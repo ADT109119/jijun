@@ -1,0 +1,361 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>輕鬆記帳</title>
+
+<meta name="description" content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。">
+<meta name="keywords" content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本">
+<meta name="author" content="ADT109119">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+<link rel="stylesheet" type="text/css" href="CSS/CSS_Var.css">
+<link rel="stylesheet" type="text/css" href="CSS/CSS.css">
+<link rel="stylesheet" type="text/css" href="CSS/ButtonStyle.css">
+<link rel="stylesheet" type="text/css" href="CSS/Success.css">
+
+<link rel="manifest" href="manifest.json">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#00A7E5">
+
+
+<link rel="apple-touch-icon" sizes="192x192" href="icon/icon.png" />
+<link rel="shortcut icon" href="icon/favicon.ico">
+
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1250445032458691"
+     crossorigin="anonymous"></script>
+</head>
+
+<body>
+	
+	<div class="Container JiJunContainer">
+		<a class="ButtonA out active" href="#" onClick="InOutSwitch(this)"><span><b>支出</b></span></a>
+		<a class="ButtonA in" href="#" onClick="InOutSwitch(this)"><span><b>收入</b></span></a>
+		
+		<div class="Container2">
+			<input type="date" class="InputDate" onChange="LoadDataOnDateChange(this);">
+			
+			
+			<section class="Selections out active">
+			<lable style="font-size: 5vw;"><b>支出類別:</b></lable>
+			<div class="ClassesContainer">
+				<a class="ButtonA Classes" href="#"><span class="ClassesC food">飲食</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC life">日常</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC traffic">交通</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC fun">娛樂</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC medi">醫療</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC edu">教育</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC another">其他</span></a>
+			</div>
+			</section>
+			
+			<section class="Selections in">
+			<lable style="font-size: 5vw;"><b>收入類別:</b></lable>
+			<div class="ClassesContainer">
+				<a class="ButtonA Classes" href="#"><span class="ClassesC salary">薪水</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC bonus">獎金</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC pocket">零用錢</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC parttime">兼職</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC invest">投資</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC interest">利息</span></a>
+				<a class="ButtonA Classes" href="#"><span class="ClassesC another">其他</span></a>
+			</div>
+			</section>
+			
+			<div class="DescriptionAndMonyDisplay">
+				<label><b>說明：</b></label>
+				<input type="text" class="DescriptionInput">
+				
+			</div>
+			<div class="MoneyDisplay">0</div>
+			
+			<a class="ButtonA" href="#"><div class="AC not active">　</div></a>
+			<a class="ButtonA" href="#"><div class="AC not active">　</div></a>
+			<a class="ButtonA" href="#"><div class="AC active" onClick="AC()">AC</div></a>
+
+			<div class="NumberPad">
+
+				<a class="ButtonA number" name="1" href="#"><span name="1" class="NumberButton one">1</span></a>
+				<a class="ButtonA number" name="2" href="#"><span name="2" class="NumberButton two">2</span></a>
+				<a class="ButtonA number" name="3" href="#"><span name="3" class="NumberButton three">3</span></a>
+				<a class="ButtonA number" name="4" href="#"><span name="4" class="NumberButton four">4</span></a>
+				<a class="ButtonA number" name="5" href="#"><span name="5" class="NumberButton five">5</span></a>
+				<a class="ButtonA number" name="6" href="#"><span name="6" class="NumberButton six">6</span></a>
+				<a class="ButtonA number" name="7" href="#"><span name="7" class="NumberButton seven">7</span></a>
+				<a class="ButtonA number" name="8" href="#"><span name="8" class="NumberButton eight">8</span></a>
+				<a class="ButtonA number" name="9" href="#"><span name="9" class="NumberButton nine">9</span></a>
+				<a class="ButtonA number" name="0" href="#"><span name="0" class="NumberButton zero">0</span></a>
+				<a class="ButtonA number" name="." href="#"><span name="." class="NumberButton dot">.</span></a>
+			</div>
+			
+			<br>
+			
+			<a class="ButtonA SaveData" href="#"  onClick="SaveData()"><span class="SaveDataButton">記帳！！！</span></a>
+			<br>
+			<span style="padding: 8vh"></span>
+		</div>
+		
+		
+	</div>
+	
+	
+	<div class="Container HomeContainer active">
+		<div class="Container2">
+			<div class="MoneySpend Today">
+				<label style="font-size: 5vw; font-weight: bold">今日花費:</label>
+				<span class="MoneySpendDisplay Today">0</span>
+			</div>
+
+			<div class="MoneySpend ThisWeek">
+				<label style="font-size: 5vw; font-weight: bold">本周花費:</label>
+				<span class="MoneySpendDisplay ThisWeek">0</span>
+
+			</div>
+
+			<div class="MoneySpend ThisMonth">
+				<label style="font-size: 5vw; font-weight: bold">本月花費:</label>
+				<span class="MoneySpendDisplay ThisMonth">0</span>
+
+			</div>
+		</div>
+		<!--
+		<div class="BudgetAndRemainedMoney">
+			<div>a</div>
+			<div>
+				<span>1</span>
+				<span>2adwd</span>
+				<hr>
+			</div>
+		</div>
+		-->
+		
+		<div class="DataDownloadAndInputButtonContainer">
+			
+			<span class="DataDownloadAndInputButton DownloadButton" onClick="CreateAndDownloadAllTheData()">
+				<span>
+					<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 				viewBox="0 0 485 485" style="enable-background:new 0 0 485 485;" xml:space="preserve">
+					<g>
+						<polygon points="380.926,115.57 321.93,115.57 321.93,0 163.07,0 163.07,115.57 104.074,115.57 242.5,267.252 	"/>
+						<path d="M0,308.626v175h485v-175H0z M330,411.126c-8.284,0-15-6.716-15-15s6.716-15,15-15c8.284,0,15,6.716,15,15
+						S338.284,411.126,330,411.126z M400,411.126c-8.284,0-15-6.716-15-15s6.716-15,15-15c8.284,0,15,6.716,15,15
+						S408.284,411.126,400,411.126z"/>
+					</g>
+					</svg>
+				</span>
+			</span>
+			
+			<span class="DataDownloadAndInputButton InputButton">
+				<label>
+					<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 				viewBox="0 0 485 485" style="enable-background:new 0 0 485 485;" xml:space="preserve">
+					<g>
+						<polygon points="163.07,268.626 321.93,268.626 321.93,153.056 380.926,153.056 242.5,1.374 104.074,153.056 163.07,153.056"/>
+						<path d="M0,308.626v175h485v-175H0z M330,411.126c-8.284,0-15-6.716-15-15s6.716-15,15-15c8.284,0,15,6.716,15,15
+						S338.284,411.126,330,411.126z M400,411.126c-8.284,0-15-6.716-15-15s6.716-15,15-15c8.284,0,15,6.716,15,15
+						S408.284,411.126,400,411.126z"/>
+					</g>
+
+					</svg>
+					<input type="file" onChange="InputOuterAllTheData(this.files)" accept=".json">
+				</label>
+			</span>
+			
+			<span class="DataDownloadAndInputButton CloudStorageButton">
+				<span onClick="CloudDataSave()">
+					<svg version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+						 viewBox="0 0 430 430" style="enable-background:new 0 0 430 430;" xml:space="preserve">
+					<g>
+					<circle cx="250" cy="350" r="10.98"/>
+					<path d="M323.424,133.621c-4.114,0-8.213,0.234-12.277,0.703c-4.898-20.225-15.654-38.647-31.178-53.025
+						c-19.752-18.295-45.464-28.369-72.4-28.369c-49.559,0-91.801,33.842-103.422,80.719C46.495,134.941,0,182.242,0,240.197
+						c0,58.77,47.811,106.58,106.576,106.58h3.65c1.931,17.021,16.411,30.293,33.939,30.293h141.668
+						c17.528,0,32.009-13.272,33.939-30.293h3.65c58.766,0,106.576-47.811,106.576-106.58C430,181.432,382.19,133.621,323.424,133.621z
+						 M300,342.9c0,7.824-6.342,14.17-14.166,14.17H144.166c-7.824,0-14.166-6.346-14.166-14.17v-21.15
+						c0-7.824,6.342-14.168,14.166-14.168h141.668c7.824,0,14.166,6.344,14.166,14.168V342.9z M300,282.32
+						c0,7.824-6.342,14.168-14.166,14.168H144.166c-7.824,0-14.166-6.344-14.166-14.168v-21.152c0-7.824,6.342-14.164,14.166-14.164
+						h141.668c7.824,0,14.166,6.34,14.166,14.164V282.32z M300,221.74c0,7.824-6.342,14.168-14.166,14.168H144.166
+						c-7.824,0-14.166-6.344-14.166-14.168v-21.15c0-7.824,6.342-14.17,14.166-14.17h141.668c7.824,0,14.166,6.346,14.166,14.17V221.74z
+						"/>
+					<circle cx="250" cy="455" r="10.981"/>
+					<circle cx="250" cy="560" r="10.979"/>
+					</g>
+					</svg>
+				</span>
+			</span>
+			
+		</div>
+		
+	</div>
+	
+	<div class="Container ChaJunContainer">
+		<a class="ButtonA ChaJunOut active" href="#" onClick="ChaJunInOutSwitch(this)"><span><b>支出</b></span></a>
+		<a class="ButtonA ChaJunIn" href="#" onClick="ChaJunInOutSwitch(this)"><span><b>收入</b></span></a>
+		<div class="Container2">
+			<input type="date" class="ChaJunDate Earlier">
+			
+			<span style="font-size: 5vw; font-weight: bold;">~</span>
+			
+			<input type="date" class="ChaJunDate Later">
+			
+			<a class="ButtonA ReadData" href="#" onClick="ChaJunTransition()"><span class="ReadDataButton">查詢🔎</span></a>
+			
+			<div class="SetSearchDate">
+				<lable style="font-size: 5vw;"><b>快速查詢:</b></lable>
+
+				<a class="ButtonA SetSearchDate" href="#" name="Today"><span class="SetSearchDateButton">今日</span></a>
+				<a class="ButtonA SetSearchDate" href="#" name="Week"><span class="SetSearchDateButton">本周</span></a>
+				<a class="ButtonA SetSearchDate" href="#" name="SevenDays"><span class="SetSearchDateButton">七日</span></a>
+				<a class="ButtonA SetSearchDate" href="#" name="Month"><span class="SetSearchDateButton">本月</span></a>
+				<a class="ButtonA SetSearchDate" href="#" name="LastMonth"><span class="SetSearchDateButton">上個月</span></a>
+				
+
+			</div>
+			
+			<div class="ChaJunClassContainer">
+				<div class="ChaJunClassContainer2">
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">飲食</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">日常</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">交通</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">娛樂</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">醫療</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">教育</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+					<div class="ChaJunNoClassSelector" data-totalmoney="$0">其他</div>
+					<section class="ChaJunItemDisplay"></section>
+					
+				</div>
+			</div>
+			
+		</div>
+		<span style="padding: 18vh"></span>
+	</div>
+	
+	<div class="FunctionSelector">
+		<a class="ButtonA FunctionSelectorButton" name="." href="#"><span name="." class="FunctionButton JiJun">
+				<img style="height: 100%; width: auto" src="icon/JiJun.png">
+			</span></a>
+		
+		<a class="ButtonA FunctionSelectorButton" name="." href="#"><span name="." class="FunctionButton Home">
+				<img style="height: 100%; width: auto" src="icon/Home.png">
+			</span></a>
+		
+		<a class="ButtonA FunctionSelectorButton" name="." href="#"><span name="." class="FunctionButton ChaJun">
+				<img style="height: 100%; width: auto" src="icon/ChaJun.png">
+			</span></a>
+		
+		<span class="ShowSelectedFunction" style="--i: 1;"></span>
+	</div>
+
+	
+	<script src="JS/DataStorage.js"></script>
+	<script src="JS/ButtonPress.js"></script>
+	<script src="JS/DataRead.js"></script>
+	<script src="JS/DataEdit.js"></script>
+	<script src="JS/DataDownloadAndInput.js"></script>
+	
+	<script>
+		var InOutClasses = {"InType":
+							[["薪水","獎金","零用錢","兼職","投資","利息","其他"],
+						 ["salary","bonus","pocket","parttime","invest","interest","another"]],
+							
+						   "OutType":
+							[["飲食","日常","交通","娛樂","醫療","教育","其他"], 	["food","life","traffic","fun","medi","edu","another"]]
+						   
+						   };
+		
+		var DDD = new Date();
+		let date = DDD.getDate()
+			
+		if(date < 10)
+			date = "0" +date;
+
+		let month = DDD.getMonth() + 1;
+
+		if(month < 10)
+			month = "0" +month;
+
+		let year = DDD.getFullYear();
+		
+		function DateParse(dateData){
+			let date = dateData.getDate()
+			
+			if(date < 10)
+				date = "0" +date;
+
+			let month = dateData.getMonth() + 1;
+
+			if(month < 10)
+				month = "0" +month;
+
+			let year = dateData.getFullYear();
+			
+			return year + "-" + month + "-" + date;
+		}
+		
+		
+		var TodaysDate = DateParse(DDD);
+		
+		//將記帳日期調整至今日
+		document.querySelector(".InputDate").value = TodaysDate;
+		
+		//將查帳日期調整至今日
+		document.querySelector(".ChaJunDate.Earlier").value = TodaysDate;
+		document.querySelector(".ChaJunDate.Later").value = TodaysDate;
+		
+		//載入網頁時呼叫localStorage將今日資料存入tempData
+		LoadDataOnDateChange(document.querySelector(".InputDate"));
+		
+		
+		//載入網頁時呼叫讀取今日、本周、本月支出
+		var SundayDate = new Date();
+		var SevenDays = new Date();
+
+		let day = DDD.getDay(); //得到今日星期幾
+		SundayDate.setDate(SundayDate.getDate() - day); //減至星期日
+		//console.log(tempDate);
+		SevenDays.setDate(SevenDays.getDate() - 6);
+
+		function HomePageMoneyDisplay(){
+			ReadMoney_HomePage(TodaysDate, TodaysDate, "Today")
+
+			ReadMoney_HomePage(DateParse(SundayDate), TodaysDate, "ThisWeek");
+
+			ReadMoney_HomePage(year+"-"+month+"-"+"01", year+"-"+month+"-"+"31", "ThisMonth");
+		}
+		
+		HomePageMoneyDisplay();
+	</script>
+	
+	<script>
+    if('serviceWorker' in navigator){
+        console.log("瀏覽器支援 Service Worker")
+
+        navigator.serviceWorker
+            .register('serviceWorker.js') // 註冊 Service Worker
+            .then(function (reg) {
+                console.log('Registration succeeded. Scope is ' + reg.scope) // 註冊成功
+            })
+            .catch(function (error) {
+                console.log('Registration failed with ' + error) // 註冊失敗
+            })
+		}else{
+			console.log("瀏覽器不支援 Service Worker")
+		}
+	</script>
+
+</body>
+</html>

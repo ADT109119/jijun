@@ -1,0 +1,80 @@
+@charset "utf-8";
+/* CSS Document */
+
+.SaveSuccessWindow svg{
+	position: relative;
+	height: 80vw;
+    width: 80vw;
+	align-content: center;
+	text-align: center;
+	top: 2vw;
+}
+
+svg circle, svg polyline{
+	transform: scale(0.6);
+}
+
+.Success{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-size: 36px;
+    margin-top: 40px;
+    color: #333;
+    opacity: 0;
+	font-weight: bold;
+}
+
+.Success{
+    animation: 0.6s title ease-in-out;
+    animation-delay: 1.2s;
+    animation-fill-mode: forwards;
+}
+
+.SaveSuccessWindow .circle{
+    stroke-dasharray: 1194;
+    stroke-dashoffset: 1194;
+}
+
+@keyframes circle{
+    from{
+        stroke-dashoffset: 1194;
+    }
+    to{
+        stroke-dashoffset: 2388;
+    }
+}
+
+svg .circle{
+    animation: circle 1s ease-in-out;
+    animation-fill-mode: forwards;
+}
+
+.SaveSuccessWindow .tick{
+    stroke-dasharray: 350;
+    stroke-dashoffset: 350;
+	position: absolute;
+	left: 0;
+}
+
+@keyframes tick{
+    from{
+        stroke-dashoffset: 350;
+    }
+    to{
+        stroke-dashoffset: 0;
+    }
+}
+
+svg .tick{
+    animation: tick 0.8s ease-in-out;
+    animation-fill-mode: forwards;
+    animation-delay: .95s;
+}
+
+@keyframes title{
+    from{
+        opacity: 0;
+    }
+    to{
+        opacity: 1;
+    }
+}

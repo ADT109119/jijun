@@ -1,0 +1,262 @@
+@charset "utf-8";
+/* CSS Document */
+
+.ButtonA{
+	text-decoration-line: none;
+	color: black;
+}
+
+.ButtonA span:hover{
+	background: rgba(243,127,171,1.00);
+}
+
+.ButtonA.in, .ButtonA.out, .ButtonA.ChaJunIn, .ButtonA.ChaJunOut{
+	font-size: 10vw;
+	margin-left: 2vw;
+	margin-right: 2vw;
+}
+
+.ButtonA.active{
+	color: red;
+	text-decoration-line: underline;
+}
+
+.ButtonA.FunctionSelectorButton span:hover{
+	background: rgba(0,0,0,0);
+}
+
+.ClassesC{
+	position: relative;
+	display: inline-flex;
+	height: 10vw;
+	width: 15vw;
+	color: rgba(23,23,23,1.00);
+	border-radius: 30%;
+	line-height: 10vw;
+	justify-content: center;
+	font-size: 5vw;
+	margin-left: 1vw;
+	margin-right: 1vw;
+	border: 2px #555555 solid;
+	box-shadow: 0.5vw 0.5vw #AAAAAA;
+	font-weight: bold;
+	background: var(--ButtonBackGroundColor);
+}
+
+.ClassesC.active{
+	background: rgba(243,127,171,1.00);
+}
+
+.NumberButton, .SaveDataButton, .ReadDataButton, .SetSearchDateButton, .ChaJunEditConfirm.Yes, .ChaJunEditConfirm.No, .ChaJunEditWindows{
+	position: relative;
+	display: inline-flex;
+	height: 12vw;
+	width: 25vw;
+	color: rgba(23,23,23,1.00);
+	border-radius: 5vw;
+	line-height: 12vw;
+	justify-content: center;
+	font-size: 8vw;
+	margin-left: 1vw;
+	margin-right: 1vw;
+	margin-top: 1vw;
+	border: 2px #555555 solid;
+	box-shadow: 0.5vw 0.5vw #AAAAAA;
+	font-weight: bolder;
+	background: var(--ButtonBackGroundColor);
+}
+
+.ChaJunEditWindows.Save{
+	background: rgba(17,156,12,1.00);
+	color: white;
+}
+
+.ChaJunEditWindows.Cancle{
+	
+}
+
+.ChaJunEditWindows.Delete{
+	background: rgba(236,0,0,1.00);
+	color: white;
+	width: 50vw;
+}
+
+.NumberButton.zero{
+	width: 53vw;
+}
+
+.SaveDataButton{
+	width: 50vw;
+}
+
+.ReadDataButton{
+	width: 20vw;
+	height: 7vw;
+	font-size: 5vw;
+	line-height: 7vw;
+}
+
+.SetSearchDateButton{
+	width: 20vw;
+	height: 7vw;
+	font-size: 5vw;
+	line-height: 7vw;
+}
+
+.ChaJunEdit.Yes{
+	
+}
+	
+
+.AC{
+	display: inline-flex;
+	height: 12vw;
+	width: 25vw;
+	color: rgba(23,23,23,1.00);
+	border-radius: 5vw;
+	line-height: 12vw;
+	justify-content: center;
+	font-size: 8vw;
+	margin-left: 1vw;
+	margin-right: 1vw;
+	margin-top: 1vw;
+	border: 2px #555555 solid;
+	box-shadow: 0.5vw 0.5vw #AAAAAA;
+	font-weight: bolder;
+	background: rgba(243,127,171,1.00);
+}
+
+.AC:hover{
+	background: var(--ButtonBackGroundColor);
+}
+
+
+.FunctionSelector{
+	position: fixed;
+	justify-content: center;
+	align-content: center;
+	text-align: center;
+	left: 0;
+	bottom: 0;
+	width: 100vw;
+	height: 8vh;
+	background: rgba(230,230,230,1.00);
+	z-index: 10;
+}
+
+.ShowSelectedFunction{
+	position: absolute;
+	height: 10vh;
+	width: 10vh;
+	top: 0;
+	left: calc(20vw + var(--i) * 30vw);
+	transform: translate(-50%, -30%);
+	background: rgba(106,168,255,1.00);
+	border: 2vw rgba(230,230,230,1.00) solid;
+	border-radius: 50%;
+	z-index: -3;
+	transition: 0.5s;
+}
+
+.FunctionSelector .FunctionButton{
+	display: inline-flex;
+	align-content: center;
+	justify-content: center;
+	text-align: center;
+	flex: 1;
+	width: 10vw;
+	height: 8vh;
+	padding-left: 10vw;
+	padding-right: 10vw;
+}
+
+.ChaJunNoClassSelector{
+	position: relative;
+	top: 1vh;
+	background: var(--ButtonBackGroundColor);
+	width: 100%;
+	min-height: 8vw;
+	border-top: #FFFFFF 1vw solid;
+	border-bottom: #FFFFFF 1vw solid;
+	justify-content: center;
+	align-self: center;
+	line-height: 8vw;
+	font-size: 6vw;
+	font-weight: bold;
+}
+
+.ChaJunNoClassSelector:hover{
+	background: rgba(200,174,88,1.00);
+}
+
+.ChaJunNoClassSelector::before{
+	position: absolute;
+	content: "+";
+	display: block;
+	float: left;
+	font-size: 10vw;
+	font-weight: bold;
+	width: 6vw;
+	height: 6vw;
+	line-height: 6vw;
+	background: #FFFFFF;
+	border-radius: 15px;
+	top: 50%;
+	transform: translateY(-50%);
+}
+
+.ChaJunNoClassSelector.active::before{
+	content: "-";
+}
+
+.ChaJunNoClassSelector::after{
+	position: absolute;
+	content: attr(data-totalmoney);
+	float: right;
+	font-size: 8vw;
+	font-weight: bold;
+	margin-right: 5vw;
+	text-align: right;
+	right: 0;
+}
+
+.DataDownloadAndInputButton{
+	position: relative;
+	width: 20vw;
+	height: 20vw;
+	border: 0.5vw grey solid;
+	background: var(--HomePageDisplayer);
+	border-radius: 15px;
+	display: inline-block;
+}
+
+.DataDownloadAndInputButton.InputButton label input{
+	display: none;
+}
+
+.DataDownloadAndInputButton span{
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+}
+
+.DataDownloadAndInputButton img{
+	width: 100%;
+	height: 100%;
+}
+
+.DataDownloadAndInputButton svg{
+	position: relative;
+	width: 90%;
+	height: 90%;
+	top: 50%;
+	left: 50%;
+	transform: translate(-55%, -50%);
+}
+
+.DataDownloadAndInputButton.InputButton span{
+	line-height: 20vw;
+	font-size: 10vw;
+}
