@@ -312,14 +312,8 @@ class EasyAccountingApp {
     const container = document.getElementById('app')
     
     container.innerHTML = `
-      <div class="container mx-auto px-4 py-6 max-w-md">
+      <div class="container mx-auto px-4 py-6 max-w-md" style="padding-bottom: calc(100vh - 400px);">
         
-        <!-- 標題區域 -->
-        <header class="text-center mb-6">
-          <h1 class="text-3xl font-bold text-gray-800 mb-2">輕鬆記帳</h1>
-          <p class="text-gray-600">簡單實用的記帳工具</p>
-        </header>
-
         <!-- 收支切換按鈕 -->
         <div class="flex mb-6 bg-white rounded-lg p-1 shadow-md">
           <button id="expense-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 bg-red-500 text-white">
@@ -330,11 +324,6 @@ class EasyAccountingApp {
           </button>
         </div>
 
-        <!-- 日期選擇 -->
-        <div class="mb-6">
-          <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
-        </div>
-
         <!-- 分類選擇 -->
         <div class="mb-6">
           <div class="flex items-center justify-between mb-3">
@@ -343,47 +332,51 @@ class EasyAccountingApp {
               + 新增分類
             </button>
           </div>
-          <div id="category-container" class="grid grid-cols-2 gap-3">
+          <div id="category-container" class="grid grid-cols-2 gap-3 overflow-y-auto max-h-[calc(100vh-420px)] pb-4">
             <!-- 分類按鈕將由 JavaScript 動態生成 -->
           </div>
         </div>
 
-        <!-- 說明輸入 -->
-        <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">說明</label>
-          <input type="text" id="description-input" placeholder="輸入說明..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
-        </div>
-
-        <!-- 金額顯示 -->
-        <div class="mb-6">
-          <div id="amount-display" class="text-4xl font-bold text-center py-6 bg-white rounded-lg shadow-md text-gray-800">
-            0
+        <!-- 底部固定區域 -->
+        <div class="fixed bottom-[80px] left-0 right-0 bg-white p-4 shadow-lg z-40">
+          <!-- 日期選擇 -->
+          <div class="mb-4">
+            <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
           </div>
-        </div>
 
-        <!-- 數字鍵盤 -->
-        <div class="grid grid-cols-3 gap-3 mb-6">
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="1">1</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="2">2</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="3">3</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="4">4</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="5">5</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="6">6</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="7">7</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="8">8</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="9">9</button>
-          <button id="clear-btn" class="bg-gray-200 hover:bg-gray-300 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors">AC</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="0">0</button>
-          <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number=".">.</button>
-        </div>
+          <div class="flex space-x-2 mb-4 items-center">
+            <!-- 金額顯示 -->
+            <div id="amount-display" class="w-2/4 text-2xl font-bold text-center py-3 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
+              $0
+            </div>
+            <!-- 說明輸入 -->
+            <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+          </div>
 
-        <!-- 記帳按鈕 -->
-        <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
-          記帳！
-        </button>
+          <!-- 數字鍵盤 -->
+          <div class="grid grid-cols-3 gap-2 mb-4">
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="1">1</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="2">2</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="3">3</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="4">4</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="5">5</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="6">6</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="7">7</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="8">8</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="9">9</button>
+            <button id="clear-btn" class="bg-red-400 hover:bg-red-500 text-white text-xl font-semibold py-3 rounded-lg transition-colors">AC</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="0">0</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number=".">.</button>
+          </div>
+
+          <!-- 記帳按鈕 -->
+          <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all duration-200">
+            記帳！
+          </button>
+        </div>
 
         <!-- 底部導航 -->
-        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-50">
           <div class="flex justify-around max-w-md mx-auto">
             <button id="nav-list" class="flex flex-col items-center py-2 text-gray-400">
               <span class="text-2xl"><i class="fas fa-home"></i></span>
@@ -417,11 +410,6 @@ class EasyAccountingApp {
     
     container.innerHTML = `
       <div class="container mx-auto px-4 py-6 max-w-md">
-        <!-- 標題區域 -->
-        <header class="text-center mb-6">
-          <h1 class="text-3xl font-bold text-gray-800 mb-2">輕鬆記帳</h1>
-          <p class="text-gray-600">您的財務管理助手</p>
-        </header>
 
         <!-- 快速統計 -->
         <div class="grid grid-cols-2 gap-4 mb-6">

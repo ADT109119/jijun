@@ -20,11 +20,6 @@ export class StatisticsManager {
     
     container.innerHTML = `
       <div class="container mx-auto px-4 py-6 max-w-md">
-        <!-- 標題區域 -->
-        <header class="text-center mb-6">
-          <h1 class="text-3xl font-bold text-gray-800 mb-2">統計分析</h1>
-          <p class="text-gray-600">收支分析與趨勢</p>
-        </header>
 
         <!-- 時間範圍選擇 -->
         <div class="mb-6">

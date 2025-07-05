@@ -18,11 +18,6 @@ export class RecordsListManager {
     
     container.innerHTML = `
       <div class="container mx-auto px-4 py-6 max-w-md">
-        <!-- 標題區域 -->
-        <header class="text-center mb-6">
-          <h1 class="text-3xl font-bold text-gray-800 mb-2">記錄明細</h1>
-          <p class="text-gray-600">查看和管理您的記帳記錄</p>
-        </header>
 
         <!-- 篩選器 -->
         <div class="mb-6 space-y-4">
