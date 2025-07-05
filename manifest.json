@@ -1,0 +1,61 @@
+{
+  "name": "輕鬆記帳",
+  "short_name": "輕鬆記帳",
+  "description": "簡單實用的記帳 PWA 應用程式",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#00A7E5",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "zh-TW",
+  "icons": [
+    {
+      "src": "/icon/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity", "utilities"],
+  "screenshots": [
+    {
+      "src": "/screenshots/mobile-1.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "快速記帳",
+      "short_name": "記帳",
+      "description": "快速新增一筆記帳記錄",
+      "url": "/?action=add",
+      "icons": [
+        {
+          "src": "/icon/icon.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "查看統計",
+      "short_name": "統計",
+      "description": "查看收支統計分析",
+      "url": "/?action=stats",
+      "icons": [
+        {
+          "src": "/icon/icon.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
