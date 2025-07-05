@@ -1,0 +1,102 @@
+/* 自定義樣式 */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  padding-bottom: 80px; /* 為底部導航留出空間 */
+}
+
+/* 確保 active 樣式優先級 */
+.category-btn.active {
+  background-color: #3B82F6 !important;
+  color: white !important;
+  border-color: #3B82F6 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+  transform: scale(1.05) !important;
+}
+
+/* 按鈕點擊效果 */
+.number-btn:active,
+button:active {
+  transform: scale(0.95);
+}
+
+/* 分類按鈕樣式 */
+.category-btn {
+  @apply py-3 px-4 rounded-lg font-medium transition-all duration-200 border-2;
+}
+
+/* 預設樣式（無顏色分類） */
+.category-btn:not([class*="bg-"]) {
+  @apply bg-white text-gray-700 border-gray-200;
+}
+
+.category-btn:not([class*="bg-"]):hover {
+  @apply border-blue-500 text-blue-500 transform scale-105 shadow-md;
+}
+
+/* 有顏色的分類按鈕 */
+.category-btn[class*="bg-"] {
+  @apply text-white border-transparent;
+}
+
+.category-btn[class*="bg-"]:hover {
+  @apply transform scale-105 shadow-md opacity-90;
+}
+
+/* 選中狀態 */
+.category-btn.active {
+  @apply shadow-lg transform scale-105 !important;
+}
+
+/* 管理分類按鈕特殊樣式 */
+.category-btn[class*="border-dashed"] {
+  @apply bg-white text-gray-700 border-gray-300 !important;
+}
+
+.category-btn[class*="border-dashed"]:hover {
+  @apply border-primary text-primary !important;
+}
+
+/* 成功動畫 */
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.success-show {
+  animation: slideInDown 0.3s ease-out;
+}
+
+/* 響應式調整 */
+@media (max-width: 640px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* 漸層背景動畫 */
+body {
+  background: linear-gradient(-45deg, #e3f2fd, #f3e5f5, #e8f5e8, #fff3e0);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

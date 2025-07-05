@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>輕鬆記帳</title>
+  
+  <meta name="description" content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。">
+  <meta name="keywords" content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本">
+  <meta name="author" content="ADT109119">
+  
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="theme-color" content="#00A7E5">
+  
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon/icon.png" />
+  <link rel="shortcut icon" href="/icon/favicon.ico">
+  
+  <!-- Tailwind CSS CDN for development -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#00A7E5',
+            secondary: '#FFD700',
+            accent: '#FF6B6B'
+          }
+        }
+      }
+    }
+  </script>
+  
+  <link rel="stylesheet" href="./css/main.css">
+</head>
+
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+  <div id="app">
+    <!-- 主要應用程式容器 -->
+    <div class="container mx-auto px-4 py-6 max-w-md">
+      
+      <!-- 標題區域 -->
+      <header class="text-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">輕鬆記帳</h1>
+        <p class="text-gray-600">簡單實用的記帳工具</p>
+      </header>
+
+      <!-- 收支切換按鈕 -->
+      <div class="flex mb-6 bg-white rounded-lg p-1 shadow-md">
+        <button id="expense-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 bg-red-500 text-white">
+          支出
+        </button>
+        <button id="income-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 text-gray-600 hover:bg-gray-100">
+          收入
+        </button>
+      </div>
+
+      <!-- 日期選擇 -->
+      <div class="mb-6">
+        <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+      </div>
+
+      <!-- 分類選擇 -->
+      <div class="mb-6">
+        <h3 class="text-lg font-semibold mb-3 text-gray-800" id="category-title">支出類別</h3>
+        <div id="category-container" class="grid grid-cols-2 gap-3">
+          <!-- 分類按鈕將由 JavaScript 動態生成 -->
+        </div>
+      </div>
+
+      <!-- 說明輸入 -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">說明</label>
+        <input type="text" id="description-input" placeholder="輸入說明..." class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+      </div>
+
+      <!-- 金額顯示 -->
+      <div class="mb-6">
+        <div id="amount-display" class="text-4xl font-bold text-center py-6 bg-white rounded-lg shadow-md text-gray-800">
+          0
+        </div>
+      </div>
+
+      <!-- 數字鍵盤 -->
+      <div class="grid grid-cols-3 gap-3 mb-6">
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="1">1</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="2">2</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="3">3</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="4">4</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="5">5</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="6">6</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="7">7</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="8">8</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="9">9</button>
+        <button id="clear-btn" class="bg-gray-200 hover:bg-gray-300 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors">AC</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number="0">0</button>
+        <button class="number-btn bg-white hover:bg-gray-50 text-xl font-semibold py-4 rounded-lg shadow-md transition-colors" data-number=".">.</button>
+      </div>
+
+      <!-- 記帳按鈕 -->
+      <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
+        記帳！
+      </button>
+
+      <!-- 底部導航 -->
+      <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+        <div class="flex justify-around max-w-md mx-auto">
+          <button id="nav-add" class="flex flex-col items-center py-2 text-primary">
+            <span class="text-2xl">➕</span>
+            <span class="text-xs">記帳</span>
+          </button>
+          <button id="nav-list" class="flex flex-col items-center py-2 text-gray-400">
+            <span class="text-2xl">📋</span>
+            <span class="text-xs">明細</span>
+          </button>
+          <button id="nav-stats" class="flex flex-col items-center py-2 text-gray-400">
+            <span class="text-2xl">📊</span>
+            <span class="text-xs">統計</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+
+    <!-- 成功提示 -->
+    <div id="success-toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-50">
+      記帳成功！
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "easy-accounting-pwa",
+  "version": "2.0.0",
+  "description": "現代化輕鬆記帳 PWA 應用程式",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,html --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.0.0",
+    "@vitejs/plugin-legacy": "^5.0.0"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.0",
+    "idb": "^8.0.0"
+  },
+  "keywords": ["記帳", "PWA", "網頁程式", "輕鬆記帳"],
+  "author": "ADT109119",
+  "license": "MIT"
+}
