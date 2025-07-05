@@ -121,6 +121,9 @@ export class BudgetManager {
   }
 
   showBudgetModal() {
+    // 確保每次只存在一個預算設定彈窗
+    this.closeBudgetModal()
+
     const modal = document.createElement('div')
     modal.id = 'budget-modal'
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
