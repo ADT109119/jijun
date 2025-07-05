@@ -30,7 +30,7 @@ jobs:
 
             # use actions-gh-pages to deploy dist to gh-pages
             - name: Deploy
-              uses: peaceiris/actions-gh-pages@v4
+              uses: peaceiris/actions-gh-pages@v3
               with:
                 # github will auto-generate a token for this job and use it 
                 github_token: ${{ secrets.GITHUB_TOKEN }}
