@@ -31,6 +31,26 @@ export class RecordsListManager {
             <button class="period-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="week">本週</button>
             <button class="period-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200 bg-primary text-white" data-period="month">本月</button>
             <button class="period-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="year">今年</button>
+            <button class="period-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="custom">自訂</button>
+          </div>
+
+          <!-- 自訂時間範圍 Modal -->
+          <div id="recordsDateRangeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+              <h3 class="text-xl font-semibold mb-4">選擇自訂時間範圍</h3>
+              <div class="mb-4">
+                <label for="recordsStartDate" class="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
+                <input type="date" id="recordsStartDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+              </div>
+              <div class="mb-4">
+                <label for="recordsEndDate" class="block text-sm font-medium text-gray-700 mb-1">結束日期</label>
+                <input type="date" id="recordsEndDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+              </div>
+              <div class="flex justify-end space-x-3">
+                <button id="cancelRecordsDateRange" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">取消</button>
+                <button id="applyRecordsDateRange" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-600">確定</button>
+              </div>
+            </div>
           </div>
 
           <!-- 類型篩選 -->
@@ -150,11 +170,42 @@ export class RecordsListManager {
     document.querySelectorAll('.period-filter').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const period = e.target.dataset.period
-        this.switchPeriodFilter(period)
-        this.currentPeriod = period
-        this.loadRecords()
+        if (period === 'custom') {
+          this.showRecordsDateRangeModal()
+        } else {
+          this.switchPeriodFilter(period)
+          this.currentPeriod = period
+          this.loadRecords()
+        }
       })
     })
+
+    // 自訂時間範圍 Modal 事件
+    const dateRangeModal = document.getElementById('recordsDateRangeModal')
+    const startDateInput = document.getElementById('recordsStartDate')
+    const endDateInput = document.getElementById('recordsEndDate')
+    const applyDateRangeBtn = document.getElementById('applyRecordsDateRange')
+    const cancelDateRangeBtn = document.getElementById('cancelRecordsDateRange')
+
+    if (applyDateRangeBtn) {
+      applyDateRangeBtn.addEventListener('click', () => {
+        const startDate = startDateInput.value
+        const endDate = endDateInput.value
+        if (startDate && endDate) {
+          this.loadRecords('custom', startDate, endDate)
+          this.switchPeriodFilter('custom')
+          dateRangeModal.classList.add('hidden')
+        } else {
+          showToast('請選擇開始和結束日期', 'error')
+        }
+      })
+    }
+
+    if (cancelDateRangeBtn) {
+      cancelDateRangeBtn.addEventListener('click', () => {
+        dateRangeModal.classList.add('hidden')
+      })
+    }
 
     // 類型篩選
     document.querySelectorAll('.type-filter').forEach(btn => {
@@ -227,14 +278,33 @@ export class RecordsListManager {
     })
   }
 
+  showRecordsDateRangeModal() {
+    const modal = document.getElementById('recordsDateRangeModal')
+    const startDateInput = document.getElementById('recordsStartDate')
+    const endDateInput = document.getElementById('recordsEndDate')
+
+    // Set default dates (e.g., last month)
+    const today = new Date()
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+
+    startDateInput.value = firstDayOfMonth.toISOString().split('T')[0]
+    endDateInput.value = lastDayOfMonth.toISOString().split('T')[0]
+
+    modal.classList.remove('hidden')
+  }
+
   switchPeriodFilter(period) {
     document.querySelectorAll('.period-filter').forEach(btn => {
       btn.classList.remove('bg-primary', 'text-white')
       btn.classList.add('text-gray-600', 'hover:bg-gray-100')
     })
     
-    document.querySelector(`[data-period="${period}"]`).classList.add('bg-primary', 'text-white')
-    document.querySelector(`[data-period="${period}"]`).classList.remove('text-gray-600', 'hover:bg-gray-100')
+    const selectedBtn = document.querySelector(`[data-period="${period}"]`)
+    if (selectedBtn) {
+      selectedBtn.classList.add('bg-primary', 'text-white')
+      selectedBtn.classList.remove('text-gray-600', 'hover:bg-gray-100')
+    }
   }
 
   switchTypeFilter(type) {
@@ -254,9 +324,15 @@ export class RecordsListManager {
     targetBtn.classList.remove('text-gray-600', 'hover:bg-gray-100')
   }
 
-  async loadRecords() {
+  async loadRecords(period = this.currentPeriod, startDate = null, endDate = null) {
     try {
-      const dateRange = getDateRange(this.currentPeriod)
+      let dateRange
+      if (period === 'custom' && startDate && endDate) {
+        dateRange = { startDate, endDate }
+      } else {
+        dateRange = getDateRange(period)
+      }
+
       const filters = {
         startDate: dateRange.startDate,
         endDate: dateRange.endDate

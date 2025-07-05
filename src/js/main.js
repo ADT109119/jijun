@@ -440,6 +440,26 @@ class EasyAccountingApp {
           <div class="flex space-x-2 bg-white rounded-lg p-1 shadow-md">
             <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="week">本週</button>
             <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200 bg-primary text-white" data-period="month">本月</button>
+            <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="custom">自訂</button>
+          </div>
+        </div>
+
+        <!-- 自訂時間範圍 Modal -->
+        <div id="dateRangeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
+          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <h3 class="text-xl font-semibold mb-4">選擇自訂時間範圍</h3>
+            <div class="mb-4">
+              <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
+              <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+            </div>
+            <div class="mb-4">
+              <label for="endDate" class="block text-sm font-medium text-gray-700 mb-1">結束日期</label>
+              <input type="date" id="endDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+            </div>
+            <div class="flex justify-end space-x-3">
+              <button id="cancelDateRange" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">取消</button>
+              <button id="applyDateRange" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-600">確定</button>
+            </div>
           </div>
         </div>
 
@@ -523,10 +543,41 @@ class EasyAccountingApp {
     document.querySelectorAll('.period-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const period = e.target.dataset.period
-        this.switchHomePeriod(period)
-        this.loadHomePageData(period)
+        if (period === 'custom') {
+          this.showDateRangeModal()
+        } else {
+          this.switchHomePeriod(period)
+          this.loadHomePageData(period)
+        }
       })
     })
+
+    // 自訂時間範圍 Modal 事件
+    const dateRangeModal = document.getElementById('dateRangeModal')
+    const startDateInput = document.getElementById('startDate')
+    const endDateInput = document.getElementById('endDate')
+    const applyDateRangeBtn = document.getElementById('applyDateRange')
+    const cancelDateRangeBtn = document.getElementById('cancelDateRange')
+
+    if (applyDateRangeBtn) {
+      applyDateRangeBtn.addEventListener('click', () => {
+        const startDate = startDateInput.value
+        const endDate = endDateInput.value
+        if (startDate && endDate) {
+          this.loadHomePageData('custom', startDate, endDate)
+          this.switchHomePeriod('custom')
+          dateRangeModal.classList.add('hidden')
+        } else {
+          showToast('請選擇開始和結束日期', 'error')
+        }
+      })
+    }
+
+    if (cancelDateRangeBtn) {
+      cancelDateRangeBtn.addEventListener('click', () => {
+        dateRangeModal.classList.add('hidden')
+      })
+    }
 
     // Slider 標籤切換
     document.getElementById('slider-tab-1').addEventListener('click', () => {
@@ -591,14 +642,44 @@ class EasyAccountingApp {
     }
   }
 
-  async loadHomePageData(period = 'month') {
+  showDateRangeModal() {
+    const modal = document.getElementById('dateRangeModal')
+    const startDateInput = document.getElementById('startDate')
+    const endDateInput = document.getElementById('endDate')
+
+    // Set default dates (e.g., last month)
+    const today = new Date()
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+
+    startDateInput.value = firstDayOfMonth.toISOString().split('T')[0]
+    endDateInput.value = lastDayOfMonth.toISOString().split('T')[0]
+
+    modal.classList.remove('hidden')
+  }
+
+  async loadHomePageData(period = 'month', startDate = null, endDate = null) {
     try {
+      let dateRange
+      if (period === 'custom' && startDate && endDate) {
+        dateRange = { startDate, endDate }
+      } else {
+        dateRange = getDateRange(period)
+      }
+      
       // 載入統計資料
-      const dateRange = getDateRange(period)
       const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate)
       
       // 更新統計數字
-      const periodText = period === 'week' ? '本週' : '本月'
+      let periodText = ''
+      if (period === 'week') {
+        periodText = '本週'
+      } else if (period === 'month') {
+        periodText = '本月'
+      } else if (period === 'custom') {
+        periodText = `${startDate} 至 ${endDate}`
+      }
+      
       document.querySelector('#month-income').parentElement.querySelector('.text-sm').textContent = `${periodText}收入`
       document.querySelector('#month-expense').parentElement.querySelector('.text-sm').textContent = `${periodText}支出`
       
@@ -609,7 +690,7 @@ class EasyAccountingApp {
       this.renderHomeExpenseChart(stats.expenseByCategory)
       
       // 載入最近記錄
-      await this.loadRecentRecords()
+      await this.loadRecentRecords(dateRange.startDate, dateRange.endDate)
       
     } catch (error) {
       console.error('載入首頁資料失敗:', error)
@@ -622,8 +703,11 @@ class EasyAccountingApp {
       btn.classList.add('text-gray-600', 'hover:bg-gray-100')
     })
     
-    document.querySelector(`[data-period="${period}"]`).classList.add('bg-primary', 'text-white')
-    document.querySelector(`[data-period="${period}"]`).classList.remove('text-gray-600', 'hover:bg-gray-100')
+    const selectedBtn = document.querySelector(`[data-period="${period}"]`)
+    if (selectedBtn) {
+      selectedBtn.classList.add('bg-primary', 'text-white')
+      selectedBtn.classList.remove('text-gray-600', 'hover:bg-gray-100')
+    }
   }
 
   switchSlider(page) {
