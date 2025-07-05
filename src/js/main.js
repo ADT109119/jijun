@@ -199,7 +199,6 @@ class EasyAccountingApp {
         selectedBtn.style.borderWidth = '3px'
       }
       
-      selectedBtn.style.transform = 'scale(1.05)'
       selectedBtn.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
     }
   }

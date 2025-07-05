@@ -12,7 +12,6 @@ body {
   color: white !important;
   border-color: #3B82F6 !important;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
-  transform: scale(1.05) !important;
 }
 
 /* 按鈕點擊效果 */
@@ -23,39 +22,53 @@ button:active {
 
 /* 分類按鈕樣式 */
 .category-btn {
-  @apply py-3 px-4 rounded-lg font-medium transition-all duration-200 border-2;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  transition-property: all;
+  transition-duration: 200ms;
+  border-width: 2px;
+  border-color: #e5e7eb;
+  color: #374151;
+  background-color: #fff;
+  border-width: 3px;
 }
 
-/* 預設樣式（無顏色分類） */
-.category-btn:not([class*="bg-"]) {
-  @apply bg-white text-gray-700 border-gray-200;
-}
-
-.category-btn:not([class*="bg-"]):hover {
-  @apply border-blue-500 text-blue-500 transform scale-105 shadow-md;
+.category-btn:hover {
+  border-color: var(--primary-color, #00A7E5);
+  color: var(--primary-color, #00A7E5);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 /* 有顏色的分類按鈕 */
 .category-btn[class*="bg-"] {
-  @apply text-white border-transparent;
+  color: #fff;
+  border-color: transparent;
 }
 
 .category-btn[class*="bg-"]:hover {
-  @apply transform scale-105 shadow-md opacity-90;
+  opacity: 0.9;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 /* 選中狀態 */
 .category-btn.active {
-  @apply shadow-lg transform scale-105 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
 }
 
 /* 管理分類按鈕特殊樣式 */
 .category-btn[class*="border-dashed"] {
-  @apply bg-white text-gray-700 border-gray-300 !important;
+  background-color: #fff !important;
+  color: #374151 !important;
+  border-color: #d1d5db !important;
 }
 
 .category-btn[class*="border-dashed"]:hover {
-  @apply border-primary text-primary !important;
+  border-color: var(--primary-color, #00A7E5) !important;
+  color: var(--primary-color, #00A7E5) !important;
 }
 
 /* 成功動畫 */
