@@ -1158,12 +1158,77 @@ class EasyAccountingApp {
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/serviceWorker.js')
+        const registration = await navigator.serviceWorker.register('/public/serviceWorker.js')
         console.log('Service Worker 註冊成功:', registration)
+        
+        // 檢查更新
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing
+          console.log('發現新版本的 Service Worker')
+          
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // 新版本已安裝，顯示更新提示
+              this.showUpdateAvailable(registration)
+            }
+          })
+        })
+        
+        // 監聽 Service Worker 控制權變更
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          console.log('Service Worker 已更新，重新載入頁面')
+          window.location.reload()
+        })
+
+        // 監聽 Service Worker 消息
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'SW_UPDATED') {
+            console.log(`應用程式已更新到版本 ${event.data.version}`)
+            showToast(`應用程式已更新到版本 ${event.data.version}`, 'success', 5000)
+          }
+        })
+        
       } catch (error) {
         console.log('Service Worker 註冊失敗:', error)
       }
     }
+  }
+
+  // 顯示更新可用提示
+  showUpdateAvailable(registration) {
+    // 創建更新提示 UI
+    const updateBanner = document.createElement('div')
+    updateBanner.id = 'update-banner'
+    updateBanner.className = 'fixed top-0 left-0 right-0 bg-blue-600 text-white p-3 z-50 flex items-center justify-between'
+    updateBanner.innerHTML = `
+      <div class="flex items-center space-x-2">
+        <i class="fas fa-sync-alt"></i>
+        <span>發現新版本！</span>
+      </div>
+      <div class="flex space-x-2">
+        <button id="update-now-btn" class="bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-gray-100">
+          立即更新
+        </button>
+        <button id="update-later-btn" class="text-white hover:text-gray-200">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    `
+    
+    document.body.appendChild(updateBanner)
+    
+    // 立即更新按鈕
+    document.getElementById('update-now-btn').addEventListener('click', () => {
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+      }
+      updateBanner.remove()
+    })
+    
+    // 稍後更新按鈕
+    document.getElementById('update-later-btn').addEventListener('click', () => {
+      updateBanner.remove()
+    })
   }
 }
 
