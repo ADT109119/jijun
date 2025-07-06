@@ -337,7 +337,7 @@ class EasyAccountingApp {
     const container = document.getElementById('app')
     
     container.innerHTML = `
-      <div class="container mx-auto px-4 py-6 max-w-md" style="padding-bottom: calc(100vh - 400px);">
+      <div class="container mx-auto px-4 py-4 max-w-md" style="padding-bottom: 45vh;">
         
         <!-- 收支切換按鈕 -->
         <div class="flex mb-6 bg-white rounded-lg p-1 shadow-md">
@@ -357,56 +357,56 @@ class EasyAccountingApp {
               + 新增分類
             </button>
           </div>
-          <div id="category-container" class="grid grid-cols-2 gap-3 overflow-y-auto max-h-[calc(100vh-420px)] pb-4">
+          <div id="category-container" class="grid grid-cols-2 gap-2 overflow-y-auto max-h-[calc(55vh-180px)] pb-2">
             <!-- 分類按鈕將由 JavaScript 動態生成 -->
           </div>
         </div>
 
         <!-- 底部固定區域 -->
-        <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300">
+        <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300 max-h-[45vh]">
           <!-- 面板標題列 -->
-          <div id="panel-title-bar" class="flex items-center justify-between p-2.5 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
-            <h4 class="font-medium text-gray-800">記帳輸入</h4>
+          <div id="panel-title-bar" class="flex items-center justify-between p-2 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
+            <h4 class="font-medium text-gray-800 text-sm">記帳輸入</h4>
             <button id="minimize-panel-btn" class="p-1 text-gray-500 hover:text-gray-700 transition-colors">
-              <i class="fas fa-chevron-down"></i>
+              <i class="fas fa-chevron-down text-sm"></i>
             </button>
           </div>
           
           <!-- 面板內容 -->
-          <div id="input-panel-content" class="p-3">
+          <div id="input-panel-content" class="p-2 overflow-y-auto max-h-[calc(45vh-3rem)]">
             <!-- 日期選擇 -->
-            <div class="mb-3 flex items-center space-x-2">
-              <label class="text-sm font-medium text-gray-700 whitespace-nowrap">日期</label>
-              <input type="date" id="date-input" class="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+            <div class="mb-2 flex items-center space-x-2">
+              <label class="text-xs font-medium text-gray-700 whitespace-nowrap">日期</label>
+              <input type="date" id="date-input" class="flex-1 p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent">
             </div>
 
-            <div class="flex space-x-2 mb-3 items-center">
+            <div class="flex space-x-2 mb-2 items-center">
               <!-- 金額顯示 -->
-              <div id="amount-display" class="w-2/4 text-xl font-bold text-center py-2.5 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
+              <div id="amount-display" class="w-2/4 text-lg font-bold text-center py-2 bg-gray-100 rounded-md text-gray-800 flex items-center justify-center">
                 $0
               </div>
               <!-- 說明輸入 -->
-              <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+              <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent">
             </div>
 
             <!-- 數字鍵盤 -->
-            <div id="number-keypad" class="grid grid-cols-3 gap-2 mb-3">
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="1">1</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="2">2</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="3">3</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="4">4</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="5">5</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="6">6</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="7">7</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="8">8</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="9">9</button>
-              <button id="clear-btn" class="number-btn bg-red-400 hover:bg-red-500 text-white text-lg font-semibold rounded-lg transition-colors">AC</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="0">0</button>
-              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number=".">.</button>
+            <div id="number-keypad" class="grid grid-cols-3 gap-1.5 mb-2">
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="1">1</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="2">2</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="3">3</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="4">4</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="5">5</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="6">6</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="7">7</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="8">8</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="9">9</button>
+              <button id="clear-btn" class="number-btn bg-red-400 hover:bg-red-500 text-white text-base font-semibold rounded-md transition-colors h-10">AC</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number="0">0</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-base font-semibold rounded-md transition-colors h-10" data-number=".">.</button>
             </div>
 
             <!-- 記帳按鈕 -->
-            <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all duration-200">
+            <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-2.5 rounded-md shadow-lg transition-all duration-200 text-sm">
               記帳！
             </button>
           </div>
