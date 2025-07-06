@@ -3,9 +3,7 @@ const CACHE_NAME = 'easy-accounting-v2.0.0'
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json',
-  '/icon/icon.png',
-  '/icon/favicon.ico'
+  '/manifest.json'
 ]
 
 // 安裝事件
