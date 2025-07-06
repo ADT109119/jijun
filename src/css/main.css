@@ -20,6 +20,14 @@ button:active {
   transform: scale(0.95);
 }
 
+/* 數字鍵盤樣式調整 - 減少高度 */
+.number-btn {
+  height: 3rem; /* 從預設的 py-4 (1rem top + 1rem bottom) 改為固定高度 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 分類按鈕樣式 */
 .category-btn {
   padding-top: 0.75rem;

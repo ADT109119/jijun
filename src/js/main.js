@@ -355,18 +355,18 @@ class EasyAccountingApp {
 
           <!-- 數字鍵盤 -->
           <div class="grid grid-cols-3 gap-2 mb-4">
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="1">1</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="2">2</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="3">3</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="4">4</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="5">5</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="6">6</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="7">7</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="8">8</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="9">9</button>
-            <button id="clear-btn" class="bg-red-400 hover:bg-red-500 text-white text-xl font-semibold py-3 rounded-lg transition-colors">AC</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number="0">0</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-xl font-semibold py-3 rounded-lg transition-colors" data-number=".">.</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="1">1</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="2">2</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="3">3</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="4">4</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="5">5</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="6">6</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="7">7</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="8">8</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="9">9</button>
+            <button id="clear-btn" class="number-btn bg-red-400 hover:bg-red-500 text-white text-lg font-semibold rounded-lg transition-colors">AC</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="0">0</button>
+            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number=".">.</button>
           </div>
 
           <!-- 記帳按鈕 -->
@@ -411,6 +411,14 @@ class EasyAccountingApp {
     container.innerHTML = `
       <div class="container mx-auto px-4 py-6 max-w-md">
 
+        <!-- 標題和設定按鈕 -->
+        <div class="flex items-center justify-between mb-6">
+          <h1 class="text-2xl font-bold text-gray-800">輕鬆記帳</h1>
+          <button id="settings-btn" class="p-2 text-gray-600 hover:text-primary transition-colors">
+            <i class="fas fa-cog text-xl"></i>
+          </button>
+        </div>
+
         <!-- 快速統計 -->
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg shadow-md">
@@ -420,6 +428,27 @@ class EasyAccountingApp {
           <div class="bg-gradient-to-r from-red-500 to-red-600 text-white p-4 rounded-lg shadow-md">
             <div class="text-sm opacity-90">本月支出</div>
             <div id="month-expense" class="text-xl font-bold">$0</div>
+          </div>
+        </div>
+
+        <!-- 設定選單 Modal -->
+        <div id="settingsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
+          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <h3 class="text-xl font-semibold mb-4 text-center">資料管理</h3>
+            <div class="space-y-3">
+              <button id="export-data-btn" class="w-full flex items-center justify-center space-x-2 p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                <i class="fas fa-download"></i>
+                <span>匯出資料</span>
+              </button>
+              <button id="import-data-btn" class="w-full flex items-center justify-center space-x-2 p-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                <i class="fas fa-upload"></i>
+                <span>匯入資料</span>
+              </button>
+              <input type="file" id="import-file-input" accept=".json" class="hidden">
+            </div>
+            <div class="flex justify-end mt-6">
+              <button id="closeSettingsModal" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">關閉</button>
+            </div>
           </div>
         </div>
 
@@ -603,6 +632,46 @@ class EasyAccountingApp {
       viewAllBtn.addEventListener('click', () => {
         this.recordsListManager.renderRecordsListPage()
         this.updateNavigation('records')
+      })
+    }
+
+    // 設定按鈕
+    const settingsBtn = document.getElementById('settings-btn')
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => {
+        this.showSettingsModal()
+      })
+    }
+
+    // 設定 Modal 相關事件
+    const closeSettingsBtn = document.getElementById('closeSettingsModal')
+    const exportDataBtn = document.getElementById('export-data-btn')
+    const importDataBtn = document.getElementById('import-data-btn')
+    const importFileInput = document.getElementById('import-file-input')
+
+    if (closeSettingsBtn) {
+      closeSettingsBtn.addEventListener('click', () => {
+        this.hideSettingsModal()
+      })
+    }
+
+    if (exportDataBtn) {
+      exportDataBtn.addEventListener('click', () => {
+        this.exportData()
+      })
+    }
+
+    if (importDataBtn) {
+      importDataBtn.addEventListener('click', () => {
+        importFileInput.click()
+      })
+    }
+
+    if (importFileInput) {
+      importFileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          this.importData(e.target.files[0])
+        }
       })
     }
 
@@ -974,6 +1043,70 @@ class EasyAccountingApp {
   async renderStatistics() {
     // 這裡會實現統計圖表的渲染
     console.log('顯示統計資料')
+  }
+
+  // 顯示設定 Modal
+  showSettingsModal() {
+    const modal = document.getElementById('settingsModal')
+    if (modal) {
+      modal.classList.remove('hidden')
+    }
+  }
+
+  // 隱藏設定 Modal
+  hideSettingsModal() {
+    const modal = document.getElementById('settingsModal')
+    if (modal) {
+      modal.classList.add('hidden')
+    }
+  }
+
+  // 匯出資料
+  async exportData() {
+    try {
+      showToast('正在匯出資料...', 'info')
+      await this.dataService.exportData()
+      showToast('資料匯出成功！', 'success')
+      this.hideSettingsModal()
+    } catch (error) {
+      console.error('匯出資料失敗:', error)
+      showToast('匯出資料失敗，請重試', 'error')
+    }
+  }
+
+  // 匯入資料
+  async importData(file) {
+    try {
+      showToast('正在匯入資料...', 'info')
+      const result = await this.dataService.importData(file)
+      
+      if (result.success) {
+        showToast(result.message, 'success')
+        // 重新載入頁面資料
+        await this.loadHomePageData('month')
+        await this.loadRecentRecords()
+      } else {
+        showToast(result.message, 'warning')
+      }
+      
+      this.hideSettingsModal()
+      
+      // 清除檔案輸入
+      const fileInput = document.getElementById('import-file-input')
+      if (fileInput) {
+        fileInput.value = ''
+      }
+      
+    } catch (error) {
+      console.error('匯入資料失敗:', error)
+      showToast('匯入資料失敗：' + error.message, 'error')
+      
+      // 清除檔案輸入
+      const fileInput = document.getElementById('import-file-input')
+      if (fileInput) {
+        fileInput.value = ''
+      }
+    }
   }
 
   async registerServiceWorker() {

@@ -296,6 +296,145 @@ class DataService {
 
     return stats
   }
+
+  // 匯出所有資料
+  async exportData() {
+    try {
+      const records = await this.getRecords()
+      const exportData = {
+        version: '2.0.0',
+        exportDate: new Date().toISOString(),
+        records: records,
+        metadata: {
+          totalRecords: records.length,
+          dateRange: {
+            start: records.length > 0 ? Math.min(...records.map(r => new Date(r.date).getTime())) : null,
+            end: records.length > 0 ? Math.max(...records.map(r => new Date(r.date).getTime())) : null
+          }
+        }
+      }
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `記帳資料_${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      return true
+    } catch (error) {
+      console.error('匯出資料失敗:', error)
+      throw error
+    }
+  }
+
+  // 匯入資料（支援舊版格式）
+  async importData(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      
+      reader.onload = async (event) => {
+        try {
+          const data = JSON.parse(event.target.result)
+          let records = []
+
+          // 檢查資料格式版本
+          if (data.version && data.version === '2.0.0') {
+            // 新版格式
+            records = data.records || []
+          } else if (data.records && Array.isArray(data.records)) {
+            // 可能是舊版但已轉換的格式
+            records = data.records
+          } else {
+            // 舊版格式，需要轉換
+            records = this.convertOldDataFormat(data)
+          }
+
+          // 驗證資料格式
+          const validRecords = records.filter(record => {
+            return record.date && 
+                   record.type && 
+                   (record.type === 'income' || record.type === 'expense') &&
+                   record.category && 
+                   typeof record.amount === 'number' &&
+                   record.amount >= 0
+          })
+
+          if (validRecords.length !== records.length) {
+            console.warn(`過濾了 ${records.length - validRecords.length} 筆無效記錄`)
+          }
+
+          // 確認是否要覆蓋現有資料
+          const existingRecords = await this.getRecords()
+          if (existingRecords.length > 0) {
+            const confirmed = confirm(`目前已有 ${existingRecords.length} 筆記錄。\n匯入 ${validRecords.length} 筆新記錄將會覆蓋現有資料。\n\n確定要繼續嗎？`)
+            if (!confirmed) {
+              resolve({ success: false, message: '使用者取消操作' })
+              return
+            }
+          }
+
+          // 清除現有資料
+          await this.clearAllRecords()
+
+          // 匯入新資料
+          let importedCount = 0
+          for (const record of validRecords) {
+            try {
+              await this.addRecord(record)
+              importedCount++
+            } catch (error) {
+              console.error('匯入記錄失敗:', record, error)
+            }
+          }
+
+          resolve({ 
+            success: true, 
+            message: `成功匯入 ${importedCount} 筆記錄`,
+            importedCount,
+            totalRecords: validRecords.length
+          })
+
+        } catch (error) {
+          console.error('解析匯入檔案失敗:', error)
+          reject(new Error('檔案格式錯誤或損壞'))
+        }
+      }
+
+      reader.onerror = () => {
+        reject(new Error('讀取檔案失敗'))
+      }
+
+      reader.readAsText(file)
+    })
+  }
+
+  // 清除所有記錄
+  async clearAllRecords() {
+    if (this.useLocalStorage) {
+      localStorage.removeItem('records')
+      return true
+    }
+
+    try {
+      const tx = this.db.transaction('records', 'readwrite')
+      const store = tx.objectStore('records')
+      await store.clear()
+      await tx.done
+      return true
+    } catch (error) {
+      console.error('清除記錄失敗:', error)
+      throw error
+    }
+  }
+
+  // 獲取所有記錄（用於匯出）
+  async getAllRecords() {
+    return await this.getRecords()
+  }
 }
 
 export default DataService
