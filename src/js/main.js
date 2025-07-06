@@ -82,6 +82,14 @@ class EasyAccountingApp {
       })
     }
 
+    // 小鍵盤最小化按鈕
+    const minimizePanelBtn = document.getElementById('minimize-panel-btn')
+    if (minimizePanelBtn) {
+      minimizePanelBtn.addEventListener('click', () => {
+        this.toggleInputPanel()
+      })
+    }
+
     // 底部導航
     document.getElementById('nav-add').addEventListener('click', () => {
       this.showAddPage()
@@ -338,41 +346,52 @@ class EasyAccountingApp {
         </div>
 
         <!-- 底部固定區域 -->
-        <div class="fixed bottom-[80px] left-0 right-0 bg-white p-4 shadow-lg z-40">
-          <!-- 日期選擇 -->
-          <div class="mb-4">
-            <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+        <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300">
+          <!-- 面板標題列 -->
+          <div class="flex items-center justify-between p-3 border-b border-gray-200">
+            <h4 class="font-medium text-gray-800">記帳輸入</h4>
+            <button id="minimize-panel-btn" class="p-1 text-gray-500 hover:text-gray-700 transition-colors">
+              <i class="fas fa-chevron-down"></i>
+            </button>
           </div>
-
-          <div class="flex space-x-2 mb-4 items-center">
-            <!-- 金額顯示 -->
-            <div id="amount-display" class="w-2/4 text-2xl font-bold text-center py-3 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
-              $0
+          
+          <!-- 面板內容 -->
+          <div id="input-panel-content" class="p-4">
+            <!-- 日期選擇 -->
+            <div class="mb-4">
+              <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
             </div>
-            <!-- 說明輸入 -->
-            <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
-          </div>
 
-          <!-- 數字鍵盤 -->
-          <div class="grid grid-cols-3 gap-2 mb-4">
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="1">1</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="2">2</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="3">3</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="4">4</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="5">5</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="6">6</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="7">7</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="8">8</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="9">9</button>
-            <button id="clear-btn" class="number-btn bg-red-400 hover:bg-red-500 text-white text-lg font-semibold rounded-lg transition-colors">AC</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="0">0</button>
-            <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number=".">.</button>
-          </div>
+            <div class="flex space-x-2 mb-4 items-center">
+              <!-- 金額顯示 -->
+              <div id="amount-display" class="w-2/4 text-2xl font-bold text-center py-3 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
+                $0
+              </div>
+              <!-- 說明輸入 -->
+              <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+            </div>
 
-          <!-- 記帳按鈕 -->
-          <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all duration-200">
-            記帳！
-          </button>
+            <!-- 數字鍵盤 -->
+            <div id="number-keypad" class="grid grid-cols-3 gap-2 mb-4">
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="1">1</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="2">2</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="3">3</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="4">4</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="5">5</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="6">6</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="7">7</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="8">8</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="9">9</button>
+              <button id="clear-btn" class="number-btn bg-red-400 hover:bg-red-500 text-white text-lg font-semibold rounded-lg transition-colors">AC</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="0">0</button>
+              <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number=".">.</button>
+            </div>
+
+            <!-- 記帳按鈕 -->
+            <button id="save-btn" class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all duration-200">
+              記帳！
+            </button>
+          </div>
         </div>
 
         <!-- 底部導航 -->
@@ -434,8 +453,21 @@ class EasyAccountingApp {
         <!-- 設定選單 Modal -->
         <div id="settingsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
           <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
-            <h3 class="text-xl font-semibold mb-4 text-center">資料管理</h3>
+            <h3 class="text-xl font-semibold mb-4 text-center">設定</h3>
+            
+            <!-- 版本資訊 -->
+            <div class="mb-6 p-3 bg-gray-50 rounded-lg">
+              <div class="text-sm text-gray-600 mb-1">應用程式版本</div>
+              <div class="font-mono text-lg" id="app-version">v2.0.1</div>
+              <div class="text-xs text-gray-500 mt-1" id="last-updated">最後更新：載入中...</div>
+            </div>
+
+            <!-- 功能按鈕 -->
             <div class="space-y-3">
+              <button id="check-update-btn" class="w-full flex items-center justify-center space-x-2 p-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
+                <i class="fas fa-sync-alt"></i>
+                <span>檢查更新</span>
+              </button>
               <button id="export-data-btn" class="w-full flex items-center justify-center space-x-2 p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
                 <i class="fas fa-download"></i>
                 <span>匯出資料</span>
@@ -446,6 +478,7 @@ class EasyAccountingApp {
               </button>
               <input type="file" id="import-file-input" accept=".json" class="hidden">
             </div>
+            
             <div class="flex justify-end mt-6">
               <button id="closeSettingsModal" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">關閉</button>
             </div>
@@ -648,6 +681,7 @@ class EasyAccountingApp {
     const exportDataBtn = document.getElementById('export-data-btn')
     const importDataBtn = document.getElementById('import-data-btn')
     const importFileInput = document.getElementById('import-file-input')
+    const checkUpdateBtn = document.getElementById('check-update-btn')
 
     if (closeSettingsBtn) {
       closeSettingsBtn.addEventListener('click', () => {
@@ -672,6 +706,12 @@ class EasyAccountingApp {
         if (e.target.files.length > 0) {
           this.importData(e.target.files[0])
         }
+      })
+    }
+
+    if (checkUpdateBtn) {
+      checkUpdateBtn.addEventListener('click', () => {
+        this.checkForUpdates()
       })
     }
 
@@ -1096,6 +1136,67 @@ class EasyAccountingApp {
     const modal = document.getElementById('settingsModal')
     if (modal) {
       modal.classList.remove('hidden')
+      this.loadVersionInfo()
+    }
+  }
+
+  // 載入版本資訊
+  loadVersionInfo() {
+    const versionElement = document.getElementById('app-version')
+    const lastUpdatedElement = document.getElementById('last-updated')
+    
+    if (versionElement) {
+      versionElement.textContent = 'v2.0.1'
+    }
+    
+    if (lastUpdatedElement) {
+      // 從 localStorage 獲取最後更新時間，如果沒有則使用當前時間
+      const lastUpdated = localStorage.getItem('app-last-updated') || new Date().toISOString()
+      const updateDate = new Date(lastUpdated)
+      lastUpdatedElement.textContent = `最後更新：${updateDate.toLocaleDateString('zh-TW')} ${updateDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`
+    }
+  }
+
+  // 檢查更新
+  async checkForUpdates() {
+    const checkUpdateBtn = document.getElementById('check-update-btn')
+    const originalText = checkUpdateBtn.innerHTML
+    
+    // 顯示檢查中狀態
+    checkUpdateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>檢查中...</span>'
+    checkUpdateBtn.disabled = true
+    
+    try {
+      // 檢查 Service Worker 更新
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (registration) {
+          await registration.update()
+          
+          // 檢查是否有等待中的 Service Worker
+          if (registration.waiting) {
+            showToast('發現新版本！請點擊立即更新', 'info', 5000)
+            this.showUpdateAvailable(registration)
+          } else if (registration.installing) {
+            showToast('正在下載新版本...', 'info', 3000)
+          } else {
+            showToast('已是最新版本！', 'success', 3000)
+          }
+        } else {
+          showToast('無法檢查更新', 'error', 3000)
+        }
+      } else {
+        showToast('瀏覽器不支援自動更新', 'warning', 3000)
+      }
+    } catch (error) {
+      console.error('檢查更新失敗:', error)
+      showToast('檢查更新失敗，請稍後再試', 'error', 3000)
+    } finally {
+      // 恢復按鈕狀態
+      setTimeout(() => {
+        checkUpdateBtn.innerHTML = originalText
+        checkUpdateBtn.disabled = false
+      }, 1000)
     }
   }
 
@@ -1155,10 +1256,35 @@ class EasyAccountingApp {
     }
   }
 
+  // 切換輸入面板顯示/隱藏
+  toggleInputPanel() {
+    const inputPanel = document.getElementById('input-panel')
+    const inputPanelContent = document.getElementById('input-panel-content')
+    const minimizeBtn = document.getElementById('minimize-panel-btn')
+    
+    if (!inputPanel || !inputPanelContent || !minimizeBtn) return
+    
+    const isMinimized = inputPanelContent.style.display === 'none'
+    
+    if (isMinimized) {
+      // 展開面板
+      inputPanelContent.style.display = 'block'
+      minimizeBtn.innerHTML = '<i class="fas fa-chevron-down"></i>'
+      inputPanel.style.transform = 'translateY(0)'
+    } else {
+      // 最小化面板
+      inputPanelContent.style.display = 'none'
+      minimizeBtn.innerHTML = '<i class="fas fa-chevron-up"></i>'
+      // 只顯示標題列
+      const titleHeight = minimizeBtn.closest('.flex').offsetHeight
+      inputPanel.style.transform = `translateY(calc(100% - ${titleHeight + 16}px))`
+    }
+  }
+
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/public/serviceWorker.js')
+        const registration = await navigator.serviceWorker.register('/serviceWorker.js')
         console.log('Service Worker 註冊成功:', registration)
         
         // 檢查更新
@@ -1185,6 +1311,8 @@ class EasyAccountingApp {
           if (event.data && event.data.type === 'SW_UPDATED') {
             console.log(`應用程式已更新到版本 ${event.data.version}`)
             showToast(`應用程式已更新到版本 ${event.data.version}`, 'success', 5000)
+            // 更新最後更新時間
+            localStorage.setItem('app-last-updated', new Date().toISOString())
           }
         })
         
