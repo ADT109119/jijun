@@ -363,7 +363,7 @@ class EasyAccountingApp {
         </div>
 
         <!-- 底部固定區域 -->
-        <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300 max-h-[45vh]">
+        <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300">
           <!-- 面板標題列 -->
           <div id="panel-title-bar" class="flex items-center justify-between p-2 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
             <h4 class="font-medium text-gray-800 text-sm">記帳輸入</h4>
@@ -373,7 +373,7 @@ class EasyAccountingApp {
           </div>
           
           <!-- 面板內容 -->
-          <div id="input-panel-content" class="p-2 overflow-y-auto max-h-[calc(45vh-3rem)]">
+          <div id="input-panel-content" class="p-2 overflow-y-auto">
             <!-- 日期選擇 -->
             <div class="mb-2 flex items-center space-x-2">
               <label class="text-xs font-medium text-gray-700 whitespace-nowrap">日期</label>

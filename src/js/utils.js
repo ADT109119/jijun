@@ -179,35 +179,51 @@ export function isValidDate(dateString) {
  */
 export function getDateRange(period) {
   const today = new Date()
-  const startDate = new Date(today)
-  const endDate = new Date(today)
-
+  
   switch (period) {
     case 'today':
-      // 今天
-      break
+      const todayStr = today.toISOString().split('T')[0]
+      return {
+        startDate: todayStr,
+        endDate: todayStr
+      }
     case 'week':
       // 本週
-      startDate.setDate(today.getDate() - today.getDay())
-      endDate.setDate(startDate.getDate() + 6)
-      break
+      const startOfWeek = new Date(today)
+      startOfWeek.setDate(today.getDate() - today.getDay())
+      const endOfWeek = new Date(startOfWeek)
+      endOfWeek.setDate(startOfWeek.getDate() + 6)
+      return {
+        startDate: startOfWeek.toISOString().split('T')[0],
+        endDate: endOfWeek.toISOString().split('T')[0]
+      }
     case 'month':
-      // 本月
-      startDate.setDate(1)
-      endDate.setMonth(endDate.getMonth() + 1, 0)
-      break
+      // 本月 - 使用年月直接構造，避免時區問題
+      const year = today.getFullYear()
+      const month = today.getMonth() + 1 // getMonth() 返回 0-11，需要 +1
+      const startOfMonth = `${year}-${month.toString().padStart(2, '0')}-01`
+      
+      // 計算本月最後一天
+      const lastDay = new Date(year, month, 0).getDate() // month 參數這裡不用 +1，因為 Date 構造函數中 month 是 0-based
+      const endOfMonth = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`
+      
+      return {
+        startDate: startOfMonth,
+        endDate: endOfMonth
+      }
     case 'year':
       // 今年
-      startDate.setMonth(0, 1)
-      endDate.setMonth(11, 31)
-      break
+      const currentYear = today.getFullYear()
+      return {
+        startDate: `${currentYear}-01-01`,
+        endDate: `${currentYear}-12-31`
+      }
     default:
-      break
-  }
-
-  return {
-    startDate: startDate.toISOString().split('T')[0],
-    endDate: endDate.toISOString().split('T')[0]
+      const defaultStr = today.toISOString().split('T')[0]
+      return {
+        startDate: defaultStr,
+        endDate: defaultStr
+      }
   }
 }
 

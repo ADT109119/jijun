@@ -166,9 +166,9 @@ class DataService {
       // 應用篩選器
       if (filters.startDate || filters.endDate) {
         records = records.filter(record => {
-          const recordDate = new Date(record.date)
-          if (filters.startDate && recordDate < new Date(filters.startDate)) return false
-          if (filters.endDate && recordDate > new Date(filters.endDate)) return false
+          const recordDate = record.date // 使用字符串比較，格式為 YYYY-MM-DD
+          if (filters.startDate && recordDate < filters.startDate) return false
+          if (filters.endDate && recordDate > filters.endDate) return false
           return true
         })
       }
@@ -241,9 +241,27 @@ class DataService {
   }
 
   getRecordsFromLocalStorage(filters = {}) {
-    const records = JSON.parse(localStorage.getItem('records') || '[]')
-    // 應用篩選器邏輯...
-    return records
+    let records = JSON.parse(localStorage.getItem('records') || '[]')
+    
+    // 應用篩選器
+    if (filters.startDate || filters.endDate) {
+      records = records.filter(record => {
+        const recordDate = record.date // 使用字符串比較，格式為 YYYY-MM-DD
+        if (filters.startDate && recordDate < filters.startDate) return false
+        if (filters.endDate && recordDate > filters.endDate) return false
+        return true
+      })
+    }
+
+    if (filters.type) {
+      records = records.filter(record => record.type === filters.type)
+    }
+
+    if (filters.category) {
+      records = records.filter(record => record.category === filters.category)
+    }
+
+    return records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   }
 
   updateRecordInLocalStorage(id, updates) {
