@@ -829,24 +829,77 @@ class EasyAccountingApp {
 
   setupSliderGestures() {
     const sliderWrapper = document.getElementById('slider-wrapper')
-    if (!sliderWrapper) return
+    const sliderContainer = document.getElementById('slider-container')
+    if (!sliderWrapper || !sliderContainer) return
 
     let startX = 0
     let currentX = 0
     let isDragging = false
     let currentSlide = 1
+    let initialTransform = 0
+
+    // 獲取容器寬度
+    const getContainerWidth = () => sliderWrapper.offsetWidth
+
+    // 更新滑動位置
+    const updateSliderPosition = (deltaX) => {
+      const containerWidth = getContainerWidth()
+      let newTransform = initialTransform + deltaX
+      
+      // 限制滑動範圍
+      const maxTransform = 0
+      const minTransform = -containerWidth
+      newTransform = Math.max(minTransform, Math.min(maxTransform, newTransform))
+      
+      sliderContainer.style.transform = `translateX(${newTransform}px)`
+      sliderContainer.style.transition = 'none' // 移除動畫以實現實時跟隨
+      
+      return newTransform
+    }
+
+    // 完成滑動並決定最終位置
+    const finishSlide = (deltaX) => {
+      const containerWidth = getContainerWidth()
+      const threshold = containerWidth * 0.3 // 30% 的寬度作為切換閾值
+      
+      let targetSlide = currentSlide
+      
+      if (deltaX < -threshold && currentSlide === 1) {
+        // 向左滑動超過閾值，切換到第二頁
+        targetSlide = 2
+      } else if (deltaX > threshold && currentSlide === 2) {
+        // 向右滑動超過閾值，切換到第一頁
+        targetSlide = 1
+      }
+      
+      // 恢復動畫並切換到目標頁面
+      sliderContainer.style.transition = 'transform 0.3s ease-in-out'
+      this.switchSlider(targetSlide)
+      currentSlide = targetSlide
+      
+      // 更新初始變換值
+      initialTransform = targetSlide === 1 ? 0 : -containerWidth
+    }
 
     // 觸控事件
     sliderWrapper.addEventListener('touchstart', (e) => {
       startX = e.touches[0].clientX
+      currentX = startX
       isDragging = true
       sliderWrapper.style.cursor = 'grabbing'
+      
+      // 記錄當前的變換值
+      const containerWidth = getContainerWidth()
+      initialTransform = currentSlide === 1 ? 0 : -containerWidth
     })
 
     sliderWrapper.addEventListener('touchmove', (e) => {
       if (!isDragging) return
       e.preventDefault()
+      
       currentX = e.touches[0].clientX
+      const deltaX = currentX - startX
+      updateSliderPosition(deltaX)
     })
 
     sliderWrapper.addEventListener('touchend', () => {
@@ -854,33 +907,29 @@ class EasyAccountingApp {
       isDragging = false
       sliderWrapper.style.cursor = 'grab'
       
-      const deltaX = startX - currentX
-      const threshold = 50 // 最小滑動距離
-
-      if (Math.abs(deltaX) > threshold) {
-        if (deltaX > 0 && currentSlide === 1) {
-          // 向左滑動，切換到第二頁
-          this.switchSlider(2)
-          currentSlide = 2
-        } else if (deltaX < 0 && currentSlide === 2) {
-          // 向右滑動，切換到第一頁
-          this.switchSlider(1)
-          currentSlide = 1
-        }
-      }
+      const deltaX = currentX - startX
+      finishSlide(deltaX)
     })
 
     // 滑鼠事件（桌面支援）
     sliderWrapper.addEventListener('mousedown', (e) => {
       startX = e.clientX
+      currentX = startX
       isDragging = true
       sliderWrapper.style.cursor = 'grabbing'
       e.preventDefault()
+      
+      // 記錄當前的變換值
+      const containerWidth = getContainerWidth()
+      initialTransform = currentSlide === 1 ? 0 : -containerWidth
     })
 
     sliderWrapper.addEventListener('mousemove', (e) => {
       if (!isDragging) return
+      
       currentX = e.clientX
+      const deltaX = currentX - startX
+      updateSliderPosition(deltaX)
     })
 
     sliderWrapper.addEventListener('mouseup', () => {
@@ -888,27 +937,24 @@ class EasyAccountingApp {
       isDragging = false
       sliderWrapper.style.cursor = 'grab'
       
-      const deltaX = startX - currentX
-      const threshold = 50
-
-      if (Math.abs(deltaX) > threshold) {
-        if (deltaX > 0 && currentSlide === 1) {
-          this.switchSlider(2)
-          currentSlide = 2
-        } else if (deltaX < 0 && currentSlide === 2) {
-          this.switchSlider(1)
-          currentSlide = 1
-        }
-      }
+      const deltaX = currentX - startX
+      finishSlide(deltaX)
     })
 
     sliderWrapper.addEventListener('mouseleave', () => {
+      if (!isDragging) return
       isDragging = false
       sliderWrapper.style.cursor = 'grab'
+      
+      const deltaX = currentX - startX
+      finishSlide(deltaX)
     })
 
     // 設置初始游標樣式
     sliderWrapper.style.cursor = 'grab'
+    
+    // 確保初始狀態正確
+    sliderContainer.style.transition = 'transform 0.3s ease-in-out'
   }
 
   renderHomeExpenseChart(expenseData) {
