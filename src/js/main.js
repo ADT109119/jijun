@@ -1112,7 +1112,7 @@ class EasyAccountingApp {
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/public/serviceWorker.js')
+        const registration = await navigator.serviceWorker.register('/serviceWorker.js')
         console.log('Service Worker 註冊成功:', registration)
       } catch (error) {
         console.log('Service Worker 註冊失敗:', error)
