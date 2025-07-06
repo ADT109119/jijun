@@ -202,7 +202,7 @@ class EasyAccountingApp {
     document.querySelectorAll('.category-btn').forEach(btn => {
       btn.classList.remove('active')
       // 清除內聯樣式
-      btn.style.backgroundColor = ''
+      btn.style.background = ''
       btn.style.color = ''
       btn.style.borderColor = ''
       btn.style.transform = ''
@@ -213,20 +213,12 @@ class EasyAccountingApp {
     if (selectedBtn) {
       selectedBtn.classList.add('active')
       
-      // 如果按鈕有背景色，使用更深的顏色作為選中狀態
-      const hasBackgroundColor = selectedBtn.classList.toString().includes('bg-')
-      if (!hasBackgroundColor) {
-        // 沒有背景色的按鈕使用藍色
-        selectedBtn.style.backgroundColor = '#3B82F6'
-        selectedBtn.style.color = 'white'
-        selectedBtn.style.borderColor = '#3B82F6'
-      } else {
-        // 有背景色的按鈕增加邊框和陰影
-        selectedBtn.style.borderColor = '#1F2937'
-        selectedBtn.style.borderWidth = '3px'
-      }
-      
-      selectedBtn.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+      // 使用與記帳成功相同的綠色漸變效果，添加黑邊
+      selectedBtn.style.background = 'linear-gradient(to right, #10B981, #059669)'
+      selectedBtn.style.color = 'white'
+      selectedBtn.style.border = '2px solid #000000'
+      selectedBtn.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+      selectedBtn.style.transition = 'all 0.2s ease-in-out'
     }
   }
 
@@ -373,7 +365,7 @@ class EasyAccountingApp {
         <!-- 底部固定區域 -->
         <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300">
           <!-- 面板標題列 -->
-          <div id="panel-title-bar" class="flex items-center justify-between p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
+          <div id="panel-title-bar" class="flex items-center justify-between p-2.5 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
             <h4 class="font-medium text-gray-800">記帳輸入</h4>
             <button id="minimize-panel-btn" class="p-1 text-gray-500 hover:text-gray-700 transition-colors">
               <i class="fas fa-chevron-down"></i>
@@ -381,23 +373,24 @@ class EasyAccountingApp {
           </div>
           
           <!-- 面板內容 -->
-          <div id="input-panel-content" class="p-4">
+          <div id="input-panel-content" class="p-3">
             <!-- 日期選擇 -->
-            <div class="mb-4">
-              <input type="date" id="date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+            <div class="mb-3 flex items-center space-x-2">
+              <label class="text-sm font-medium text-gray-700 whitespace-nowrap">日期</label>
+              <input type="date" id="date-input" class="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
             </div>
 
-            <div class="flex space-x-2 mb-4 items-center">
+            <div class="flex space-x-2 mb-3 items-center">
               <!-- 金額顯示 -->
-              <div id="amount-display" class="w-2/4 text-2xl font-bold text-center py-3 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
+              <div id="amount-display" class="w-2/4 text-xl font-bold text-center py-2.5 bg-gray-100 rounded-lg text-gray-800 flex items-center justify-center">
                 $0
               </div>
               <!-- 說明輸入 -->
-              <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+              <input type="text" id="description-input" placeholder="輸入說明..." class="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
             </div>
 
             <!-- 數字鍵盤 -->
-            <div id="number-keypad" class="grid grid-cols-3 gap-2 mb-4">
+            <div id="number-keypad" class="grid grid-cols-3 gap-2 mb-3">
               <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="1">1</button>
               <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="2">2</button>
               <button class="number-btn bg-gray-100 hover:bg-gray-200 text-lg font-semibold rounded-lg transition-colors" data-number="3">3</button>

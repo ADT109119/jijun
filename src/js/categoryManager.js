@@ -73,10 +73,12 @@ export class CategoryManager {
     const typeText = type === 'expense' ? '支出' : '收入'
     
     modal.innerHTML = `
-      <div class="bg-white rounded-lg max-w-md w-full p-6">
-        <h3 class="text-lg font-semibold mb-4">新增${typeText}分類</h3>
+      <div class="bg-white rounded-lg max-w-md w-full max-h-[90vh] flex flex-col">
+        <div class="p-6 border-b border-gray-200">
+          <h3 class="text-lg font-semibold">新增${typeText}分類</h3>
+        </div>
         
-        <div class="space-y-4">
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">分類名稱</label>
             <input type="text" id="category-name" maxlength="10" 
@@ -86,9 +88,24 @@ export class CategoryManager {
           
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">選擇圖示</label>
-            <div class="grid grid-cols-6 gap-3" id="icon-selector">
+            <div class="mb-3">
+              <div class="flex items-center space-x-2 mb-2">
+                <input type="text" id="custom-icon-input" 
+                       placeholder="輸入 Font Awesome class (如: fas fa-heart)"
+                       class="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors">
+                  <span id="icon-preview" class="text-lg">
+                    <i class="fas fa-eye"></i>
+                  </span>
+                </button>
+              </div>
+              <div class="text-xs text-gray-500">
+                可輸入自訂圖標或從下方選擇預設圖標
+              </div>
+            </div>
+            <div class="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3" id="icon-selector">
               ${this.getAvailableIcons().map(icon => `
-                <button type="button" class="icon-option p-3 border border-gray-300 rounded-lg hover:border-primary hover:bg-blue-50 transition-colors text-xl" data-icon="${icon}">
+                <button type="button" class="icon-option p-2 border border-gray-300 rounded-lg hover:border-primary hover:bg-blue-50 transition-colors text-lg" data-icon="${icon}">
                   <i class="${icon}"></i>
                 </button>
               `).join('')}
@@ -106,13 +123,15 @@ export class CategoryManager {
           </div>
         </div>
         
-        <div class="flex space-x-3 mt-6">
-          <button id="save-category-btn" class="flex-1 bg-primary hover:bg-blue-600 text-white py-3 rounded-lg transition-colors">
-            新增分類
-          </button>
-          <button id="cancel-category-btn" class="px-6 bg-gray-300 hover:bg-gray-400 text-gray-700 py-3 rounded-lg transition-colors">
-            取消
-          </button>
+        <div class="p-6 border-t border-gray-200">
+          <div class="flex space-x-3">
+            <button id="save-category-btn" class="flex-1 bg-primary hover:bg-blue-600 text-white py-3 rounded-lg transition-colors">
+              新增分類
+            </button>
+            <button id="cancel-category-btn" class="px-6 bg-gray-300 hover:bg-gray-400 text-gray-700 py-3 rounded-lg transition-colors">
+              取消
+            </button>
+          </div>
         </div>
       </div>
     `
@@ -121,6 +140,34 @@ export class CategoryManager {
     
     let selectedIcon = ''
     let selectedColor = ''
+    
+    // 自訂圖標輸入
+    const customIconInput = document.getElementById('custom-icon-input')
+    const previewIconBtn = document.getElementById('preview-icon-btn')
+    const iconPreview = document.getElementById('icon-preview')
+
+    // 圖標預覽功能
+    const updateIconPreview = () => {
+      const iconClass = customIconInput.value.trim()
+      if (iconClass) {
+        iconPreview.innerHTML = `<i class="${iconClass}"></i>`
+        selectedIcon = iconClass
+        // 清除預設圖標選擇
+        document.querySelectorAll('.icon-option').forEach(b => {
+          b.classList.remove('border-primary', 'bg-blue-50')
+          b.classList.add('border-gray-300')
+        })
+      } else {
+        iconPreview.innerHTML = `<i class="fas fa-eye"></i>`
+      }
+    }
+
+    // 自訂圖標輸入事件
+    customIconInput.addEventListener('input', updateIconPreview)
+    customIconInput.addEventListener('keyup', updateIconPreview)
+
+    // 預覽按鈕點擊
+    previewIconBtn.addEventListener('click', updateIconPreview)
     
     // 圖示選擇
     document.querySelectorAll('.icon-option').forEach(btn => {
@@ -132,6 +179,9 @@ export class CategoryManager {
         btn.classList.remove('border-gray-300')
         btn.classList.add('border-primary', 'bg-blue-50')
         selectedIcon = btn.dataset.icon
+        // 更新自訂輸入框
+        customIconInput.value = selectedIcon
+        updateIconPreview()
       })
     })
     
