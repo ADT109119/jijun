@@ -85,23 +85,42 @@ class EasyAccountingApp {
     // 小鍵盤最小化按鈕
     const minimizePanelBtn = document.getElementById('minimize-panel-btn')
     if (minimizePanelBtn) {
-      minimizePanelBtn.addEventListener('click', () => {
+      minimizePanelBtn.addEventListener('click', (e) => {
+        e.stopPropagation() // 防止事件冒泡到標題列
+        this.toggleInputPanel()
+      })
+    }
+
+    // 面板標題列點擊
+    const panelTitleBar = document.getElementById('panel-title-bar')
+    if (panelTitleBar) {
+      panelTitleBar.addEventListener('click', () => {
         this.toggleInputPanel()
       })
     }
 
     // 底部導航
-    document.getElementById('nav-add').addEventListener('click', () => {
-      this.showAddPage()
-    })
+    const navAdd = document.getElementById('nav-add')
+    const navList = document.getElementById('nav-list')
+    const navRecords = document.getElementById('nav-records')
     
-    document.getElementById('nav-list').addEventListener('click', () => {
-      this.showListPage()
-    })
+    if (navAdd) {
+      navAdd.addEventListener('click', () => {
+        this.showAddPage()
+      })
+    }
     
-    document.getElementById('nav-stats').addEventListener('click', () => {
-      this.showStatsPage()
-    })
+    if (navList) {
+      navList.addEventListener('click', () => {
+        this.showListPage()
+      })
+    }
+    
+    if (navRecords) {
+      navRecords.addEventListener('click', () => {
+        this.showRecordsPage()
+      })
+    }
   }
 
   switchType(type) {
@@ -316,6 +335,12 @@ class EasyAccountingApp {
     this.updateNavigation('stats')
   }
 
+  showRecordsPage() {
+    this.currentPage = 'records'
+    this.recordsListManager.renderRecordsListPage()
+    this.updateNavigation('records')
+  }
+
   renderAddPage() {
     const container = document.getElementById('app')
     
@@ -348,7 +373,7 @@ class EasyAccountingApp {
         <!-- 底部固定區域 -->
         <div id="input-panel" class="fixed bottom-[80px] left-0 right-0 bg-white shadow-lg z-40 transition-transform duration-300">
           <!-- 面板標題列 -->
-          <div class="flex items-center justify-between p-3 border-b border-gray-200">
+          <div id="panel-title-bar" class="flex items-center justify-between p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
             <h4 class="font-medium text-gray-800">記帳輸入</h4>
             <button id="minimize-panel-btn" class="p-1 text-gray-500 hover:text-gray-700 transition-colors">
               <i class="fas fa-chevron-down"></i>
@@ -405,9 +430,9 @@ class EasyAccountingApp {
               <span class="text-2xl"><i class="fas fa-plus"></i></span>
               <span class="text-xs">記帳</span>
             </button>
-            <button id="nav-stats" class="flex flex-col items-center py-2 text-gray-400">
-              <span class="text-2xl"><i class="fas fa-chart-bar"></i></span>
-              <span class="text-xs">統計</span>
+            <button id="nav-records" class="flex flex-col items-center py-2 text-gray-400">
+              <span class="text-2xl"><i class="fas fa-list"></i></span>
+              <span class="text-xs">明細</span>
             </button>
           </div>
         </nav>
@@ -430,12 +455,17 @@ class EasyAccountingApp {
     container.innerHTML = `
       <div class="container mx-auto px-4 py-6 max-w-md">
 
-        <!-- 標題和設定按鈕 -->
+        <!-- 標題和功能按鈕 -->
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-2xl font-bold text-gray-800">輕鬆記帳</h1>
-          <button id="settings-btn" class="p-2 text-gray-600 hover:text-primary transition-colors">
-            <i class="fas fa-cog text-xl"></i>
-          </button>
+          <div class="flex space-x-2">
+            <button id="stats-btn" class="p-2 text-gray-600 hover:text-primary transition-colors" title="統計分析">
+              <i class="fas fa-chart-bar text-xl"></i>
+            </button>
+            <button id="settings-btn" class="p-2 text-gray-600 hover:text-primary transition-colors" title="設定">
+              <i class="fas fa-cog text-xl"></i>
+            </button>
+          </div>
         </div>
 
         <!-- 快速統計 -->
@@ -532,6 +562,12 @@ class EasyAccountingApp {
             <div id="slider-container" class="flex transition-transform duration-300 ease-in-out" style="transform: translateX(0%)">
               <!-- 第一頁：支出分類圓餅圖 -->
               <div class="w-full flex-shrink-0 p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="font-medium text-gray-700">支出分析</h4>
+                  <button id="view-stats-btn" class="text-sm text-primary hover:text-blue-600 transition-colors">
+                    <i class="fas fa-chart-line mr-1"></i>詳細統計
+                  </button>
+                </div>
                 <div class="relative h-64">
                   <canvas id="home-expense-chart"></canvas>
                 </div>
@@ -574,9 +610,9 @@ class EasyAccountingApp {
               <span class="text-2xl"><i class="fas fa-plus"></i></span>
               <span class="text-xs">記帳</span>
             </button>
-            <button id="nav-stats" class="flex flex-col items-center py-2 text-gray-400">
-              <span class="text-2xl"><i class="fas fa-chart-bar"></i></span>
-              <span class="text-xs">統計</span>
+            <button id="nav-records" class="flex flex-col items-center py-2 text-gray-400">
+              <span class="text-2xl"><i class="fas fa-list"></i></span>
+              <span class="text-xs">明細</span>
             </button>
           </div>
         </nav>
@@ -668,6 +704,22 @@ class EasyAccountingApp {
       })
     }
 
+    // 統計按鈕
+    const statsBtn = document.getElementById('stats-btn')
+    if (statsBtn) {
+      statsBtn.addEventListener('click', () => {
+        this.showStatsPage()
+      })
+    }
+
+    // 詳細統計按鈕
+    const viewStatsBtn = document.getElementById('view-stats-btn')
+    if (viewStatsBtn) {
+      viewStatsBtn.addEventListener('click', () => {
+        this.showStatsPage()
+      })
+    }
+
     // 設定按鈕
     const settingsBtn = document.getElementById('settings-btn')
     if (settingsBtn) {
@@ -718,7 +770,7 @@ class EasyAccountingApp {
     // 底部導航 - 添加存在性檢查
     const homeNavAdd = document.getElementById('nav-add')
     const homeNavList = document.getElementById('nav-list')
-    const homeNavStats = document.getElementById('nav-stats')
+    const homeNavRecords = document.getElementById('nav-records')
     
     if (homeNavAdd) {
       homeNavAdd.addEventListener('click', () => {
@@ -732,9 +784,9 @@ class EasyAccountingApp {
       })
     }
     
-    if (homeNavStats) {
-      homeNavStats.addEventListener('click', () => {
-        this.showStatsPage()
+    if (homeNavRecords) {
+      homeNavRecords.addEventListener('click', () => {
+        this.showRecordsPage()
       })
     }
   }
@@ -1027,12 +1079,15 @@ class EasyAccountingApp {
       this.homeChart.destroy()
     }
 
+    const total = categories.reduce((sum, cat) => sum + expenseData[cat], 0)
+
     this.homeChart = new Chart(ctx, {
       type: 'doughnut',
       data: data,
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '60%', // 增加中間空洞大小以顯示總額
         plugins: {
           legend: {
             position: 'bottom',
@@ -1054,9 +1109,51 @@ class EasyAccountingApp {
               }
             }
           }
+        },
+        animation: {
+          onComplete: (animation) => {
+            // 在動畫完成後繪製中央文字
+            this.drawCenterText(animation.chart.ctx, total)
+          }
+        },
+        onHover: (event, activeElements) => {
+          // 當滑鼠懸停時可以改變中間顯示的內容
         }
       }
     })
+
+    // 使用多種方式確保中央文字顯示
+    // 1. 立即繪製
+    this.drawCenterText(ctx, total)
+    
+    // 2. 延遲繪製（防止動畫覆蓋）
+    setTimeout(() => {
+      this.drawCenterText(ctx, total)
+    }, 100)
+    
+    // 3. 更長延遲確保顯示
+    setTimeout(() => {
+      this.drawCenterText(ctx, total)
+    }, 500)
+    
+    // 4. 儲存總額供後續使用
+    this.currentExpenseTotal = total
+  }
+
+  drawCenterText(ctx, total) {
+    const centerX = ctx.canvas.width / 2
+    const centerY = ctx.canvas.height / 2
+    
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#374151'
+    ctx.font = 'bold 14px Arial'
+    ctx.fillText('總支出', centerX, centerY - 12)
+    ctx.font = 'bold 16px Arial'
+    ctx.fillStyle = '#EF4444'
+    ctx.fillText(formatCurrency(total), centerX, centerY + 12)
+    ctx.restore()
   }
 
   async loadRecentRecords() {
@@ -1104,7 +1201,7 @@ class EasyAccountingApp {
     const navButtons = {
       'nav-add': 'add',
       'nav-list': 'list', 
-      'nav-stats': 'stats'
+      'nav-records': 'records'
     }
     
     Object.keys(navButtons).forEach(buttonId => {

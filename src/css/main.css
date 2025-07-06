@@ -22,10 +22,11 @@ button:active {
 
 /* 數字鍵盤樣式調整 - 減少高度 */
 .number-btn {
-  height: 3rem; /* 從預設的 py-4 (1rem top + 1rem bottom) 改為固定高度 */
+  height: 2.5rem; /* 進一步縮小高度 */
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 1rem; /* 調整字體大小 */
 }
 
 /* 分類按鈕樣式 */

@@ -111,9 +111,9 @@ export class RecordsListManager {
               <span class="text-2xl"><i class="fas fa-plus"></i></span>
               <span class="text-xs">記帳</span>
             </button>
-            <button id="nav-stats" class="flex flex-col items-center py-2 text-gray-400">
-              <span class="text-2xl"><i class="fas fa-chart-bar"></i></span>
-              <span class="text-xs">統計</span>
+            <button id="nav-records" class="flex flex-col items-center py-2 text-primary">
+              <span class="text-2xl"><i class="fas fa-list"></i></span>
+              <span class="text-xs">明細</span>
             </button>
           </div>
         </nav>
@@ -121,10 +121,29 @@ export class RecordsListManager {
 
       <!-- 編輯記錄彈窗 -->
       <div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-lg max-w-md w-full p-6">
+        <div class="bg-white rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
           <h3 class="text-lg font-semibold mb-4">編輯記錄</h3>
           
           <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">類型</label>
+              <div class="flex space-x-2">
+                <button id="edit-type-expense" class="flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 bg-red-500 text-white">
+                  支出
+                </button>
+                <button id="edit-type-income" class="flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 text-gray-600 hover:bg-gray-100">
+                  收入
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">分類</label>
+              <div id="edit-category-container" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                <!-- 分類按鈕將動態生成 -->
+              </div>
+            </div>
+            
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">金額</label>
               <input type="number" id="edit-amount" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
@@ -231,7 +250,7 @@ export class RecordsListManager {
     // 底部導航
     const navList = document.getElementById('nav-list')
     const navAdd = document.getElementById('nav-add')
-    const navStats = document.getElementById('nav-stats')
+    const navRecords = document.getElementById('nav-records')
     
     if (navList) {
       navList.addEventListener('click', () => {
@@ -245,9 +264,9 @@ export class RecordsListManager {
       })
     }
     
-    if (navStats) {
-      navStats.addEventListener('click', () => {
-        if (window.app) window.app.showStatsPage()
+    if (navRecords) {
+      navRecords.addEventListener('click', () => {
+        if (window.app) window.app.showRecordsPage()
       })
     }
 
@@ -260,10 +279,16 @@ export class RecordsListManager {
     const saveBtn = document.getElementById('save-edit-btn')
     const deleteBtn = document.getElementById('delete-record-btn')
     const cancelBtn = document.getElementById('cancel-edit-btn')
+    const expenseBtn = document.getElementById('edit-type-expense')
+    const incomeBtn = document.getElementById('edit-type-income')
 
     saveBtn.addEventListener('click', () => this.saveEditedRecord())
     deleteBtn.addEventListener('click', () => this.deleteRecord())
     cancelBtn.addEventListener('click', () => this.closeEditModal())
+
+    // 類型切換
+    expenseBtn.addEventListener('click', () => this.switchEditType('expense'))
+    incomeBtn.addEventListener('click', () => this.switchEditType('income'))
 
     // 點擊背景關閉彈窗
     modal.addEventListener('click', (e) => {
@@ -475,10 +500,18 @@ export class RecordsListManager {
 
   openEditModal(record) {
     this.currentEditingRecord = record
+    this.editType = record.type
+    this.editSelectedCategory = record.category
     
     document.getElementById('edit-amount').value = record.amount
     document.getElementById('edit-description').value = record.description || ''
     document.getElementById('edit-date').value = record.date
+    
+    // 設置類型按鈕狀態
+    this.switchEditType(record.type)
+    
+    // 渲染分類選項
+    this.renderEditCategories()
     
     document.getElementById('edit-modal').classList.remove('hidden')
   }
@@ -486,6 +519,84 @@ export class RecordsListManager {
   closeEditModal() {
     document.getElementById('edit-modal').classList.add('hidden')
     this.currentEditingRecord = null
+    this.editType = null
+    this.editSelectedCategory = null
+  }
+
+  switchEditType(type) {
+    this.editType = type
+    this.editSelectedCategory = null // 重置選中的分類
+    
+    const expenseBtn = document.getElementById('edit-type-expense')
+    const incomeBtn = document.getElementById('edit-type-income')
+    
+    if (type === 'expense') {
+      expenseBtn.className = 'flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 bg-red-500 text-white'
+      incomeBtn.className = 'flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 text-gray-600 hover:bg-gray-100'
+    } else {
+      expenseBtn.className = 'flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 text-gray-600 hover:bg-gray-100'
+      incomeBtn.className = 'flex-1 py-2 px-4 rounded-md font-medium transition-all duration-200 bg-green-500 text-white'
+    }
+    
+    this.renderEditCategories()
+  }
+
+  renderEditCategories() {
+    const container = document.getElementById('edit-category-container')
+    if (!container) return
+    
+    container.innerHTML = ''
+    
+    // 獲取分類管理器
+    const categoryManager = window.app?.categoryManager
+    if (!categoryManager) return
+    
+    // 獲取所有分類（包含自定義分類）
+    const allCategories = categoryManager.getAllCategories(this.editType)
+    
+    allCategories.forEach(category => {
+      const button = document.createElement('button')
+      button.className = 'category-btn p-2 border border-gray-300 rounded-lg text-sm transition-all duration-200 hover:border-primary'
+      button.dataset.categoryId = category.id
+      
+      // 添加分類顏色作為背景色
+      if (category.color) {
+        button.classList.add(category.color)
+        button.classList.add('text-white')
+      }
+      
+      button.innerHTML = `
+        <div class="flex flex-col items-center space-y-1">
+          <span class="text-lg"><i class="${category.icon}"></i></span>
+          <span class="text-xs">${category.name}</span>
+        </div>
+      `
+      
+      // 如果是當前選中的分類，添加選中樣式
+      if (category.id === this.editSelectedCategory) {
+        button.classList.add('ring-2', 'ring-primary', 'ring-offset-2')
+      }
+      
+      button.addEventListener('click', () => {
+        this.selectEditCategory(category.id)
+      })
+      
+      container.appendChild(button)
+    })
+  }
+
+  selectEditCategory(categoryId) {
+    this.editSelectedCategory = categoryId
+    
+    // 更新按鈕樣式
+    document.querySelectorAll('#edit-category-container .category-btn').forEach(btn => {
+      btn.classList.remove('ring-2', 'ring-primary', 'ring-offset-2')
+    })
+    
+    const selectedBtn = document.querySelector(`#edit-category-container [data-category-id="${categoryId}"]`)
+    if (selectedBtn) {
+      selectedBtn.classList.add('ring-2', 'ring-primary', 'ring-offset-2')
+    }
   }
 
   async saveEditedRecord() {
@@ -500,8 +611,20 @@ export class RecordsListManager {
       return
     }
 
+    if (!this.editSelectedCategory) {
+      showToast('請選擇分類', 'error')
+      return
+    }
+
+    if (!date) {
+      showToast('請選擇日期', 'error')
+      return
+    }
+
     try {
       await this.dataService.updateRecord(this.currentEditingRecord.id, {
+        type: this.editType,
+        category: this.editSelectedCategory,
         amount,
         description,
         date
