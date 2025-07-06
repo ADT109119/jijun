@@ -88,6 +88,11 @@ self.addEventListener('activate', event => {
             type: 'SW_UPDATED',
             version: APP_VERSION
           })
+          // 同時發送版本資訊
+          client.postMessage({
+            type: 'VERSION_INFO',
+            version: APP_VERSION
+          })
         })
       })
     })
@@ -209,6 +214,17 @@ async function cacheFirst(request) {
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting()
+  }
+  
+  if (event.data && event.data.type === 'GET_VERSION') {
+    // 回應版本資訊請求
+    event.ports[0]?.postMessage({
+      type: 'VERSION_INFO',
+      version: APP_VERSION
+    }) || event.source?.postMessage({
+      type: 'VERSION_INFO',
+      version: APP_VERSION
+    })
   }
 })
 

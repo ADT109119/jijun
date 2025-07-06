@@ -1141,12 +1141,30 @@ class EasyAccountingApp {
   }
 
   // 載入版本資訊
-  loadVersionInfo() {
+  async loadVersionInfo() {
     const versionElement = document.getElementById('app-version')
     const lastUpdatedElement = document.getElementById('last-updated')
     
     if (versionElement) {
-      versionElement.textContent = 'v2.0.1'
+      // 嘗試從 Service Worker 獲取版本號
+      try {
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration()
+          if (registration && registration.active) {
+            // 從 Service Worker 腳本 URL 或其他方式獲取版本
+            // 由於無法直接訪問 Service Worker 的變數，我們使用一個備用方案
+            const currentVersion = localStorage.getItem('app-current-version') || '2.0.4'
+            versionElement.textContent = `v${currentVersion}`
+          } else {
+            versionElement.textContent = 'v2.0.4'
+          }
+        } else {
+          versionElement.textContent = 'v2.0.4'
+        }
+      } catch (error) {
+        console.error('獲取版本資訊失敗:', error)
+        versionElement.textContent = 'v2.0.4'
+      }
     }
     
     if (lastUpdatedElement) {
@@ -1284,7 +1302,7 @@ class EasyAccountingApp {
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/serviceWorker.js')
+        const registration = await navigator.serviceWorker.register('/public/serviceWorker.js')
         console.log('Service Worker 註冊成功:', registration)
         
         // 檢查更新
@@ -1311,10 +1329,22 @@ class EasyAccountingApp {
           if (event.data && event.data.type === 'SW_UPDATED') {
             console.log(`應用程式已更新到版本 ${event.data.version}`)
             showToast(`應用程式已更新到版本 ${event.data.version}`, 'success', 5000)
-            // 更新最後更新時間
+            // 更新最後更新時間和版本號
             localStorage.setItem('app-last-updated', new Date().toISOString())
+            localStorage.setItem('app-current-version', event.data.version)
+          }
+          
+          if (event.data && event.data.type === 'VERSION_INFO') {
+            // 儲存當前版本號
+            localStorage.setItem('app-current-version', event.data.version)
+            console.log(`當前應用程式版本：${event.data.version}`)
           }
         })
+
+        // 請求當前版本資訊
+        if (registration.active) {
+          registration.active.postMessage({ type: 'GET_VERSION' })
+        }
         
       } catch (error) {
         console.log('Service Worker 註冊失敗:', error)
