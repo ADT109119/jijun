@@ -1,5 +1,5 @@
 // 現代化 Service Worker
-const APP_VERSION = '2.0.4' // 每次更新時增加版本號
+const APP_VERSION = '2.0.4.2' // 每次更新時增加版本號
 const CACHE_NAME = `easy-accounting-v${APP_VERSION}`
 const STATIC_CACHE = `static-v${APP_VERSION}`
 const DYNAMIC_CACHE = `dynamic-v${APP_VERSION}`
