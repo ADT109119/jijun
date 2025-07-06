@@ -7,8 +7,8 @@
 :root{
 	--backGroundColor: white;
 	--ButtonBackGroundColor: #00AAFF;
-	--Container2BackGroundColor: rgba(241,210,120,1.00);
-	--ButtonBackGroundColor: rgba(236,191,39,1.00);
-	--ButtonPressBackGroundColor: rgba(200,174,88,1.00);
-	--HomePageDisplayer: rgba(255,190,0,1.00);
+	--Container2BackGroundColor: rgba(255,255,255,0.95);
+	--ButtonBackGroundColor: rgba(0,170,255,1.00);
+	--ButtonPressBackGroundColor: rgba(0,140,220,1.00);
+	--HomePageDisplayer: rgba(248,250,252,1.00);
 }
