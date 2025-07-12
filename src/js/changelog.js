@@ -1,5 +1,24 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.0.7.1": {
+    date: "2024-07-12",
+    title: "瀏覽器歷史記錄管理與設定介面修復",
+    features: [
+      "新增瀏覽器歷史記錄管理功能，支援手機返回鍵在應用內導航，不再直接退出程式",
+      "URL 同步顯示當前頁面狀態（#home, #add, #records, #stats）",
+      "支援瀏覽器前進/後退按鈕操作"
+    ],
+    bugfixes: [
+      "修復設定介面無法打開的問題",
+      "修復頁面切換時事件監聽器失效的問題",
+      "解決 PWA 中返回鍵直接退出應用的問題",
+      "修復循環設定版本資訊的 bug"
+    ],
+    improvements: [
+      "使用事件委託優化設定按鈕的事件處理",
+      "改善 PWA 的使用體驗和導航流暢度"
+    ]
+  },
   "2.0.7": {
     date: "2024-07-12",
     title: "使用體驗優化與新增更新日誌",
@@ -175,7 +194,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.1'
   }
 
   // 獲取當前版本資訊

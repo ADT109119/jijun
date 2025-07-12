@@ -32,6 +32,8 @@ class EasyAccountingApp {
     this.budgetManager = new BudgetManager(this.dataService)
     this.categoryManager = new CategoryManager()
     this.changelogManager = new ChangelogManager()
+    this.setupHistoryManagement()
+    this.setupGlobalSettingsListener()
     
     // 設置全域應用程式引用
     window.app = this
@@ -312,27 +314,87 @@ class EasyAccountingApp {
   }
 
   showAddPage() {
-    this.currentPage = 'add'
-    this.renderAddPage()
-    this.updateNavigation('add')
+    this.navigateToPage('add')
+  }
+
+  // 統一的頁面導航方法
+  navigateToPage(page, addToHistory = true) {
+    const previousPage = this.currentPage
+    this.currentPage = page
+    
+    // 添加到瀏覽器歷史記錄
+    if (addToHistory && page !== previousPage) {
+      const state = { page: page, timestamp: Date.now() }
+      const url = `#${page}`
+      history.pushState(state, '', url)
+    }
+    
+    // 根據頁面類型渲染
+    switch(page) {
+      case 'add':
+        this.renderAddPage()
+        this.updateNavigation('add')
+        break
+      case 'records':
+        this.renderRecordsPage()
+        this.updateNavigation('records')
+        break
+      case 'statistics':
+        this.renderStatisticsPage()
+        this.updateNavigation('statistics')
+        break
+      case 'home':
+      default:
+        this.renderHomePage()
+        this.updateNavigation('home')
+        break
+    }
   }
 
   showListPage() {
-    this.currentPage = 'list'
-    this.renderHomePage()
-    this.updateNavigation('list')
+    this.navigateToPage('list')
   }
 
   showStatsPage() {
-    this.currentPage = 'stats'
-    this.statisticsManager.renderStatisticsPage()
-    this.updateNavigation('stats')
+    this.navigateToPage('stats')
   }
 
   showRecordsPage() {
-    this.currentPage = 'records'
-    this.recordsListManager.renderRecordsListPage()
-    this.updateNavigation('records')
+    this.navigateToPage('records')
+  }
+
+  // 統一的頁面導航方法
+  navigateToPage(page, addToHistory = true) {
+    const previousPage = this.currentPage
+    this.currentPage = page
+    
+    // 添加到瀏覽器歷史記錄
+    if (addToHistory && page !== previousPage) {
+      const state = { page: page, timestamp: Date.now() }
+      const url = `#${page}`
+      history.pushState(state, '', url)
+    }
+    
+    // 根據頁面類型渲染
+    switch(page) {
+      case 'add':
+        this.renderAddPage()
+        this.updateNavigation('add')
+        break
+      case 'records':
+        this.recordsListManager.renderRecordsListPage()
+        this.updateNavigation('records')
+        break
+      case 'stats':
+        this.statisticsManager.renderStatisticsPage()
+        this.updateNavigation('stats')
+        break
+      case 'list':
+      default:
+        this.renderHomePage()
+        this.updateNavigation('list')
+        break
+    }
   }
 
   renderAddPage() {
@@ -491,7 +553,7 @@ class EasyAccountingApp {
               
               <!-- 版本號和發布日期 -->
               <div class="flex items-center justify-between mb-3">
-                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7</div>
+                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7.1</div>
                 <div class="text-xs text-gray-500" id="last-updated">載入中...</div>
               </div>
               
@@ -1280,6 +1342,67 @@ class EasyAccountingApp {
       modal.classList.remove('hidden')
       this.loadVersionInfo()
       this.loadCurrentVersionSummary()
+      // 不需要重複設置事件監聽器，因為已經在 setupHomePageEventListeners 中設置了
+    }
+  }
+
+  // 設置全域設定按鈕監聽器
+  setupGlobalSettingsListener() {
+    // 移除調試代碼，簡化監聽器
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'settings-btn' || e.target.closest('#settings-btn')) {
+        e.preventDefault()
+        this.showSettingsModal()
+      }
+    })
+  }
+
+  // 設置設定 Modal 的事件監聽器
+  setupSettingsModalEventListeners() {
+    // 設定 Modal 相關事件
+    const closeSettingsBtn = document.getElementById('closeSettingsModal')
+    const exportDataBtn = document.getElementById('export-data-btn')
+    const importDataBtn = document.getElementById('import-data-btn')
+    const importFileInput = document.getElementById('import-file-input')
+    const checkUpdateBtn = document.getElementById('check-update-btn')
+    const viewChangelogBtn = document.getElementById('view-changelog-btn')
+
+    if (closeSettingsBtn) {
+      closeSettingsBtn.addEventListener('click', () => {
+        this.hideSettingsModal()
+      })
+    }
+
+    if (exportDataBtn) {
+      exportDataBtn.addEventListener('click', () => {
+        this.exportData()
+      })
+    }
+
+    if (importDataBtn) {
+      importDataBtn.addEventListener('click', () => {
+        importFileInput.click()
+      })
+    }
+
+    if (importFileInput) {
+      importFileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          this.importData(e.target.files[0])
+        }
+      })
+    }
+
+    if (checkUpdateBtn) {
+      checkUpdateBtn.addEventListener('click', () => {
+        this.checkForUpdates()
+      })
+    }
+
+    if (viewChangelogBtn) {
+      viewChangelogBtn.addEventListener('click', () => {
+        this.changelogManager.showChangelogModal()
+      })
     }
   }
 
@@ -1294,7 +1417,7 @@ class EasyAccountingApp {
       versionElement.textContent = `v${currentVersion}`
       
       // 更新 localStorage 中的版本號
-      localStorage.setItem('app-current-version', currentVersion)
+      // localStorage.setItem('app-current-version', currentVersion)
     }
     
     if (lastUpdatedElement) {
@@ -1533,6 +1656,32 @@ class EasyAccountingApp {
     document.getElementById('update-later-btn').addEventListener('click', () => {
       updateBanner.remove()
     })
+  }
+
+  // 設置歷史記錄管理
+  setupHistoryManagement() {
+    // 監聽瀏覽器返回/前進按鈕
+    window.addEventListener('popstate', (event) => {
+      if (event.state && event.state.page) {
+        // 從歷史記錄恢復頁面，不添加新的歷史記錄
+        this.navigateToPage(event.state.page, false)
+      } else {
+        // 如果沒有狀態，回到首頁
+        this.navigateToPage('list', false)
+      }
+    })
+  }
+
+  // 從 URL 初始化頁面
+  initializeFromUrl() {
+    const hash = window.location.hash.slice(1) // 移除 # 符號
+    if (hash && ['add', 'list', 'records', 'stats'].includes(hash)) {
+      this.navigateToPage(hash, false) // 初始化時不添加歷史記錄
+    } else {
+      // 設置初始狀態
+      const state = { page: 'list', timestamp: Date.now() }
+      history.replaceState(state, '', '#list')
+    }
   }
 }
 
