@@ -1,8 +1,9 @@
 // 現代化 Service Worker
-const APP_VERSION = '2.0.6.3' // 每次更新時增加版本號
-const CACHE_NAME = `easy-accounting-v${APP_VERSION}`
-const STATIC_CACHE = `static-v${APP_VERSION}`
-const DYNAMIC_CACHE = `dynamic-v${APP_VERSION}`
+// 使用統一的版本號和快取名稱
+const APP_VERSION = self.APP_VERSION || '2.0.7' // 備用版本號
+const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
+const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
+const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
 
 // 需要預先快取的核心檔案
 const urlsToCache = [

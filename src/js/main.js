@@ -6,6 +6,7 @@ import { StatisticsManager } from './statistics.js'
 import { RecordsListManager } from './recordsList.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
+import { ChangelogManager } from './changelog.js'
 
 class EasyAccountingApp {
   constructor() {
@@ -30,6 +31,7 @@ class EasyAccountingApp {
     this.recordsListManager = new RecordsListManager(this.dataService)
     this.budgetManager = new BudgetManager(this.dataService)
     this.categoryManager = new CategoryManager()
+    this.changelogManager = new ChangelogManager()
     
     // 設置全域應用程式引用
     window.app = this
@@ -475,14 +477,28 @@ class EasyAccountingApp {
 
         <!-- 設定選單 Modal -->
         <div id="settingsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
-          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <h3 class="text-xl font-semibold mb-4 text-center">設定</h3>
             
-            <!-- 版本資訊 -->
-            <div class="mb-6 p-3 bg-gray-50 rounded-lg">
-              <div class="text-sm text-gray-600 mb-1">應用程式版本</div>
-              <div class="font-mono text-lg" id="app-version">v2.0.1</div>
-              <div class="text-xs text-gray-500 mt-1" id="last-updated">最後更新：載入中...</div>
+            <!-- 版本資訊與更新內容 -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-sm text-gray-600">應用程式版本</div>
+                <button id="view-changelog-btn" class="text-xs text-primary hover:text-blue-600 underline">
+                  查看完整日誌
+                </button>
+              </div>
+              
+              <!-- 版本號和發布日期 -->
+              <div class="flex items-center justify-between mb-3">
+                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7</div>
+                <div class="text-xs text-gray-500" id="last-updated">載入中...</div>
+              </div>
+              
+              <!-- 當前版本更新內容 -->
+              <div id="current-version-summary">
+                <!-- 將由 JavaScript 動態填入 -->
+              </div>
             </div>
 
             <!-- 功能按鈕 -->
@@ -727,6 +743,7 @@ class EasyAccountingApp {
     const importDataBtn = document.getElementById('import-data-btn')
     const importFileInput = document.getElementById('import-file-input')
     const checkUpdateBtn = document.getElementById('check-update-btn')
+    const viewChangelogBtn = document.getElementById('view-changelog-btn')
 
     if (closeSettingsBtn) {
       closeSettingsBtn.addEventListener('click', () => {
@@ -757,6 +774,12 @@ class EasyAccountingApp {
     if (checkUpdateBtn) {
       checkUpdateBtn.addEventListener('click', () => {
         this.checkForUpdates()
+      })
+    }
+
+    if (viewChangelogBtn) {
+      viewChangelogBtn.addEventListener('click', () => {
+        this.changelogManager.showChangelogModal()
       })
     }
 
@@ -918,8 +941,10 @@ class EasyAccountingApp {
     if (!sliderWrapper || !sliderContainer) return
 
     let startX = 0
+    let startY = 0
     let currentX = 0
     let isDragging = false
+    let isHorizontalSwipe = false
     let currentSlide = 1
     let initialTransform = 0
 
@@ -969,9 +994,10 @@ class EasyAccountingApp {
     // 觸控事件
     sliderWrapper.addEventListener('touchstart', (e) => {
       startX = e.touches[0].clientX
+      startY = e.touches[0].clientY
       currentX = startX
-      isDragging = true
-      sliderWrapper.style.cursor = 'grabbing'
+      isDragging = false
+      isHorizontalSwipe = false
       
       // 記錄當前的變換值
       const containerWidth = getContainerWidth()
@@ -979,17 +1005,43 @@ class EasyAccountingApp {
     })
 
     sliderWrapper.addEventListener('touchmove', (e) => {
-      if (!isDragging) return
-      e.preventDefault()
-      
+      const currentY = e.touches[0].clientY
       currentX = e.touches[0].clientX
       const deltaX = currentX - startX
-      updateSliderPosition(deltaX)
+      const deltaY = currentY - startY
+      
+      // 如果還沒確定滑動方向，判斷是水平還是垂直滑動
+      if (!isDragging && !isHorizontalSwipe) {
+        const absX = Math.abs(deltaX)
+        const absY = Math.abs(deltaY)
+        
+        // 如果水平移動距離大於垂直移動距離，且超過閾值，認為是水平滑動
+        if (absX > absY && absX > 10) {
+          isHorizontalSwipe = true
+          isDragging = true
+          sliderWrapper.style.cursor = 'grabbing'
+        } else if (absY > 10) {
+          // 如果垂直移動距離較大，不處理，讓頁面正常滾動
+          return
+        }
+      }
+      
+      // 只有在確定是水平滑動時才阻止預設行為和更新位置
+      if (isDragging && isHorizontalSwipe) {
+        e.preventDefault()
+        updateSliderPosition(deltaX)
+      }
     })
 
     sliderWrapper.addEventListener('touchend', () => {
-      if (!isDragging) return
+      if (!isDragging || !isHorizontalSwipe) {
+        isDragging = false
+        isHorizontalSwipe = false
+        return
+      }
+      
       isDragging = false
+      isHorizontalSwipe = false
       sliderWrapper.style.cursor = 'grab'
       
       const deltaX = currentX - startX
@@ -1227,6 +1279,7 @@ class EasyAccountingApp {
     if (modal) {
       modal.classList.remove('hidden')
       this.loadVersionInfo()
+      this.loadCurrentVersionSummary()
     }
   }
 
@@ -1236,32 +1289,35 @@ class EasyAccountingApp {
     const lastUpdatedElement = document.getElementById('last-updated')
     
     if (versionElement) {
-      // 嘗試從 Service Worker 獲取版本號
-      try {
-        if ('serviceWorker' in navigator) {
-          const registration = await navigator.serviceWorker.getRegistration()
-          if (registration && registration.active) {
-            // 從 Service Worker 腳本 URL 或其他方式獲取版本
-            // 由於無法直接訪問 Service Worker 的變數，我們使用一個備用方案
-            const currentVersion = localStorage.getItem('app-current-version') || '2.0.4'
-            versionElement.textContent = `v${currentVersion}`
-          } else {
-            versionElement.textContent = 'v2.0.4'
-          }
-        } else {
-          versionElement.textContent = 'v2.0.4'
-        }
-      } catch (error) {
-        console.error('獲取版本資訊失敗:', error)
-        versionElement.textContent = 'v2.0.4'
-      }
+      // 使用 changelog 管理器的版本號
+      const currentVersion = this.changelogManager.currentVersion
+      versionElement.textContent = `v${currentVersion}`
+      
+      // 更新 localStorage 中的版本號
+      localStorage.setItem('app-current-version', currentVersion)
     }
     
     if (lastUpdatedElement) {
-      // 從 localStorage 獲取最後更新時間，如果沒有則使用當前時間
-      const lastUpdated = localStorage.getItem('app-last-updated') || new Date().toISOString()
-      const updateDate = new Date(lastUpdated)
-      lastUpdatedElement.textContent = `最後更新：${updateDate.toLocaleDateString('zh-TW')} ${updateDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`
+      // 從 changelog 獲取當前版本的發布日期
+      const currentVersionInfo = this.changelogManager.getCurrentVersionInfo()
+      if (currentVersionInfo && currentVersionInfo.date) {
+        const updateDate = new Date(currentVersionInfo.date)
+        lastUpdatedElement.textContent = `發布日期：${updateDate.toLocaleDateString('zh-TW')}`
+      } else {
+        // 備用方案：從 localStorage 獲取最後更新時間
+        const lastUpdated = localStorage.getItem('app-last-updated') || new Date().toISOString()
+        const updateDate = new Date(lastUpdated)
+        lastUpdatedElement.textContent = `最後更新：${updateDate.toLocaleDateString('zh-TW')} ${updateDate.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}`
+      }
+    }
+  }
+
+  // 載入當前版本更新摘要
+  loadCurrentVersionSummary() {
+    const summaryContainer = document.getElementById('current-version-summary')
+    if (summaryContainer) {
+      const summaryHTML = this.changelogManager.renderCurrentVersionSummary()
+      summaryContainer.innerHTML = summaryHTML
     }
   }
 

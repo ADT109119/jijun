@@ -287,8 +287,8 @@ export class RecordsListManager {
     cancelBtn.addEventListener('click', () => this.closeEditModal())
 
     // 類型切換
-    expenseBtn.addEventListener('click', () => this.switchEditType('expense'))
-    incomeBtn.addEventListener('click', () => this.switchEditType('income'))
+    expenseBtn.addEventListener('click', () => this.switchEditType('expense', true))
+    incomeBtn.addEventListener('click', () => this.switchEditType('income', true))
 
     // 點擊背景關閉彈窗
     modal.addEventListener('click', (e) => {
@@ -507,8 +507,8 @@ export class RecordsListManager {
     document.getElementById('edit-description').value = record.description || ''
     document.getElementById('edit-date').value = record.date
     
-    // 設置類型按鈕狀態
-    this.switchEditType(record.type)
+    // 設置類型按鈕狀態（不重置分類選擇）
+    this.switchEditType(record.type, false)
     
     // 渲染分類選項
     this.renderEditCategories()
@@ -523,9 +523,13 @@ export class RecordsListManager {
     this.editSelectedCategory = null
   }
 
-  switchEditType(type) {
+  switchEditType(type, resetCategory = true) {
     this.editType = type
-    this.editSelectedCategory = null // 重置選中的分類
+    
+    // 只有在用戶主動切換類型時才重置分類選擇
+    if (resetCategory) {
+      this.editSelectedCategory = null
+    }
     
     const expenseBtn = document.getElementById('edit-type-expense')
     const incomeBtn = document.getElementById('edit-type-income')
