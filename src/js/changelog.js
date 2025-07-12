@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.0.7.2": {
+    date: "2024-07-12",
+    title: "icon 更新",
+    features: [
+    ],
+    bugfixes: [
+    ],
+    improvements: [
+      "製作新的 icon，完全重新繪製"
+    ]
+  },
   "2.0.7.1": {
     date: "2024-07-12",
     title: "瀏覽器歷史記錄管理與設定介面修復",
