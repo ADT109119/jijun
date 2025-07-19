@@ -1,6 +1,18 @@
 // 工具函數模組
 
 /**
+ * 格式化日期為 YYYY-MM-DD 格式（避免時區問題）
+ * @param {Date} date - 日期對象
+ * @returns {string} 格式化後的日期字串
+ */
+export function formatDateToString(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
  * 格式化貨幣顯示
  * @param {number} amount - 金額
  * @returns {string} 格式化後的貨幣字串
@@ -181,8 +193,32 @@ export function getDateRange(period) {
   const today = new Date()
   
   switch (period) {
+    case 'last7days':
+      // 近七日
+      const sevenDaysAgo = new Date(today)
+      sevenDaysAgo.setDate(today.getDate() - 6) // 包含今天，所以是 -6
+      return {
+        startDate: formatDateToString(sevenDaysAgo),
+        endDate: formatDateToString(today)
+      }
+    case 'lastmonth':
+      // 上月
+      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+      return {
+        startDate: formatDateToString(lastMonthStart),
+        endDate: formatDateToString(lastMonthEnd)
+      }
+    case 'year':
+      // 今年
+      const yearStart = new Date(today.getFullYear(), 0, 1)
+      const yearEnd = new Date(today.getFullYear(), 11, 31)
+      return {
+        startDate: formatDateToString(yearStart),
+        endDate: formatDateToString(yearEnd)
+      }
     case 'today':
-      const todayStr = today.toISOString().split('T')[0]
+      const todayStr = formatDateToString(today)
       return {
         startDate: todayStr,
         endDate: todayStr
@@ -194,8 +230,8 @@ export function getDateRange(period) {
       const endOfWeek = new Date(startOfWeek)
       endOfWeek.setDate(startOfWeek.getDate() + 6)
       return {
-        startDate: startOfWeek.toISOString().split('T')[0],
-        endDate: endOfWeek.toISOString().split('T')[0]
+        startDate: formatDateToString(startOfWeek),
+        endDate: formatDateToString(endOfWeek)
       }
     case 'month':
       // 本月 - 使用年月直接構造，避免時區問題
@@ -219,7 +255,7 @@ export function getDateRange(period) {
         endDate: `${currentYear}-12-31`
       }
     default:
-      const defaultStr = today.toISOString().split('T')[0]
+      const defaultStr = formatDateToString(today)
       return {
         startDate: defaultStr,
         endDate: defaultStr

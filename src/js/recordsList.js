@@ -31,8 +31,22 @@ export class RecordsListManager {
 
           <!-- 自訂時間範圍 Modal -->
           <div id="recordsDateRangeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
-            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
               <h3 class="text-xl font-semibold mb-4">選擇自訂時間範圍</h3>
+              
+              <!-- 快速設定按鍵 -->
+              <div class="mb-6">
+                <h4 class="text-sm font-medium text-gray-700 mb-3">快速設定</h4>
+                <div class="grid grid-cols-3 gap-2">
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="today">今日</button>
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="week">本週</button>
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="last7days">近七日</button>
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="month">本月</button>
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="lastmonth">上月</button>
+                  <button class="records-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="year">今年</button>
+                </div>
+              </div>
+              
               <div class="mb-4">
                 <label for="recordsStartDate" class="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
                 <input type="date" id="recordsStartDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
@@ -220,6 +234,30 @@ export class RecordsListManager {
         dateRangeModal.classList.add('hidden')
       })
     }
+
+    // 明細頁面快速日期設定按鍵
+    document.querySelectorAll('.records-quick-date-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const range = e.target.dataset.range
+        const dateRange = getDateRange(range)
+        
+        const recordsStartDateInput = document.getElementById('recordsStartDate')
+        const recordsEndDateInput = document.getElementById('recordsEndDate')
+        
+        if (recordsStartDateInput && recordsEndDateInput) {
+          recordsStartDateInput.value = dateRange.startDate
+          recordsEndDateInput.value = dateRange.endDate
+        }
+        
+        // 高亮選中的快速設定按鈕
+        document.querySelectorAll('.records-quick-date-btn').forEach(b => {
+          b.classList.remove('bg-primary', 'text-white')
+          b.classList.add('bg-gray-100', 'hover:bg-gray-200')
+        })
+        e.target.classList.remove('bg-gray-100', 'hover:bg-gray-200')
+        e.target.classList.add('bg-primary', 'text-white')
+      })
+    })
 
     // 類型篩選
     document.querySelectorAll('.type-filter').forEach(btn => {

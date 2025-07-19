@@ -1,7 +1,7 @@
 // 主應用程式入口
 import DataService from './dataService.js'
 import { CATEGORIES, getCategoryName, getCategoryIcon } from './categories.js'
-import { formatCurrency, formatDate, showToast, getDateRange } from './utils.js'
+import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString } from './utils.js'
 import { StatisticsManager } from './statistics.js'
 import { RecordsListManager } from './recordsList.js'
 import { BudgetManager } from './budgetManager.js'
@@ -256,8 +256,11 @@ class EasyAccountingApp {
   }
 
   setCurrentDate() {
-    const today = new Date().toISOString().split('T')[0]
-    document.getElementById('date-input').value = today
+    // 使用本地時間避免時區問題
+    const today = new Date()
+    const todayStr = formatDateToString(today)
+    
+    document.getElementById('date-input').value = todayStr
   }
 
   onDateChange(date) {
@@ -553,7 +556,7 @@ class EasyAccountingApp {
               
               <!-- 版本號和發布日期 -->
               <div class="flex items-center justify-between mb-3">
-                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7.1</div>
+                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7.3</div>
                 <div class="text-xs text-gray-500" id="last-updated">載入中...</div>
               </div>
               
@@ -597,8 +600,22 @@ class EasyAccountingApp {
 
         <!-- 自訂時間範圍 Modal -->
         <div id="dateRangeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
-          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm mx-4">
+          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
             <h3 class="text-xl font-semibold mb-4">選擇自訂時間範圍</h3>
+            
+            <!-- 快速設定按鍵 -->
+            <div class="mb-6">
+              <h4 class="text-sm font-medium text-gray-700 mb-3">快速設定</h4>
+              <div class="grid grid-cols-3 gap-2">
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="today">今日</button>
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="week">本週</button>
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="last7days">近七日</button>
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="month">本月</button>
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="lastmonth">上月</button>
+                <button class="quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="year">今年</button>
+              </div>
+            </div>
+            
             <div class="mb-4">
               <label for="startDate" class="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
               <input type="date" id="startDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
@@ -735,6 +752,27 @@ class EasyAccountingApp {
         dateRangeModal.classList.add('hidden')
       })
     }
+
+    // 快速日期設定按鍵
+    document.querySelectorAll('.quick-date-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const range = e.target.dataset.range
+        const dateRange = getDateRange(range)
+        
+        if (startDateInput && endDateInput) {
+          startDateInput.value = dateRange.startDate
+          endDateInput.value = dateRange.endDate
+        }
+        
+        // 高亮選中的快速設定按鈕
+        document.querySelectorAll('.quick-date-btn').forEach(b => {
+          b.classList.remove('bg-primary', 'text-white')
+          b.classList.add('bg-gray-100', 'hover:bg-gray-200')
+        })
+        e.target.classList.remove('bg-gray-100', 'hover:bg-gray-200')
+        e.target.classList.add('bg-primary', 'text-white')
+      })
+    })
 
     // Slider 標籤切換
     document.getElementById('slider-tab-1').addEventListener('click', () => {

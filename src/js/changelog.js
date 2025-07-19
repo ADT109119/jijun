@@ -1,5 +1,18 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.0.7.3": {
+    date: "2024-07-19",
+    title: "日期功能優化與添加自訂日期快速設定",
+    features: [
+    ],
+    bugfixes: [
+      "修復早上8點前記帳日期顯示為前一天的問題"
+    ],
+    improvements: [
+      "創建統一的日期格式化函數 formatDateToString",
+      "新增自訂時間範圍快速設定按鍵，添加「今日」、「本週」、「近七日」、「本月」、「上月」、「今年」快速選擇"
+    ]
+  },
   "2.0.7.2": {
     date: "2024-07-12",
     title: "icon 更新",
@@ -205,7 +218,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.1'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.3'
   }
 
   // 獲取當前版本資訊
