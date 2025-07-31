@@ -7,6 +7,7 @@ export class RecordsListManager {
     this.dataService = dataService
     this.currentFilter = 'all'
     this.currentPeriod = 'month'
+    this.selectedCategories = new Set() // 改為支援多選
     this.records = []
   }
 
@@ -68,12 +69,23 @@ export class RecordsListManager {
             <button class="type-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-type="income">收入</button>
             <button class="type-filter flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-type="expense">支出</button>
           </div>
+
         </div>
 
-        <!-- 搜尋框 -->
+        <!-- 搜尋框和類別篩選 -->
         <div class="mb-6">
-          <input type="text" id="search-input" placeholder="搜尋記錄..." 
-                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+          <div class="flex space-x-2">
+            <div class="relative flex-1">
+              <input type="text" id="search-input" placeholder="搜尋記錄..." 
+                     class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+              <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+            </div>
+            <button id="category-filter-btn" class="px-4 py-3 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg transition-colors flex items-center space-x-2">
+              <i class="fas fa-filter text-gray-600"></i>
+              <span class="text-gray-700">類別</span>
+              <span id="category-filter-count" class="hidden bg-primary text-white text-xs px-2 py-1 rounded-full"></span>
+            </button>
+          </div>
         </div>
 
         <!-- 統計摘要 -->
@@ -94,6 +106,35 @@ export class RecordsListManager {
 
         <!-- 記錄列表 -->
         <div id="records-container" class="space-y-3 mb-20">
+        </div>
+
+        <!-- 類別篩選 Modal -->
+        <div id="categoryFilterModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
+          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-xl font-semibold text-gray-800">選擇類別篩選</h3>
+              <button id="closeCategoryModal" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times text-xl"></i>
+              </button>
+            </div>
+            
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-sm text-gray-600">已選擇 <span id="selected-count">0</span> 個類別</span>
+                <button id="clearAllCategories" class="text-sm text-primary hover:text-blue-600">清除全部</button>
+              </div>
+            </div>
+            
+            <div id="category-list" class="space-y-2 mb-6">
+              <!-- 類別選項將由 JavaScript 動態生成 -->
+            </div>
+            
+            <div class="flex justify-end space-x-3">
+              <button id="cancelCategoryFilter" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">取消</button>
+              <button id="applyCategoryFilter" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-600">確定</button>
+            </div>
+          </div>
+        </div>
           <!-- 記錄項目將在這裡顯示 -->
         </div>
 
@@ -258,6 +299,44 @@ export class RecordsListManager {
         e.target.classList.add('bg-primary', 'text-white')
       })
     })
+
+    // 類別篩選按鈕
+    const categoryFilterBtn = document.getElementById('category-filter-btn')
+    if (categoryFilterBtn) {
+      categoryFilterBtn.addEventListener('click', () => {
+        this.showCategoryFilterModal()
+      })
+    }
+
+    // 類別篩選 Modal 事件
+    const closeCategoryModalBtn = document.getElementById('closeCategoryModal')
+    const cancelCategoryFilterBtn = document.getElementById('cancelCategoryFilter')
+    const applyCategoryFilterBtn = document.getElementById('applyCategoryFilter')
+    const clearAllCategoriesBtn = document.getElementById('clearAllCategories')
+
+    if (closeCategoryModalBtn) {
+      closeCategoryModalBtn.addEventListener('click', () => {
+        this.hideCategoryFilterModal()
+      })
+    }
+
+    if (cancelCategoryFilterBtn) {
+      cancelCategoryFilterBtn.addEventListener('click', () => {
+        this.hideCategoryFilterModal()
+      })
+    }
+
+    if (applyCategoryFilterBtn) {
+      applyCategoryFilterBtn.addEventListener('click', () => {
+        this.applyCategoryFilter()
+      })
+    }
+
+    if (clearAllCategoriesBtn) {
+      clearAllCategoriesBtn.addEventListener('click', () => {
+        this.clearAllCategories()
+      })
+    }
 
     // 類型篩選
     document.querySelectorAll('.type-filter').forEach(btn => {
@@ -519,18 +598,31 @@ export class RecordsListManager {
   }
 
   searchRecords(query) {
-    if (!query.trim()) {
-      this.renderRecords(this.records)
-      return
+    console.log('搜尋記錄，選中的類別:', this.selectedCategories) // 調試用
+    
+    let filteredRecords = this.records
+    
+    // 應用類別篩選
+    if (this.selectedCategories && this.selectedCategories.size > 0) {
+      console.log('應用類別篩選，篩選前記錄數:', filteredRecords.length)
+      filteredRecords = filteredRecords.filter(record => {
+        const hasCategory = this.selectedCategories.has(record.category)
+        console.log(`記錄 ${record.description} 類別 ${record.category}:`, hasCategory)
+        return hasCategory
+      })
+      console.log('篩選後記錄數:', filteredRecords.length)
     }
 
-    const filteredRecords = this.records.filter(record => {
-      const categoryName = getCategoryName(record.type, record.category)
-      return (
-        categoryName.toLowerCase().includes(query.toLowerCase()) ||
-        (record.description && record.description.toLowerCase().includes(query.toLowerCase()))
-      )
-    })
+    // 應用搜尋篩選
+    if (query.trim()) {
+      filteredRecords = filteredRecords.filter(record => {
+        const categoryName = getCategoryName(record.type, record.category)
+        return (
+          categoryName.toLowerCase().includes(query.toLowerCase()) ||
+          (record.description && record.description.toLowerCase().includes(query.toLowerCase()))
+        )
+      })
+    }
 
     this.renderRecords(filteredRecords)
     this.updateSummary(filteredRecords)
@@ -695,5 +787,145 @@ export class RecordsListManager {
       console.error('刪除記錄失敗:', error)
       showToast('刪除記錄失敗', 'error')
     }
+  }
+
+  // 顯示類別篩選 Modal
+  async showCategoryFilterModal() {
+    const modal = document.getElementById('categoryFilterModal')
+    if (!modal) return
+    
+    await this.loadCategoryOptions()
+    modal.classList.remove('hidden')
+  }
+
+  // 隱藏類別篩選 Modal
+  hideCategoryFilterModal() {
+    const modal = document.getElementById('categoryFilterModal')
+    if (modal) {
+      modal.classList.add('hidden')
+    }
+  }
+
+  // 載入類別選項
+  async loadCategoryOptions() {
+    const allRecords = await this.dataService.getRecords()
+    
+    // 根據當前類型篩選獲取相關記錄
+    let relevantRecords = allRecords
+    if (this.currentFilter !== 'all') {
+      relevantRecords = allRecords.filter(record => record.type === this.currentFilter)
+    }
+    
+    // 獲取所有唯一的類別
+    const categories = [...new Set(relevantRecords.map(record => record.category).filter(Boolean))]
+    
+    // 從分類配置中獲取中文名稱
+    const categoriesModule = await import('./categories.js')
+    const allCategories = categoriesModule.CATEGORIES.expense.concat(categoriesModule.CATEGORIES.income)
+    
+    // 計算每個類別的統計資訊
+    const categoryStats = categories.map(categoryKey => {
+      // 找到對應的分類配置
+      const categoryConfig = allCategories.find(cat => cat.id === categoryKey)
+      const displayName = categoryConfig ? categoryConfig.name : categoryKey
+      
+      const categoryRecords = relevantRecords.filter(record => record.category === categoryKey)
+      const totalAmount = categoryRecords.reduce((sum, record) => sum + parseFloat(record.amount), 0)
+      const count = categoryRecords.length
+      
+      return {
+        id: categoryKey,
+        name: displayName,
+        totalAmount,
+        count
+      }
+    }).sort((a, b) => b.totalAmount - a.totalAmount) // 按金額排序
+    
+    this.renderCategoryOptions(categoryStats)
+  }
+
+  // 渲染類別選項
+  renderCategoryOptions(categoryStats) {
+    const container = document.getElementById('category-list')
+    if (!container) return
+    
+    if (categoryStats.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">暫無類別資料</p>'
+      return
+    }
+    
+    container.innerHTML = categoryStats.map(stat => {
+      const isSelected = this.selectedCategories.has(stat.id)
+      
+      return `
+        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+          <div class="flex items-center space-x-3">
+            <input type="checkbox" id="category-${stat.id}" class="category-checkbox" 
+                   data-category="${stat.id}" ${isSelected ? 'checked' : ''}>
+            <label for="category-${stat.id}" class="flex-1 cursor-pointer">
+              <div class="font-medium text-gray-800">${stat.name}</div>
+              <div class="text-sm text-gray-500">$${stat.totalAmount.toLocaleString()} • ${stat.count}筆記錄</div>
+            </label>
+          </div>
+        </div>
+      `
+    }).join('')
+    
+    // 添加事件監聽器
+    container.querySelectorAll('.category-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const category = e.target.dataset.category
+        if (e.target.checked) {
+          this.selectedCategories.add(category)
+        } else {
+          this.selectedCategories.delete(category)
+        }
+        this.updateSelectedCount()
+      })
+    })
+    
+    this.updateSelectedCount()
+  }
+
+  // 更新選中數量顯示
+  updateSelectedCount() {
+    const countElement = document.getElementById('selected-count')
+    const filterCountBadge = document.getElementById('category-filter-count')
+    
+    if (countElement) {
+      countElement.textContent = this.selectedCategories.size
+    }
+    
+    if (filterCountBadge) {
+      if (this.selectedCategories.size > 0) {
+        filterCountBadge.textContent = this.selectedCategories.size
+        filterCountBadge.classList.remove('hidden')
+      } else {
+        filterCountBadge.classList.add('hidden')
+      }
+    }
+  }
+
+  // 清除所有類別選擇
+  clearAllCategories() {
+    this.selectedCategories.clear()
+    
+    // 更新 checkbox 狀態
+    document.querySelectorAll('.category-checkbox').forEach(checkbox => {
+      checkbox.checked = false
+    })
+    
+    this.updateSelectedCount()
+  }
+
+  // 應用類別篩選
+  applyCategoryFilter() {
+    console.log('應用類別篩選，選中的類別:', this.selectedCategories)
+    this.hideCategoryFilterModal()
+    
+    // 重新應用篩選
+    const searchInput = document.getElementById('search-input')
+    const currentQuery = searchInput ? searchInput.value : ''
+    this.searchRecords(currentQuery)
   }
 }

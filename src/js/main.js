@@ -556,7 +556,7 @@ class EasyAccountingApp {
               
               <!-- 版本號和發布日期 -->
               <div class="flex items-center justify-between mb-3">
-                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7.3</div>
+                <div class="font-mono text-xl font-bold text-gray-800" id="app-version">v2.0.7.4</div>
                 <div class="text-xs text-gray-500" id="last-updated">載入中...</div>
               </div>
               
@@ -1262,42 +1262,59 @@ class EasyAccountingApp {
           }
         },
         onHover: (event, activeElements) => {
-          // 當滑鼠懸停時可以改變中間顯示的內容
+          // 當滑鼠懸停時重新繪製中央文字，確保不會消失
+          this.drawCenterText(event.chart.ctx, this.currentExpenseTotal || 0)
         }
       }
     })
 
-    // 使用多種方式確保中央文字顯示
-    // 1. 立即繪製
+    // 儲存總額供後續使用
+    this.currentExpenseTotal = total
+    
+    // 立即繪製中心文字
     this.drawCenterText(ctx, total)
     
-    // 2. 延遲繪製（防止動畫覆蓋）
+    // 延遲繪製確保顯示
     setTimeout(() => {
       this.drawCenterText(ctx, total)
     }, 100)
     
-    // 3. 更長延遲確保顯示
     setTimeout(() => {
       this.drawCenterText(ctx, total)
     }, 500)
-    
-    // 4. 儲存總額供後續使用
-    this.currentExpenseTotal = total
   }
 
   drawCenterText(ctx, total) {
+    if (!ctx || !ctx.canvas) return
+    
     const centerX = ctx.canvas.width / 2
     const centerY = ctx.canvas.height / 2
     
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#374151'
-    ctx.font = 'bold 14px Arial'
+    
+    // 響應式字體大小
+    const isMobile = ctx.canvas.width < 400
+    const titleFontSize = isMobile ? 12 : 14
+    const amountFontSize = isMobile ? 16 : 18
+    
+    // 繪製白色背景圓形
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, 50, 0, 2 * Math.PI)
+    ctx.fill()
+    
+    // 繪製標題
+    ctx.fillStyle = '#6B7280'
+    ctx.font = `bold ${titleFontSize}px Arial`
     ctx.fillText('總支出', centerX, centerY - 12)
-    ctx.font = 'bold 16px Arial'
+    
+    // 繪製金額
     ctx.fillStyle = '#EF4444'
+    ctx.font = `bold ${amountFontSize}px Arial`
     ctx.fillText(formatCurrency(total), centerX, centerY + 12)
+    
     ctx.restore()
   }
 

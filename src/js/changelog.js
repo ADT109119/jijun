@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.0.7.4": {
+    date: "2024-07-31",
+    title: "明細頁面添加類別篩選",
+    features: [
+      "明細頁面新增類別篩選功能",
+    ],
+    bugfixes: [
+    ],
+    improvements: [
+    ]
+  },
   "2.0.7.3": {
     date: "2024-07-19",
     title: "日期功能優化與添加自訂日期快速設定",
@@ -218,7 +229,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.3'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.4'
   }
 
   // 獲取當前版本資訊

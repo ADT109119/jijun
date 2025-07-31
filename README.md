@@ -249,7 +249,7 @@
 
 ```javascript
 // public/serviceWorker.js
-const APP_VERSION = '2.0.7.3' // 每次更新時增加版本號
+const APP_VERSION = '2.0.7.4' // 每次更新時增加版本號
 ```
 
 版本資訊流程：
