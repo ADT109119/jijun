@@ -61,11 +61,27 @@ export class CategoryManager {
     return this.saveCustomCategories()
   }
 
+  updateCustomCategory(type, updatedCategory) {
+    if (!this.customCategories[type]) {
+      return false
+    }
+    const index = this.customCategories[type].findIndex(cat => cat.id === updatedCategory.id)
+    if (index === -1) {
+      return false
+    }
+    this.customCategories[type][index] = updatedCategory
+    return this.saveCustomCategories()
+  }
+
+  getCustomCategoryById(type, categoryId) {
+    return this.customCategories[type]?.find(cat => cat.id === categoryId) || null
+  }
+
   isCustomCategory(type, categoryId) {
     return this.customCategories[type]?.some(cat => cat.id === categoryId) || false
   }
 
-  showAddCategoryModal(type) {
+  showAddCategoryModal(type, categoryToEdit = null) {
     const modal = document.createElement('div')
     modal.id = 'add-category-modal'
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
@@ -75,7 +91,7 @@ export class CategoryManager {
     modal.innerHTML = `
       <div class="bg-white rounded-lg max-w-md w-full max-h-[90vh] flex flex-col">
         <div class="p-6 border-b border-gray-200">
-          <h3 class="text-lg font-semibold">新增${typeText}分類</h3>
+          <h3 class="text-lg font-semibold">${categoryToEdit ? '編輯' : '新增'}${typeText}分類</h3>
         </div>
         
         <div class="flex-1 overflow-y-auto p-6 space-y-4">
@@ -83,6 +99,7 @@ export class CategoryManager {
             <label class="block text-sm font-medium text-gray-700 mb-2">分類名稱</label>
             <input type="text" id="category-name" maxlength="10" 
                    placeholder="輸入分類名稱..."
+                   value="${categoryToEdit ? categoryToEdit.name : ''}"
                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
           </div>
           
@@ -92,10 +109,11 @@ export class CategoryManager {
               <div class="flex items-center space-x-2 mb-2">
                 <input type="text" id="custom-icon-input" 
                        placeholder="輸入 Font Awesome class (如: fas fa-heart)"
+                       value="${categoryToEdit ? categoryToEdit.icon : ''}"
                        class="flex-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
                 <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors">
                   <span id="icon-preview" class="text-lg">
-                    <i class="fas fa-eye"></i>
+                    <i class="${categoryToEdit ? categoryToEdit.icon : 'fas fa-eye'}"></i>
                   </span>
                 </button>
               </div>
@@ -105,7 +123,7 @@ export class CategoryManager {
             </div>
             <div class="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3" id="icon-selector">
               ${this.getAvailableIcons().map(icon => `
-                <button type="button" class="icon-option p-2 border border-gray-300 rounded-lg hover:border-primary hover:bg-blue-50 transition-colors text-lg" data-icon="${icon}">
+                <button type="button" class="icon-option p-2 border border-gray-300 rounded-lg hover:border-primary hover:bg-blue-50 transition-colors text-lg ${categoryToEdit && categoryToEdit.icon === icon ? 'border-primary bg-blue-50' : ''}" data-icon="${icon}">
                   <i class="${icon}"></i>
                 </button>
               `).join('')}
@@ -116,7 +134,7 @@ export class CategoryManager {
             <label class="block text-sm font-medium text-gray-700 mb-2">選擇顏色</label>
             <div class="grid grid-cols-4 gap-3" id="color-selector">
               ${this.getAvailableColors().map(color => `
-                <button type="button" class="color-option w-12 h-12 rounded-lg border-2 border-gray-300 hover:border-gray-500 transition-colors ${color}" data-color="${color}">
+                <button type="button" class="color-option w-12 h-12 rounded-lg border-2 border-gray-300 hover:border-gray-500 transition-colors ${color} ${categoryToEdit && categoryToEdit.color === color ? 'border-gray-500' : ''}" data-color="${color}">
                 </button>
               `).join('')}
             </div>
@@ -126,7 +144,7 @@ export class CategoryManager {
         <div class="p-6 border-t border-gray-200">
           <div class="flex space-x-3">
             <button id="save-category-btn" class="flex-1 bg-primary hover:bg-blue-600 text-white py-3 rounded-lg transition-colors">
-              新增分類
+              ${categoryToEdit ? '儲存變更' : '新增分類'}
             </button>
             <button id="cancel-category-btn" class="px-6 bg-gray-300 hover:bg-gray-400 text-gray-700 py-3 rounded-lg transition-colors">
               取消
@@ -138,8 +156,8 @@ export class CategoryManager {
     
     document.body.appendChild(modal)
     
-    let selectedIcon = ''
-    let selectedColor = ''
+    let selectedIcon = categoryToEdit ? categoryToEdit.icon : ''
+    let selectedColor = categoryToEdit ? categoryToEdit.color : ''
     
     // 自訂圖標輸入
     const customIconInput = document.getElementById('custom-icon-input')
@@ -217,23 +235,29 @@ export class CategoryManager {
         return
       }
       
-      const categoryId = 'custom_' + Date.now()
       const category = {
-        id: categoryId,
+        id: categoryToEdit ? categoryToEdit.id : 'custom_' + Date.now(),
         name: name,
         icon: selectedIcon,
         color: selectedColor,
         isCustom: true
       }
       
-      if (this.addCustomCategory(type, category)) {
+      let success = false
+      if (categoryToEdit) {
+        success = this.updateCustomCategory(type, category)
+      } else {
+        success = this.addCustomCategory(type, category)
+      }
+
+      if (success) {
         this.closeAddCategoryModal()
         // 重新渲染分類
         if (window.app && window.app.renderCategories) {
           window.app.renderCategories()
         }
       } else {
-        alert('新增分類失敗')
+        alert(categoryToEdit ? '更新分類失敗' : '新增分類失敗')
       }
     })
     
@@ -304,9 +328,14 @@ export class CategoryManager {
                   <span class="text-xl"><i class="${category.icon}"></i></span>
                   <span class="font-medium">${category.name}</span>
                 </div>
-                <button class="delete-category-btn text-red-500 hover:text-red-700 text-sm" data-category-id="${category.id}">
-                  刪除
-                </button>
+                <div class="flex space-x-2">
+                  <button class="edit-category-btn text-blue-500 hover:text-blue-700 text-sm" data-category-id="${category.id}">
+                    編輯
+                  </button>
+                  <button class="delete-category-btn text-red-500 hover:text-red-700 text-sm" data-category-id="${category.id}">
+                    刪除
+                  </button>
+                </div>
               </div>
             `).join('')}
           </div>
@@ -343,6 +372,18 @@ export class CategoryManager {
               window.app.renderCategories()
             }
           }
+        }
+      })
+    })
+
+    // 編輯分類
+    document.querySelectorAll('.edit-category-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const categoryId = btn.dataset.categoryId
+        const categoryToEdit = this.getCustomCategoryById(type, categoryId)
+        if (categoryToEdit) {
+          this.closeManageCategoriesModal()
+          this.showAddCategoryModal(type, categoryToEdit) // 使用 showAddCategoryModal 進行編輯
         }
       })
     })

@@ -86,6 +86,11 @@ class EasyAccountingApp {
       })
     }
 
+    // 監聽自定義分類的變更事件
+    document.addEventListener('customCategoryChanged', () => {
+      this.renderCategories()
+    })
+
     // 小鍵盤最小化按鈕
     const minimizePanelBtn = document.getElementById('minimize-panel-btn')
     if (minimizePanelBtn) {

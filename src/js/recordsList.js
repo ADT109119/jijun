@@ -7,6 +7,8 @@ export class RecordsListManager {
     this.dataService = dataService
     this.currentFilter = 'all'
     this.currentPeriod = 'month'
+    this.customStartDate = null
+    this.customEndDate = null
     this.selectedCategories = new Set() // 改為支援多選
     this.records = []
   }
@@ -261,6 +263,7 @@ export class RecordsListManager {
         const startDate = startDateInput.value
         const endDate = endDateInput.value
         if (startDate && endDate) {
+          this.currentPeriod = 'custom'
           this.loadRecords('custom', startDate, endDate)
           this.switchPeriodFilter('custom')
           dateRangeModal.classList.add('hidden')
@@ -464,8 +467,12 @@ export class RecordsListManager {
   async loadRecords(period = this.currentPeriod, startDate = null, endDate = null) {
     try {
       let dateRange
-      if (period === 'custom' && startDate && endDate) {
-        dateRange = { startDate, endDate }
+      if (period === 'custom') {
+        if (startDate && endDate) {
+          this.customStartDate = startDate
+          this.customEndDate = endDate
+        }
+        dateRange = { startDate: this.customStartDate, endDate: this.customEndDate }
       } else {
         dateRange = getDateRange(period)
       }
@@ -488,7 +495,7 @@ export class RecordsListManager {
     }
   }
 
-  renderRecords(records) {
+  async renderRecords(records) {
     const container = document.getElementById('records-container')
     const emptyState = document.getElementById('empty-state')
 
@@ -504,7 +511,7 @@ export class RecordsListManager {
     // 按日期分組
     const groupedRecords = this.groupRecordsByDate(records)
 
-    Object.keys(groupedRecords).sort((a, b) => new Date(b) - new Date(a)).forEach(date => {
+    for (const date of Object.keys(groupedRecords).sort((a, b) => new Date(b) - new Date(a))) {
       const dateGroup = document.createElement('div')
       dateGroup.className = 'mb-4'
 
@@ -526,31 +533,37 @@ export class RecordsListManager {
       dateGroup.appendChild(dateHeader)
 
       // 該日期的記錄
-      groupedRecords[date].forEach((record, index) => {
-        const recordItem = this.createRecordItem(record)
+      for (const [index, record] of groupedRecords[date].entries()) {
+        const recordItem = await this.createRecordItem(record)
         if (index > 0) {
           recordItem.classList.add('mt-2') // 添加上邊距
         }
         dateGroup.appendChild(recordItem)
-      })
+      }
 
       container.appendChild(dateGroup)
-    })
+    }
   }
 
-  createRecordItem(record) {
+  async createRecordItem(record) {
     const item = document.createElement('div')
     item.className = 'bg-white p-4 rounded-lg shadow-md cursor-pointer hover:shadow-lg transition-shadow'
     item.dataset.recordId = record.id
 
-    const categoryName = getCategoryName(record.type, record.category)
-    const categoryIcon = getCategoryIcon(record.type, record.category)
+    const categoriesModule = await import('./categories.js')
+    const categoryConfig = categoriesModule.getCategoryById(record.type, record.category)
+    
+    const categoryName = categoryConfig ? categoryConfig.name : '未知分類'
+    const categoryIcon = categoryConfig ? categoryConfig.icon : 'fas fa-question'
+    const categoryColor = categoryConfig ? categoryConfig.color : 'bg-gray-500' // 預設顏色
     const isIncome = record.type === 'income'
 
     item.innerHTML = `
       <div class="flex items-center justify-between">
         <div class="flex items-center space-x-3">
-          <div class="text-2xl"><i class="${categoryIcon}"></i></div>
+          <div class="w-10 h-10 rounded-full flex items-center justify-center ${categoryColor} text-white text-xl">
+            <i class="${categoryIcon}"></i>
+          </div>
           <div>
             <div class="font-medium text-gray-800">${categoryName}</div>
             <div class="text-sm text-gray-500">${record.description || '無說明'}</div>
@@ -808,26 +821,43 @@ export class RecordsListManager {
 
   // 載入類別選項
   async loadCategoryOptions() {
-    const allRecords = await this.dataService.getRecords()
+    // 獲取當前時間範圍的記錄
+    let dateRange
+    if (this.currentPeriod === 'custom') {
+      dateRange = { startDate: this.customStartDate, endDate: this.customEndDate }
+    } else {
+      dateRange = getDateRange(this.currentPeriod)
+    }
+
+    const recordsInPeriod = await this.dataService.getRecords({
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate
+    })
     
     // 根據當前類型篩選獲取相關記錄
-    let relevantRecords = allRecords
+    let relevantRecords = recordsInPeriod
     if (this.currentFilter !== 'all') {
-      relevantRecords = allRecords.filter(record => record.type === this.currentFilter)
+      relevantRecords = recordsInPeriod.filter(record => record.type === this.currentFilter)
     }
     
     // 獲取所有唯一的類別
     const categories = [...new Set(relevantRecords.map(record => record.category).filter(Boolean))]
     
-    // 從分類配置中獲取中文名稱
+    // 從分類配置中獲取中文名稱和類型
     const categoriesModule = await import('./categories.js')
-    const allCategories = categoriesModule.CATEGORIES.expense.concat(categoriesModule.CATEGORIES.income)
     
     // 計算每個類別的統計資訊
     const categoryStats = categories.map(categoryKey => {
       // 找到對應的分類配置
-      const categoryConfig = allCategories.find(cat => cat.id === categoryKey)
+      let categoryConfig = categoriesModule.getCategoryById('expense', categoryKey)
+      let type = 'expense'
+      if (!categoryConfig) {
+        categoryConfig = categoriesModule.getCategoryById('income', categoryKey)
+        type = 'income'
+      }
+      
       const displayName = categoryConfig ? categoryConfig.name : categoryKey
+      const categoryColor = categoryConfig ? categoryConfig.color : 'bg-gray-500' // 預設顏色
       
       const categoryRecords = relevantRecords.filter(record => record.category === categoryKey)
       const totalAmount = categoryRecords.reduce((sum, record) => sum + parseFloat(record.amount), 0)
@@ -837,7 +867,9 @@ export class RecordsListManager {
         id: categoryKey,
         name: displayName,
         totalAmount,
-        count
+        count,
+        type, // 添加類型
+        color: categoryColor // 添加顏色
       }
     }).sort((a, b) => b.totalAmount - a.totalAmount) // 按金額排序
     
@@ -856,6 +888,7 @@ export class RecordsListManager {
     
     container.innerHTML = categoryStats.map(stat => {
       const isSelected = this.selectedCategories.has(stat.id)
+      const amountColorClass = stat.type === 'income' ? 'text-green-600' : 'text-red-600'
       
       return `
         <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
@@ -864,7 +897,7 @@ export class RecordsListManager {
                    data-category="${stat.id}" ${isSelected ? 'checked' : ''}>
             <label for="category-${stat.id}" class="flex-1 cursor-pointer">
               <div class="font-medium text-gray-800">${stat.name}</div>
-              <div class="text-sm text-gray-500">$${stat.totalAmount.toLocaleString()} • ${stat.count}筆記錄</div>
+              <div class="text-sm ${amountColorClass}">${stat.type === 'income' ? '+' : '-'}${formatCurrency(stat.totalAmount)} • ${stat.count}筆記錄</div>
             </label>
           </div>
         </div>
