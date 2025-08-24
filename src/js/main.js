@@ -1231,6 +1231,11 @@ class EasyAccountingApp {
 
     const total = categories.reduce((sum, cat) => sum + expenseData[cat], 0)
 
+    // 響應式字體大小
+    const isMobile = ctx.canvas.width < 400
+    const titleFontSize = isMobile ? 12 : 14
+    const amountFontSize = isMobile ? 16 : 18
+
     this.homeChart = new Chart(ctx, {
       type: 'doughnut',
       data: data,
@@ -1258,17 +1263,25 @@ class EasyAccountingApp {
                 return `${context.label}: ${value} (${percentage}%)`
               }
             }
+          },
+          title: {
+            display: true,
+            text: '總支出',
+            position: 'bottom',
+            align: 'center',
+            font: { size: titleFontSize, weight: 'bold' },
+            color: '#6B7280',
+            padding: { top: -40 , left: 30}
+          },
+          subtitle: {
+            display: true,
+            text: formatCurrency(total),
+            position: 'bottom',
+            align: 'center',
+            font: { size: amountFontSize, weight: 'bold' },
+            color: '#EF4444',
+            padding: { top: -140 , left: 30}
           }
-        },
-        animation: {
-          onComplete: (animation) => {
-            // 在動畫完成後繪製中央文字
-            this.drawCenterText(animation.chart.ctx, total)
-          }
-        },
-        onHover: (event, activeElements) => {
-          // 當滑鼠懸停時重新繪製中央文字，確保不會消失
-          this.drawCenterText(event.chart.ctx, this.currentExpenseTotal || 0)
         }
       }
     })
@@ -1276,51 +1289,6 @@ class EasyAccountingApp {
     // 儲存總額供後續使用
     this.currentExpenseTotal = total
     
-    // 立即繪製中心文字
-    this.drawCenterText(ctx, total)
-    
-    // 延遲繪製確保顯示
-    setTimeout(() => {
-      this.drawCenterText(ctx, total)
-    }, 100)
-    
-    setTimeout(() => {
-      this.drawCenterText(ctx, total)
-    }, 500)
-  }
-
-  drawCenterText(ctx, total) {
-    if (!ctx || !ctx.canvas) return
-    
-    const centerX = ctx.canvas.width / 2
-    const centerY = ctx.canvas.height / 2
-    
-    ctx.save()
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    
-    // 響應式字體大小
-    const isMobile = ctx.canvas.width < 400
-    const titleFontSize = isMobile ? 12 : 14
-    const amountFontSize = isMobile ? 16 : 18
-    
-    // 繪製白色背景圓形
-    ctx.fillStyle = '#ffffff'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, 50, 0, 2 * Math.PI)
-    ctx.fill()
-    
-    // 繪製標題
-    ctx.fillStyle = '#6B7280'
-    ctx.font = `bold ${titleFontSize}px Arial`
-    ctx.fillText('總支出', centerX, centerY - 12)
-    
-    // 繪製金額
-    ctx.fillStyle = '#EF4444'
-    ctx.font = `bold ${amountFontSize}px Arial`
-    ctx.fillText(formatCurrency(total), centerX, centerY + 12)
-    
-    ctx.restore()
   }
 
   async loadRecentRecords() {
