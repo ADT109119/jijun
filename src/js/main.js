@@ -1271,7 +1271,7 @@ class EasyAccountingApp {
             align: 'center',
             font: { size: titleFontSize, weight: 'bold' },
             color: '#6B7280',
-            padding: { top: -40 , left: 30}
+            padding: { top: -40 , left: 0}
           },
           subtitle: {
             display: true,
@@ -1280,7 +1280,7 @@ class EasyAccountingApp {
             align: 'center',
             font: { size: amountFontSize, weight: 'bold' },
             color: '#EF4444',
-            padding: { top: -140 , left: 30}
+            padding: { top: -140 , left: 0}
           }
         }
       }
