@@ -392,11 +392,11 @@ export class StatisticsManager {
                     
                     <!-- Quick Select Buttons -->
                     <div class="grid grid-cols-3 gap-2 mb-4">
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisWeek">本週</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="week">本週</button>
                         <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="last7days">近7日</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisMonth">本月</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="month">本月</button>
                         <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="lastMonth">上月</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisYear">今年</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="year">今年</button>
                     </div>
 
                     <!-- Date Inputs -->
