@@ -1,576 +1,458 @@
-// 統計圖表模組
-import { Chart, registerables } from 'chart.js'
-import { formatCurrency, getDateRange } from './utils.js'
-import { getCategoryName, getCategoryIcon, CATEGORIES } from './categories.js'
+import { Chart, registerables } from 'chart.js';
+import 'chartjs-adapter-date-fns';
+import { zhTW } from 'date-fns/locale';
+import { formatCurrency, getDateRange } from './utils.js';
 
-// 註冊 Chart.js 組件
-Chart.register(...registerables)
+Chart.register(...registerables);
 
 export class StatisticsManager {
-  constructor(dataService) {
-    this.dataService = dataService
-    this.charts = {}
-  }
+    constructor(dataService, categoryManager) {
+        this.dataService = dataService;
+        this.categoryManager = categoryManager;
+        this.container = null;
+        this.modalsContainer = null;
+        this.charts = {};
+        this.filters = {
+            period: 'month',
+            customStartDate: null,
+            customEndDate: null,
+        };
+    }
 
-  /**
-   * 渲染統計頁面
-   */
-  async renderStatisticsPage() {
-    const container = document.getElementById('app')
-    
-    container.innerHTML = `
-      <div class="container mx-auto px-4 py-6 max-w-md">
-
-        <!-- 時間範圍選擇 -->
-        <div class="mb-6">
-          <div class="flex space-x-2 bg-white rounded-lg p-1 shadow-md">
-            <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="week">本週</button>
-            <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200 bg-primary text-white" data-period="month">本月</button>
-            <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="year">今年</button>
-            <button class="period-btn flex-1 py-2 px-3 rounded-md font-medium transition-all duration-200" data-period="custom">自訂</button>
-          </div>
-        </div>
-
-        <!-- 自訂時間範圍 Modal -->
-        <div id="statisticsDateRangeModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 hidden">
-          <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
-            <h3 class="text-xl font-semibold mb-4">選擇自訂時間範圍</h3>
-            
-            <!-- 快速設定按鍵 -->
-            <div class="mb-6">
-              <h4 class="text-sm font-medium text-gray-700 mb-3">快速設定</h4>
-              <div class="grid grid-cols-3 gap-2">
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="today">今日</button>
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="week">本週</button>
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="last7days">近七日</button>
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="month">本月</button>
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="lastmonth">上月</button>
-                <button class="stats-quick-date-btn px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" data-range="year">今年</button>
-              </div>
+    async renderStatisticsPage(container) {
+        this.container = container;
+        this.container.innerHTML = `
+            <!-- Time Range Selector -->
+            <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-6">
+                <button data-period="week" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">週</button>
+                <button data-period="month" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">月</button>
+                <button data-period="year" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">年</button>
+                <button data-period="custom" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">自訂</button>
             </div>
-            
-            <div class="mb-4">
-              <label for="statisticsStartDate" class="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
-              <input type="date" id="statisticsStartDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+
+            <!-- Key Metric Cards -->
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="flex flex-col gap-1 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
+                    <p class="text-sm font-medium text-wabi-text-secondary">總收入</p>
+                    <p id="stats-total-income" class="text-xl font-bold tracking-tight text-wabi-income">$0</p>
+                </div>
+                <div class="flex flex-col gap-1 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
+                    <p class="text-sm font-medium text-wabi-text-secondary">總支出</p>
+                    <p id="stats-total-expense" class="text-xl font-bold tracking-tight text-wabi-expense">$0</p>
+                </div>
+                <div class="col-span-2 flex flex-col gap-1 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
+                    <p class="text-sm font-medium text-wabi-text-secondary">結餘</p>
+                    <p id="stats-net-balance" class="text-2xl font-bold tracking-tight text-wabi-primary">$0</p>
+                </div>
             </div>
-            <div class="mb-4">
-              <label for="statisticsEndDate" class="block text-sm font-medium text-gray-700 mb-1">結束日期</label>
-              <input type="date" id="statisticsEndDate" class="w-full p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary">
+
+            <!-- Donut Chart: Expense Distribution -->
+            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border mb-8">
+                <h2 class="text-base font-bold mb-4 text-wabi-primary">支出分佈</h2>
+                <div id="stats-expense-donut-container" class="flex flex-col items-center gap-6 sm:flex-row">
+                    <!-- Chart will be rendered here -->
+                </div>
             </div>
-            <div class="flex justify-end space-x-3">
-              <button id="cancelStatisticsDateRange" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">取消</button>
-              <button id="applyStatisticsDateRange" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-600">確定</button>
+
+            <!-- Donut Chart: Income Distribution -->
+            <div class="mb-8 rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border">
+                <h2 class="text-base font-bold mb-4 text-wabi-primary">收入分佈</h2>
+                <div id="stats-income-donut-container" class="flex flex-col items-center gap-6 sm:flex-row">
+                    <!-- Chart will be rendered here -->
+                </div>
             </div>
-          </div>
-        </div>
 
-        <!-- 總覽卡片 -->
-        <div class="grid grid-cols-2 gap-4 mb-6">
-          <div class="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 rounded-lg shadow-md">
-            <div class="text-sm opacity-90">總收入</div>
-            <div id="total-income" class="text-2xl font-bold">$0</div>
-          </div>
-          <div class="bg-gradient-to-r from-red-500 to-red-600 text-white p-4 rounded-lg shadow-md">
-            <div class="text-sm opacity-90">總支出</div>
-            <div id="total-expense" class="text-2xl font-bold">$0</div>
-          </div>
-        </div>
-
-        <!-- 淨收入 -->
-        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
-          <div class="text-center">
-            <div class="text-sm text-gray-600">淨收入</div>
-            <div id="net-income" class="text-3xl font-bold text-gray-800">$0</div>
-          </div>
-        </div>
-
-        <!-- 圖表區域 -->
-        <div class="space-y-6">
-          <!-- 支出分類圓餅圖 -->
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h3 class="text-lg font-semibold mb-4 text-gray-800">支出分類</h3>
-            <div class="relative h-64">
-              <canvas id="expense-pie-chart"></canvas>
+            <!-- Line Chart: Income/Expense Trend -->
+            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border">
+                <h2 class="text-base font-bold mb-4 text-wabi-primary">收支趨勢</h2>
+                <div class="relative h-48 w-full">
+                    <canvas id="stats-trend-chart"></canvas>
+                </div>
             </div>
-          </div>
-
-          <!-- 收入分類圓餅圖 -->
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h3 class="text-lg font-semibold mb-4 text-gray-800">收入分類</h3>
-            <div class="relative h-64">
-              <canvas id="income-pie-chart"></canvas>
-            </div>
-          </div>
-
-          <!-- 趨勢圖 -->
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h3 class="text-lg font-semibold mb-4 text-gray-800">收支趨勢</h3>
-            <div class="relative h-64">
-              <canvas id="trend-chart"></canvas>
-            </div>
-          </div>
-
-          <!-- 分類詳細列表 -->
-          <div class="bg-white p-4 rounded-lg shadow-md">
-            <h3 class="text-lg font-semibold mb-4 text-gray-800">分類明細</h3>
-            <div id="category-details" class="space-y-3">
-              <!-- 分類詳細資料將在這裡顯示 -->
-            </div>
-          </div>
-        </div>
-
-        <!-- 底部空間 -->
-        <div class="h-20"></div>
-
-        <!-- 底部導航 -->
-        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
-          <div class="flex justify-around max-w-md mx-auto">
-            <button id="nav-list" class="flex flex-col items-center py-2 text-gray-400">
-              <span class="text-2xl"><i class="fas fa-home"></i></span>
-              <span class="text-xs">首頁</span>
-            </button>
-            <button id="nav-add" class="flex flex-col items-center py-2 text-gray-400">
-              <span class="text-2xl"><i class="fas fa-plus"></i></span>
-              <span class="text-xs">記帳</span>
-            </button>
-            <button id="nav-stats" class="flex flex-col items-center py-2 text-primary">
-              <span class="text-2xl"><i class="fas fa-chart-bar"></i></span>
-              <span class="text-xs">統計</span>
-            </button>
-          </div>
-        </nav>
-      </div>
-    `
-
-    this.setupStatisticsEventListeners()
-    await this.loadStatistics('month')
-  }
-
-  setupStatisticsEventListeners() {
-    // 時間範圍切換
-    document.querySelectorAll('.period-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const period = e.target.dataset.period
-        if (period === 'custom') {
-          this.showStatisticsDateRangeModal()
-        } else {
-          this.switchPeriod(period)
-          this.loadStatistics(period)
-        }
-      })
-    })
-
-    // 自訂時間範圍 Modal 事件
-    const dateRangeModal = document.getElementById('statisticsDateRangeModal')
-    const startDateInput = document.getElementById('statisticsStartDate')
-    const endDateInput = document.getElementById('statisticsEndDate')
-    const applyDateRangeBtn = document.getElementById('applyStatisticsDateRange')
-    const cancelDateRangeBtn = document.getElementById('cancelStatisticsDateRange')
-
-    if (applyDateRangeBtn) {
-      applyDateRangeBtn.addEventListener('click', () => {
-        const startDate = startDateInput.value
-        const endDate = endDateInput.value
-        if (startDate && endDate) {
-          this.loadStatistics('custom', startDate, endDate)
-          this.switchPeriod('custom')
-          dateRangeModal.classList.add('hidden')
-        } else {
-          showToast('請選擇開始和結束日期', 'error')
-        }
-      })
+            <!-- Modals container -->
+            <div id="stats-modals-container"></div>
+        `;
+        this.modalsContainer = this.container.querySelector('#stats-modals-container');
+        this.setupEventListeners();
+        await this.loadStatisticsData();
     }
 
-    if (cancelDateRangeBtn) {
-      cancelDateRangeBtn.addEventListener('click', () => {
-        dateRangeModal.classList.add('hidden')
-      })
+    setupEventListeners() {
+        this.container.querySelectorAll('.period-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const period = e.target.dataset.period;
+                if (period === 'custom') {
+                    this.showDateRangeModal();
+                } else {
+                    this.filters.period = period;
+                    this.updatePeriodButtons();
+                    this.loadStatisticsData();
+                }
+            });
+        });
     }
 
-    // 統計頁面快速日期設定按鍵
-    document.querySelectorAll('.stats-quick-date-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const range = e.target.dataset.range
-        const dateRange = getDateRange(range)
-        
-        const statsStartDateInput = document.getElementById('statisticsStartDate')
-        const statsEndDateInput = document.getElementById('statisticsEndDate')
-        
-        if (statsStartDateInput && statsEndDateInput) {
-          statsStartDateInput.value = dateRange.startDate
-          statsEndDateInput.value = dateRange.endDate
-        }
-        
-        // 高亮選中的快速設定按鈕
-        document.querySelectorAll('.stats-quick-date-btn').forEach(b => {
-          b.classList.remove('bg-primary', 'text-white')
-          b.classList.add('bg-gray-100', 'hover:bg-gray-200')
-        })
-        e.target.classList.remove('bg-gray-100', 'hover:bg-gray-200')
-        e.target.classList.add('bg-primary', 'text-white')
-      })
-    })
-
-    // 底部導航
-    const navList = document.getElementById('nav-list')
-    const navAdd = document.getElementById('nav-add')
-    const navStats = document.getElementById('nav-stats')
-    
-    if (navList) {
-      navList.addEventListener('click', () => {
-        if (window.app) window.app.showListPage()
-      })
-    }
-    
-    if (navAdd) {
-      navAdd.addEventListener('click', () => {
-        if (window.app) window.app.showAddPage()
-      })
-    }
-    
-    if (navStats) {
-      navStats.addEventListener('click', () => {
-        if (window.app) window.app.showStatsPage()
-      })
-    }
-  }
-
-  showStatisticsDateRangeModal() {
-    const modal = document.getElementById('statisticsDateRangeModal')
-    const startDateInput = document.getElementById('statisticsStartDate')
-    const endDateInput = document.getElementById('statisticsEndDate')
-
-    // Set default dates (e.g., last month)
-    const today = new Date()
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-
-    startDateInput.value = firstDayOfMonth.toISOString().split('T')[0]
-    endDateInput.value = lastDayOfMonth.toISOString().split('T')[0]
-
-    modal.classList.remove('hidden')
-  }
-
-  switchPeriod(period) {
-    document.querySelectorAll('.period-btn').forEach(btn => {
-      btn.classList.remove('bg-primary', 'text-white')
-      btn.classList.add('text-gray-600', 'hover:bg-gray-100')
-    })
-    
-    const selectedBtn = document.querySelector(`[data-period="${period}"]`)
-    if (selectedBtn) {
-      selectedBtn.classList.add('bg-primary', 'text-white')
-      selectedBtn.classList.remove('text-gray-600', 'hover:bg-gray-100')
-    }
-  }
-
-  async loadStatistics(period, startDate = null, endDate = null) {
-    let dateRange
-    if (period === 'custom' && startDate && endDate) {
-      dateRange = { startDate, endDate }
-    } else {
-      dateRange = getDateRange(period)
-    }
-
-    const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate)
-    
-    this.updateSummaryCards(stats)
-    this.renderExpensePieChart(stats.expenseByCategory)
-    this.renderIncomePieChart(stats.incomeByCategory)
-    this.renderTrendChart(stats.dailyTotals, dateRange)
-    this.renderCategoryDetails(stats)
-  }
-
-  updateSummaryCards(stats) {
-    document.getElementById('total-income').textContent = formatCurrency(stats.totalIncome)
-    document.getElementById('total-expense').textContent = formatCurrency(stats.totalExpense)
-    
-    const netIncome = stats.totalIncome - stats.totalExpense
-    const netIncomeElement = document.getElementById('net-income')
-    netIncomeElement.textContent = formatCurrency(Math.abs(netIncome))
-    
-    if (netIncome >= 0) {
-      netIncomeElement.className = 'text-3xl font-bold text-green-600'
-    } else {
-      netIncomeElement.className = 'text-3xl font-bold text-red-600'
-    }
-  }
-
-  renderExpensePieChart(expenseData) {
-    const ctx = document.getElementById('expense-pie-chart').getContext('2d')
-    
-    // 銷毀現有圖表
-    if (this.charts.expensePie) {
-      this.charts.expensePie.destroy()
-    }
-
-    const categories = Object.keys(expenseData)
-    if (categories.length === 0) {
-      ctx.fillStyle = '#gray'
-      ctx.font = '16px Arial'
-      ctx.textAlign = 'center'
-      ctx.fillText('暫無支出資料', ctx.canvas.width / 2, ctx.canvas.height / 2)
-      return
-    }
-
-    const data = {
-      labels: categories.map(cat => getCategoryName('expense', cat)),
-      datasets: [{
-        data: categories.map(cat => expenseData[cat]),
-        backgroundColor: [
-          '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-          '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
-        ],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    }
-
-    this.charts.expensePie = new Chart(ctx, {
-      type: 'doughnut',
-      data: data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              padding: 20,
-              usePointStyle: true
+    updatePeriodButtons() {
+        this.container.querySelectorAll('.period-btn').forEach(btn => {
+            if (btn.dataset.period === this.filters.period) {
+                btn.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
+                btn.classList.remove('text-wabi-text-secondary');
+            } else {
+                btn.classList.remove('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
+                btn.classList.add('text-wabi-text-secondary');
             }
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const value = formatCurrency(context.parsed)
-                const total = context.dataset.data.reduce((a, b) => a + b, 0)
-                const percentage = ((context.parsed / total) * 100).toFixed(1)
-                return `${context.label}: ${value} (${percentage}%)`
-              }
-            }
-          }
-        }
-      }
-    })
-  }
-
-  renderIncomePieChart(incomeData) {
-    const ctx = document.getElementById('income-pie-chart').getContext('2d')
-    
-    // 銷毀現有圖表
-    if (this.charts.incomePie) {
-      this.charts.incomePie.destroy()
+        });
     }
 
-    const categories = Object.keys(incomeData)
-    if (categories.length === 0) {
-      ctx.fillStyle = '#gray'
-      ctx.font = '16px Arial'
-      ctx.textAlign = 'center'
-      ctx.fillText('暫無收入資料', ctx.canvas.width / 2, ctx.canvas.height / 2)
-      return
+    async loadStatisticsData() {
+        const dateRange = this.filters.period === 'custom' && this.filters.customStartDate
+            ? { startDate: this.filters.customStartDate, endDate: this.filters.customEndDate }
+            : getDateRange(this.filters.period);
+
+        const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate);
+
+        this.updateSummaryCards(stats);
+        this.renderTrendChart(stats.dailyTotals, dateRange);
+        this.renderExpenseDonutChart(stats.expenseByCategory);
+        this.renderIncomeDonutChart(stats.incomeByCategory);
     }
 
-    const data = {
-      labels: categories.map(cat => getCategoryName('income', cat)),
-      datasets: [{
-        data: categories.map(cat => incomeData[cat]),
-        backgroundColor: [
-          '#4CAF50', '#2196F3', '#FF9800', '#9C27B0',
-          '#00BCD4', '#795548', '#607D8B', '#E91E63'
-        ],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
+    updateSummaryCards(stats) {
+        const netBalance = stats.totalIncome - stats.totalExpense;
+        this.container.querySelector('#stats-total-income').textContent = formatCurrency(stats.totalIncome);
+        this.container.querySelector('#stats-total-expense').textContent = formatCurrency(stats.totalExpense);
+        this.container.querySelector('#stats-net-balance').textContent = formatCurrency(netBalance);
+        this.container.querySelector('#stats-net-balance').className = `text-2xl font-bold tracking-tight ${netBalance >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}`;
     }
 
-    this.charts.incomePie = new Chart(ctx, {
-      type: 'doughnut',
-      data: data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              padding: 20,
-              usePointStyle: true
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const value = formatCurrency(context.parsed)
-                const total = context.dataset.data.reduce((a, b) => a + b, 0)
-                const percentage = ((context.parsed / total) * 100).toFixed(1)
-                return `${context.label}: ${value} (${percentage}%)`
-              }
-            }
-          }
-        }
-      }
-    })
-  }
+    renderTrendChart(dailyData, dateRange) {
+        const ctx = this.container.querySelector('#stats-trend-chart').getContext('2d');
+        if (this.charts.trend) this.charts.trend.destroy();
 
-  renderTrendChart(dailyData, dateRange) {
-    const ctx = document.getElementById('trend-chart').getContext('2d')
-    
-    // 銷毀現有圖表
-    if (this.charts.trend) {
-      this.charts.trend.destroy()
-    }
+        const labels = Object.keys(dailyData).sort();
+        const incomeValues = labels.map(label => dailyData[label].income);
+        const expenseValues = labels.map(label => dailyData[label].expense);
 
-    // 生成日期範圍內的所有日期
-    const dates = this.generateDateRange(dateRange.startDate, dateRange.endDate)
-    const incomeData = dates.map(date => dailyData[date]?.income || 0)
-    const expenseData = dates.map(date => dailyData[date]?.expense || 0)
-
-    const data = {
-      labels: dates.map(date => {
-        const d = new Date(date)
-        return `${d.getMonth() + 1}/${d.getDate()}`
-      }),
-      datasets: [
-        {
-          label: '收入',
-          data: incomeData,
-          borderColor: '#4CAF50',
-          backgroundColor: 'rgba(76, 175, 80, 0.1)',
-          tension: 0.4
-        },
-        {
-          label: '支出',
-          data: expenseData,
-          borderColor: '#F44336',
-          backgroundColor: 'rgba(244, 67, 54, 0.1)',
-          tension: 0.4
-        }
-      ]
-    }
-
-    this.charts.trend = new Chart(ctx, {
-      type: 'line',
-      data: data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top'
-          },
-          tooltip: {
-            mode: 'index',
-            intersect: false,
-            callbacks: {
-              label: (context) => {
-                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            display: true,
-            title: {
-              display: true,
-              text: '日期'
-            }
-          },
-          y: {
-            display: true,
-            title: {
-              display: true,
-              text: '金額'
+        this.charts.trend = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '收入',
+                        data: incomeValues,
+                        borderColor: '#6A9C89', // wabi-income
+                        backgroundColor: '#6A9C8933',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: '支出',
+                        data: expenseValues,
+                        borderColor: '#B95A5A', // wabi-expense
+                        backgroundColor: '#B95A5A33',
+                        fill: true,
+                        tension: 0.3,
+                    }
+                ]
             },
-            ticks: {
-              callback: (value) => formatCurrency(value)
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: this.getChartTimeUnit(dateRange),
+                            tooltipFormat: 'yyyy-MM-dd',
+                            displayFormats: { day: 'MM-dd', week: 'MM-dd', month: 'yyyy-MM' }
+                        },
+                        adapters: { date: { locale: zhTW } },
+                        grid: { display: false },
+                        ticks: { color: '#718096' }
+                    },
+                    y: {
+                        grid: { color: '#E2E8F0' },
+                        ticks: { 
+                            color: '#718096',
+                            callback: value => formatCurrency(value, 0)
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
+                        }
+                    }
+                }
             }
-          }
+        });
+    }
+
+    renderExpenseDonutChart(expenseData) {
+        const container = this.container.querySelector('#stats-expense-donut-container');
+        if (this.charts.expenseDonut) this.charts.expenseDonut.destroy();
+
+        const totalExpense = Object.values(expenseData).reduce((a, b) => a + b, 0);
+        if (totalExpense === 0) {
+            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">此期間無支出紀錄</p>`;
+            return;
         }
-      }
-    })
-  }
 
-  renderCategoryDetails(stats) {
-    const container = document.getElementById('category-details')
-    container.innerHTML = ''
+        container.innerHTML = `
+            <div class="relative flex size-40 items-center justify-center sm:size-48">
+                <canvas id="stats-expense-donut-chart"></canvas>
+                <div class="absolute text-center">
+                    <p class="text-xs text-wabi-text-secondary">總支出</p>
+                    <p class="text-lg font-bold text-wabi-primary">${formatCurrency(totalExpense)}</p>
+                </div>
+            </div>
+            <div id="stats-expense-legend" class="w-full flex-1 space-y-3"></div>
+        `;
 
-    // 合併收入和支出分類
-    const allCategories = []
-    
-    // 添加支出分類
-    Object.entries(stats.expenseByCategory).forEach(([categoryId, amount]) => {
-      allCategories.push({
-        type: 'expense',
-        categoryId,
-        amount,
-        name: getCategoryName('expense', categoryId),
-        icon: getCategoryIcon('expense', categoryId)
-      })
-    })
+        const categoryData = Object.keys(expenseData).map(id => {
+            const category = this.categoryManager.getCategoryById('expense', id);
+            return {
+                id: id,
+                name: category?.name || '其他',
+                value: expenseData[id],
+                color: category?.color || 'bg-gray-400'
+            };
+        }).sort((a, b) => b.value - a.value);
 
-    // 添加收入分類
-    Object.entries(stats.incomeByCategory).forEach(([categoryId, amount]) => {
-      allCategories.push({
-        type: 'income',
-        categoryId,
-        amount,
-        name: getCategoryName('income', categoryId),
-        icon: getCategoryIcon('income', categoryId)
-      })
-    })
+        const labels = categoryData.map(c => c.name);
+        const values = categoryData.map(c => c.value);
+        // The color is a tailwind class like `bg-red-500`. We need the hex code for Chart.js.
+        // This is a temporary solution. A better solution would be to have a mapping from tailwind classes to hex codes.
+        const colors = categoryData.map(c => {
+            const colorClass = c.color;
+            const match = colorClass.match(/bg-(.*)-(\d+)/);
+            if (match) {
+                const colorName = match[1];
+                const colorValue = match[2];
+                // This is a very simplified mapping and will not work for all tailwind colors.
+                const colorMap = {
+                    slate: '#64748b',
+                    stone: '#78716c',
+                    red: '#ef4444',
+                    orange: '#f97316',
+                    amber: '#f59e0b',
+                    yellow: '#eab308',
+                    lime: '#84cc16',
+                    green: '#22c55e',
+                    emerald: '#10b981',
+                    teal: '#14b8a6',
+                    cyan: '#06b6d4',
+                    sky: '#0ea5e9',
+                    blue: '#3b82f6',
+                    indigo: '#6366f1',
+                    violet: '#8b5cf6',
+                    purple: '#a855f7',
+                };
+                return colorMap[colorName] || '#9ca3af';
+            }
+            return '#9ca3af'; // default gray
+        });
 
-    // 按金額排序
-    allCategories.sort((a, b) => b.amount - a.amount)
+        const ctx = this.container.querySelector('#stats-expense-donut-chart').getContext('2d');
+        this.charts.expenseDonut = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
 
-    allCategories.forEach(category => {
-      const item = document.createElement('div')
-      item.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg'
-      
-      const typeColor = category.type === 'income' ? 'text-green-600' : 'text-red-600'
-      const typeText = category.type === 'income' ? '收入' : '支出'
-      
-      item.innerHTML = `
-        <div class="flex items-center space-x-3">
-          <span class="text-2xl"><i class="${category.icon}"></i></span>
-          <div>
-            <div class="font-medium">${category.name}</div>
-            <div class="text-sm text-gray-500">${typeText}</div>
-          </div>
-        </div>
-        <div class="text-right">
-          <div class="font-bold ${typeColor}">${formatCurrency(category.amount)}</div>
-        </div>
-      `
-      
-      container.appendChild(item)
-    })
-
-    if (allCategories.length === 0) {
-      container.innerHTML = '<div class="text-center text-gray-500 py-8">暫無資料</div>'
+        // Custom Legend
+        const legendContainer = this.container.querySelector('#stats-expense-legend');
+        legendContainer.innerHTML = categoryData.map((cat, i) => `
+            <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="size-3 rounded-full" style="background-color: ${colors[i]};"></span>
+                    <span>${cat.name}</span>
+                </div>
+                <div class="font-medium">
+                    <span>${formatCurrency(cat.value)}</span>
+                    <span class="ml-2 text-xs text-wabi-text-secondary">${((cat.value / totalExpense) * 100).toFixed(0)}%</span>
+                </div>
+            </div>
+        `).join('');
     }
-  }
 
-  generateDateRange(startDate, endDate) {
-    const dates = []
-    const current = new Date(startDate)
-    const end = new Date(endDate)
+    renderIncomeDonutChart(incomeData) {
+        const container = this.container.querySelector('#stats-income-donut-container');
+        if (this.charts.incomeDonut) this.charts.incomeDonut.destroy();
 
-    while (current <= end) {
-      dates.push(current.toISOString().split('T')[0])
-      current.setDate(current.getDate() + 1)
+        const totalIncome = Object.values(incomeData).reduce((a, b) => a + b, 0);
+        if (totalIncome === 0) {
+            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">此期間無收入紀錄</p>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="relative flex size-40 items-center justify-center sm:size-48">
+                <canvas id="stats-income-donut-chart"></canvas>
+                <div class="absolute text-center">
+                    <p class="text-xs text-wabi-text-secondary">總收入</p>
+                    <p class="text-lg font-bold text-wabi-primary">${formatCurrency(totalIncome)}</p>
+                </div>
+            </div>
+            <div id="stats-income-legend" class="w-full flex-1 space-y-3"></div>
+        `;
+
+        const categoryData = Object.keys(incomeData).map(id => {
+            const category = this.categoryManager.getCategoryById('income', id);
+            return {
+                id: id,
+                name: category?.name || '其他',
+                value: incomeData[id],
+                color: category?.color || 'bg-gray-400'
+            };
+        }).sort((a, b) => b.value - a.value);
+
+        const labels = categoryData.map(c => c.name);
+        const values = categoryData.map(c => c.value);
+        const colors = categoryData.map(c => {
+            const colorClass = c.color;
+            const match = colorClass.match(/bg-(.*)-(\d+)/);
+            if (match) {
+                const colorName = match[1];
+                const colorMap = {
+                    slate: '#64748b', stone: '#78716c', red: '#ef4444', orange: '#f97316',
+                    amber: '#f59e0b', yellow: '#eab308', lime: '#84cc16', green: '#22c55e',
+                    emerald: '#10b981', teal: '#14b8a6', cyan: '#06b6d4', sky: '#0ea5e9',
+                    blue: '#3b82f6', indigo: '#6366f1', violet: '#8b5cf6', purple: '#a855f7',
+                };
+                return colorMap[colorName] || '#9ca3af';
+            }
+            return '#9ca3af';
+        });
+
+        const ctx = this.container.querySelector('#stats-income-donut-chart').getContext('2d');
+        this.charts.incomeDonut = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+
+        const legendContainer = this.container.querySelector('#stats-income-legend');
+        legendContainer.innerHTML = categoryData.map((cat, i) => `
+            <div class="flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="size-3 rounded-full" style="background-color: ${colors[i]};"></span>
+                    <span>${cat.name}</span>
+                </div>
+                <div class="font-medium">
+                    <span>${formatCurrency(cat.value)}</span>
+                    <span class="ml-2 text-xs text-wabi-text-secondary">${((cat.value / totalIncome) * 100).toFixed(0)}%</span>
+                </div>
+            </div>
+        `).join('');
     }
 
-    return dates
-  }
+    getChartTimeUnit(dateRange) {
+        const days = (new Date(dateRange.endDate) - new Date(dateRange.startDate)) / (1000 * 60 * 60 * 24);
+        if (days <= 14) return 'day';
+        if (days <= 90) return 'week';
+        return 'month';
+    }
 
-  // 清理圖表資源
-  destroy() {
-    Object.values(this.charts).forEach(chart => {
-      if (chart) chart.destroy()
-    })
-    this.charts = {}
-  }
+    showDateRangeModal() {
+        const today = new Date().toISOString().split('T')[0];
+        const modalHtml = `
+            <div id="date-range-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4" role="dialog" aria-modal="true">
+                <div class="bg-wabi-bg w-full max-w-sm rounded-2xl shadow-xl p-6">
+                    <h3 class="text-lg font-bold text-wabi-primary mb-4">自訂日期範圍</h3>
+                    
+                    <!-- Quick Select Buttons -->
+                    <div class="grid grid-cols-3 gap-2 mb-4">
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisWeek">本週</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="last7days">近7日</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisMonth">本月</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="lastMonth">上月</button>
+                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="thisYear">今年</button>
+                    </div>
+
+                    <!-- Date Inputs -->
+                    <div class="space-y-4">
+                        <div>
+                            <label for="custom-start-date" class="text-sm text-wabi-text-secondary">開始日期</label>
+                            <input type="date" id="custom-start-date" value="${this.filters.customStartDate || today}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                        </div>
+                        <div>
+                            <label for="custom-end-date" class="text-sm text-wabi-text-secondary">結束日期</label>
+                            <input type="date" id="custom-end-date" value="${this.filters.customEndDate || today}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-2 mt-6">
+                        <button id="apply-custom-date" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">確定</button>
+                        <button id="close-date-modal" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        this.modalsContainer.innerHTML = modalHtml;
+
+        const modal = this.modalsContainer.querySelector('#date-range-modal');
+        const startDateInput = modal.querySelector('#custom-start-date');
+        const endDateInput = modal.querySelector('#custom-end-date');
+
+        modal.querySelectorAll('.quick-date-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const { startDate, endDate } = getDateRange(button.dataset.range);
+                startDateInput.value = startDate;
+                endDateInput.value = endDate;
+            });
+        });
+
+        modal.querySelector('#apply-custom-date').addEventListener('click', () => {
+            const start = startDateInput.value;
+            const end = endDateInput.value;
+            if (start && end) {
+                this.filters.period = 'custom';
+                this.filters.customStartDate = start;
+                this.filters.customEndDate = end;
+                this.updatePeriodButtons();
+                this.loadStatisticsData();
+                this.modalsContainer.innerHTML = ''; // Close modal
+            }
+        });
+
+        modal.querySelector('#close-date-modal').addEventListener('click', () => {
+            this.modalsContainer.innerHTML = '';
+        });
+    }
+
+    destroy() {
+        Object.values(this.charts).forEach(chart => chart?.destroy());
+        this.charts = {};
+    }
 }

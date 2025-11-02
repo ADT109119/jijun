@@ -11,16 +11,23 @@
     "format": "prettier --write ."
   },
   "devDependencies": {
-    "vite": "^5.0.0",
+    "@vitejs/plugin-legacy": "^5.0.0",
     "eslint": "^8.57.0",
     "prettier": "^3.0.0",
-    "@vitejs/plugin-legacy": "^5.0.0"
+    "vite": "^5.0.0"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "date-fns": "^4.1.0",
     "idb": "^8.0.0"
   },
-  "keywords": ["記帳", "PWA", "網頁程式", "輕鬆記帳"],
+  "keywords": [
+    "記帳",
+    "PWA",
+    "網頁程式",
+    "輕鬆記帳"
+  ],
   "author": "ADT109119",
   "license": "MIT"
 }

@@ -318,11 +318,14 @@ class DataService {
   // 匯出所有資料
   async exportData() {
     try {
-      const records = await this.getRecords()
+      const records = await this.getRecords();
+      const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
+
       const exportData = {
-        version: '2.0.0',
+        version: '2.1.0', // New version to indicate categories are included
         exportDate: new Date().toISOString(),
         records: records,
+        customCategories: customCategories,
         metadata: {
           totalRecords: records.length,
           dateRange: {
@@ -332,7 +335,7 @@ class DataService {
         }
       }
 
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -359,15 +362,24 @@ class DataService {
           const data = JSON.parse(event.target.result)
           let records = []
 
-          // 檢查資料格式版本
-          if (data.version && data.version === '2.0.0') {
-            // 新版格式
+          // Handle custom categories first
+          if (data.customCategories) {
+            localStorage.setItem('customCategories', JSON.stringify(data.customCategories));
+            // Optionally, reload category manager if it's running
+            if (window.app && window.app.categoryManager) {
+              window.app.categoryManager.loadCustomCategories();
+            }
+          }
+
+          // Check data format version
+          if (data.version && (data.version === '2.1.0' || data.version === '2.0.0')) {
+            // New format
             records = data.records || []
           } else if (data.records && Array.isArray(data.records)) {
-            // 可能是舊版但已轉換的格式
+            // Possibly old but converted format
             records = data.records
           } else {
-            // 舊版格式，需要轉換
+            // Old format, needs conversion
             records = this.convertOldDataFormat(data)
           }
 

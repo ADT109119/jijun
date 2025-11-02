@@ -1,5 +1,17 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.0": {
+    date: "2025-11-02",
+    title: "介面重置",
+    features: [
+      "匯出/匯入功能增強，現在會完整包含自訂的分類"
+    ],
+    bugfixes: [
+    ],
+    improvements: [
+      "頁面重置，將整個介面重新設計以提升使用體驗",
+    ]
+  },
   "2.0.7.6": {
     date: "2025-08-24",
     title: "修復首頁支出分析圖中心金額不顯示的錯誤",
@@ -285,42 +297,42 @@ export class ChangelogManager {
     const { version, date, title, features = [], bugfixes = [], improvements = [], note } = versionInfo
     
     return `
-      <div class="mb-6 p-4 border rounded-lg ${isCurrentVersion ? 'border-primary bg-blue-50' : 'border-gray-200'}">
+      <div class="mb-6 p-4 border rounded-lg ${isCurrentVersion ? 'border-wabi-accent/50 bg-wabi-accent/10' : 'border-wabi-border bg-wabi-surface'}">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center space-x-2">
-            <h3 class="text-lg font-bold text-gray-800">v${version}</h3>
-            ${isCurrentVersion ? '<span class="px-2 py-1 text-xs bg-primary text-white rounded-full">目前版本</span>' : ''}
+            <h3 class="text-lg font-bold text-wabi-primary">v${version}</h3>
+            ${isCurrentVersion ? '<span class="px-2 py-1 text-xs bg-wabi-accent text-wabi-primary rounded-full">目前版本</span>' : ''}
           </div>
-          <span class="text-sm text-gray-500">${date}</span>
+          <span class="text-sm text-wabi-text-secondary">${date}</span>
         </div>
         
-        <h4 class="text-md font-semibold text-gray-700 mb-3">${title}</h4>
+        <h4 class="text-md font-semibold text-wabi-text-primary mb-3">${title}</h4>
         
-        ${note ? `<div class="mb-3 p-2 bg-yellow-100 border border-yellow-300 rounded text-sm text-yellow-800">${note}</div>` : ''}
+        ${note ? `<div class="mb-3 p-2 bg-yellow-100/50 border border-yellow-300/30 rounded text-sm text-yellow-800">${note}</div>` : ''}
         
         ${features.length > 0 ? `
           <div class="mb-3">
-            <h5 class="text-sm font-semibold text-green-600 mb-2">✨ 新功能</h5>
-            <ul class="text-sm text-gray-600 space-y-1">
-              ${features.map(feature => `<li class="flex items-start"><span class="text-green-500 mr-2">•</span>${feature}</li>`).join('')}
+            <h5 class="text-sm font-semibold text-wabi-income mb-2">✨ 新功能</h5>
+            <ul class="text-sm text-wabi-text-secondary space-y-1">
+              ${features.map(feature => `<li class="flex items-start"><span class="text-wabi-income mr-2">•</span>${feature}</li>`).join('')}
             </ul>
           </div>
         ` : ''}
         
         ${bugfixes.length > 0 ? `
           <div class="mb-3">
-            <h5 class="text-sm font-semibold text-red-600 mb-2">🐛 錯誤修復</h5>
-            <ul class="text-sm text-gray-600 space-y-1">
-              ${bugfixes.map(fix => `<li class="flex items-start"><span class="text-red-500 mr-2">•</span>${fix}</li>`).join('')}
+            <h5 class="text-sm font-semibold text-wabi-expense mb-2">🐛 錯誤修復</h5>
+            <ul class="text-sm text-wabi-text-secondary space-y-1">
+              ${bugfixes.map(fix => `<li class="flex items-start"><span class="text-wabi-expense mr-2">•</span>${fix}</li>`).join('')}
             </ul>
           </div>
         ` : ''}
         
         ${improvements.length > 0 ? `
           <div class="mb-3">
-            <h5 class="text-sm font-semibold text-blue-600 mb-2">🔧 改進優化</h5>
-            <ul class="text-sm text-gray-600 space-y-1">
-              ${improvements.map(improvement => `<li class="flex items-start"><span class="text-blue-500 mr-2">•</span>${improvement}</li>`).join('')}
+            <h5 class="text-sm font-semibold text-wabi-primary mb-2">🔧 改進優化</h5>
+            <ul class="text-sm text-wabi-text-secondary space-y-1">
+              ${improvements.map(improvement => `<li class="flex items-start"><span class="text-wabi-primary mr-2">•</span>${improvement}</li>`).join('')}
             </ul>
           </div>
         ` : ''}
@@ -389,10 +401,10 @@ export class ChangelogManager {
     const allVersions = this.getAllVersions()
     
     modal.innerHTML = `
-      <div class="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200">
-          <h3 class="text-xl font-semibold text-gray-800">版本更新日誌</h3>
-          <button id="close-changelog-btn" class="text-gray-500 hover:text-gray-700">
+      <div class="bg-wabi-bg rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
+        <div class="flex items-center justify-between p-4 border-b border-wabi-border">
+          <h3 class="text-xl font-semibold text-wabi-primary">版本更新日誌</h3>
+          <button id="close-changelog-btn" class="text-wabi-text-secondary hover:text-wabi-primary">
             <i class="fas fa-times text-xl"></i>
           </button>
         </div>
@@ -403,8 +415,8 @@ export class ChangelogManager {
           ).join('')}
         </div>
         
-        <div class="p-4 border-t border-gray-200 text-center">
-          <p class="text-sm text-gray-500">感謝您使用輕鬆記帳！</p>
+        <div class="p-4 border-t border-wabi-border text-center">
+          <p class="text-sm text-wabi-text-secondary">感謝您使用輕鬆記帳！</p>
         </div>
       </div>
     `
