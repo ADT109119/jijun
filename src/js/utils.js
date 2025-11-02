@@ -65,50 +65,41 @@ export function formatDate(date, format = 'short') {
  * @param {number} duration - 顯示時間（毫秒）
  */
 export function showToast(message, type = 'info', duration = 3000) {
-  // 移除現有的 toast
-  const existingToast = document.getElementById('success-toast')
-  if (existingToast) {
-    existingToast.remove()
-  }
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
 
-  // 創建新的 toast
-  const toast = document.createElement('div')
-  toast.id = 'success-toast'
-  toast.className = `fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg transition-opacity duration-300 z-50`
-  
-  // 根據類型設置樣式
-  switch (type) {
-    case 'success':
-      toast.classList.add('bg-green-500', 'text-white')
-      break
-    case 'error':
-      toast.classList.add('bg-red-500', 'text-white')
-      break
-    case 'info':
-    default:
-      toast.classList.add('bg-blue-500', 'text-white')
-      break
-  }
-  
-  toast.textContent = message
-  document.body.appendChild(toast)
+    if (!toast || !toastMessage) {
+        console.error('Toast elements not found in the DOM.');
+        return;
+    }
 
-  // 顯示動畫
-  setTimeout(() => {
-    toast.classList.remove('opacity-0')
-    toast.classList.add('opacity-100', 'success-show')
-  }, 10)
+    // Set message
+    toastMessage.textContent = message;
 
-  // 自動隱藏
-  setTimeout(() => {
-    toast.classList.remove('opacity-100')
-    toast.classList.add('opacity-0')
+    // Reset classes
+    toast.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'bg-wabi-primary', 'toast-hide');
+
+    // Apply new classes based on type
+    switch (type) {
+        case 'success':
+            toast.classList.add('bg-wabi-income');
+            break;
+        case 'error':
+            toast.classList.add('bg-wabi-expense');
+            break;
+        case 'info':
+        default:
+            toast.classList.add('bg-wabi-primary');
+            break;
+    }
+
+    // Show toast
+    toast.classList.add('toast-show');
+
+    // Hide after duration
     setTimeout(() => {
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast)
-      }
-    }, 300)
-  }, duration)
+        toast.classList.replace('toast-show', 'toast-hide');
+    }, duration);
 }
 
 /**

@@ -1,61 +1,99 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>輕鬆記帳 2.0</title>
-  
-  <meta name="description" content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。">
-  <meta name="keywords" content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本">
-  <meta name="author" content="ADT109119">
-  
-  <link rel="manifest" href="/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="theme-color" content="#00A7E5">
-  
-  <link rel="apple-touch-icon" sizes="192x192" href="icon/icon.png" />
-  <link rel="shortcut icon" href="icon/favicon.ico">
-  
-  <!-- Tailwind CSS CDN for development -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: '#00A7E5',
-            secondary: '#FFD700',
-            accent: '#FF6B6B'
-          }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>輕鬆記帳 2.0</title>
+    
+    <meta name="description" content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。">
+    <meta name="keywords" content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本">
+    <meta name="author" content="ADT109119">
+
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#F5F5F3">
+
+    <link rel="apple-touch-icon" sizes="192x192" href="icon/icon.png">
+    <link rel="shortcut icon" href="icon/favicon.ico">
+
+    <!-- Tailwind CSS & Fonts -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome 6 CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+    <!-- IDB CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
+
+    <link rel="stylesheet" href="src/css/main.css">
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "wabi-bg": "#F5F5F3",
+                        "wabi-primary": "#334A52",
+                        "wabi-expense": "#B95A5A",
+                        "wabi-income": "#6A9C89",
+                        "wabi-accent": "#E2B67A",
+                        "wabi-text-primary": "#2D3748",
+                        "wabi-text-secondary": "#718096",
+                        "wabi-surface": "#FFFFFF",
+                        "wabi-border": "#E2E8F0",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "Noto Sans TC", "sans-serif"]
+                    },
+                },
+            },
         }
-      }
-    }
-  </script>
-  
-  <!-- Font Awesome 6 CDN -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  
-  <!-- IDB CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
-  
-  <link rel="stylesheet" href="src/css/main.css">
+    </script>
 </head>
 
-<body class="min-h-screen">
-  <div id="app">
-    <!-- 載入中畫面 -->
-    <div class="flex items-center justify-center min-h-screen">
-      <div class="text-center">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p class="text-gray-600">載入中...</p>
-      </div>
+<body class="font-display bg-wabi-bg text-wabi-text-primary">
+    <div id="app-container" class="relative min-h-screen w-full">
+        <!-- Pages will be injected here -->
     </div>
-  </div>
 
-  <script type="module" src="src/js/main.js"></script>
+    <!-- Bottom Navigation Bar -->
+    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center">
+        <a href="#home" data-page="home" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
+            <i class="fa-solid fa-house text-xl"></i>
+            <span class="text-xs mt-1">首頁</span>
+        </a>
+        <a href="#records" data-page="records" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
+            <i class="fa-solid fa-list-ul text-xl"></i>
+            <span class="text-xs mt-1">明細</span>
+        </a>
+        <a href="#add" data-page="add" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
+            <div class="flex items-center justify-center w-14 h-14 rounded-full bg-wabi-accent text-wabi-primary shadow-lg -mt-8">
+                <i class="fa-solid fa-plus text-2xl"></i>
+            </div>
+        </a>
+        <a href="#stats" data-page="stats" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
+            <i class="fa-solid fa-chart-pie text-xl"></i>
+            <span class="text-xs mt-1">統計</span>
+        </a>
+        <a href="#settings" data-page="settings" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
+            <i class="fa-solid fa-gear text-xl"></i>
+            <span class="text-xs mt-1">設定</span>
+        </a>
+    </nav>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-wabi-primary text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-all duration-300 z-50">
+        <span id="toast-message"></span>
+    </div>
+
+    <script type="module" src="src/js/main.js"></script>
 </body>
 </html>

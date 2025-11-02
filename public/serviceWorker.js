@@ -1,6 +1,6 @@
 // 現代化 Service Worker
 // 使用統一的版本號和快取名稱
-const APP_VERSION = '2.0.7.6' // 備用版本號
+const APP_VERSION = '2.1.0' // 備用版本號
 const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
 const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
 const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
@@ -19,9 +19,9 @@ const urlsToCache = [
 
 // 需要網路優先的檔案（經常變動）
 const networkFirstUrls = [
-  '/src/js/',
-  '/src/css/',
-  '/api/'
+  // '/src/js/',
+  // '/src/css/',
+  // '/api/'
 ]
 
 // 快取優先的檔案（靜態資源）
