@@ -255,14 +255,16 @@ export function getDateRange(period) {
 }
 
 /**
- * 計算兩個日期之間的天數
- * @param {string|Date} startDate - 開始日期
- * @param {string|Date} endDate - 結束日期
- * @returns {number} 天數差
+ * 獲取指定年月的日期範圍
+ * @param {number} year - 年份
+ * @param {number} monthIndex - 月份 (0-11)
+ * @returns {object} 包含 startDate 和 endDate 的對象
  */
-export function daysBetween(startDate, endDate) {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  const diffTime = Math.abs(end - start)
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+export function getMonthRange(year, monthIndex) {
+  const startOfMonth = new Date(year, monthIndex, 1);
+  const endOfMonth = new Date(year, monthIndex + 1, 0);
+  return {
+    startDate: formatDateToString(startOfMonth),
+    endDate: formatDateToString(endOfMonth)
+  };
 }
