@@ -1,6 +1,6 @@
 import DataService from './dataService.js';
 import { getCategoryName, getCategoryIcon } from './categories.js';
-import { formatCurrency, formatDate, showToast, getDateRange } from './utils.js';
+import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange } from './utils.js';
 import { StatisticsManager } from './statistics.js';
 import { RecordsListManager } from './recordsList.js';
 import { BudgetManager } from './budgetManager.js';
@@ -85,7 +85,10 @@ class EasyAccountingApp {
             <div class="page active p-4 pb-24">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
-                    <select id="home-month-selector" class="text-2xl font-bold text-wabi-primary bg-transparent border-0 focus:ring-0"></select>
+                    <button id="home-month-selector-btn" class="text-2xl font-bold text-wabi-primary bg-transparent border-0 focus:ring-0 flex items-center gap-2">
+                        <span id="home-month-display"></span>
+                        <i class="fa-solid fa-chevron-down text-base"></i>
+                    </button>
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
                         <i class="fa-solid fa-gear text-xl"></i>
                     </a>
@@ -133,14 +136,16 @@ class EasyAccountingApp {
                     <h1 class="text-wabi-primary text-xl font-bold text-center flex-1">記帳紀錄</h1>
                 </div>
 
-                <!-- Period & Type Filters -->
+                <!-- Period Filter (Date Filter) - New Row -->
+                <div id="records-period-filter" class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-4">
+                    <button data-period="week" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">週</button>
+                    <button data-period="month" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">月</button>
+                    <button data-period="year" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">年</button>
+                    <button data-period="custom" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">自訂</button>
+                </div>
+
+                <!-- Type & Category Filters -->
                 <div class="flex gap-2 py-2 overflow-x-auto">
-                    <div id="records-period-filter" class="flex items-center justify-center rounded-lg bg-gray-200/50 p-1">
-                        <button data-period="week" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">週</button>
-                        <button data-period="month" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">月</button>
-                        <button data-period="year" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">年</button>
-                        <button data-period="custom" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">自訂</button>
-                    </div>
                     <div id="records-type-filter" class="flex items-center justify-center rounded-lg bg-gray-200/50 p-1">
                         <button data-type="all" class="type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">全部</button>
                         <button data-type="expense" class="type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">支出</button>
@@ -219,7 +224,7 @@ class EasyAccountingApp {
                 <div class="flex items-center px-4 py-2 gap-2">
                     <label class="relative flex items-center gap-2 p-2 rounded-lg bg-white/50">
                         <i class="fa-solid fa-calendar-days text-wabi-text-secondary"></i>
-                        <span id="add-date-display" class="text-sm font-medium">${formatDate(new Date().toISOString().split('T')[0], 'short')}</span>
+                        <span id="add-date-display" class="text-sm font-medium">${formatDate(formatDateToString(new Date()), 'short')}</span>
                         <input type="date" id="add-date-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
                     </label>
                     <input id="add-note-input" class="w-full rounded-lg border-gray-300 bg-white/80 placeholder:text-wabi-text-secondary focus:border-wabi-primary focus:ring-wabi-primary" placeholder="新增備註" type="text"/>
@@ -280,29 +285,27 @@ class EasyAccountingApp {
     // --- Page Loaders & Setup ---
 
     async populateHomeMonthFilter() {
-        const monthSelector = document.getElementById('home-month-selector');
-        if (!monthSelector) return;
-
         const allRecords = await this.dataService.getRecords();
         const months = [...new Set(allRecords.map(r => r.date.slice(0, 7)))].sort().reverse();
         
-        const currentMonth = new Date().toISOString().slice(0, 7);
+        const currentMonth = formatDateToString(new Date()).slice(0, 7);
         if (!months.includes(currentMonth)) {
             months.unshift(currentMonth);
         }
 
-        monthSelector.innerHTML = months.map(month => `<option value="${month}">${month.replace('-', ' / ')}</option>`).join('');
-        monthSelector.value = currentMonth;
+        // Update the display for the new button
+        const monthDisplay = document.getElementById('home-month-display');
+        if (monthDisplay) {
+            monthDisplay.textContent = currentMonth.replace('-', ' / ');
+        }
     }
 
-    async loadHomePageData() {
-        const monthSelector = document.getElementById('home-month-selector');
-        const selectedMonth = monthSelector ? monthSelector.value : new Date().toISOString().slice(0, 7);
+    async loadHomePageData(selectedMonthString = null) {
+        const selectedMonth = selectedMonthString || document.getElementById('home-month-display').textContent.replace(' / ', '-');
 
         const year = parseInt(selectedMonth.split('-')[0]);
         const month = parseInt(selectedMonth.split('-')[1]) - 1;
-        const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-        const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        const { startDate, endDate } = getMonthRange(year, month);
 
         const stats = await this.dataService.getStatistics(startDate, endDate);
         const allRecords = await this.dataService.getRecords();
@@ -365,10 +368,85 @@ class EasyAccountingApp {
     }
 
     setupHomePageEventListeners() {
-        const monthSelector = document.getElementById('home-month-selector');
-        if (monthSelector) {
-            monthSelector.addEventListener('change', () => this.loadHomePageData());
+        const monthSelectorBtn = document.getElementById('home-month-selector-btn');
+        if (monthSelectorBtn) {
+            monthSelectorBtn.addEventListener('click', () => {
+                const currentMonthDisplay = document.getElementById('home-month-display').textContent;
+                const [year, month] = currentMonthDisplay.split(' / ').map(Number);
+                this.showMonthYearPickerModal(year, month - 1); // monthIndex is 0-indexed
+            });
         }
+    }
+
+    showMonthYearPickerModal(initialYear, initialMonthIndex) {
+        const modal = document.createElement('div');
+        modal.id = 'month-year-picker-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+        let selectedYear = initialYear;
+        let selectedMonth = initialMonthIndex + 1; // 1-indexed month
+
+        const renderModalContent = () => {
+            modal.innerHTML = `
+                <div class="bg-wabi-bg rounded-lg max-w-xs w-full p-6">
+                    <h3 class="text-lg font-semibold mb-4 text-wabi-primary text-center">選擇月份</h3>
+                    <!-- Year Navigation -->
+                    <div class="flex items-center justify-between mb-6">
+                        <button id="prev-year" class="p-2 rounded-full hover:bg-gray-200/50 text-wabi-primary">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <span id="current-year" class="text-xl font-bold text-wabi-primary">${selectedYear}年</span>
+                        <button id="next-year" class="p-2 rounded-full hover:bg-gray-200/50 text-wabi-primary">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <!-- Month Grid -->
+                    <div id="month-grid" class="grid grid-cols-3 gap-3 mb-6">
+                        ${Array.from({ length: 12 }, (_, i) => {
+                            const monthNum = i + 1;
+                            const isActive = monthNum === selectedMonth ? 'bg-wabi-accent text-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary';
+                            return `<button data-month="${monthNum}" class="month-btn p-3 rounded-lg font-medium ${isActive}">${monthNum}月</button>`;
+                        }).join('')}
+                    </div>
+                    <div class="flex justify-end">
+                        <button id="cancel-month-year" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
+                    </div>
+                </div>
+            `;
+
+            // Attach event listeners after rendering content
+            modal.querySelector('#prev-year').addEventListener('click', () => {
+                selectedYear--;
+                renderModalContent();
+            });
+            modal.querySelector('#next-year').addEventListener('click', () => {
+                selectedYear++;
+                renderModalContent();
+            });
+            modal.querySelectorAll('.month-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    selectedMonth = parseInt(e.target.dataset.month);
+                    const newMonthString = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+                    
+                    // Update the display and reload data
+                    document.getElementById('home-month-display').textContent = newMonthString.replace('-', ' / ');
+                    this.loadHomePageData(newMonthString); // Pass the selected month string
+                    modal.remove();
+                });
+            });
+            modal.querySelector('#cancel-month-year').addEventListener('click', () => {
+                modal.remove();
+            });
+        };
+
+        renderModalContent(); // Initial render
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
     }
 
     setupSettingsPageListeners() {
@@ -420,7 +498,7 @@ class EasyAccountingApp {
         let currentType = 'expense';
         let currentAmount = '0';
         let selectedCategory = null;
-        let currentDate = new Date().toISOString().split('T')[0];
+        let currentDate = formatDateToString(new Date());
         let keypadGridOpen = true; // Keypad grid is open by default
 
         const amountDisplay = document.getElementById('add-amount-display');
