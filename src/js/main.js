@@ -20,6 +20,7 @@ class EasyAccountingApp {
 
         this.currentHash = null;
         this.currentChart = null;
+        this.deferredInstallPrompt = null;
 
         this.init();
     }
@@ -29,6 +30,26 @@ class EasyAccountingApp {
         this.setupEventListeners();
         this.handleRouteChange();
         this.registerServiceWorker();
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent the mini-infobar from appearing on mobile
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            this.deferredInstallPrompt = e;
+            // Update UI to notify the user they can install the PWA
+            const installBtnContainer = document.getElementById('install-pwa-btn-container');
+            if (installBtnContainer) {
+                installBtnContainer.classList.remove('hidden');
+            }
+        });
+
+        // Hide install button if already in standalone mode
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            const installBtnContainer = document.getElementById('install-pwa-btn-container');
+            if (installBtnContainer) {
+                installBtnContainer.classList.add('hidden');
+            }
+        }
     }
 
     setupEventListeners() {
@@ -262,6 +283,15 @@ class EasyAccountingApp {
                     <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">設定</h2>
                 </div>
                 <div class="p-4 space-y-6">
+                    <div class="bg-wabi-surface rounded-xl">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">應用程式</h3>
+                        ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn')}
+                        ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
+                        <div id="install-pwa-btn-container" class="hidden">
+                            ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
+                        </div>
+                    </div>
+
                     <!-- Data Management -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">資料管理</h3>
@@ -495,6 +525,39 @@ class EasyAccountingApp {
 
         document.getElementById('check-update-btn').addEventListener('click', () => this.checkForUpdates());
         document.getElementById('changelog-btn').addEventListener('click', () => this.changelogManager.showChangelogModal());
+
+        // New Listeners
+        document.getElementById('force-update-btn').addEventListener('click', () => this.forceUpdate());
+
+        const installBtn = document.getElementById('install-pwa-btn');
+        if (installBtn) {
+            installBtn.addEventListener('click', async () => {
+                if (this.deferredInstallPrompt) {
+                    this.deferredInstallPrompt.prompt();
+                    const { outcome } = await this.deferredInstallPrompt.userChoice;
+                    console.log(`User response to the install prompt: ${outcome}`);
+                    this.deferredInstallPrompt = null;
+                    document.getElementById('install-pwa-btn-container').classList.add('hidden');
+                }
+            });
+        }
+
+        const shareBtn = document.getElementById('share-app-btn');
+        if (shareBtn) {
+            shareBtn.addEventListener('click', () => {
+                if (navigator.share) {
+                    navigator.share({
+                        title: '輕鬆記帳',
+                        text: '快來試試這款簡單好用的記帳 App！',
+                        url: window.location.origin,
+                    })
+                    .then(() => console.log('Successful share'))
+                    .catch((error) => console.log('Error sharing', error));
+                } else {
+                    showToast('您的瀏覽器不支援分享功能', 'warning');
+                }
+            });
+        }
 
         const versionInfo = document.getElementById('version-info');
         if (versionInfo) {
@@ -739,6 +802,20 @@ class EasyAccountingApp {
             this.showUpdateAvailable(registration);
         } else {
             showToast('已是最新版本！', 'success');
+        }
+    }
+
+    async forceUpdate() {
+        if (confirm('確定要強制更新嗎？這將會清除所有快取資料並重新載入 App。')) {
+            showToast('強制更新中...');
+            try {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(key => caches.delete(key)));
+                window.location.reload(true);
+            } catch (error) {
+                console.error('強制更新失敗:', error);
+                showToast('強制更新失敗', 'error');
+            }
         }
     }
 

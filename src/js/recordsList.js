@@ -1,4 +1,5 @@
 import { formatCurrency, formatDate, getDateRange } from './utils.js';
+import { createDateRangeModal } from './datePickerModal.js';
 
 export class RecordsListManager {
     constructor(dataService, categoryManager, container) {
@@ -231,70 +232,17 @@ export class RecordsListManager {
     }
 
     showDateRangeModal() {
-        const today = new Date().toISOString().split('T')[0];
-        const modalHtml = `
-            <div id="date-range-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4" role="dialog" aria-modal="true">
-                <div class="bg-wabi-bg w-full max-w-sm rounded-2xl shadow-xl p-6">
-                    <h3 class="text-lg font-bold text-wabi-primary mb-4">自訂日期範圍</h3>
-                    
-                    <!-- Quick Select Buttons -->
-                    <div class="grid grid-cols-3 gap-2 mb-4">
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="week">本週</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="last7days">近7日</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="month">本月</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="lastmonth">上月</button>
-                        <button class="quick-date-btn text-sm p-2 rounded-lg bg-wabi-surface border border-wabi-border" data-range="year">今年</button>
-                    </div>
-
-                    <!-- Date Inputs -->
-                    <div class="space-y-4">
-                        <div>
-                            <label for="custom-start-date" class="text-sm text-wabi-text-secondary">開始日期</label>
-                            <input type="date" id="custom-start-date" value="${this.filters.customStartDate || today}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
-                        </div>
-                        <div>
-                            <label for="custom-end-date" class="text-sm text-wabi-text-secondary">結束日期</label>
-                            <input type="date" id="custom-end-date" value="${this.filters.customEndDate || today}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
-                        </div>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div class="flex gap-2 mt-6">
-                        <button id="apply-custom-date" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">確定</button>
-                        <button id="close-date-modal" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        this.modalsContainer.innerHTML = modalHtml;
-
-        const modal = this.modalsContainer.querySelector('#date-range-modal');
-        const startDateInput = modal.querySelector('#custom-start-date');
-        const endDateInput = modal.querySelector('#custom-end-date');
-
-        modal.querySelectorAll('.quick-date-btn').forEach(button => {
-            button.addEventListener('click', () => {
-                const { startDate, endDate } = getDateRange(button.dataset.range);
-                startDateInput.value = startDate;
-                endDateInput.value = endDate;
-            });
-        });
-
-        modal.querySelector('#apply-custom-date').addEventListener('click', () => {
-            const start = startDateInput.value;
-            const end = endDateInput.value;
-            if (start && end) {
+        const modal = createDateRangeModal({
+            initialStartDate: this.filters.customStartDate,
+            initialEndDate: this.filters.customEndDate,
+            onApply: (start, end) => {
                 this.filters.period = 'custom';
                 this.filters.customStartDate = start;
                 this.filters.customEndDate = end;
                 this.updatePeriodButtons();
                 this.loadAndRenderRecords();
-                this.modalsContainer.innerHTML = ''; // Close modal
             }
         });
-
-        modal.querySelector('#close-date-modal').addEventListener('click', () => {
-            this.modalsContainer.innerHTML = '';
-        });
+        this.modalsContainer.appendChild(modal);
     }
 }
