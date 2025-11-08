@@ -137,3 +137,8 @@ body {
     z-index: 1;
     opacity: 0.5;
 }
+
+/* 記帳小鍵盤 */
+#account-selector-container:empty {
+    display: none;
+}
