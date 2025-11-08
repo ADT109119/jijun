@@ -1421,7 +1421,7 @@ class EasyAccountingApp {
                 accountSelectorContainer.innerHTML = `
                     <label class="text-sm text-wabi-text-secondary">帳戶</label>
                     <button id="account-selector-btn" class="w-full flex items-center justify-between bg-wabi-surface py-1 px-2 mt-1 rounded-lg border border-wabi-border">
-                        <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-3 truncate">
                             <i class="${selectedAccount.icon} text-lg"></i>
                             <span class="font-medium">${selectedAccount.name}</span>
                         </div>
