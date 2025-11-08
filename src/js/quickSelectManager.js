@@ -128,8 +128,8 @@ export class QuickSelectManager {
         
         container.classList.remove('hidden');
         container.innerHTML = `
-            <div class="px-4 py-2">
-                <p class="text-xs text-wabi-text-secondary mb-2">最近紀錄</p>
+            <div class="px-2">
+                <label class="text-sm text-wabi-text-secondary">最近紀錄</label>
                 <div class="flex gap-2 overflow-x-auto pb-2">
                     ${quickSelects.map(record => {
                         const category = categoryManager.getCategoryById(record.type, record.categoryId);
@@ -138,7 +138,7 @@ export class QuickSelectManager {
                         const descriptionText = record.description ? record.description : category.name;
 
                         return `
-                            <button class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 text-sm"
+                            <button class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 mt-1 text-sm"
                                 data-type="${record.type}"
                                 data-category-id="${record.categoryId}"
                                 data-description="${record.description}"

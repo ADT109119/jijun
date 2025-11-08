@@ -307,11 +307,11 @@ class EasyAccountingApp {
             </div>
             <!-- Note, Date, and Keypad -->
             <div id="keypad-container" class="fixed bottom-20 left-0 right-0 bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
-                <!-- Quick Select Container -->
-                <div id="quick-select-container" class="hidden"></div>
-
-                <!-- Account Selector (Advanced Mode Only) -->
-                <div id="account-selector-container" class="px-4 pt-2"></div>
+                <!-- Account Selector & Quick Select Container -->
+                <div class="flex items-start px-4 pt-2 gap-2">
+                    <div id="account-selector-container" class="w-1/4 shrink-0"></div>
+                    <div id="quick-select-container" class="w-3/4 grow hidden"></div>
+                </div>
 
                 <div class="flex items-center px-4 py-2 gap-2">
                     <label class="relative flex items-center gap-2 p-2 rounded-lg bg-white/50">
@@ -1420,7 +1420,7 @@ class EasyAccountingApp {
             if (selectedAccount) {
                 accountSelectorContainer.innerHTML = `
                     <label class="text-sm text-wabi-text-secondary">帳戶</label>
-                    <button id="account-selector-btn" class="w-full flex items-center justify-between bg-wabi-surface p-3 mt-1 rounded-lg border border-wabi-border">
+                    <button id="account-selector-btn" class="w-full flex items-center justify-between bg-wabi-surface py-1 px-2 mt-1 rounded-lg border border-wabi-border">
                         <div class="flex items-center gap-3">
                             <i class="${selectedAccount.icon} text-lg"></i>
                             <span class="font-medium">${selectedAccount.name}</span>
