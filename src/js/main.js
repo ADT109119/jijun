@@ -6,6 +6,7 @@ import { RecordsListManager } from './recordsList.js';
 import { BudgetManager } from './budgetManager.js';
 import { CategoryManager } from './categoryManager.js';
 import { ChangelogManager } from './changelog.js';
+import { QuickSelectManager } from './quickSelectManager.js';
 
 class EasyAccountingApp {
     constructor() {
@@ -13,6 +14,7 @@ class EasyAccountingApp {
         this.categoryManager = new CategoryManager();
         this.changelogManager = new ChangelogManager();
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
+        this.quickSelectManager = new QuickSelectManager();
 
         this.appContainer = document.getElementById('app-container');
         this.navItems = document.querySelectorAll('.nav-item');
@@ -305,6 +307,9 @@ class EasyAccountingApp {
             </div>
             <!-- Note, Date, and Keypad -->
             <div id="keypad-container" class="fixed bottom-20 left-0 right-0 bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
+                <!-- Quick Select Container -->
+                <div id="quick-select-container" class="hidden"></div>
+
                 <!-- Account Selector (Advanced Mode Only) -->
                 <div id="account-selector-container" class="px-4 pt-2"></div>
 
@@ -320,7 +325,7 @@ class EasyAccountingApp {
                     </button>
                 </div>
                 <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-gray-200/80">
-                    ${['1', '2', '3', 'backspace', '4', '5', '6', 'save', '7', '8', '9', 'done', '.', '0', '00', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
+                    ${['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
                 </div>
             </div>
         `;
@@ -439,7 +444,7 @@ class EasyAccountingApp {
         const month = parseInt(selectedMonth.split('-')[1]) - 1;
         const { startDate, endDate } = getMonthRange(year, month);
 
-        const stats = await this.dataService.getStatistics(startDate, endDate, null);
+        const stats = await this.dataService.getStatistics(startDate, endDate, null, true); // Exclude transfers from totals
         
         let allRecords = await this.dataService.getRecords();
         const recentRecords = allRecords.slice(0, 5);
@@ -459,10 +464,18 @@ class EasyAccountingApp {
         } else {
             container.innerHTML = recentRecords.map(record => {
                 const isIncome = record.type === 'income';
-                const category = this.categoryManager.getCategoryById(record.type, record.category);
-                const icon = category?.icon || 'fa-solid fa-question';
-                const name = category?.name || '未分類';
-                const color = category?.color || 'bg-gray-400';
+                let icon, name, color;
+
+                if (record.category === 'transfer') {
+                    icon = 'fa-solid fa-money-bill-transfer';
+                    name = '帳戶間轉帳';
+                    color = 'bg-gray-400';
+                } else {
+                    const category = this.categoryManager.getCategoryById(record.type, record.category);
+                    icon = category?.icon || 'fa-solid fa-question';
+                    name = category?.name || '未分類';
+                    color = category?.color || 'bg-gray-400';
+                }
 
                 return `
                     <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
@@ -1395,6 +1408,7 @@ class EasyAccountingApp {
         const keypadToggleBtn = document.getElementById('keypad-toggle-btn');
         const expenseBtn = document.getElementById('add-type-expense');
         const incomeBtn = document.getElementById('add-type-income');
+        const quickSelectContainer = document.getElementById('quick-select-container');
 
         // --- Account Selector Logic ---
         const accountSelectorContainer = document.getElementById('account-selector-container');
@@ -1420,6 +1434,10 @@ class EasyAccountingApp {
                         updateAccountSelectorUI();
                     });
                 });
+            } else if (accounts.length > 0) {
+                // If no account is selected (e.g. from a quick select without one), default to the first
+                selectedAccountId = accounts[0].id;
+                updateAccountSelectorUI();
             }
         };
 
@@ -1428,7 +1446,6 @@ class EasyAccountingApp {
             if (accounts.length > 0) {
                 selectedAccountId = accounts[0].id; // Default to first account
             } else {
-                // Handle case with no accounts: show a message and disable saving
                 accountSelectorContainer.innerHTML = `<p class="text-center text-red-500">請先至「設定」頁面建立一個帳戶</p>`;
             }
         }
@@ -1445,7 +1462,6 @@ class EasyAccountingApp {
             keypadGridOpen = shouldOpen;
         };
 
-        // Show the whole keypad container bar
         keypadContainer.classList.remove('translate-y-full');
 
         const updateTypeUI = () => {
@@ -1517,6 +1533,8 @@ class EasyAccountingApp {
                 if (!currentAmount.includes('.')) currentAmount += '.';
             } else if (key === 'backspace') {
                 currentAmount = currentAmount.slice(0, -1) || '0';
+            } else if (key === 'ac') {
+                currentAmount = '0';
             } else if (key === 'done') {
                 toggleKeypadGrid(false);
             } else if (key === 'save') {
@@ -1531,19 +1549,19 @@ class EasyAccountingApp {
                         category: selectedCategory,
                         amount: amount,
                         description: noteInput.value,
-                        date: currentDate
+                        date: currentDate,
+                        accountId: advancedModeEnabled ? selectedAccountId : null
                     };
-                    if (advancedModeEnabled) {
-                        recordData.accountId = selectedAccountId;
-                    }
+
                     if (isEditMode) {
                         await this.dataService.updateRecord(parseInt(recordId, 10), recordData);
                         showToast('更新成功！');
                     } else {
                         await this.dataService.addRecord(recordData);
+                        this.quickSelectManager.addRecord(recordData.type, recordData.category, recordData.description, recordData.accountId);
                         showToast('儲存成功！');
                     }
-                    window.location.hash = 'records'; // Go to records page after save/update
+                    window.location.hash = 'records';
                 } else {
                     showToast('請輸入金額並選擇分類', 'error');
                 }
@@ -1564,25 +1582,39 @@ class EasyAccountingApp {
                 if (advancedModeEnabled) {
                     selectedAccountId = recordToEdit.accountId;
                 }
-
                 amountDisplay.textContent = formatCurrency(currentAmount);
                 dateDisplay.textContent = formatDate(currentDate, 'short');
                 dateInput.value = currentDate;
             }
         }
 
-        // --- Event Listeners ---
-        keypadToggleBtn.addEventListener('click', () => toggleKeypadGrid());
+        const handleQuickSelect = (type, categoryId, description, accountId) => {
+            if (isEditMode) return;
 
+            currentType = type;
+            selectedCategory = categoryId;
+            noteInput.value = description;
+            
+            if (advancedModeEnabled && accountId !== null) {
+                selectedAccountId = accountId;
+                updateAccountSelectorUI();
+            }
+
+            updateTypeUI();
+        };
+
+        if (!isEditMode) {
+            this.quickSelectManager.render(quickSelectContainer, handleQuickSelect, this.categoryManager, advancedModeEnabled);
+        }
+
+        keypadToggleBtn.addEventListener('click', () => toggleKeypadGrid());
         dateInput.addEventListener('change', (e) => {
             currentDate = e.target.value;
             dateDisplay.textContent = formatDate(currentDate, 'short');
         });
-
         document.querySelectorAll('.keypad-btn').forEach(btn => {
             btn.addEventListener('click', () => handleKeypad(btn.dataset.key));
         });
-
         expenseBtn.addEventListener('click', () => { if (!isEditMode) { currentType = 'expense'; updateTypeUI(); } });
         incomeBtn.addEventListener('click', () => { if (!isEditMode) { currentType = 'income'; updateTypeUI(); } });
 
@@ -1596,28 +1628,27 @@ class EasyAccountingApp {
             });
         }
 
-        // Initial State
         updateTypeUI();
-        updateAccountSelectorUI(); // New call
-        toggleKeypadGrid(true); // Open by default
+        updateAccountSelectorUI();
+        toggleKeypadGrid(true);
     }
 
     createKeypadButton(key, isEditMode = false) {
         let content = key;
+        if (key === 'ac') content = 'AC';
         if (key === 'backspace') content = '<i class="fa-solid fa-delete-left"></i>';
-        if (key === 'done') content = '<i class="fa-solid fa-check"></i>';
         if (key === 'save') content = isEditMode ? '<span class="font-bold">更新</span>' : '<span class="font-bold">儲存</span>';
 
         const specialClasses = {
             'save': 'row-span-2 bg-wabi-accent text-wabi-primary',
-            'done': 'bg-gray-300/80',
+            'ac': 'bg-gray-300/80',
             '': 'bg-transparent'
         }[key] || '';
 
         if (key === '') return `<div class="${specialClasses}"></div>`;
 
         return `
-            <button data-key="${key}" class="keypad-btn text-2xl py-4 text-center rounded-none transition-colors duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
+            <button data-key="${key}" class="keypad-btn text-xl py-3 text-center rounded-none transition-colors duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
                 ${content}
             </button>
         `;

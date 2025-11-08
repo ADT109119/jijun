@@ -107,22 +107,59 @@ export class RecordsListManager {
     }
 
     applyFiltersAndRender() {
-        let filteredRecords = this.records;
-
-        if (this.filters.type !== 'all') {
-            filteredRecords = filteredRecords.filter(r => r.type === this.filters.type);
-        }
+        // 1. Apply all filters EXCEPT type to the master list for the period
+        let baseFilteredRecords = this.records;
 
         if (this.filters.categories.size > 0) {
-            filteredRecords = filteredRecords.filter(r => this.filters.categories.has(r.category));
+            baseFilteredRecords = baseFilteredRecords.filter(r => this.filters.categories.has(r.category));
         }
 
         if (this.advancedModeEnabled && this.filters.accounts.size > 0) {
-            filteredRecords = filteredRecords.filter(r => this.filters.accounts.has(String(r.accountId)));
+            baseFilteredRecords = baseFilteredRecords.filter(r => this.filters.accounts.has(String(r.accountId)));
         }
 
-        this.renderRecords(filteredRecords);
-        this.updateSummary(filteredRecords);
+        // 2. Perform transfer offsetting on this base list to get records for summary calculation
+        const transferRecords = baseFilteredRecords.filter(r => r.category === 'transfer');
+        const normalRecords = baseFilteredRecords.filter(r => r.category !== 'transfer');
+        const excludedTransferIds = new Set();
+
+        if (transferRecords.length > 1) {
+            const expenseTransfers = transferRecords.filter(r => r.type === 'expense');
+            const incomeTransfers = [...transferRecords.filter(r => r.type === 'income')]; // Mutable copy
+
+            expenseTransfers.forEach(expense => {
+                const matchingIncomeIndex = incomeTransfers.findIndex(income => 
+                    income.amount === expense.amount && income.date === expense.date
+                );
+                if (matchingIncomeIndex !== -1) {
+                    excludedTransferIds.add(expense.id);
+                    excludedTransferIds.add(incomeTransfers[matchingIncomeIndex].id);
+                    incomeTransfers.splice(matchingIncomeIndex, 1);
+                }
+            });
+        }
+        
+        const recordsForSummary = normalRecords.concat(transferRecords.filter(r => !excludedTransferIds.has(r.id)));
+
+        // 3. Calculate summary from the offset list and update UI
+        const summary = recordsForSummary.reduce((acc, r) => {
+            if (r.type === 'income') acc.income += r.amount;
+            else acc.expense += r.amount;
+            return acc;
+        }, { income: 0, expense: 0 });
+
+        this.container.querySelector('#total-income').textContent = formatCurrency(summary.income);
+        this.container.querySelector('#total-expense').textContent = formatCurrency(summary.expense);
+
+        // 4. Now, apply the final type filter to the summary list to get the records for DISPLAY
+        let displayRecords = recordsForSummary;
+        if (this.filters.type !== 'all') {
+            displayRecords = displayRecords.filter(r => r.type === this.filters.type);
+        }
+
+        // 5. Render the final list of records for display and update the count
+        this.renderRecords(displayRecords);
+        this.container.querySelector('#record-count').textContent = displayRecords.length;
     }
 
     renderRecords(records) {
@@ -191,38 +228,32 @@ export class RecordsListManager {
         const normalRecords = records.filter(r => r.category !== 'transfer');
         const excludedTransferIds = new Set();
 
-        // Only try to offset if there are selected accounts or all accounts are shown
-        const shouldOffset = this.advancedModeEnabled && (this.filters.accounts.size === 0 || this.filters.accounts.size > 1);
-
-        if (shouldOffset && transferRecords.length > 0) {
+        // Only proceed if there are potential pairs of transfers to analyze
+        if (transferRecords.length > 1) {
             const expenseTransfers = transferRecords.filter(r => r.type === 'expense');
-            const incomeTransfers = transferRecords.filter(r => r.type === 'income');
+            // Create a mutable copy to splice from
+            const incomeTransfers = [...transferRecords.filter(r => r.type === 'income')]; 
 
             expenseTransfers.forEach(expense => {
+                // Find a matching income record within the currently visible records
                 const matchingIncomeIndex = incomeTransfers.findIndex(income => 
                     income.amount === expense.amount && 
-                    income.date === expense.date &&
-                    !excludedTransferIds.has(income.id) // Ensure it hasn't been matched already
+                    income.date === expense.date
                 );
 
                 if (matchingIncomeIndex !== -1) {
+                    // A pair is found within the visible records. Exclude both.
                     const income = incomeTransfers[matchingIncomeIndex];
+                    excludedTransferIds.add(expense.id);
+                    excludedTransferIds.add(income.id);
                     
-                    // Check if both accounts are in the current filter scope
-                    const allAccountsFiltered = this.filters.accounts.size === 0;
-                    const expenseAccountInFilter = this.filters.accounts.has(String(expense.accountId));
-                    const incomeAccountInFilter = this.filters.accounts.has(String(income.accountId));
-
-                    if (allAccountsFiltered || (expenseAccountInFilter && incomeAccountInFilter)) {
-                        excludedTransferIds.add(expense.id);
-                        excludedTransferIds.add(income.id);
-                        // Remove the matched income to prevent it from being matched again
-                        incomeTransfers.splice(matchingIncomeIndex, 1);
-                    }
+                    // Remove the matched income so it can't be paired again
+                    incomeTransfers.splice(matchingIncomeIndex, 1);
                 }
             });
         }
 
+        // Records for summary are normal ones + any transfers that couldn't be paired
         const recordsForSummary = normalRecords.concat(transferRecords.filter(r => !excludedTransferIds.has(r.id)));
         
         const summary = recordsForSummary.reduce((acc, r) => {

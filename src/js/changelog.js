@@ -1,5 +1,20 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.0.4": {
+    date: "2025-11-08",
+    title: "添加最近紀錄快速選擇功能",
+    features: [
+      "在記帳頁面新增最近紀錄快速選擇功能，可快速帶入類別與備註，支援長按刪除"
+    ],
+    bugfixes: [
+      "修復首頁總收入與總支出錯誤計入帳戶間轉帳的問題",
+      "修復首頁最近紀錄中帳戶間轉帳顯示為「未分類」且無圖示的問題",
+      "修復明細頁面單獨篩選收入或支出時，總計錯誤計入帳戶間轉帳的問題"
+    ],
+    improvements: [
+      "重新設計記帳頁面小鍵盤佈局，移除「完成」按鈕，新增「AC」清除按鈕，並調整按鈕樣式使其更扁平",
+    ]
+  },
   "2.1.0.3": {
     date: "2025-11-08",
     title: "多帳戶與週期性交易實驗功能",
@@ -305,7 +320,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.3'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.4'
   }
 
   // 獲取當前版本資訊
