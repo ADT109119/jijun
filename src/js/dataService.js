@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 1
+    this.dbVersion = 3 // <<<<<<< CHANGE: Bump version for schema upgrade
     this.db = null
     this.init()
   }
@@ -17,35 +17,59 @@ class DataService {
     try {
       if (openDB && typeof openDB === 'function') {
         this.db = await openDB(this.dbName, this.dbVersion, {
-          upgrade(db) {
-            // 創建記帳記錄表
-            if (!db.objectStoreNames.contains('records')) {
-              const recordStore = db.createObjectStore('records', {
-                keyPath: 'id',
-                autoIncrement: true
-              })
-              recordStore.createIndex('date', 'date')
-              recordStore.createIndex('type', 'type')
-              recordStore.createIndex('category', 'category')
+          upgrade(db, oldVersion, newVersion, transaction) {
+            // Schema version 1
+            if (oldVersion < 1) {
+              if (!db.objectStoreNames.contains('records')) {
+                const recordStore = db.createObjectStore('records', {
+                  keyPath: 'id',
+                  autoIncrement: true
+                })
+                recordStore.createIndex('date', 'date')
+                recordStore.createIndex('type', 'type')
+                recordStore.createIndex('category', 'category')
+              }
+              if (!db.objectStoreNames.contains('settings')) {
+                db.createObjectStore('settings', { keyPath: 'key' })
+              }
             }
-
-            // 創建設定表
-            if (!db.objectStoreNames.contains('settings')) {
-              db.createObjectStore('settings', { keyPath: 'key' })
+            // Schema version 2
+            if (oldVersion < 2) {
+              if (!db.objectStoreNames.contains('accounts')) {
+                const accountStore = db.createObjectStore('accounts', {
+                  keyPath: 'id',
+                  autoIncrement: true
+                });
+                accountStore.createIndex('name', 'name', { unique: true });
+              }
+              const recordStore = transaction.objectStore('records');
+              if (!recordStore.indexNames.contains('accountId')) {
+                recordStore.createIndex('accountId', 'accountId');
+              }
+            }
+            // Schema version 3
+            if (oldVersion < 3) {
+                if (!db.objectStoreNames.contains('recurring_transactions')) {
+                    const recurringStore = db.createObjectStore('recurring_transactions', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    recurringStore.createIndex('nextDueDate', 'nextDueDate');
+                }
             }
           }
         })
         
-        // 如果是首次使用，嘗試從 localStorage 遷移資料
+        // If it's the first time using the app, try to migrate from localStorage
         await this.migrateFromLocalStorage()
       } else {
-        throw new Error('IndexedDB 不可用')
+        throw new Error('IndexedDB not available')
       }
     } catch (error) {
-      console.error('資料庫初始化失敗:', error)
-      // 如果 IndexedDB 不可用，回退到 localStorage
+      console.error('Database initialization failed:', error)
+      // Fallback to localStorage if IndexedDB is not available
       this.useLocalStorage = true
-      console.log('使用 localStorage 作為備用儲存')
+      console.log('Using localStorage as a fallback')
     }
   }
 
@@ -181,6 +205,10 @@ class DataService {
         records = records.filter(record => record.category === filters.category)
       }
 
+      if (filters.accountId) {
+        records = records.filter(record => record.accountId === filters.accountId);
+      }
+
       return records.sort((a, b) => b.timestamp - a.timestamp)
     } catch (error) {
       console.error('獲取記錄失敗:', error)
@@ -227,7 +255,58 @@ class DataService {
       return true
     } catch (error) {
       console.error('刪除記錄失敗:', error)
-      throw error
+      throw error;
+    }
+  }
+
+  // --- Recurring Transaction Methods ---
+  async addRecurringTransaction(transaction) {
+    try {
+      const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      const id = await tx.store.add(transaction);
+      await tx.done;
+      return id;
+    } catch (error) {
+      console.error('Failed to add recurring transaction:', error);
+      throw error;
+    }
+  }
+
+  async getRecurringTransactions() {
+    try {
+      return await this.db.getAll('recurring_transactions');
+    } catch (error) {
+      console.error('Failed to get recurring transactions:', error);
+      return [];
+    }
+  }
+
+  async updateRecurringTransaction(id, updates) {
+    try {
+      const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      const transaction = await tx.store.get(id);
+      if (transaction) {
+        const updatedTransaction = { ...transaction, ...updates };
+        await tx.store.put(updatedTransaction);
+        await tx.done;
+        return updatedTransaction;
+      }
+      throw new Error('Recurring transaction not found');
+    } catch (error) {
+      console.error(`Failed to update recurring transaction ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteRecurringTransaction(id) {
+    try {
+      const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete recurring transaction ${id}:`, error);
+      throw error;
     }
   }
 
@@ -283,8 +362,16 @@ class DataService {
   }
 
   // 獲取統計資料
-  async getStatistics(startDate, endDate) {
-    const records = await this.getRecords({ startDate, endDate })
+  async getStatistics(startDate, endDate, accountId = null, offsetTransfers = false) {
+    const filters = { startDate, endDate };
+    if (accountId) {
+      filters.accountId = accountId;
+    }
+    let records = await this.getRecords(filters);
+
+    if (offsetTransfers) {
+        records = records.filter(r => r.category !== 'transfer');
+    }
     
     const stats = {
       totalIncome: 0,
@@ -320,10 +407,16 @@ class DataService {
     try {
       const records = await this.getRecords();
       const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
+      const accounts = await this.getAccounts();
+      const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
 
       const exportData = {
-        version: '2.1.0', // New version to indicate categories are included
+        version: '2.1.1', // New version to indicate accounts are included
         exportDate: new Date().toISOString(),
+        settings: {
+            advancedAccountModeEnabled: advancedAccountModeEnabled?.value || false,
+        },
+        accounts: accounts,
         records: records,
         customCategories: customCategories,
         metadata: {
@@ -360,72 +453,67 @@ class DataService {
       reader.onload = async (event) => {
         try {
           const data = JSON.parse(event.target.result)
-          let records = []
-
-          // Handle custom categories first
-          if (data.customCategories) {
-            localStorage.setItem('customCategories', JSON.stringify(data.customCategories));
-            // Optionally, reload category manager if it's running
-            if (window.app && window.app.categoryManager) {
-              window.app.categoryManager.loadCustomCategories();
-            }
-          }
-
-          // Check data format version
-          if (data.version && (data.version === '2.1.0' || data.version === '2.0.0')) {
-            // New format
-            records = data.records || []
-          } else if (data.records && Array.isArray(data.records)) {
-            // Possibly old but converted format
-            records = data.records
-          } else {
-            // Old format, needs conversion
-            records = this.convertOldDataFormat(data)
-          }
-
-          // 驗證資料格式
-          const validRecords = records.filter(record => {
-            return record.date && 
-                   record.type && 
-                   (record.type === 'income' || record.type === 'expense') &&
-                   record.category && 
-                   typeof record.amount === 'number' &&
-                   record.amount >= 0
-          })
-
-          if (validRecords.length !== records.length) {
-            console.warn(`過濾了 ${records.length - validRecords.length} 筆無效記錄`)
-          }
 
           // 確認是否要覆蓋現有資料
-          const existingRecords = await this.getRecords()
-          if (existingRecords.length > 0) {
-            const confirmed = confirm(`目前已有 ${existingRecords.length} 筆記錄。\n匯入 ${validRecords.length} 筆新記錄將會覆蓋現有資料。\n\n確定要繼續嗎？`)
+          if ((await this.getRecords()).length > 0) {
+            const confirmed = confirm(`匯入新資料將會覆蓋所有現有資料 (包含紀錄、帳戶、分類設定)。\n\n確定要繼續嗎？`)
             if (!confirmed) {
               resolve({ success: false, message: '使用者取消操作' })
               return
             }
           }
 
-          // 清除現有資料
-          await this.clearAllRecords()
+          // --- 清除所有舊資料 ---
+          await this.clearAllRecords();
+          await this.clearAllAccounts();
+          localStorage.removeItem('customCategories');
+          await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
 
-          // 匯入新資料
-          let importedCount = 0
-          for (const record of validRecords) {
-            try {
-              await this.addRecord(record)
-              importedCount++
-            } catch (error) {
-              console.error('匯入記錄失敗:', record, error)
+
+          // --- 開始匯入 ---
+          // 1. 匯入設定
+          const advancedModeEnabled = data.settings?.advancedAccountModeEnabled || false;
+          await this.saveSetting({ key: 'advancedAccountModeEnabled', value: advancedModeEnabled });
+
+          // 2. 匯入自訂分類
+          if (data.customCategories) {
+            localStorage.setItem('customCategories', JSON.stringify(data.customCategories));
+          }
+
+          // 3. 匯入帳戶並建立 ID Map
+          const oldIdToNewIdMap = new Map();
+          if (advancedModeEnabled && data.accounts && Array.isArray(data.accounts)) {
+            for (const account of data.accounts) {
+                const oldId = account.id;
+                const { id, ...accountData } = account;
+                const newId = await this.addAccount(accountData);
+                oldIdToNewIdMap.set(oldId, newId);
             }
+          }
+
+          // 4. 匯入紀錄
+          let records = [];
+          if (data.version && data.version.startsWith('2.')) {
+            records = data.records || []
+          } else {
+            records = this.convertOldDataFormat(data)
+          }
+
+          const validRecords = records.filter(record => 
+            record.date && record.type && record.category && typeof record.amount === 'number'
+          );
+
+          for (const record of validRecords) {
+            // 如果是進階模式，更新 accountId
+            if (advancedModeEnabled && record.accountId !== undefined) {
+                record.accountId = oldIdToNewIdMap.get(record.accountId);
+            }
+            await this.addRecord(record);
           }
 
           resolve({ 
             success: true, 
-            message: `成功匯入 ${importedCount} 筆記錄`,
-            importedCount,
-            totalRecords: validRecords.length
+            message: `成功匯入 ${validRecords.length} 筆記錄`,
           })
 
         } catch (error) {
@@ -464,6 +552,108 @@ class DataService {
   // 獲取所有記錄（用於匯出）
   async getAllRecords() {
     return await this.getRecords()
+  }
+
+  // --- Settings Methods ---
+  async getSetting(key) {
+    if (this.useLocalStorage) {
+      return JSON.parse(localStorage.getItem(key) || 'null');
+    }
+    try {
+      return await this.db.get('settings', key);
+    } catch (error) {
+      console.error(`Failed to get setting '${key}':`, error);
+      return null;
+    }
+  }
+
+  async saveSetting(setting) {
+    if (this.useLocalStorage) {
+      localStorage.setItem(setting.key, JSON.stringify(setting));
+      return;
+    }
+    try {
+      const tx = this.db.transaction('settings', 'readwrite');
+      await tx.store.put(setting);
+      await tx.done;
+    } catch (error) {
+      console.error(`Failed to save setting '${setting.key}':`, error);
+      throw error;
+    }
+  }
+
+  // --- Account Methods ---
+  async addAccount(account) {
+    try {
+      const tx = this.db.transaction('accounts', 'readwrite');
+      const id = await tx.store.add(account);
+      await tx.done;
+      return id;
+    } catch (error) {
+      console.error('Failed to add account:', error);
+      throw error;
+    }
+  }
+
+  async getAccount(id) {
+    try {
+      return await this.db.get('accounts', id);
+    } catch (error) {
+      console.error(`Failed to get account ${id}:`, error);
+      return null;
+    }
+  }
+
+  async getAccounts() {
+    try {
+      return await this.db.getAll('accounts');
+    } catch (error) {
+      console.error('Failed to get accounts:', error);
+      return [];
+    }
+  }
+
+  async updateAccount(id, updates) {
+    try {
+      const tx = this.db.transaction('accounts', 'readwrite');
+      const account = await tx.store.get(id);
+      if (account) {
+        const updatedAccount = { ...account, ...updates };
+        await tx.store.put(updatedAccount);
+        await tx.done;
+        return updatedAccount;
+      }
+      throw new Error('Account not found');
+    } catch (error) {
+      console.error(`Failed to update account ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteAccount(id) {
+    // Note: This doesn't re-assign records from the deleted account.
+    // That logic should be handled at the application level.
+    try {
+      const tx = this.db.transaction('accounts', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // 清除所有帳戶
+  async clearAllAccounts() {
+    try {
+      const tx = this.db.transaction('accounts', 'readwrite');
+      await tx.store.clear();
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error('Failed to clear accounts:', error);
+      throw error;
+    }
   }
 }
 

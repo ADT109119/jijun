@@ -13,17 +13,61 @@ export class StatisticsManager {
         this.container = null;
         this.modalsContainer = null;
         this.charts = {};
+        this.accounts = [];
+        this.advancedModeEnabled = false;
         this.filters = {
             period: 'month',
             customStartDate: null,
             customEndDate: null,
+            selectedAccountId: null, // null means all accounts
         };
     }
 
     async renderStatisticsPage(container) {
         this.container = container;
-        this.container.innerHTML = `
-            <!-- Time Range Selector -->
+
+        const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
+        this.advancedModeEnabled = !!advancedMode?.value;
+
+                if (this.advancedModeEnabled) {
+
+                    this.accounts = await this.dataService.getAccounts();
+
+                }
+
+        
+
+                const accountFilterOptions = this.accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('');
+
+                const accountFilterHTML = this.advancedModeEnabled ? `
+
+                    <div class="mb-4">
+
+                        <label for="stats-account-filter" class="text-sm text-wabi-text-secondary">帳戶</label>
+
+                        <select id="stats-account-filter" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+
+                            <option value="all">所有帳戶</option>
+
+                            ${accountFilterOptions}
+
+                        </select>
+
+                    </div>
+
+                ` : '';
+
+        
+
+                        this.container.innerHTML = `
+
+        
+
+                            ${accountFilterHTML}
+
+        
+
+                            <!-- Time Range Selector -->
             <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-6">
                 <button data-period="week" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">週</button>
                 <button data-period="month" class="period-btn flex-1 h-full rounded-md px-2 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">月</button>
@@ -44,6 +88,10 @@ export class StatisticsManager {
                 <div class="col-span-2 flex flex-col gap-1 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
                     <p class="text-sm font-medium text-wabi-text-secondary">結餘</p>
                     <p id="stats-net-balance" class="text-2xl font-bold tracking-tight text-wabi-primary">$0</p>
+                </div>
+                <div id="stats-account-balance-card" class="col-span-2 flex flex-col gap-1 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border hidden">
+                    <p class="text-sm font-medium text-wabi-text-secondary">帳戶餘額</p>
+                    <p id="stats-account-balance" class="text-2xl font-bold tracking-tight text-wabi-primary">$0</p>
                 </div>
             </div>
 
@@ -91,6 +139,16 @@ export class StatisticsManager {
                 }
             });
         });
+
+        if (this.advancedModeEnabled) {
+            const accountFilter = this.container.querySelector('#stats-account-filter');
+            if (accountFilter) {
+                accountFilter.addEventListener('change', (e) => {
+                    this.filters.selectedAccountId = e.target.value === 'all' ? null : parseInt(e.target.value, 10);
+                    this.loadStatisticsData();
+                });
+            }
+        }
     }
 
     updatePeriodButtons() {
@@ -110,7 +168,30 @@ export class StatisticsManager {
             ? { startDate: this.filters.customStartDate, endDate: this.filters.customEndDate }
             : getDateRange(this.filters.period);
 
-        const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate);
+        const offsetTransfers = this.filters.selectedAccountId === null;
+        const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate, this.filters.selectedAccountId, offsetTransfers);
+
+        // Handle Account Balance display
+        const accountBalanceCard = this.container.querySelector('#stats-account-balance-card');
+        if (this.advancedModeEnabled && this.filters.selectedAccountId !== null) {
+            const account = this.accounts.find(a => a.id === this.filters.selectedAccountId);
+            if (account) {
+                const allRecordsForAccount = await this.dataService.getRecords({ accountId: this.filters.selectedAccountId });
+                const currentBalance = allRecordsForAccount.reduce((balance, record) => {
+                    if (record.category === 'transfer') {
+                        // Transfers are handled as simple income/expense
+                        return balance + (record.type === 'income' ? record.amount : -record.amount);
+                    }
+                    return balance + (record.type === 'income' ? record.amount : -record.amount);
+                }, account.balance);
+
+                const accountBalanceEl = accountBalanceCard.querySelector('#stats-account-balance');
+                accountBalanceEl.textContent = formatCurrency(currentBalance);
+                accountBalanceCard.classList.remove('hidden');
+            }
+        } else {
+            accountBalanceCard.classList.add('hidden');
+        }
 
         this.updateSummaryCards(stats);
         this.renderTrendChart(stats.dailyTotals, dateRange);

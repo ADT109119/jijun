@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.0.3": {
+    date: "2025-11-08",
+    title: "多帳戶與週期性交易實驗功能",
+    features: [
+      "新增多帳戶功能，提供使用者管理並統計多個帳戶的收支",
+      "新增完整的週期性交易功能，可設定每日、每週、每月、每年的重複收支",
+      "週期性交易支援強大的略過規則，可任意組合設定在「每週的某幾天」、「每月的某幾號」或「每年的某幾月」自動跳過"
+    ],
+    bugfixes: [
+    ],
+    improvements: [
+      "切換主要頁面後，畫面會自動滾動至最頂部，優化瀏覽體驗"
+    ]
+  },
   "2.1.0.2": {
     date: "2025-11-07",
     title: "共用元件與設定頁面功能增強",
@@ -291,7 +305,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.0.7.4'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.3'
   }
 
   // 獲取當前版本資訊

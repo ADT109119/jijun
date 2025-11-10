@@ -268,3 +268,67 @@ export function getMonthRange(year, monthIndex) {
     endDate: formatDateToString(endOfMonth)
   };
 }
+
+/**
+ * 計算下一個週期性交易日期
+ * @param {string} currentDueDate - 當前到期日期 (YYYY-MM-DD)
+ * @param {string} frequency - 頻率 ('daily', 'weekly', 'monthly', 'yearly')
+ * @param {number} interval - 間隔 (例如：每 2 週)
+ * @returns {string} 下一個到期日期 (YYYY-MM-DD)
+ */
+export function calculateNextDueDate(currentDueDate, frequency, interval) {
+  const date = new Date(currentDueDate);
+  switch (frequency) {
+    case 'daily':
+      date.setDate(date.getDate() + interval);
+      break;
+    case 'weekly':
+      date.setDate(date.getDate() + (interval * 7));
+      break;
+    case 'monthly':
+      date.setMonth(date.getMonth() + interval);
+      break;
+    case 'yearly':
+      date.setFullYear(date.getFullYear() + interval);
+      break;
+    default:
+      throw new Error('Invalid frequency');
+  }
+  return formatDateToString(date);
+}
+
+/**
+ * 檢查日期是否應根據規則列表跳過
+ * @param {Date} date - 要檢查的日期對象
+ * @param {Array|null} skipRules - 略過規則對象的陣列
+ * @returns {boolean} 如果應跳過則為 true
+ */
+export function shouldSkipDate(date, skipRules) {
+  if (!skipRules || !Array.isArray(skipRules) || skipRules.length === 0) {
+    return false;
+  }
+
+  for (const rule of skipRules) {
+    if (!rule.values || rule.values.length === 0) {
+      continue;
+    }
+    const { type, values } = rule;
+    let match = false;
+    switch (type) {
+      case 'dayOfWeek':
+        match = values.includes(date.getDay()); // 0 (Sun) to 6 (Sat)
+        break;
+      case 'dayOfMonth':
+        match = values.includes(date.getDate()); // 1 to 31
+        break;
+      case 'monthOfYear':
+        match = values.includes(date.getMonth()); // 0 (Jan) to 11 (Dec)
+        break;
+    }
+    if (match) {
+      return true; // If any rule matches, skip the date
+    }
+  }
+
+  return false; // If no rules matched, do not skip
+}

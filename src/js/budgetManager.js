@@ -31,7 +31,8 @@ export class BudgetManager {
 
   async getBudgetStatus() {
     const dateRange = getDateRange('month')
-    const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate)
+    // Budget should not include transfers, so offset them
+    const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate, null, true);
     
     const spent = stats.totalExpense
     const remaining = Math.max(0, this.currentBudget - spent)

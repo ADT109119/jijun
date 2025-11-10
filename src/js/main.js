@@ -1,6 +1,6 @@
 import DataService from './dataService.js';
 import { getCategoryName, getCategoryIcon } from './categories.js';
-import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange } from './utils.js';
+import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange, calculateNextDueDate, shouldSkipDate } from './utils.js';
 import { StatisticsManager } from './statistics.js';
 import { RecordsListManager } from './recordsList.js';
 import { BudgetManager } from './budgetManager.js';
@@ -27,6 +27,15 @@ class EasyAccountingApp {
 
     async init() {
         await this.dataService.init();
+
+        const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
+        this.advancedModeEnabled = !!advancedModeSetting?.value;
+        if (this.advancedModeEnabled) {
+            this.accounts = await this.dataService.getAccounts();
+        } else {
+            this.accounts = [];
+        }
+
         this.setupEventListeners();
         this.handleRouteChange();
         this.registerServiceWorker();
@@ -50,6 +59,48 @@ class EasyAccountingApp {
                 installBtnContainer.classList.add('hidden');
             }
         }
+
+        this.processRecurringTransactions();
+    }
+
+    async processRecurringTransactions() {
+        const today = formatDateToString(new Date());
+        const recurringTxs = await this.dataService.getRecurringTransactions();
+        
+        for (const tx of recurringTxs) {
+            let { nextDueDate } = tx;
+
+            while (nextDueDate && nextDueDate <= today) {
+                const dateToCheck = new Date(nextDueDate);
+
+                // Check if the date should be skipped
+                if (shouldSkipDate(dateToCheck, tx.skipRules)) {
+                    // If skipped, just advance the date and continue the loop
+                    nextDueDate = calculateNextDueDate(nextDueDate, tx.frequency, tx.interval);
+                    continue;
+                }
+
+                // Generate a new record for this due date
+                const newRecord = {
+                    type: tx.type,
+                    amount: tx.amount,
+                    category: tx.category,
+                    description: tx.description,
+                    date: nextDueDate,
+                    accountId: tx.accountId,
+                };
+                await this.dataService.addRecord(newRecord);
+                console.log(`Generated record for recurring transaction: ${tx.description}`);
+
+                // Calculate the next due date for the next iteration
+                nextDueDate = calculateNextDueDate(nextDueDate, tx.frequency, tx.interval);
+            }
+
+            // Update the recurring transaction with the final new due date
+            if (nextDueDate !== tx.nextDueDate) {
+                await this.dataService.updateRecurringTransaction(tx.id, { nextDueDate });
+            }
+        }
     }
 
     setupEventListeners() {
@@ -67,6 +118,9 @@ class EasyAccountingApp {
 
         this.updateActiveNavItem(page);
 
+        // Scroll to top on page change
+        window.scrollTo(0, 0);
+
         switch (page) {
             case 'home':
                 this.renderHomePage();
@@ -82,6 +136,12 @@ class EasyAccountingApp {
                 break;
             case 'settings':
                 this.renderSettingsPage();
+                break;
+            case 'accounts':
+                this.renderAccountsPage();
+                break;
+            case 'recurring':
+                this.renderRecurringPage();
                 break;
             default:
                 window.location.hash = 'home';
@@ -176,6 +236,10 @@ class EasyAccountingApp {
                         <p class="text-wabi-text-primary text-sm font-medium leading-normal">類別</p>
                         <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
                     </button>
+                    <button id="records-account-filter-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-white px-4 border border-gray-200 hidden">
+                        <p class="text-wabi-text-primary text-sm font-medium leading-normal">帳戶</p>
+                        <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
+                    </button>
                 </div>
 
                 <!-- Summary Cards -->
@@ -238,10 +302,12 @@ class EasyAccountingApp {
 
                 <!-- Categories -->
                 <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
-
             </div>
             <!-- Note, Date, and Keypad -->
             <div id="keypad-container" class="fixed bottom-20 left-0 right-0 bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
+                <!-- Account Selector (Advanced Mode Only) -->
+                <div id="account-selector-container" class="px-4 pt-2"></div>
+
                 <div class="flex items-center px-4 py-2 gap-2">
                     <label class="relative flex items-center gap-2 p-2 rounded-lg bg-white/50">
                         <i class="fa-solid fa-calendar-days text-wabi-text-secondary"></i>
@@ -318,6 +384,30 @@ class EasyAccountingApp {
                         <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
                         <div id="version-info" class="px-4 py-3 text-xs text-center text-wabi-text-secondary"></div>
                     </div>
+
+                    <!-- Advanced Features -->
+                    <div class="bg-wabi-surface rounded-xl">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">實驗功能</h3>
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-wallet"></i>
+                                </div>
+                                <p class="text-wabi-text-primary text-base font-normal">多帳戶模式</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="advanced-account-mode-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-accounts-link-container" class="hidden">
+                            ${this.createSettingItem('fa-solid fa-credit-card', '帳戶管理', 'manage-accounts-btn')}
+                        </div>
+                        <div id="manage-recurring-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -349,8 +439,9 @@ class EasyAccountingApp {
         const month = parseInt(selectedMonth.split('-')[1]) - 1;
         const { startDate, endDate } = getMonthRange(year, month);
 
-        const stats = await this.dataService.getStatistics(startDate, endDate);
-        const allRecords = await this.dataService.getRecords();
+        const stats = await this.dataService.getStatistics(startDate, endDate, null);
+        
+        let allRecords = await this.dataService.getRecords();
         const recentRecords = allRecords.slice(0, 5);
 
         const balanceCardTitle = document.querySelector('.page.active .bg-wabi-surface p:first-child');
@@ -415,12 +506,14 @@ class EasyAccountingApp {
             monthSelectorBtn.addEventListener('click', () => {
                 const currentMonthDisplay = document.getElementById('home-month-display').textContent;
                 const [year, month] = currentMonthDisplay.split(' / ').map(Number);
-                this.showMonthYearPickerModal(year, month - 1); // monthIndex is 0-indexed
+                this.showMonthYearPickerModal(year, month - 1, (newMonthString) => {
+                    this.loadHomePageData(newMonthString);
+                });
             });
         }
     }
 
-    showMonthYearPickerModal(initialYear, initialMonthIndex) {
+    showMonthYearPickerModal(initialYear, initialMonthIndex, onApply) {
         const modal = document.createElement('div');
         modal.id = 'month-year-picker-modal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
@@ -470,9 +563,11 @@ class EasyAccountingApp {
                     selectedMonth = parseInt(e.target.dataset.month);
                     const newMonthString = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
                     
-                    // Update the display and reload data
+                    // Update the display and call the callback
                     document.getElementById('home-month-display').textContent = newMonthString.replace('-', ' / ');
-                    this.loadHomePageData(newMonthString); // Pass the selected month string
+                    if (onApply) {
+                        onApply(newMonthString);
+                    }
                     modal.remove();
                 });
             });
@@ -564,17 +659,730 @@ class EasyAccountingApp {
             const latestVersion = this.changelogManager.getAllVersions()[0];
             versionInfo.textContent = `版本 v${latestVersion.version}`;
         }
+
+        const advancedModeToggle = document.getElementById('advanced-account-mode-toggle');
+        if (advancedModeToggle) {
+            this.dataService.getSetting('advancedAccountModeEnabled').then(setting => {
+                const isEnabled = !!setting?.value;
+                advancedModeToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-accounts-link-container').classList.remove('hidden');
+                    document.getElementById('manage-recurring-link-container').classList.remove('hidden');
+                }
+            });
+
+            advancedModeToggle.addEventListener('change', async (e) => {
+                const isEnabled = e.target.checked;
+                await this.dataService.saveSetting({ key: 'advancedAccountModeEnabled', value: isEnabled });
+                if (isEnabled) {
+                    await this.handleAdvancedModeActivation();
+                }
+                showToast(`多帳戶模式已${isEnabled ? '啟用' : '停用'}，將重新載入...`);
+                setTimeout(() => window.location.reload(), 1500);
+            });
+        }
+
+        const manageAccountsBtn = document.getElementById('manage-accounts-btn');
+        if (manageAccountsBtn) {
+            manageAccountsBtn.addEventListener('click', () => {
+                window.location.hash = '#accounts';
+            });
+        }
+
+        const manageRecurringBtn = document.getElementById('manage-recurring-btn');
+        if (manageRecurringBtn) {
+            manageRecurringBtn.addEventListener('click', () => {
+                window.location.hash = '#recurring';
+            });
+        }
+    }
+
+    async renderAccountsPage() {
+        const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
+        if (!advancedMode?.value) {
+            window.location.hash = '#settings';
+            return;
+        }
+
+        this.appContainer.innerHTML = `
+            <div class="page active p-4 pb-24">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
+                        <i class="fa-solid fa-chevron-left text-xl"></i>
+                    </a>
+                    <h1 class="text-xl font-bold text-wabi-primary">帳戶管理</h1>
+                    <div class="w-6"></div> <!-- Placeholder for alignment -->
+                </div>
+
+                <!-- Total Assets -->
+                <div class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-6 mb-8 text-center">
+                    <p class="text-wabi-text-secondary text-base font-medium">總資產</p>
+                    <p id="total-assets" class="text-wabi-primary text-4xl font-bold tracking-tight mt-1">$0</p>
+                </div>
+
+                <!-- Account List -->
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-wabi-primary">帳戶列表</h3>
+                    <div class="flex gap-2">
+                        <button id="transfer-btn" class="bg-wabi-income text-white rounded-full w-8 h-8 flex items-center justify-center">
+                            <i class="fa-solid fa-money-bill-transfer"></i>
+                        </button>
+                        <button id="add-account-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="accounts-list-container" class="space-y-2"></div>
+            </div>
+        `;
+        this.setupAccountsPageListeners();
+    }
+
+    async setupAccountsPageListeners() {
+        const accounts = await this.dataService.getAccounts();
+        const allRecords = await this.dataService.getRecords(); // Get all records once
+        const container = document.getElementById('accounts-list-container');
+        const totalAssetsEl = document.getElementById('total-assets');
+
+        let totalAssets = 0;
+        container.innerHTML = '';
+
+        if (accounts.length === 0) {
+            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">尚未建立任何帳戶</p>`;
+        }
+
+        for (const account of accounts) {
+            const recordsForAccount = allRecords.filter(r => r.accountId === account.id);
+            const currentBalance = recordsForAccount.reduce((balance, record) => {
+                return balance + (record.type === 'income' ? record.amount : -record.amount);
+            }, account.balance); // Start with initial balance
+
+            totalAssets += currentBalance;
+
+            const accountEl = document.createElement('div');
+            accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
+            accountEl.innerHTML = `
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-12">
+                        <i class="${account.icon} text-2xl"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium text-wabi-text-primary">${account.name}</p>
+                        <p class="text-sm text-wabi-text-secondary">餘額: ${formatCurrency(currentBalance)}</p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="edit-account-btn" data-id="${account.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
+                    <button class="delete-account-btn" data-id="${account.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
+                </div>
+            `;
+            container.appendChild(accountEl);
+        }
+
+        totalAssetsEl.textContent = formatCurrency(totalAssets);
+
+        document.getElementById('add-account-btn').addEventListener('click', () => {
+            this.showAccountModal();
+        });
+
+        document.getElementById('transfer-btn').addEventListener('click', () => {
+            this.showTransferModal();
+        });
+
+        container.querySelectorAll('.edit-account-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10);
+                const account = await this.dataService.getAccount(accountId);
+                this.showAccountModal(account);
+            });
+        });
+
+        container.querySelectorAll('.delete-account-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10);
+                const records = await this.dataService.getRecords({ accountId });
+                if (records.length > 0) {
+                    alert('此帳戶尚有交易紀錄，無法刪除。');
+                    return;
+                }
+                if (confirm('確定要刪除此帳戶嗎？')) {
+                    await this.dataService.deleteAccount(accountId);
+                    showToast('帳戶已刪除');
+                    this.renderAccountsPage(); // Re-render the page
+                }
+            });
+        });
+    }
+
+    showAccountSelectionModal(accounts, currentAccountId, onSelect) {
+        const modal = document.createElement('div');
+        modal.id = 'account-selection-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+        const accountListHtml = accounts.map(account => `
+            <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
+                <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-10">
+                    <i class="${account.icon} text-xl"></i>
+                </div>
+                <span class="font-medium text-wabi-text-primary">${account.name}</span>
+            </button>
+        `).join('');
+
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+                <h3 class="text-lg font-bold text-wabi-primary">選擇帳戶</h3>
+                <div class="space-y-2 max-h-60 overflow-y-auto">
+                    ${accountListHtml}
+                </div>
+                <button id="cancel-account-select-btn" class="w-full py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        modal.querySelector('#cancel-account-select-btn').addEventListener('click', closeModal);
+
+        modal.querySelectorAll('.account-select-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const newAccountId = parseInt(btn.dataset.id, 10);
+                onSelect(newAccountId);
+                closeModal();
+            });
+        });
+    }
+
+    async renderRecurringPage() {
+        const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
+        if (!advancedMode?.value) {
+            window.location.hash = '#settings';
+            return;
+        }
+
+        this.appContainer.innerHTML = `
+            <div class="page active p-4 pb-24">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
+                        <i class="fa-solid fa-chevron-left text-xl"></i>
+                    </a>
+                    <h1 class="text-xl font-bold text-wabi-primary">週期性交易</h1>
+                    <div class="w-6"></div> <!-- Placeholder for alignment -->
+                </div>
+
+                <!-- Recurring Transaction List -->
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-wabi-primary">已設定項目</h3>
+                    <button id="add-recurring-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+                <div id="recurring-list-container" class="space-y-2"></div>
+            </div>
+        `;
+        this.setupRecurringPageListeners(this.appContainer.querySelector('.page.active'));
+    }
+
+    async setupRecurringPageListeners(pageElement) {
+        if (!pageElement) return;
+
+        const recurringTxs = await this.dataService.getRecurringTransactions();
+        const container = pageElement.querySelector('#recurring-list-container');
+        container.innerHTML = '';
+
+        if (recurringTxs.length === 0) {
+            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">尚未建立任何週期性交易</p>`;
+            // Still need to set up the add button listener
+        } else {
+            for (const tx of recurringTxs) {
+                const txEl = document.createElement('div');
+                txEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
+                txEl.innerHTML = `
+                    <div>
+                        <p class="font-medium text-wabi-text-primary">${tx.description}</p>
+                        <p class="text-sm text-wabi-text-secondary">金額: ${formatCurrency(tx.amount)} | 下次日期: ${tx.nextDueDate}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="edit-recurring-btn" data-id="${tx.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
+                        <button class="delete-recurring-btn" data-id="${tx.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
+                    </div>
+                `;
+                container.appendChild(txEl);
+            }
+        }
+
+        const addBtn = pageElement.querySelector('#add-recurring-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', async () => {
+                await this.showRecurringTransactionModal();
+            });
+        }
+
+        pageElement.querySelectorAll('.edit-recurring-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const txId = parseInt(e.currentTarget.dataset.id, 10);
+                const tx = recurringTxs.find(t => t.id === txId);
+                await this.showRecurringTransactionModal(tx);
+            });
+        });
+
+        pageElement.querySelectorAll('.delete-recurring-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const txId = parseInt(e.currentTarget.dataset.id, 10);
+                if (confirm('確定要刪除此週期性交易嗎？')) {
+                    await this.dataService.deleteRecurringTransaction(txId);
+                    showToast('已刪除週期性交易');
+                    this.renderRecurringPage();
+                }
+            });
+        });
+    }
+
+    async showRecurringTransactionModal(txToEdit = null) {
+        const isEdit = !!txToEdit;
+        const modal = document.createElement('div');
+        modal.id = 'recurring-tx-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+        // Ensure accounts are loaded
+        const accounts = this.advancedModeEnabled ? await this.dataService.getAccounts() : [];
+
+        // Prepare category and account options
+        const expenseCategories = this.categoryManager.getAllCategories('expense').map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        const incomeCategories = this.categoryManager.getAllCategories('income').map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        const accountOptions = this.advancedModeEnabled ? accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('') : '';
+
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+                <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯' : '新增'}週期性交易</h3>
+                
+                <div>
+                    <label class="text-sm">描述</label>
+                    <input type="text" id="recurring-desc" value="${txToEdit?.description || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+
+                <div>
+                    <label class="text-sm">金額</label>
+                    <input type="number" id="recurring-amount" value="${txToEdit?.amount || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+
+                <div>
+                    <label class="text-sm">類型</label>
+                    <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mt-1">
+                        <button data-type="expense" class="recurring-type-btn flex-1 h-full rounded-md text-sm font-medium">支出</button>
+                        <button data-type="income" class="recurring-type-btn flex-1 h-full rounded-md text-sm font-medium">收入</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-sm">分類</label>
+                    <select id="recurring-category" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface"></select>
+                </div>
+
+                ${this.advancedModeEnabled ? `
+                <div>
+                    <label class="text-sm">帳戶</label>
+                    <select id="recurring-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                </div>
+                ` : ''}
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-sm">頻率</label>
+                        <select id="recurring-frequency" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                            <option value="daily">每日</option>
+                            <option value="weekly">每週</option>
+                            <option value="monthly">每月</option>
+                            <option value="yearly">每年</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm">間隔</label>
+                        <input type="number" id="recurring-interval" value="${txToEdit?.interval || 1}" min="1" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-sm">開始日期</label>
+                    <input type="date" id="recurring-start-date" value="${txToEdit?.startDate || formatDateToString(new Date())}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+
+                <!-- Skip Rules -->
+                <div id="skip-rules-container" class="space-y-2 pt-2 hidden">
+                    <label class="text-sm font-medium text-wabi-text-primary">略過規則 (可選)</label>
+                    <!-- Weekly Skip -->
+                    <div id="skip-weekly-controls" class="hidden">
+                        <div class="grid grid-cols-4 gap-2 text-center">
+                            ${['日', '一', '二', '三', '四', '五', '六'].map((day, i) => `
+                                <label class="p-2 rounded-lg border border-wabi-border has-[:checked]:bg-wabi-accent has-[:checked]:border-wabi-primary">
+                                    <input type="checkbox" name="skipDayOfWeek" value="${i}" class="sr-only">
+                                    <span>${day}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <!-- Monthly Skip -->
+                    <div id="skip-monthly-controls" class="hidden">
+                        <label class="text-sm font-medium text-wabi-text-primary" for="skip-day-of-month-input">略過每月幾號:</label>
+                        <input type="text" id="skip-day-of-month-input" placeholder="例如: 15, 31 (用逗號分隔)" class="w-full p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    </div>
+                    <!-- Yearly Skip -->
+                    <div id="skip-yearly-controls" class="hidden">
+                        <label class="text-sm font-medium text-wabi-text-primary" for="skip-month-of-year-input">略過每年幾月:</label>
+                         <input type="text" id="skip-month-of-year-input" placeholder="例如: 7, 8 (用逗號分隔)" class="w-full p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                    <button id="save-recurring-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">儲存</button>
+                    <button id="cancel-recurring-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const typeExpenseBtn = modal.querySelector('.recurring-type-btn[data-type="expense"]');
+        const typeIncomeBtn = modal.querySelector('.recurring-type-btn[data-type="income"]');
+        const categorySelect = modal.querySelector('#recurring-category');
+        const frequencySelect = modal.querySelector('#recurring-frequency');
+        let currentType = txToEdit?.type || 'expense';
+
+        const skipRulesContainer = modal.querySelector('#skip-rules-container');
+        const skipWeeklyControls = modal.querySelector('#skip-weekly-controls');
+        const skipMonthlyControls = modal.querySelector('#skip-monthly-controls');
+        const skipYearlyControls = modal.querySelector('#skip-yearly-controls');
+
+        // Make all skip rule controls visible
+        skipRulesContainer.classList.remove('hidden');
+        skipWeeklyControls.classList.remove('hidden');
+        skipMonthlyControls.classList.remove('hidden');
+        skipYearlyControls.classList.remove('hidden');
+
+        const updateCategoryOptions = () => {
+            if (currentType === 'expense') {
+                categorySelect.innerHTML = expenseCategories;
+                typeExpenseBtn.classList.add('bg-wabi-expense', 'text-white');
+                typeIncomeBtn.classList.remove('bg-wabi-income', 'text-white');
+            } else {
+                categorySelect.innerHTML = incomeCategories;
+                typeIncomeBtn.classList.add('bg-wabi-income', 'text-white');
+                typeExpenseBtn.classList.remove('bg-wabi-expense', 'text-white');
+            }
+        };
+
+        updateCategoryOptions();
+
+        if (txToEdit) {
+            categorySelect.value = txToEdit.category;
+            if (this.advancedModeEnabled) modal.querySelector('#recurring-account').value = txToEdit.accountId;
+            frequencySelect.value = txToEdit.frequency;
+
+            // Populate skip rules
+            if (txToEdit.skipRules && Array.isArray(txToEdit.skipRules)) {
+                txToEdit.skipRules.forEach(rule => {
+                    const { type, values } = rule;
+                    if (type === 'dayOfWeek') {
+                        values.forEach(day => {
+                            const checkbox = modal.querySelector(`input[name="skipDayOfWeek"][value="${day}"]`);
+                            if (checkbox) checkbox.checked = true;
+                        });
+                    } else if (type === 'dayOfMonth') {
+                        modal.querySelector('#skip-day-of-month-input').value = values.join(', ');
+                    } else if (type === 'monthOfYear') {
+                        // Convert 0-indexed month back to 1-indexed for display
+                        modal.querySelector('#skip-month-of-year-input').value = values.map(m => m + 1).join(', ');
+                    }
+                });
+            }
+        }
+
+        typeExpenseBtn.addEventListener('click', () => { currentType = 'expense'; updateCategoryOptions(); });
+        typeIncomeBtn.addEventListener('click', () => { currentType = 'income'; updateCategoryOptions(); });
+
+        const closeModal = () => modal.remove();
+        modal.querySelector('#cancel-recurring-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+        modal.querySelector('#save-recurring-btn').addEventListener('click', async () => {
+            const data = {
+                description: modal.querySelector('#recurring-desc').value,
+                amount: parseFloat(modal.querySelector('#recurring-amount').value),
+                type: currentType,
+                category: categorySelect.value,
+                accountId: this.advancedModeEnabled ? parseInt(modal.querySelector('#recurring-account').value, 10) : null,
+                frequency: frequencySelect.value,
+                interval: parseInt(modal.querySelector('#recurring-interval').value, 10),
+                startDate: modal.querySelector('#recurring-start-date').value,
+                nextDueDate: modal.querySelector('#recurring-start-date').value, // First due date is the start date
+                skipRules: [],
+            };
+
+            // Parse all skip rules
+            const weeklyValues = [...modal.querySelectorAll('input[name="skipDayOfWeek"]:checked')].map(cb => parseInt(cb.value, 10));
+            if (weeklyValues.length > 0) {
+                data.skipRules.push({ type: 'dayOfWeek', values: weeklyValues });
+            }
+
+            const monthlyInput = modal.querySelector('#skip-day-of-month-input').value;
+            const monthlyValues = monthlyInput.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 31);
+            if (monthlyValues.length > 0) {
+                data.skipRules.push({ type: 'dayOfMonth', values: monthlyValues });
+            }
+
+            const yearlyInput = modal.querySelector('#skip-month-of-year-input').value;
+            const yearlyValues = yearlyInput.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n >= 1 && n <= 12);
+            if (yearlyValues.length > 0) {
+                // Convert to 0-indexed month for storage
+                data.skipRules.push({ type: 'monthOfYear', values: yearlyValues.map(m => m - 1) });
+            }
+
+            if (data.skipRules.length === 0) {
+                data.skipRules = null;
+            }
+
+            if (!data.description || !data.amount || data.amount <= 0 || !data.startDate) {
+                showToast('請填寫所有必要欄位', 'error');
+                return;
+            }
+
+            if (isEdit) {
+                await this.dataService.updateRecurringTransaction(txToEdit.id, { ...txToEdit, ...data });
+                showToast('週期性交易已更新');
+            } else {
+                await this.dataService.addRecurringTransaction(data);
+                showToast('週期性交易已新增');
+            }
+            this.renderRecurringPage();
+            closeModal();
+        });
+    }
+
+    async showTransferModal() {
+
+        const accounts = await this.dataService.getAccounts();
+        if (accounts.length < 2) {
+            showToast('你需要至少兩個帳戶才能轉帳', 'warning');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'transfer-form-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+        const accountOptions = accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('');
+
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+                <h3 class="text-lg font-bold text-wabi-primary">建立轉帳</h3>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">從</label>
+                    <select id="transfer-from-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">至</label>
+                    <select id="transfer-to-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">金額</label>
+                    <input type="number" id="transfer-amount" placeholder="0.00" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">日期</label>
+                    <input type="date" id="transfer-date" value="${formatDateToString(new Date())}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">備註</label>
+                    <input type="text" id="transfer-note" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div class="flex gap-2 mt-6">
+                    <button id="save-transfer-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">儲存</button>
+                    <button id="cancel-transfer-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Set default selection to different accounts
+        const fromSelect = modal.querySelector('#transfer-from-account');
+        const toSelect = modal.querySelector('#transfer-to-account');
+        if (accounts.length > 1) {
+            toSelect.value = accounts[1].id;
+        }
+
+        const closeModal = () => modal.remove();
+
+        modal.querySelector('#cancel-transfer-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        modal.querySelector('#save-transfer-btn').addEventListener('click', async () => {
+            const fromId = parseInt(fromSelect.value, 10);
+            const toId = parseInt(toSelect.value, 10);
+            const amount = parseFloat(document.getElementById('transfer-amount').value);
+            const date = document.getElementById('transfer-date').value;
+            const note = document.getElementById('transfer-note').value;
+
+            if (fromId === toId) {
+                showToast('不能在同一個帳戶內轉帳', 'error');
+                return;
+            }
+            if (!amount || amount <= 0) {
+                showToast('請輸入有效的金額', 'error');
+                return;
+            }
+
+            const fromAccount = accounts.find(a => a.id === fromId);
+            const toAccount = accounts.find(a => a.id === toId);
+
+            const expenseRecord = {
+                type: 'expense',
+                category: 'transfer', // Special category
+                amount: amount,
+                date: date,
+                description: `${note || ''} (轉出至 ${toAccount.name})`.trim(),
+                accountId: fromId,
+            };
+
+            const incomeRecord = {
+                type: 'income',
+                category: 'transfer', // Special category
+                amount: amount,
+                date: date,
+                description: `${note || ''} (從 ${fromAccount.name} 轉入)`.trim(),
+                accountId: toId,
+            };
+
+            await this.dataService.addRecord(expenseRecord);
+            await this.dataService.addRecord(incomeRecord);
+
+            showToast('轉帳成功！');
+            this.renderAccountsPage(); // Re-render to show updated balances
+            closeModal();
+        });
+    }
+
+    showAccountModal(accountToEdit = null) {
+        const isEdit = !!accountToEdit;
+        const modal = document.createElement('div');
+        modal.id = 'account-form-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+                <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">帳戶名稱</label>
+                    <input type="text" id="account-name-input" value="${accountToEdit?.name || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" required>
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">初始餘額</label>
+                    <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" ${isEdit ? 'disabled' : ''}>
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">圖示 (Font Awesome)</label>
+                    <input type="text" id="account-icon-input" value="${accountToEdit?.icon || 'fa-solid fa-wallet'}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">顏色 (Tailwind CSS)</label>
+                    <input type="text" id="account-color-input" value="${accountToEdit?.color || 'bg-blue-500'}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div class="flex gap-2 mt-6">
+                    <button id="save-account-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">儲存</button>
+                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+
+        modal.querySelector('#cancel-account-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        modal.querySelector('#save-account-btn').addEventListener('click', async () => {
+            const name = document.getElementById('account-name-input').value;
+            if (!name) {
+                showToast('請輸入帳戶名稱', 'error');
+                return;
+            }
+
+            const accountData = {
+                name: name,
+                balance: parseFloat(document.getElementById('account-balance-input').value) || 0,
+                icon: document.getElementById('account-icon-input').value || 'fa-solid fa-wallet',
+                color: document.getElementById('account-color-input').value || 'bg-blue-500',
+            };
+
+            if (isEdit) {
+                await this.dataService.updateAccount(accountToEdit.id, { ...accountToEdit, ...accountData });
+                showToast('帳戶已更新');
+            } else {
+                await this.dataService.addAccount(accountData);
+                showToast('帳戶已新增');
+            }
+            this.renderAccountsPage(); // Re-render the page
+            closeModal();
+        });
+    }
+
+    async handleAdvancedModeActivation() {
+        const accounts = await this.dataService.getAccounts();
+        let defaultAccount;
+
+        if (accounts.length === 0) {
+            console.log('No accounts found, creating a default account.');
+            const newAccount = { 
+                name: '現金', 
+                balance: 0, 
+                type: 'cash', 
+                icon: 'fa-solid fa-money-bill-wave', 
+                color: 'bg-green-500' 
+            };
+            const newAccountId = await this.dataService.addAccount(newAccount);
+            defaultAccount = await this.dataService.getAccount(newAccountId);
+            showToast('已建立預設「現金」帳戶');
+        } else {
+            defaultAccount = accounts[0];
+        }
+
+        if (!defaultAccount) {
+            console.error('Failed to get or create a default account.');
+            return;
+        }
+
+        const allRecords = await this.dataService.getRecords();
+        const recordsToUpdate = allRecords.filter(r => r.accountId === undefined);
+
+        if (recordsToUpdate.length > 0) {
+            console.log(`Migrating ${recordsToUpdate.length} records to default account...`);
+            for (const record of recordsToUpdate) {
+                await this.dataService.updateRecord(record.id, { ...record, accountId: defaultAccount.id });
+            }
+            console.log('Record migration complete.');
+            showToast(`${recordsToUpdate.length} 筆舊紀錄已歸入預設帳戶`);
+        }
     }
 
     async setupAddPageListeners(recordId) {
         const isEditMode = !!recordId;
         let recordToEdit = null;
 
+        const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
+        const advancedModeEnabled = !!advancedMode?.value;
+
         let currentType = 'expense';
         let currentAmount = '0';
         let selectedCategory = null;
+        let selectedAccountId = null; // New state for multi-account mode
         let currentDate = formatDateToString(new Date());
-        let keypadGridOpen = true; // Keypad grid is open by default
+        let keypadGridOpen = true;
 
         const amountDisplay = document.getElementById('add-amount-display');
         const categoryGrid = document.getElementById('add-category-grid');
@@ -587,6 +1395,43 @@ class EasyAccountingApp {
         const keypadToggleBtn = document.getElementById('keypad-toggle-btn');
         const expenseBtn = document.getElementById('add-type-expense');
         const incomeBtn = document.getElementById('add-type-income');
+
+        // --- Account Selector Logic ---
+        const accountSelectorContainer = document.getElementById('account-selector-container');
+        let accounts = [];
+
+        const updateAccountSelectorUI = () => {
+            if (!advancedModeEnabled || !accountSelectorContainer) return;
+            const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+            if (selectedAccount) {
+                accountSelectorContainer.innerHTML = `
+                    <label class="text-sm text-wabi-text-secondary">帳戶</label>
+                    <button id="account-selector-btn" class="w-full flex items-center justify-between bg-wabi-surface p-3 mt-1 rounded-lg border border-wabi-border">
+                        <div class="flex items-center gap-3">
+                            <i class="${selectedAccount.icon} text-lg"></i>
+                            <span class="font-medium">${selectedAccount.name}</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
+                    </button>
+                `;
+                document.getElementById('account-selector-btn').addEventListener('click', () => {
+                    this.showAccountSelectionModal(accounts, selectedAccountId, (newAccountId) => {
+                        selectedAccountId = newAccountId;
+                        updateAccountSelectorUI();
+                    });
+                });
+            }
+        };
+
+        if (advancedModeEnabled) {
+            accounts = await this.dataService.getAccounts();
+            if (accounts.length > 0) {
+                selectedAccountId = accounts[0].id; // Default to first account
+            } else {
+                // Handle case with no accounts: show a message and disable saving
+                accountSelectorContainer.innerHTML = `<p class="text-center text-red-500">請先至「設定」頁面建立一個帳戶</p>`;
+            }
+        }
 
         const toggleKeypadGrid = (force) => {
             const shouldOpen = force === undefined ? !keypadGridOpen : force;
@@ -676,6 +1521,10 @@ class EasyAccountingApp {
                 toggleKeypadGrid(false);
             } else if (key === 'save') {
                 const amount = parseFloat(currentAmount);
+                if (advancedModeEnabled && !selectedAccountId) {
+                    showToast('請先建立一個帳戶', 'error');
+                    return;
+                }
                 if (amount > 0 && selectedCategory) {
                     const recordData = {
                         type: currentType,
@@ -684,6 +1533,9 @@ class EasyAccountingApp {
                         description: noteInput.value,
                         date: currentDate
                     };
+                    if (advancedModeEnabled) {
+                        recordData.accountId = selectedAccountId;
+                    }
                     if (isEditMode) {
                         await this.dataService.updateRecord(parseInt(recordId, 10), recordData);
                         showToast('更新成功！');
@@ -709,6 +1561,9 @@ class EasyAccountingApp {
                 selectedCategory = recordToEdit.category;
                 currentDate = recordToEdit.date;
                 noteInput.value = recordToEdit.description;
+                if (advancedModeEnabled) {
+                    selectedAccountId = recordToEdit.accountId;
+                }
 
                 amountDisplay.textContent = formatCurrency(currentAmount);
                 dateDisplay.textContent = formatDate(currentDate, 'short');
@@ -743,6 +1598,7 @@ class EasyAccountingApp {
 
         // Initial State
         updateTypeUI();
+        updateAccountSelectorUI(); // New call
         toggleKeypadGrid(true); // Open by default
     }
 
