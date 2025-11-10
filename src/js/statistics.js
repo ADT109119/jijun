@@ -311,6 +311,9 @@ export class StatisticsManager {
         // The color is a tailwind class like `bg-red-500`. We need the hex code for Chart.js.
         // This is a temporary solution. A better solution would be to have a mapping from tailwind classes to hex codes.
         const colors = categoryData.map(c => {
+            if (c.color.startsWith('#')) {
+                return c.color; // Already a hex code
+            }
             const colorClass = c.color;
             const match = colorClass.match(/bg-(.*)-(\d+)/);
             if (match) {
@@ -409,6 +412,9 @@ export class StatisticsManager {
         const labels = categoryData.map(c => c.name);
         const values = categoryData.map(c => c.value);
         const colors = categoryData.map(c => {
+            if (c.color.startsWith('#')) {
+                return c.color; // Already a hex code
+            }
             const colorClass = c.color;
             const match = colorClass.match(/bg-(.*)-(\d+)/);
             if (match) {

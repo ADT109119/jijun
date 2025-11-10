@@ -136,6 +136,8 @@ export class QuickSelectManager {
                         if (!category) return '';
 
                         const descriptionText = record.description ? record.description : category.name;
+                        const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
+                        const colorClass = !category.color.startsWith('#') ? category.color : '';
 
                         return `
                             <button class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 mt-1 text-sm"
@@ -144,7 +146,7 @@ export class QuickSelectManager {
                                 data-description="${record.description}"
                                 data-account-id="${record.accountId}"
                             >
-                                <div class="flex items-center justify-center rounded-full ${category.color} text-white shrink-0 size-6">
+                                <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-6" ${colorStyle}>
                                     <i class="${category.icon} text-xs"></i>
                                 </div>
                                 <span class="text-wabi-text-primary font-medium truncate max-w-[100px]">${descriptionText}</span>

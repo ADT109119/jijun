@@ -1,5 +1,17 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.0.5": {
+    date: "2025-11-10",
+    title: "自訂類別添加自訂顏色與記帳頁面鍵盤優化",
+    features: [
+      "自訂類別添加自訂顏色功能",
+    ],
+    bugfixes: [
+      "記帳頁面鍵盤按鈕添加 touch-manipulation，避免 iPhone 點擊按鍵時觸發放大功能"
+    ],
+    improvements: [
+    ]
+  },
   "2.1.0.4": {
     date: "2025-11-08",
     title: "添加最近紀錄快速選擇功能",

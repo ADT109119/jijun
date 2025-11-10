@@ -149,9 +149,13 @@ export class CategoryManager {
             <label class="block text-sm font-medium text-wabi-text-primary mb-2">選擇顏色</label>
             <div class="grid grid-cols-6 gap-3" id="color-selector">
               ${this.getAvailableColors().map(color => `
-                <button type="button" class="color-option w-12 h-12 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
+                <button type="button" class="color-option w-10 h-10 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
                 </button>
               `).join('')}
+              <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-10 h-10 rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
+                <i class="fas fa-palette text-wabi-text-secondary text-xl"></i>
+                <input type="color" id="custom-color-picker-input" class="absolute w-0 h-0 opacity-0" value="#888888">
+              </label>
             </div>
           </div>
         </div>
@@ -219,17 +223,50 @@ export class CategoryManager {
     })
     
     // 顏色選擇
-    document.querySelectorAll('.color-option').forEach(btn => {
+    const colorOptions = document.querySelectorAll('.color-option');
+    const customColorPickerInput = document.getElementById('custom-color-picker-input');
+    const customColorPickerLabel = document.getElementById('custom-color-picker-label');
+
+    const clearColorSelection = () => {
+      colorOptions.forEach(b => {
+        b.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+        b.classList.add('border-transparent');
+      });
+      customColorPickerLabel.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+      customColorPickerLabel.classList.add('border-dashed', 'border-wabi-border');
+      customColorPickerLabel.style.backgroundColor = 'transparent';
+    };
+    
+    colorOptions.forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.color-option').forEach(b => {
-          b.classList.remove('border-gray-500')
-          b.classList.add('border-gray-300')
-        })
-        btn.classList.remove('border-gray-300')
-        btn.classList.add('border-gray-500')
-        selectedColor = btn.dataset.color
-      })
-    })
+        clearColorSelection();
+        btn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+        selectedColor = btn.dataset.color;
+      });
+    });
+
+    customColorPickerInput.addEventListener('input', (e) => {
+      clearColorSelection();
+      customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+      customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
+      customColorPickerLabel.style.backgroundColor = e.target.value;
+      selectedColor = e.target.value;
+    });
+
+    // 初始狀態
+    if (selectedColor) {
+      if (selectedColor.startsWith('#')) {
+        customColorPickerInput.value = selectedColor;
+        customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+        customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
+        customColorPickerLabel.style.backgroundColor = selectedColor;
+      } else {
+        const selectedBtn = document.querySelector(`.color-option[data-color="${selectedColor}"]`);
+        if (selectedBtn) {
+          selectedBtn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+        }
+      }
+    }
     
     // 儲存分類
     document.getElementById('save-category-btn').addEventListener('click', () => {
@@ -334,10 +371,13 @@ export class CategoryManager {
         
         <div class="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
         ${customCategories.length > 0 ? `
-            ${customCategories.map(category => `
+            ${customCategories.map(category => {
+              const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
+              const colorClass = !category.color.startsWith('#') ? category.color : '';
+              return `
               <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
                 <div class="flex items-center space-x-3">
-                  <div class="w-4 h-4 rounded-full ${category.color}"></div>
+                  <div class="w-4 h-4 rounded-full ${colorClass}" ${colorStyle}></div>
                   <span class="text-xl text-wabi-text-primary"><i class="${category.icon}"></i></span>
                   <span class="font-medium text-wabi-text-primary">${category.name}</span>
                 </div>
@@ -350,7 +390,7 @@ export class CategoryManager {
                   </button>
                 </div>
               </div>
-            `).join('')}
+            `}).join('')}
         ` : `
           <div class="text-center py-8 text-wabi-text-secondary">
             <i class="fa-regular fa-folder-open text-4xl mb-2"></i>

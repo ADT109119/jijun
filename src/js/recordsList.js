@@ -193,6 +193,9 @@ export class RecordsListManager {
                 const name = isTransfer ? '帳戶間轉帳' : (category?.name || '未分類');
                 const color = category?.color || 'bg-gray-400';
 
+                const colorStyle = color.startsWith('#') ? `style="background-color: ${color}"` : '';
+                const colorClass = !color.startsWith('#') ? color : '';
+
                 let accountName = '';
                 if (this.advancedModeEnabled) {
                     const account = this.accounts.find(a => a.id === record.accountId);
@@ -202,7 +205,7 @@ export class RecordsListManager {
                 return `
                     <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'}">
                         <div class="flex items-center gap-4">
-                            <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : color} text-white shrink-0 size-12">
+                            <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
                                 <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
                             </div>
                             <div class="flex flex-col justify-center">

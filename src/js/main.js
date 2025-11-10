@@ -477,9 +477,12 @@ class EasyAccountingApp {
                     color = category?.color || 'bg-gray-400';
                 }
 
+                const colorStyle = color.startsWith('#') ? `style="background-color: ${color}"` : '';
+                const colorClass = !color.startsWith('#') ? color : '';
+
                 return `
                     <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
-                        <div class="flex items-center justify-center rounded-lg ${color} text-white shrink-0 size-12">
+                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                             <i class="${icon} text-2xl"></i>
                         </div>
                         <div class="flex-1">
@@ -1491,8 +1494,12 @@ class EasyAccountingApp {
                 if (cat.id === selectedCategory) {
                     btn.classList.add(currentType === 'income' ? 'active-income' : 'active');
                 }
+                
+                const colorStyle = cat.color.startsWith('#') ? `style="background-color: ${cat.color}"` : '';
+                const colorClass = !cat.color.startsWith('#') ? cat.color : '';
+
                 btn.innerHTML = `
-                    <div class="flex size-14 items-center justify-center rounded-full ${cat.color} text-white">
+                    <div class="flex size-14 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
                         <i class="${cat.icon} text-3xl"></i>
                     </div>
                     <p class="text-xs text-center text-wabi-text-secondary">${cat.name}</p>
@@ -1514,8 +1521,10 @@ class EasyAccountingApp {
 
         const updateSelectedCategoryUI = (category) => {
             if (category) {
+                const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
+                const colorClass = !category.color.startsWith('#') ? category.color : '';
                 selectedCategoryUI.innerHTML = `
-                    <div class="flex items-center justify-center rounded-full ${category.color} text-white shrink-0 size-12">
+                    <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                         <i class="${category.icon} text-3xl"></i>
                     </div>
                     <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
@@ -1648,7 +1657,7 @@ class EasyAccountingApp {
         if (key === '') return `<div class="${specialClasses}"></div>`;
 
         return `
-            <button data-key="${key}" class="keypad-btn text-xl py-3 text-center rounded-none transition-colors duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
+            <button data-key="${key}" class="keypad-btn text-xl py-3 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
                 ${content}
             </button>
         `;
