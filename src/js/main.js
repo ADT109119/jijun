@@ -7,6 +7,7 @@ import { BudgetManager } from './budgetManager.js';
 import { CategoryManager } from './categoryManager.js';
 import { ChangelogManager } from './changelog.js';
 import { QuickSelectManager } from './quickSelectManager.js';
+import { DebtManager } from './debtManager.js';
 
 class EasyAccountingApp {
     constructor() {
@@ -15,6 +16,7 @@ class EasyAccountingApp {
         this.changelogManager = new ChangelogManager();
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
         this.quickSelectManager = new QuickSelectManager();
+        this.debtManager = new DebtManager(this.dataService);
 
         this.appContainer = document.getElementById('app-container');
         this.navItems = document.querySelectorAll('.nav-item');
@@ -145,6 +147,12 @@ class EasyAccountingApp {
             case 'recurring':
                 this.renderRecurringPage();
                 break;
+            case 'debts':
+                this.renderDebtsPage();
+                break;
+            case 'contacts':
+                this.renderContactsPage();
+                break;
             default:
                 window.location.hash = 'home';
                 break;
@@ -274,6 +282,9 @@ class EasyAccountingApp {
 
     async renderAddPage(recordId) {
         const isEditMode = !!recordId;
+        const debtEnabled = await this.dataService.getSetting('debtManagementEnabled');
+        const showDebtBtn = !!debtEnabled?.value;
+        
         this.appContainer.innerHTML = `
             <div class="page active p-4 pb-48"> <!-- Add padding-bottom to avoid overlap with fixed keypad -->
                 <!-- Header -->
@@ -281,8 +292,33 @@ class EasyAccountingApp {
                     <a href="#home" class="flex size-12 shrink-0 items-center justify-center">
                         <i class="fa-solid fa-xmark text-2xl text-wabi-text-primary"></i>
                     </a>
-                    <h2 class="text-lg font-bold flex-1 text-center pr-12">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
-                    ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
+                    <h2 class="text-lg font-bold flex-1 text-center">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
+                    <div class="flex items-center gap-2">
+                        ${showDebtBtn ? `
+                            <button id="toggle-debt-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-gray-100" title="標記為欠款">
+                                <i class="fa-solid fa-handshake text-lg"></i>
+                            </button>
+                        ` : ''}
+                        ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
+                    </div>
+                </div>
+
+                <!-- Debt Panel (hidden by default) -->
+                <div id="debt-panel" class="hidden bg-wabi-primary/10 rounded-lg p-4 mb-4 border border-wabi-primary/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="font-medium text-wabi-primary"><i class="fa-solid fa-handshake mr-2"></i>欠款標記</span>
+                        <button id="close-debt-panel" class="text-wabi-text-secondary hover:text-wabi-primary">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="flex h-9 w-full items-center justify-center rounded-lg bg-white/80 p-1 mb-3">
+                        <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-white">別人欠我</button>
+                        <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
+                    </div>
+                    <select id="debt-contact-select" class="w-full p-2 bg-white border border-wabi-border rounded-lg text-sm">
+                        <option value="">選擇聯絡人...</option>
+                    </select>
+                    <p class="text-xs text-wabi-text-secondary mt-2">儲存時將同時建立欠款記錄</p>
                 </div>
 
                 <!-- Type Switcher & Amount -->
@@ -411,6 +447,23 @@ class EasyAccountingApp {
                         </div>
                         <div id="manage-recurring-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
+                        </div>
+                        <!-- Debt Management Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-t border-wabi-border mt-2 pt-2">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-handshake"></i>
+                                </div>
+                                <p class="text-wabi-text-primary text-base font-normal">欠款管理</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="debt-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-debts-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
                     </div>
                 </div>
@@ -711,6 +764,36 @@ class EasyAccountingApp {
                 window.location.hash = '#recurring';
             });
         }
+
+        // Debt Management Toggle
+        const debtManagementToggle = document.getElementById('debt-management-toggle');
+        if (debtManagementToggle) {
+            this.dataService.getSetting('debtManagementEnabled').then(setting => {
+                const isEnabled = !!setting?.value;
+                debtManagementToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                }
+            });
+
+            debtManagementToggle.addEventListener('change', async (e) => {
+                const isEnabled = e.target.checked;
+                await this.dataService.saveSetting({ key: 'debtManagementEnabled', value: isEnabled });
+                if (isEnabled) {
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                } else {
+                    document.getElementById('manage-debts-link-container').classList.add('hidden');
+                }
+                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`);
+            });
+        }
+
+        const manageDebtsBtn = document.getElementById('manage-debts-btn');
+        if (manageDebtsBtn) {
+            manageDebtsBtn.addEventListener('click', () => {
+                window.location.hash = '#debts';
+            });
+        }
     }
 
     async renderAccountsPage() {
@@ -871,6 +954,24 @@ class EasyAccountingApp {
                 closeModal();
             });
         });
+    }
+
+    async renderDebtsPage() {
+        const debtEnabled = await this.dataService.getSetting('debtManagementEnabled');
+        if (!debtEnabled?.value) {
+            window.location.hash = '#settings';
+            return;
+        }
+        await this.debtManager.renderDebtsPage(this.appContainer);
+    }
+
+    async renderContactsPage() {
+        const debtEnabled = await this.dataService.getSetting('debtManagementEnabled');
+        if (!debtEnabled?.value) {
+            window.location.hash = '#settings';
+            return;
+        }
+        await this.debtManager.renderContactsPage(this.appContainer);
     }
 
     async renderRecurringPage() {
@@ -1386,12 +1487,93 @@ class EasyAccountingApp {
         }
     }
 
+    showPaymentModal(debt, recordId, remainingAmount) {
+        const isReceivable = debt.type === 'receivable';
+        
+        const modal = document.createElement('div');
+        modal.id = 'payment-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
+                <h3 class="text-lg font-semibold mb-4 text-wabi-primary">
+                    <i class="fa-solid fa-coins mr-2"></i>${isReceivable ? '登記收款' : '登記還款'}
+                </h3>
+                <p class="text-sm text-wabi-text-secondary mb-4">
+                    剩餘金額：<span class="font-bold ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">${formatCurrency(remainingAmount)}</span>
+                </p>
+                
+                <div class="mb-4">
+                    <label class="text-sm font-medium text-wabi-text-primary mb-2 block">還款金額</label>
+                    <input type="number" id="payment-amount-input" value="" min="1" max="${remainingAmount}" step="1" placeholder="輸入金額"
+                           class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary text-lg">
+                </div>
+
+                <div class="flex gap-2 mb-4">
+                    <button id="pay-full-btn" class="flex-1 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg bg-wabi-primary/10">
+                        <i class="fa-solid fa-check-double mr-1"></i>全額還清
+                    </button>
+                </div>
+
+                <div class="flex gap-3">
+                    <button id="confirm-payment-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
+                        確認
+                    </button>
+                    <button id="cancel-payment-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                        取消
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+        const amountInput = modal.querySelector('#payment-amount-input');
+
+        modal.querySelector('#cancel-payment-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        // Focus input
+        setTimeout(() => amountInput.focus(), 100);
+
+        // Pay full amount button
+        modal.querySelector('#pay-full-btn').addEventListener('click', () => {
+            amountInput.value = remainingAmount;
+        });
+
+        // Confirm payment
+        modal.querySelector('#confirm-payment-btn').addEventListener('click', async () => {
+            const amount = parseFloat(amountInput.value);
+            
+            if (!amount || amount <= 0) {
+                showToast('請輸入有效金額', 'error');
+                return;
+            }
+            
+            if (amount > remainingAmount) {
+                showToast(`金額不能超過剩餘金額 ${formatCurrency(remainingAmount)}`, 'error');
+                return;
+            }
+            
+            await this.dataService.settleDebt(debt.id, amount);
+            closeModal();
+            showToast('還款成功！');
+            await this.renderAddPage(recordId);
+        });
+    }
+
     async setupAddPageListeners(recordId) {
         const isEditMode = !!recordId;
         let recordToEdit = null;
 
         const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
         const advancedModeEnabled = !!advancedMode?.value;
+        
+        const debtManagement = await this.dataService.getSetting('debtManagementEnabled');
+        const debtManagementEnabled = !!debtManagement?.value;
 
         let currentType = 'expense';
         let currentAmount = '0';
@@ -1399,6 +1581,11 @@ class EasyAccountingApp {
         let selectedAccountId = null; // New state for multi-account mode
         let currentDate = formatDateToString(new Date());
         let keypadGridOpen = true;
+
+        // Debt panel state
+        let debtEnabled = false;
+        let debtType = 'receivable';
+        let debtContactId = null;
 
         const amountDisplay = document.getElementById('add-amount-display');
         const categoryGrid = document.getElementById('add-category-grid');
@@ -1412,6 +1599,58 @@ class EasyAccountingApp {
         const expenseBtn = document.getElementById('add-type-expense');
         const incomeBtn = document.getElementById('add-type-income');
         const quickSelectContainer = document.getElementById('quick-select-container');
+        const debtPanel = document.getElementById('debt-panel');
+        const toggleDebtBtn = document.getElementById('toggle-debt-btn');
+
+        // Setup debt panel if available
+        if (toggleDebtBtn && debtPanel) {
+            const loadContacts = async () => {
+                const contacts = await this.dataService.getContacts();
+                const select = document.getElementById('debt-contact-select');
+                if (select) {
+                    select.innerHTML = `<option value="">選擇聯絡人...</option>` +
+                        contacts.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                }
+            };
+
+            toggleDebtBtn.addEventListener('click', async () => {
+                debtEnabled = !debtEnabled;
+                debtPanel.classList.toggle('hidden', !debtEnabled);
+                toggleDebtBtn.classList.toggle('text-wabi-primary', debtEnabled);
+                toggleDebtBtn.classList.toggle('bg-wabi-primary/10', debtEnabled);
+                toggleDebtBtn.classList.toggle('text-wabi-text-secondary', !debtEnabled);
+                if (debtEnabled) {
+                    await loadContacts();
+                }
+            });
+
+            document.getElementById('close-debt-panel')?.addEventListener('click', () => {
+                debtEnabled = false;
+                debtPanel.classList.add('hidden');
+                toggleDebtBtn.classList.remove('text-wabi-primary', 'bg-wabi-primary/10');
+                toggleDebtBtn.classList.add('text-wabi-text-secondary');
+            });
+
+            document.querySelectorAll('.debt-add-type-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    debtType = btn.id === 'debt-type-receivable-add' ? 'receivable' : 'payable';
+                    document.querySelectorAll('.debt-add-type-btn').forEach(b => {
+                        b.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'text-white');
+                        b.classList.add('text-wabi-text-secondary');
+                    });
+                    if (debtType === 'receivable') {
+                        btn.classList.add('bg-wabi-income', 'text-white');
+                    } else {
+                        btn.classList.add('bg-wabi-expense', 'text-white');
+                    }
+                    btn.classList.remove('text-wabi-text-secondary');
+                });
+            });
+
+            document.getElementById('debt-contact-select')?.addEventListener('change', (e) => {
+                debtContactId = e.target.value ? parseInt(e.target.value) : null;
+            });
+        }
 
         // --- Account Selector Logic ---
         const accountSelectorContainer = document.getElementById('account-selector-container');
@@ -1552,6 +1791,10 @@ class EasyAccountingApp {
                     showToast('請先建立一個帳戶', 'error');
                     return;
                 }
+                if (debtEnabled && !debtContactId) {
+                    showToast('請選擇欠款聯絡人', 'error');
+                    return;
+                }
                 if (amount > 0 && selectedCategory) {
                     const recordData = {
                         type: currentType,
@@ -1562,13 +1805,46 @@ class EasyAccountingApp {
                         accountId: advancedModeEnabled ? selectedAccountId : null
                     };
 
+                    let newRecordId = null;
                     if (isEditMode) {
-                        await this.dataService.updateRecord(parseInt(recordId, 10), recordData);
-                        showToast('更新成功！');
+                        const numericId = parseInt(recordId, 10);
+                        await this.dataService.updateRecord(numericId, recordData);
+                        
+                        // If record doesn't have debt but user enabled debt, create one
+                        if (debtEnabled && debtContactId && !recordToEdit.debtId) {
+                            const debtId = await this.dataService.addDebt({
+                                type: debtType,
+                                contactId: debtContactId,
+                                amount: amount,
+                                date: currentDate,
+                                description: noteInput.value || selectedCategory,
+                                recordId: numericId
+                            });
+                            await this.dataService.updateRecord(numericId, { debtId: debtId });
+                            showToast('更新成功並建立欠款記錄！');
+                        } else {
+                            showToast('更新成功！');
+                        }
                     } else {
-                        await this.dataService.addRecord(recordData);
+                        newRecordId = await this.dataService.addRecord(recordData);
                         this.quickSelectManager.addRecord(recordData.type, recordData.category, recordData.description, recordData.accountId);
-                        showToast('儲存成功！');
+
+                        // Create debt record if enabled
+                        if (debtEnabled && debtContactId) {
+                            const debtId = await this.dataService.addDebt({
+                                type: debtType,
+                                contactId: debtContactId,
+                                amount: amount,
+                                date: currentDate,
+                                description: noteInput.value || selectedCategory,
+                                recordId: newRecordId
+                            });
+                            // Update record with debtId to create bidirectional link
+                            await this.dataService.updateRecord(newRecordId, { debtId: debtId });
+                            showToast('儲存成功並建立欠款記錄！');
+                        } else {
+                            showToast('儲存成功！');
+                        }
                     }
                     window.location.hash = 'records';
                 } else {
@@ -1594,6 +1870,140 @@ class EasyAccountingApp {
                 amountDisplay.textContent = formatCurrency(currentAmount);
                 dateDisplay.textContent = formatDate(currentDate, 'short');
                 dateInput.value = currentDate;
+                
+                // Load associated debt if exists
+                if (recordToEdit.debtId) {
+                    const debt = await this.dataService.getDebt(recordToEdit.debtId);
+                    if (debt) {
+                        const contacts = await this.dataService.getContacts();
+                        const contact = contacts.find(c => c.id === debt.contactId);
+                        const contactName = contact?.name || '未知聯絡人';
+                        const isReceivable = debt.type === 'receivable';
+                        const remainingAmount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
+                        const originalAmount = debt.originalAmount ?? debt.amount ?? 0;
+                        const paidPercent = originalAmount > 0 ? Math.round(((originalAmount - remainingAmount) / originalAmount) * 100) : 0;
+                        
+                        // Store debt info for later use
+                        debtContactId = debt.contactId;
+                        debtType = debt.type;
+                        debtEnabled = true;
+                        
+                        // Build contact options for edit
+                        const contactOptions = contacts.map(c => 
+                            `<option value="${c.id}" ${c.id === debt.contactId ? 'selected' : ''}>${c.name}</option>`
+                        ).join('');
+                        
+                        // Show debt info panel
+                        const debtInfoPanel = document.createElement('div');
+                        debtInfoPanel.id = 'debt-info-panel';
+                        debtInfoPanel.className = 'bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200';
+                        debtInfoPanel.innerHTML = `
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-orange-700">
+                                    <i class="fa-solid fa-handshake mr-2"></i>關聯欠款
+                                </span>
+                                ${debt.settled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-2 py-1 rounded">已還清</span>' : ''}
+                            </div>
+                            ${!debt.settled ? `
+                                <!-- Editable debt info -->
+                                <div class="space-y-2 mb-3">
+                                    <div class="flex gap-2">
+                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-orange-300 text-orange-600'}">
+                                            別人欠我
+                                        </button>
+                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-orange-300 text-orange-600'}">
+                                            我欠別人
+                                        </button>
+                                    </div>
+                                    <select id="debt-contact-edit" class="w-full p-2 border border-orange-300 rounded-lg text-sm bg-white">
+                                        ${contactOptions}
+                                    </select>
+                                </div>
+                                <!-- Progress bar -->
+                                <div class="mb-3">
+                                    <div class="flex justify-between text-xs text-orange-600 mb-1">
+                                        <span>剩餘：${formatCurrency(remainingAmount)}</span>
+                                        <span>${paidPercent}% 已還</span>
+                                    </div>
+                                    <div class="w-full bg-orange-200 rounded-full h-2">
+                                        <div class="bg-wabi-income h-2 rounded-full" style="width: ${paidPercent}%"></div>
+                                    </div>
+                                </div>
+                                <!-- Action buttons -->
+                                <div class="flex gap-2">
+                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-white bg-wabi-primary rounded-lg">
+                                        <i class="fa-solid fa-coins mr-1"></i>還款
+                                    </button>
+                                    <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-red-600 border border-red-300 rounded-lg bg-white">
+                                        <i class="fa-solid fa-unlink"></i>
+                                    </button>
+                                </div>
+                            ` : `
+                                <div class="text-sm text-orange-600">
+                                    <p><strong>聯絡人：</strong>${contactName}</p>
+                                    <p><strong>類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
+                                    <p><strong>原始金額：</strong>${formatCurrency(originalAmount)}</p>
+                                </div>
+                            `}
+                        `;
+                        
+                        // Insert after header
+                        const header = this.appContainer.querySelector('.page .flex.items-center.pb-2');
+                        if (header && header.nextElementSibling) {
+                            header.parentNode.insertBefore(debtInfoPanel, header.nextElementSibling);
+                        }
+                        
+                        // Hide the toggle debt button since this record already has a debt
+                        if (toggleDebtBtn) {
+                            toggleDebtBtn.classList.add('hidden');
+                        }
+                        if (debtPanel) {
+                            debtPanel.classList.add('hidden');
+                        }
+                        
+                        // Bind debt type edit buttons
+                        document.getElementById('debt-type-receivable-edit')?.addEventListener('click', async () => {
+                            await this.dataService.updateDebt(debt.id, { type: 'receivable' });
+                            showToast('欠款類型已更新');
+                            await this.renderAddPage(recordId);
+                        });
+                        document.getElementById('debt-type-payable-edit')?.addEventListener('click', async () => {
+                            await this.dataService.updateDebt(debt.id, { type: 'payable' });
+                            showToast('欠款類型已更新');
+                            await this.renderAddPage(recordId);
+                        });
+                        
+                        // Bind contact edit
+                        document.getElementById('debt-contact-edit')?.addEventListener('change', async (e) => {
+                            const newContactId = parseInt(e.target.value);
+                            if (newContactId) {
+                                await this.dataService.updateDebt(debt.id, { contactId: newContactId });
+                                showToast('欠款人已更新');
+                            }
+                        });
+                        
+                        // Bind partial payment button - show custom modal
+                        const partialPayBtn = document.getElementById('partial-pay-btn');
+                        if (partialPayBtn) {
+                            partialPayBtn.addEventListener('click', () => {
+                                this.showPaymentModal(debt, recordId, remainingAmount);
+                            });
+                        }
+                        
+                        // Bind remove debt link button
+                        const removeDebtBtn = document.getElementById('remove-debt-link-btn');
+                        if (removeDebtBtn) {
+                            removeDebtBtn.addEventListener('click', async () => {
+                                if (confirm('確定要取消此記錄與欠款的關聯嗎？欠款記錄將被刪除。')) {
+                                    await this.dataService.deleteDebt(debt.id);
+                                    await this.dataService.updateRecord(numericRecordId, { debtId: null });
+                                    showToast('已取消欠款關聯');
+                                    await this.renderAddPage(recordId);
+                                }
+                            });
+                        }
+                    }
+                }
             }
         }
 

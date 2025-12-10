@@ -7,6 +7,7 @@ export const CATEGORIES = {
     { id: 'fun', name: '娛樂', icon: 'fas fa-gamepad', color: 'bg-purple-500' },
     { id: 'medi', name: '醫療', icon: 'fas fa-hospital', color: 'bg-pink-500' },
     { id: 'edu', name: '教育', icon: 'fas fa-book', color: 'bg-indigo-500' },
+    { id: 'debt_repayment', name: '還款', icon: 'fas fa-hand-holding-usd', color: 'bg-orange-500' },
     { id: 'another', name: '其他', icon: 'fas fa-box', color: 'bg-gray-500' }
   ],
   income: [
@@ -16,6 +17,7 @@ export const CATEGORIES = {
     { id: 'parttime', name: '兼職', icon: 'fas fa-clock', color: 'bg-blue-400' },
     { id: 'invest', name: '投資', icon: 'fas fa-chart-line', color: 'bg-emerald-500' },
     { id: 'interest', name: '利息', icon: 'fas fa-university', color: 'bg-cyan-500' },
+    { id: 'debt_collection', name: '欠款回收', icon: 'fas fa-hand-holding-usd', color: 'bg-orange-500' },
     { id: 'another', name: '其他', icon: 'fas fa-box', color: 'bg-gray-500' }
   ]
 }

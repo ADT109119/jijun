@@ -8,6 +8,7 @@ export class RecordsListManager {
         this.container = container;
         this.records = [];
         this.accounts = []; // Store accounts for display
+        this.debtsMap = {}; // Store debts for display
         this.advancedModeEnabled = false;
         this.filters = {
             period: 'month',
@@ -103,6 +104,16 @@ export class RecordsListManager {
         });
         this.records = records; // Store all records for the period
 
+        // Load debts for records that have debtId
+        const debtIds = [...new Set(records.filter(r => r.debtId).map(r => r.debtId))];
+        this.debtsMap = {};
+        for (const debtId of debtIds) {
+            const debt = await this.dataService.getDebt(debtId);
+            if (debt) {
+                this.debtsMap[debtId] = debt;
+            }
+        }
+
         this.applyFiltersAndRender();
     }
 
@@ -142,9 +153,39 @@ export class RecordsListManager {
         const recordsForSummary = normalRecords.concat(transferRecords.filter(r => !excludedTransferIds.has(r.id)));
 
         // 3. Calculate summary from the offset list and update UI
+        // Need to consider debt status for correct calculation
         const summary = recordsForSummary.reduce((acc, r) => {
-            if (r.type === 'income') acc.income += r.amount;
-            else acc.expense += r.amount;
+            let effectiveAmount = r.amount;
+            
+            // Check if record has associated debt and adjust amount
+            if (r.debtId && this.debtsMap[r.debtId]) {
+                const debt = this.debtsMap[r.debtId];
+                const isSettled = debt.settled === true;
+                const isReceivable = debt.type === 'receivable'; // 別人欠我
+                
+                // Logic:
+                // - 支出 + 別人欠我 (代墊): 還清後 $0 (錢回來了)
+                // - 收入 + 別人欠我: 初始 $0，還清後原額 (收到錢了)
+                // - 支出 + 我欠別人: 還清後原額 (真的花了)
+                // - 收入 + 我欠別人 (先收): 還清後 $0 (還回去了)
+                
+                if (r.type === 'expense' && isReceivable) {
+                    // 代墊：還清後不計入支出
+                    effectiveAmount = isSettled ? 0 : r.amount;
+                } else if (r.type === 'income' && isReceivable) {
+                    // 別人還我：還清後才計入收入
+                    effectiveAmount = isSettled ? r.amount : 0;
+                } else if (r.type === 'expense' && !isReceivable) {
+                    // 還別人錢：還清後計入支出
+                    effectiveAmount = isSettled ? r.amount : 0;
+                } else if (r.type === 'income' && !isReceivable) {
+                    // 先收別人的錢：還清後不計入收入
+                    effectiveAmount = isSettled ? 0 : r.amount;
+                }
+            }
+            
+            if (r.type === 'income') acc.income += effectiveAmount;
+            else acc.expense += effectiveAmount;
             return acc;
         }, { income: 0, expense: 0 });
 
@@ -192,6 +233,43 @@ export class RecordsListManager {
                 const isTransfer = record.category === 'transfer';
                 const name = isTransfer ? '帳戶間轉帳' : (category?.name || '未分類');
                 const color = category?.color || 'bg-gray-400';
+                const hasDebt = !!record.debtId;
+                
+                // Check debt status and calculate display
+                const debt = hasDebt ? this.debtsMap?.[record.debtId] : null;
+                const isDebtSettled = debt?.settled === true;
+                const isReceivable = debt?.type === 'receivable'; // 別人欠我
+                
+                // Calculate display amount based on debt type and status
+                // - 支出 + 別人欠我 (代墊): 顯示原額，還清後 → $0
+                // - 收入 + 別人欠我: 顯示 $0，還清後 → 原額
+                // - 支出 + 我欠別人: 顯示 $0，還清後 → 原額
+                // - 收入 + 我欠別人 (先收): 顯示原額，還清後 → $0
+                let displayLogic = { showZero: false, showArrow: false, arrowToZero: false };
+                
+                if (hasDebt && debt) {
+                    if (isIncome && isReceivable) {
+                        // 收入+別人欠我：初始 $0，還清後顯示原額
+                        displayLogic.showZero = !isDebtSettled;
+                        displayLogic.showArrow = isDebtSettled;
+                        displayLogic.arrowToZero = false;
+                    } else if (!isIncome && isReceivable) {
+                        // 支出+別人欠我（代墊）：顯示原額，還清後 $0
+                        displayLogic.showZero = isDebtSettled;
+                        displayLogic.showArrow = isDebtSettled;
+                        displayLogic.arrowToZero = true;
+                    } else if (!isIncome && !isReceivable) {
+                        // 支出+我欠別人：初始 $0，還清後顯示原額
+                        displayLogic.showZero = !isDebtSettled;
+                        displayLogic.showArrow = isDebtSettled;
+                        displayLogic.arrowToZero = false;
+                    } else if (isIncome && !isReceivable) {
+                        // 收入+我欠別人（先收）：顯示原額，還清後 $0
+                        displayLogic.showZero = isDebtSettled;
+                        displayLogic.showArrow = isDebtSettled;
+                        displayLogic.arrowToZero = true;
+                    }
+                }
 
                 const colorStyle = color.startsWith('#') ? `style="background-color: ${color}"` : '';
                 const colorClass = !color.startsWith('#') ? color : '';
@@ -201,22 +279,69 @@ export class RecordsListManager {
                     const account = this.accounts.find(a => a.id === record.accountId);
                     accountName = account ? account.name : '未指定帳戶';
                 }
+                
+                // Build amount display based on displayLogic
+                // strikethroughAmount: what gets crossed out
+                // arrowAmount: what the arrow points to
+                // arrowColor: green for good outcome, red for money spent
+                let strikethroughAmount = 0;
+                let arrowAmount = 0;
+                let arrowColor = 'text-wabi-income'; // default green
+                
+                if (hasDebt && debt && displayLogic.showArrow) {
+                    if (displayLogic.arrowToZero) {
+                        // 支出+別人欠我, 收入+我欠別人: 原額刪除 → $0 (綠色)
+                        strikethroughAmount = record.amount;
+                        arrowAmount = 0;
+                        arrowColor = 'text-wabi-income';
+                    } else {
+                        // 收入+別人欠我, 支出+我欠別人: $0刪除 → 原額
+                        strikethroughAmount = 0;
+                        arrowAmount = record.amount;
+                        // 支出+我欠別人 還清後是紅色 (真的花錢了)
+                        // 收入+別人欠我 還清後是綠色 (收到錢了)
+                        arrowColor = isIncome ? 'text-wabi-income' : 'text-wabi-expense';
+                    }
+                }
+                
+                const mainAmount = displayLogic.showZero ? 0 : record.amount;
+                const statusLabel = hasDebt 
+                    ? (isDebtSettled ? '已還清' : '待還款')
+                    : '';
+                const statusClass = isDebtSettled ? 'bg-wabi-income/20 text-wabi-income' : 'bg-orange-100 text-orange-600';
+                
+                // Determine if record should be dimmed:
+                // Only dim if the effective value becomes 0 (money cancelled out)
+                const shouldDim = hasDebt && isDebtSettled && displayLogic.arrowToZero;
 
                 return `
-                    <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'}">
+                    <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
                         <div class="flex items-center gap-4">
                             <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
                                 <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
                             </div>
                             <div class="flex flex-col justify-center">
-                                <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
+                                <div class="flex items-center gap-2">
+                                    <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
+                                    ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
+                                    ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
+                                </div>
                                 <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2">${record.description || '無備註'}</p>
                             </div>
                         </div>
                         <div class="shrink-0 text-right">
-                            <p class="${isIncome ? 'text-wabi-income' : 'text-wabi-expense'} text-base font-medium">
-                                ${isIncome ? '+' : '-'} ${formatCurrency(record.amount)}
-                            </p>
+                            ${displayLogic.showArrow ? `
+                                <p class="text-wabi-text-secondary text-base font-medium line-through">
+                                    ${isIncome ? '+' : '-'} ${formatCurrency(strikethroughAmount)}
+                                </p>
+                                <p class="text-xs font-medium ${arrowColor}">
+                                    → ${isIncome ? '+' : '-'}${formatCurrency(arrowAmount)}
+                                </p>
+                            ` : `
+                                <p class="${isIncome ? 'text-wabi-income' : 'text-wabi-expense'} text-base font-medium">
+                                    ${isIncome ? '+' : '-'} ${formatCurrency(mainAmount)}
+                                </p>
+                            `}
                             ${this.advancedModeEnabled ? `<p class="text-xs text-wabi-text-secondary">${accountName}</p>` : `<p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>`}
                         </div>
                     </a>

@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 3 // <<<<<<< CHANGE: Bump version for schema upgrade
+    this.dbVersion = 4 // Schema version 4: Add files, contacts, debts for debt management
     this.db = null
     this.init()
   }
@@ -55,6 +55,34 @@ class DataService {
                         autoIncrement: true
                     });
                     recurringStore.createIndex('nextDueDate', 'nextDueDate');
+                }
+            }
+            // Schema version 4: Debt management system
+            if (oldVersion < 4) {
+                // Files store for storing blobs (avatars, etc.)
+                if (!db.objectStoreNames.contains('files')) {
+                    db.createObjectStore('files', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                }
+                // Contacts store for debt management
+                if (!db.objectStoreNames.contains('contacts')) {
+                    const contactStore = db.createObjectStore('contacts', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    contactStore.createIndex('name', 'name');
+                }
+                // Debts store for tracking receivables and payables
+                if (!db.objectStoreNames.contains('debts')) {
+                    const debtStore = db.createObjectStore('debts', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    debtStore.createIndex('contactId', 'contactId');
+                    debtStore.createIndex('type', 'type');
+                    debtStore.createIndex('settled', 'settled');
                 }
             }
           }
@@ -372,6 +400,12 @@ class DataService {
     if (offsetTransfers) {
         records = records.filter(r => r.category !== 'transfer');
     }
+
+    // Exclude debt-related categories from statistics
+    // These are just "moving money" not real income/expense
+    records = records.filter(r => 
+        r.category !== 'debt_collection' && r.category !== 'debt_repayment'
+    );
     
     const stats = {
       totalIncome: 0,
@@ -409,18 +443,26 @@ class DataService {
       const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
       const accounts = await this.getAccounts();
       const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
+      const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
+      const contacts = await this.getContacts();
+      const debts = await this.getDebts();
 
       const exportData = {
-        version: '2.1.1', // New version to indicate accounts are included
+        version: '2.2.0', // Version 2.2.0 includes debt management
         exportDate: new Date().toISOString(),
         settings: {
             advancedAccountModeEnabled: advancedAccountModeEnabled?.value || false,
+            debtManagementEnabled: debtManagementEnabled?.value || false,
         },
         accounts: accounts,
         records: records,
+        contacts: contacts,
+        debts: debts,
         customCategories: customCategories,
         metadata: {
           totalRecords: records.length,
+          totalContacts: contacts.length,
+          totalDebts: debts.length,
           dateRange: {
             start: records.length > 0 ? Math.min(...records.map(r => new Date(r.date).getTime())) : null,
             end: records.length > 0 ? Math.max(...records.map(r => new Date(r.date).getTime())) : null
@@ -466,14 +508,19 @@ class DataService {
           // --- 清除所有舊資料 ---
           await this.clearAllRecords();
           await this.clearAllAccounts();
+          await this.clearAllContacts();
+          await this.clearAllDebts();
           localStorage.removeItem('customCategories');
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
+          await this.saveSetting({ key: 'debtManagementEnabled', value: false });
 
 
           // --- 開始匯入 ---
           // 1. 匯入設定
           const advancedModeEnabled = data.settings?.advancedAccountModeEnabled || false;
+          const debtManagementEnabled = data.settings?.debtManagementEnabled || false;
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: advancedModeEnabled });
+          await this.saveSetting({ key: 'debtManagementEnabled', value: debtManagementEnabled });
 
           // 2. 匯入自訂分類
           if (data.customCategories) {
@@ -481,17 +528,40 @@ class DataService {
           }
 
           // 3. 匯入帳戶並建立 ID Map
-          const oldIdToNewIdMap = new Map();
+          const oldAccountIdToNewIdMap = new Map();
           if (advancedModeEnabled && data.accounts && Array.isArray(data.accounts)) {
             for (const account of data.accounts) {
                 const oldId = account.id;
                 const { id, ...accountData } = account;
                 const newId = await this.addAccount(accountData);
-                oldIdToNewIdMap.set(oldId, newId);
+                oldAccountIdToNewIdMap.set(oldId, newId);
             }
           }
 
-          // 4. 匯入紀錄
+          // 4. 匯入聯絡人並建立 ID Map
+          const oldContactIdToNewIdMap = new Map();
+          if (data.contacts && Array.isArray(data.contacts)) {
+            for (const contact of data.contacts) {
+                const oldId = contact.id;
+                const { id, ...contactData } = contact;
+                const newId = await this.addContact(contactData);
+                oldContactIdToNewIdMap.set(oldId, newId);
+            }
+          }
+
+          // 5. 匯入欠款
+          if (data.debts && Array.isArray(data.debts)) {
+            for (const debt of data.debts) {
+                const { id, ...debtData } = debt;
+                // Update contactId to new ID
+                if (debtData.contactId) {
+                    debtData.contactId = oldContactIdToNewIdMap.get(debtData.contactId);
+                }
+                await this.addDebt(debtData);
+            }
+          }
+
+          // 6. 匯入紀錄
           let records = [];
           if (data.version && data.version.startsWith('2.')) {
             records = data.records || []
@@ -506,7 +576,7 @@ class DataService {
           for (const record of validRecords) {
             // 如果是進階模式，更新 accountId
             if (advancedModeEnabled && record.accountId !== undefined) {
-                record.accountId = oldIdToNewIdMap.get(record.accountId);
+                record.accountId = oldAccountIdToNewIdMap.get(record.accountId);
             }
             await this.addRecord(record);
           }
@@ -653,6 +723,338 @@ class DataService {
     } catch (error) {
       console.error('Failed to clear accounts:', error);
       throw error;
+    }
+  }
+
+  // 清除所有聯絡人
+  async clearAllContacts() {
+    try {
+      const tx = this.db.transaction('contacts', 'readwrite');
+      await tx.store.clear();
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error('Failed to clear contacts:', error);
+      throw error;
+    }
+  }
+
+  // 清除所有欠款
+  async clearAllDebts() {
+    try {
+      const tx = this.db.transaction('debts', 'readwrite');
+      await tx.store.clear();
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error('Failed to clear debts:', error);
+      throw error;
+    }
+  }
+
+  // --- File Methods (for storing avatars, etc.) ---
+  async addFile(file) {
+    try {
+      const fileData = {
+        name: file.name || 'file',
+        type: file.type || 'application/octet-stream',
+        data: file.data, // Blob
+        createdAt: Date.now()
+      };
+      const tx = this.db.transaction('files', 'readwrite');
+      const id = await tx.store.add(fileData);
+      await tx.done;
+      return id;
+    } catch (error) {
+      console.error('Failed to add file:', error);
+      throw error;
+    }
+  }
+
+  async getFile(id) {
+    try {
+      return await this.db.get('files', id);
+    } catch (error) {
+      console.error(`Failed to get file ${id}:`, error);
+      return null;
+    }
+  }
+
+  async deleteFile(id) {
+    try {
+      const tx = this.db.transaction('files', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete file ${id}:`, error);
+      throw error;
+    }
+  }
+
+  // --- Contact Methods ---
+  async addContact(contact) {
+    try {
+      const contactData = {
+        name: contact.name,
+        avatarFileId: contact.avatarFileId || null,
+        createdAt: Date.now()
+      };
+      const tx = this.db.transaction('contacts', 'readwrite');
+      const id = await tx.store.add(contactData);
+      await tx.done;
+      return id;
+    } catch (error) {
+      console.error('Failed to add contact:', error);
+      throw error;
+    }
+  }
+
+  async getContact(id) {
+    try {
+      return await this.db.get('contacts', id);
+    } catch (error) {
+      console.error(`Failed to get contact ${id}:`, error);
+      return null;
+    }
+  }
+
+  async getContacts() {
+    try {
+      return await this.db.getAll('contacts');
+    } catch (error) {
+      console.error('Failed to get contacts:', error);
+      return [];
+    }
+  }
+
+  async updateContact(id, updates) {
+    try {
+      const tx = this.db.transaction('contacts', 'readwrite');
+      const contact = await tx.store.get(id);
+      if (contact) {
+        const updatedContact = { ...contact, ...updates };
+        await tx.store.put(updatedContact);
+        await tx.done;
+        return updatedContact;
+      }
+      throw new Error('Contact not found');
+    } catch (error) {
+      console.error(`Failed to update contact ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteContact(id) {
+    try {
+      const tx = this.db.transaction('contacts', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete contact ${id}:`, error);
+      throw error;
+    }
+  }
+
+  // --- Debt Methods ---
+  async addDebt(debt) {
+    try {
+      const amount = debt.amount;
+      const debtData = {
+        type: debt.type, // 'receivable' | 'payable'
+        contactId: debt.contactId,
+        originalAmount: amount,      // Original debt amount
+        remainingAmount: amount,     // Remaining amount (for partial payments)
+        recordId: debt.recordId || null, // Linked record ID
+        date: debt.date,
+        description: debt.description || '',
+        settled: false,
+        settledAt: null,
+        payments: [],                // Partial payment history
+        createdAt: Date.now()
+      };
+      const tx = this.db.transaction('debts', 'readwrite');
+      const id = await tx.store.add(debtData);
+      await tx.done;
+      return id;
+    } catch (error) {
+      console.error('Failed to add debt:', error);
+      throw error;
+    }
+  }
+
+  async getDebt(id) {
+    try {
+      return await this.db.get('debts', id);
+    } catch (error) {
+      console.error(`Failed to get debt ${id}:`, error);
+      return null;
+    }
+  }
+
+  async getDebts(filters = {}) {
+    try {
+      let debts = await this.db.getAll('debts');
+      
+      if (filters.contactId !== undefined) {
+        debts = debts.filter(d => d.contactId === filters.contactId);
+      }
+      if (filters.type) {
+        debts = debts.filter(d => d.type === filters.type);
+      }
+      if (filters.settled !== undefined) {
+        debts = debts.filter(d => d.settled === filters.settled);
+      }
+      
+      return debts.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (error) {
+      console.error('Failed to get debts:', error);
+      return [];
+    }
+  }
+
+  async updateDebt(id, updates) {
+    try {
+      const tx = this.db.transaction('debts', 'readwrite');
+      const debt = await tx.store.get(id);
+      if (debt) {
+        const updatedDebt = { ...debt, ...updates };
+        await tx.store.put(updatedDebt);
+        await tx.done;
+        return updatedDebt;
+      }
+      throw new Error('Debt not found');
+    } catch (error) {
+      console.error(`Failed to update debt ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteDebt(id) {
+    try {
+      const tx = this.db.transaction('debts', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete debt ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async settleDebt(id, paymentAmount = null) {
+    try {
+      const debt = await this.getDebt(id);
+      if (!debt) throw new Error('Debt not found');
+      if (debt.settled) return debt; // Already settled
+      
+      // Determine payment amount (full or partial)
+      const amount = paymentAmount || debt.remainingAmount;
+      const newRemainingAmount = debt.remainingAmount - amount;
+      const isFullySettled = newRemainingAmount <= 0;
+      
+      // Create payment record in history
+      const paymentRecord = {
+        amount,
+        date: new Date().toISOString().split('T')[0],
+        recordId: null
+      };
+      
+      // Only create a transaction record if this debt was NOT linked to an existing expense
+      // If it was linked (recordId exists), the expense was already recorded
+      // Creating another record would cause double-counting
+      let newRecordId = null;
+      if (!debt.recordId) {
+        const contact = await this.getContact(debt.contactId);
+        const contactName = contact?.name || '未知聯絡人';
+        
+        const record = {
+          type: debt.type === 'receivable' ? 'income' : 'expense',
+          category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
+          amount: amount,
+          date: new Date().toISOString().split('T')[0],
+          description: debt.type === 'receivable' 
+            ? `收回欠款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`
+            : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
+          debtId: id
+        };
+        
+        newRecordId = await this.addRecord(record);
+      }
+      paymentRecord.recordId = newRecordId;
+      
+      // Update debt with new payment
+      const updatedPayments = [...(debt.payments || []), paymentRecord];
+      const updates = {
+        remainingAmount: Math.max(0, newRemainingAmount),
+        payments: updatedPayments
+      };
+      
+      if (isFullySettled) {
+        updates.settled = true;
+        updates.settledAt = Date.now();
+      }
+      
+      const updatedDebt = await this.updateDebt(id, updates);
+      return updatedDebt;
+    } catch (error) {
+      console.error(`Failed to settle debt ${id}:`, error);
+      throw error;
+    }
+  }
+
+  // Add partial payment to a debt
+  async addPartialPayment(debtId, amount) {
+    return this.settleDebt(debtId, amount);
+  }
+
+  // Get debt summary by contact
+  async getDebtSummary() {
+    try {
+      const debts = await this.getDebts({ settled: false });
+      const contacts = await this.getContacts();
+      
+      let totalReceivable = 0;
+      let totalPayable = 0;
+      const byContact = {};
+      
+      for (const debt of debts) {
+        // Use remainingAmount for calculations, fallback to originalAmount for backward compatibility
+        const amount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
+        
+        if (debt.type === 'receivable') {
+          totalReceivable += amount;
+        } else {
+          totalPayable += amount;
+        }
+        
+        if (!byContact[debt.contactId]) {
+          const contact = contacts.find(c => c.id === debt.contactId);
+          byContact[debt.contactId] = {
+            contact: contact || { id: debt.contactId, name: '未知聯絡人' },
+            receivable: 0,
+            payable: 0,
+            debts: []
+          };
+        }
+        
+        if (debt.type === 'receivable') {
+          byContact[debt.contactId].receivable += amount;
+        } else {
+          byContact[debt.contactId].payable += amount;
+        }
+        byContact[debt.contactId].debts.push(debt);
+      }
+      
+      return {
+        totalReceivable,
+        totalPayable,
+        byContact: Object.values(byContact)
+      };
+    } catch (error) {
+      console.error('Failed to get debt summary:', error);
+      return { totalReceivable: 0, totalPayable: 0, byContact: [] };
     }
   }
 }
