@@ -1810,6 +1810,22 @@ class EasyAccountingApp {
                         const numericId = parseInt(recordId, 10);
                         await this.dataService.updateRecord(numericId, recordData);
                         
+                        // If record has existing debt, check if amount changed and update
+                        if (recordToEdit.debtId && recordToEdit.amount !== amount) {
+                            const debt = await this.dataService.getDebt(recordToEdit.debtId);
+                            if (debt && !debt.settled) {
+                                // Update debt amount proportionally
+                                const oldOriginal = debt.originalAmount ?? debt.amount ?? 0;
+                                const oldRemaining = debt.remainingAmount ?? oldOriginal;
+                                const paidAmount = oldOriginal - oldRemaining;
+                                const newRemaining = Math.max(0, amount - paidAmount);
+                                await this.dataService.updateDebt(recordToEdit.debtId, {
+                                    originalAmount: amount,
+                                    remainingAmount: newRemaining
+                                });
+                            }
+                        }
+                        
                         // If record doesn't have debt but user enabled debt, create one
                         if (debtEnabled && debtContactId && !recordToEdit.debtId) {
                             const debtId = await this.dataService.addDebt({

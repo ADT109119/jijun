@@ -6,6 +6,7 @@ export class DebtManager {
     this.dataService = dataService;
     this.container = null;
     this.currentFilter = 'unsettled'; // 'unsettled' | 'settled' | 'all'
+    this.currentContactFilter = null; // null means all contacts
     this.currentPage = 1;
     this.pageSize = 10;
   }
@@ -13,7 +14,12 @@ export class DebtManager {
   // 渲染欠款管理頁面
   async renderDebtsPage(container) {
     this.container = container;
-    const summary = await this.dataService.getDebtSummary();
+    
+    // Reset filters on page load
+    this.currentContactFilter = null;
+    this.currentFilter = 'unsettled';
+    this.currentPage = 1;
+    
     const contacts = await this.dataService.getContacts();
 
     container.innerHTML = `
@@ -29,16 +35,18 @@ export class DebtManager {
           </button>
         </div>
 
-        <!-- Summary Cards -->
-        <div class="grid grid-cols-2 gap-4 mb-6">
-          <div class="bg-wabi-income/10 rounded-xl p-4 text-center border border-wabi-income/20">
-            <p class="text-sm text-wabi-income font-medium">別人欠我</p>
-            <p class="text-2xl font-bold text-wabi-income">${formatCurrency(summary.totalReceivable)}</p>
-          </div>
-          <div class="bg-wabi-expense/10 rounded-xl p-4 text-center border border-wabi-expense/20">
-            <p class="text-sm text-wabi-expense font-medium">我欠別人</p>
-            <p class="text-2xl font-bold text-wabi-expense">${formatCurrency(summary.totalPayable)}</p>
-          </div>
+        <!-- Summary Cards (dynamic) -->
+        <div id="summary-cards-container" class="grid grid-cols-2 gap-4 mb-4"></div>
+
+        <!-- Contact Summary Table Button -->
+        <div class="mb-4">
+          <button id="show-summary-table-btn" class="w-full flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:bg-gray-50">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-table-list text-wabi-primary"></i>
+              <span class="text-wabi-text-primary font-medium">聯絡人欠款總表</span>
+            </div>
+            <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
+          </button>
         </div>
 
         <!-- Filter Tabs -->
@@ -46,6 +54,14 @@ export class DebtManager {
           <button data-filter="unsettled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'unsettled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">未結清</button>
           <button data-filter="settled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'settled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">已結清</button>
           <button data-filter="all" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'all' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">全部</button>
+        </div>
+
+        <!-- Contact Filter -->
+        <div class="mb-4">
+          <select id="contact-filter-select" class="w-full p-3 bg-wabi-surface rounded-lg border border-wabi-border text-wabi-text-primary">
+            <option value="">👤 所有聯絡人</option>
+            ${contacts.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+          </select>
         </div>
 
         <!-- Contacts Link -->
@@ -65,13 +81,156 @@ export class DebtManager {
     `;
 
     this.setupEventListeners();
+    await this.updateSummaryCards();
     await this.loadDebtList();
+  }
+
+  // Update summary cards based on current contact filter
+  async updateSummaryCards() {
+    const container = this.container.querySelector('#summary-cards-container');
+    const allDebts = await this.dataService.getDebts({ settled: false });
+    
+    let filteredDebts = allDebts;
+    if (this.currentContactFilter) {
+      filteredDebts = allDebts.filter(d => d.contactId === this.currentContactFilter);
+    }
+    
+    let totalReceivable = 0;
+    let totalPayable = 0;
+    
+    filteredDebts.forEach(debt => {
+      const amount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
+      if (debt.type === 'receivable') {
+        totalReceivable += amount;
+      } else {
+        totalPayable += amount;
+      }
+    });
+    
+    const contacts = await this.dataService.getContacts();
+    const selectedContact = this.currentContactFilter 
+      ? contacts.find(c => c.id === this.currentContactFilter)?.name || '聯絡人' 
+      : null;
+    
+    container.innerHTML = `
+      <div class="bg-wabi-income/10 rounded-xl p-4 text-center border border-wabi-income/20">
+        <p class="text-sm text-wabi-income font-medium">${selectedContact ? selectedContact + ' 欠我' : '別人欠我'}</p>
+        <p class="text-2xl font-bold text-wabi-income">${formatCurrency(totalReceivable)}</p>
+      </div>
+      <div class="bg-wabi-expense/10 rounded-xl p-4 text-center border border-wabi-expense/20">
+        <p class="text-sm text-wabi-expense font-medium">${selectedContact ? '我欠 ' + selectedContact : '我欠別人'}</p>
+        <p class="text-2xl font-bold text-wabi-expense">${formatCurrency(totalPayable)}</p>
+      </div>
+    `;
+  }
+
+  // Show contact summary table as modal
+  async showContactSummaryModal() {
+    const allDebts = await this.dataService.getDebts({ settled: false });
+    const contacts = await this.dataService.getContacts();
+    
+    // Build summary per contact
+    const contactSummary = {};
+    allDebts.forEach(debt => {
+      const contactId = debt.contactId;
+      if (!contactSummary[contactId]) {
+        contactSummary[contactId] = { receivable: 0, payable: 0 };
+      }
+      const amount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
+      if (debt.type === 'receivable') {
+        contactSummary[contactId].receivable += amount;
+      } else {
+        contactSummary[contactId].payable += amount;
+      }
+    });
+    
+    const rows = contacts.map(contact => {
+      const summary = contactSummary[contact.id] || { receivable: 0, payable: 0 };
+      const net = summary.receivable - summary.payable;
+      if (summary.receivable === 0 && summary.payable === 0) return '';
+      
+      return `
+        <tr class="border-b border-wabi-border last:border-b-0 hover:bg-gray-50 cursor-pointer" data-contact-id="${contact.id}">
+          <td class="px-4 py-3 text-sm text-wabi-text-primary font-medium">${contact.name}</td>
+          <td class="px-4 py-3 text-sm text-wabi-income text-right">${summary.receivable > 0 ? formatCurrency(summary.receivable) : '-'}</td>
+          <td class="px-4 py-3 text-sm text-wabi-expense text-right">${summary.payable > 0 ? formatCurrency(summary.payable) : '-'}</td>
+          <td class="px-4 py-3 text-sm font-bold text-right ${net > 0 ? 'text-wabi-income' : net < 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${net > 0 ? '+' : ''}${formatCurrency(net)}</td>
+        </tr>
+      `;
+    }).filter(Boolean).join('');
+    
+    const tableContent = !rows 
+      ? `<p class="p-8 text-center text-wabi-text-secondary">目前沒有未結清的欠款</p>`
+      : `
+        <table class="w-full text-left">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium">聯絡人</th>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">欠我</th>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">我欠</th>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">淨額</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      `;
+    
+    const modal = document.createElement('div');
+    modal.id = 'contact-summary-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+    modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-lg w-full max-h-[80vh] flex flex-col">
+        <div class="flex items-center justify-between p-4 border-b border-wabi-border">
+          <h3 class="text-lg font-semibold text-wabi-primary">
+            <i class="fa-solid fa-table-list mr-2"></i>聯絡人欠款總表
+          </h3>
+          <button id="close-summary-modal" class="text-wabi-text-secondary hover:text-wabi-primary">
+            <i class="fa-solid fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          ${tableContent}
+        </div>
+        <div class="p-3 border-t border-wabi-border text-center text-xs text-wabi-text-secondary">
+          點擊任一行可篩選該聯絡人的欠款
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close button
+    modal.querySelector('#close-summary-modal').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+    
+    // Click on row to filter by contact
+    modal.querySelectorAll('tr[data-contact-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const contactId = parseInt(row.dataset.contactId);
+        this.currentContactFilter = contactId;
+        this.currentPage = 1;
+        const select = this.container.querySelector('#contact-filter-select');
+        if (select) select.value = contactId;
+        this.updateSummaryCards();
+        this.loadDebtList();
+        modal.remove();
+      });
+    });
   }
 
   setupEventListeners() {
     // Add debt button
     this.container.querySelector('#add-debt-btn').addEventListener('click', () => {
       this.showAddDebtModal();
+    });
+
+    // Show summary table modal
+    this.container.querySelector('#show-summary-table-btn')?.addEventListener('click', () => {
+      this.showContactSummaryModal();
     });
 
     // Filter buttons
@@ -85,8 +244,17 @@ export class DebtManager {
         });
         e.target.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
         e.target.classList.remove('text-wabi-text-secondary');
+        this.currentPage = 1; // Reset to first page when filter changes
         await this.loadDebtList();
       });
+    });
+
+    // Contact filter select
+    this.container.querySelector('#contact-filter-select')?.addEventListener('change', async (e) => {
+      this.currentContactFilter = e.target.value ? parseInt(e.target.value) : null;
+      this.currentPage = 1; // Reset to first page when filter changes
+      await this.updateSummaryCards();
+      await this.loadDebtList();
     });
   }
 
@@ -100,8 +268,13 @@ export class DebtManager {
       filters.settled = true;
     }
 
-    const allDebts = await this.dataService.getDebts(filters);
+    let allDebts = await this.dataService.getDebts(filters);
     const contacts = await this.dataService.getContacts();
+
+    // Apply contact filter
+    if (this.currentContactFilter) {
+      allDebts = allDebts.filter(d => d.contactId === this.currentContactFilter);
+    }
 
     // Pagination
     const totalDebts = allDebts.length;
@@ -263,6 +436,7 @@ export class DebtManager {
         if (this.currentPage > 1) {
           this.currentPage--;
           await this.loadDebtList();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       });
     }
@@ -272,6 +446,7 @@ export class DebtManager {
         if (this.currentPage < totalPages) {
           this.currentPage++;
           await this.loadDebtList();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         }
       });
     }
