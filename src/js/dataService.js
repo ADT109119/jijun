@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 4 // Schema version 4: Add files, contacts, debts for debt management
+    this.dbVersion = 5 // Schema version 5: Add plugin system
     this.db = null
     this.init()
   }
@@ -83,6 +83,14 @@ class DataService {
                     debtStore.createIndex('contactId', 'contactId');
                     debtStore.createIndex('type', 'type');
                     debtStore.createIndex('settled', 'settled');
+                }
+            }
+            // Schema version 5: Plugin System
+            if (oldVersion < 5) {
+                if (!db.objectStoreNames.contains('plugins')) {
+                    const pluginStore = db.createObjectStore('plugins', { keyPath: 'id' });
+                    // id: plugin identifier (e.g. 'com.example.myplugin')
+                    // name, version, script (blob/string), enabled (bool)
                 }
             }
           }

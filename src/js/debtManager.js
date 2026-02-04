@@ -1050,7 +1050,7 @@ export class DebtManager {
         const file = await this.dataService.getFile(parseInt(avatarId));
         if (file && file.data) {
           const url = URL.createObjectURL(file.data);
-          el.innerHTML = `<img src="${url}" class="w-full h-full object-cover">`;
+          el.innerHTML = `<img src="${url}" class="w-full h-full object-cover" style="dynamic-range-limit: standard;">`;
         }
       }
     }

@@ -1,5 +1,18 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.1.0": {
+    date: "2026-02-04",
+    title: "擴充功能系統 (Beta) 與命運大轉盤",
+    features: [
+      "新增擴充功能系統 (Beta)，支援安裝第三方或官方插件",
+      "新增官方插件「命運大轉盤」，解決選擇困難症",
+      "設定頁面新增「擴充功能商店」入口"
+    ],
+    bugfixes: [
+      "修復聯絡人頭像 HDR 顯示過亮問題",
+    ],
+    improvements: []
+  },
   "2.1.0.8": {
     date: "2026-02-04",
     title: "匯出選項與欠款匯入修復",
@@ -373,7 +386,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.8'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.1.0'
   }
 
   // 獲取當前版本資訊

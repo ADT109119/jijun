@@ -8,6 +8,7 @@ import { CategoryManager } from './categoryManager.js';
 import { ChangelogManager } from './changelog.js';
 import { QuickSelectManager } from './quickSelectManager.js';
 import { DebtManager } from './debtManager.js';
+import { PluginManager } from './pluginManager.js';
 
 class EasyAccountingApp {
     constructor() {
@@ -16,7 +17,9 @@ class EasyAccountingApp {
         this.changelogManager = new ChangelogManager();
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
         this.quickSelectManager = new QuickSelectManager();
+        this.quickSelectManager = new QuickSelectManager();
         this.debtManager = new DebtManager(this.dataService);
+        this.pluginManager = new PluginManager(this.dataService, this);
 
         this.appContainer = document.getElementById('app-container');
         this.navItems = document.querySelectorAll('.nav-item');
@@ -41,7 +44,7 @@ class EasyAccountingApp {
         }
 
         this.setupEventListeners();
-        this.handleRouteChange();
+        // this.handleRouteChange(); // Moved to after plugin init
         this.registerServiceWorker();
 
         window.addEventListener('beforeinstallprompt', (e) => {
@@ -65,6 +68,12 @@ class EasyAccountingApp {
         }
 
         this.processRecurringTransactions();
+        
+        // Initialize plugins
+        await this.pluginManager.init();
+        
+        // Handle initial route after plugins are loaded
+        this.handleRouteChange();
     }
 
     async processRecurringTransactions() {
@@ -153,8 +162,28 @@ class EasyAccountingApp {
             case 'contacts':
                 this.renderContactsPage();
                 break;
+            case 'contacts':
+                this.renderContactsPage();
+                break;
+            case 'plugins':
+                this.renderPluginsPage();
+                break;
+                break;
             default:
-                window.location.hash = 'home';
+                const customPage = this.pluginManager.getCustomPage(page);
+                console.log('Routing check:', page, customPage); // Debug
+                if (customPage) {
+                    this.appContainer.innerHTML = ''; // Clear container
+                    try {
+                        customPage.renderFn(this.appContainer);
+                    } catch (e) {
+                        console.error('Error rendering custom page:', e);
+                        showToast('頁面載入失敗', 'error');
+                    }
+                } else {
+                    console.warn('Route not found, redirecting to home:', page);
+                    window.location.hash = 'home';
+                }
                 break;
         }
     }
@@ -397,6 +426,7 @@ class EasyAccountingApp {
                         <div id="install-pwa-btn-container" class="hidden">
                             ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
                         </div>
+                        ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
                     </div>
 
                     <!-- Data Management -->
@@ -470,6 +500,145 @@ class EasyAccountingApp {
             </div>
         `;
         this.setupSettingsPageListeners();
+        // Add listener for plugin manager button
+        const managePluginsBtn = document.getElementById('manage-plugins-btn');
+        if (managePluginsBtn) {
+            managePluginsBtn.addEventListener('click', () => {
+                window.location.hash = '#plugins';
+            });
+        }
+    }
+
+    async renderPluginsPage() {
+        const plugins = await this.pluginManager.getInstalledPlugins();
+
+        this.appContainer.innerHTML = `
+            <div class="page active p-4 pb-24">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
+                        <i class="fa-solid fa-chevron-left text-xl"></i>
+                    </a>
+                    <h1 class="text-xl font-bold text-wabi-primary">擴充功能商店</h1>
+                    <div class="w-8"></div>
+                </div>
+
+                <!-- Store Section -->
+                 <h3 class="font-bold text-wabi-primary mb-3">推薦擴充</h3>
+                 <div id="store-list-container" class="space-y-3 mb-8">
+                    <div class="text-center py-4 text-wabi-text-secondary animate-pulse">
+                        載入中...
+                    </div>
+                 </div>
+
+                <!-- Custom Pages List -->
+                ${this.pluginManager.customPages.size > 0 ? `
+                    <h3 class="font-bold text-wabi-primary mb-3">已安裝應用程式</h3>
+                    <div class="space-y-3 mb-6">
+                        ${Array.from(this.pluginManager.customPages.entries()).map(([route, page]) => `
+                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-gray-50">
+                                <div>
+                                    <h4 class="font-bold text-wabi-text-primary">${page.title}</h4>
+                                    <p class="text-xs text-wabi-text-secondary mt-1">#${route}</p>
+                                </div>
+                                <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
+                            </a>
+                        `).join('')}
+                    </div>
+                ` : ''}
+
+                <!-- Plugin List -->
+                <h3 class="font-bold text-wabi-primary mb-3">已安裝插件模組</h3>
+                <div id="plugin-list-container" class="space-y-3">
+                    ${plugins.length === 0 ? `
+                        <div class="text-center py-8 text-wabi-text-secondary">
+                            <i class="fa-solid fa-puzzle-piece text-4xl mb-3 opacity-30"></i>
+                            <p>尚未安裝任何擴充功能</p>
+                        </div>
+                    ` : plugins.map(p => `
+                        <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center">
+                            <div>
+                                <h4 class="font-bold text-wabi-text-primary">${p.name} <span class="text-xs text-wabi-text-secondary font-normal">v${p.version}</span></h4>
+                                <p class="text-xs text-wabi-text-secondary mt-1">${p.description || '無描述'}</p>
+                            </div>
+                            <button class="delete-plugin-btn text-wabi-expense p-2" data-id="${p.id}">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        
+        // Load Store Data
+        try {
+            const res = await fetch('plugins/index.json');
+            if (res.ok) {
+                const storePlugins = await res.json();
+                const storeContainer = document.getElementById('store-list-container');
+                
+                storeContainer.innerHTML = storePlugins.map(p => {
+                    const isInstalled = plugins.some(installed => installed.id === p.id);
+                    return `
+                    <div class="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl">
+                                <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-wabi-text-primary text-lg">${p.name}</h4>
+                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${p.description}</p>
+                            </div>
+                        </div>
+                        <button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 ${isInstalled ? 'bg-green-100 text-green-700 cursor-default' : 'bg-wabi-primary text-white hover:bg-opacity-90 shadow'}"
+                            data-url="${p.file}" data-id="${p.id}" ${isInstalled ? 'disabled' : ''}>
+                            ${isInstalled ? '已安裝' : '安裝'}
+                        </button>
+                    </div>
+                `}).join('');
+
+                // Bind Install Events
+                document.querySelectorAll('.store-install-btn').forEach(btn => {
+                    if (!btn.disabled) {
+                        btn.addEventListener('click', async () => {
+                            btn.disabled = true;
+                            btn.textContent = '下載中...';
+                            try {
+                                const response = await fetch(btn.dataset.url);
+                                const script = await response.text();
+                                // Create a File object to reuse existing installPlugin (or refactor installPlugin to accept string)
+                                // We can just overload installPlugin or create a blob file.
+                                const file = new File([script], 'plugin.js', { type: 'text/javascript' });
+                                await this.pluginManager.installPlugin(file);
+                                showToast('安裝成功！', 'success');
+                                this.renderPluginsPage();
+                            } catch (e) {
+                                console.error(e);
+                                showToast('安裝失敗', 'error');
+                                btn.disabled = false;
+                                btn.textContent = '安裝';
+                            }
+                        });
+                    }
+                });
+
+            } else {
+                 document.getElementById('store-list-container').innerHTML = '<p class="text-center text-red-500">無法載入商店列表</p>';
+            }
+        } catch (e) {
+            console.error(e);
+             document.getElementById('store-list-container').innerHTML = '<p class="text-center text-red-500">無法連結至商店</p>';
+        }
+
+        // Handle Delete
+        document.querySelectorAll('.delete-plugin-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (confirm('確定要移除此擴充功能嗎？')) {
+                    await this.pluginManager.uninstallPlugin(btn.dataset.id);
+                    this.renderPluginsPage();
+                }
+            });
+        });
     }
 
     // --- Page Loaders & Setup ---

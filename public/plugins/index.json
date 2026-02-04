@@ -1,0 +1,20 @@
+[
+  {
+    "id": "com.example.wheel",
+    "name": "命運大轉盤",
+    "description": "做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。",
+    "version": "1.0",
+    "author": "官方",
+    "file": "plugins/wheel.plugin.js",
+    "icon": "fa-dharmachakra"
+  },
+  {
+    "id": "com.example.hello",
+    "name": "Hello World",
+    "description": "顯示歡迎訊息的範例插件。",
+    "version": "1.0",
+    "author": "官方範例",
+    "file": "plugins/hello.plugin.js",
+    "icon": "fa-hand-spock"
+  }
+]
