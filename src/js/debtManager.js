@@ -387,7 +387,9 @@ export class DebtManager {
         const debtId = parseInt(btn.dataset.id);
         if (confirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
           await this.dataService.settleDebt(debtId);
-          await this.renderDebtsPage(this.container);
+          // Maintain current filter state instead of full re-render
+          await this.updateSummaryCards();
+          await this.loadDebtList();
         }
       });
     });
@@ -414,6 +416,8 @@ export class DebtManager {
         const debtId = parseInt(btn.dataset.id);
         if (confirm('確定要刪除此欠款記錄嗎？')) {
           await this.dataService.deleteDebt(debtId);
+          // Maintain current filter state
+          await this.updateSummaryCards();
           await this.loadDebtList();
         }
       });
@@ -515,7 +519,9 @@ export class DebtManager {
 
       await this.dataService.addPartialPayment(debtId, amount);
       closeModal();
-      await this.renderDebtsPage(this.container);
+      // Maintain current filter state instead of full re-render
+      await this.updateSummaryCards();
+      await this.loadDebtList();
     });
   }
 
@@ -714,7 +720,9 @@ export class DebtManager {
       }
 
       closeModal();
-      await this.renderDebtsPage(this.container);
+      // Maintain current filter state instead of full re-render
+      await this.updateSummaryCards();
+      await this.loadDebtList();
     });
   }
 

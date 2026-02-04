@@ -289,9 +289,9 @@ class EasyAccountingApp {
             <div class="page active p-4 pb-48"> <!-- Add padding-bottom to avoid overlap with fixed keypad -->
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
-                    <a href="#home" class="flex size-12 shrink-0 items-center justify-center">
+                    <button id="add-page-close-btn" class="flex size-12 shrink-0 items-center justify-center">
                         <i class="fa-solid fa-xmark text-2xl text-wabi-text-primary"></i>
-                    </a>
+                    </button>
                     <h2 class="text-lg font-bold flex-1 text-center">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
                     <div class="flex items-center gap-2">
                         ${showDebtBtn ? `
@@ -657,13 +657,8 @@ class EasyAccountingApp {
 
     setupSettingsPageListeners() {
         document.getElementById('export-data-btn').addEventListener('click', async () => {
-            try {
-                await this.dataService.exportData();
-                showToast('資料已成功匯出！', 'success');
-            } catch (error) {
-                console.error('匯出失敗:', error);
-                showToast('資料匯出失敗', 'error');
-            }
+            // Show export options dialog
+            await this.showExportOptionsModal();
         });
 
         const importFileInput = document.getElementById('import-file-input');
@@ -1377,10 +1372,94 @@ class EasyAccountingApp {
 
             await this.dataService.addRecord(expenseRecord);
             await this.dataService.addRecord(incomeRecord);
-
-            showToast('轉帳成功！');
+                showToast('轉帳成功！');
             this.renderAccountsPage(); // Re-render to show updated balances
             closeModal();
+        });
+    }
+
+    async showExportOptionsModal() {
+        const debtEnabled = await this.dataService.getSetting('debtManagementEnabled');
+        const showDebtOption = !!debtEnabled?.value;
+        const advancedModeEnabled = await this.dataService.getSetting('advancedAccountModeEnabled');
+        const showAccountOption = !!advancedModeEnabled?.value;
+
+        const modal = document.createElement('div');
+        modal.id = 'export-options-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
+                <h3 class="text-lg font-bold text-wabi-primary mb-4">匯出資料選項</h3>
+                <div class="space-y-3 mb-6">
+                    <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
+                        <input type="checkbox" id="export-records" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <div>
+                            <p class="font-medium text-wabi-text-primary">記帳紀錄</p>
+                            <p class="text-xs text-wabi-text-secondary">所有收支紀錄</p>
+                        </div>
+                    </label>
+                    ${showAccountOption ? `
+                    <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
+                        <input type="checkbox" id="export-accounts" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <div>
+                            <p class="font-medium text-wabi-text-primary">帳戶</p>
+                            <p class="text-xs text-wabi-text-secondary">多帳戶設定及餘額</p>
+                        </div>
+                    </label>
+                    ` : ''}
+                    ${showDebtOption ? `
+                    <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
+                        <input type="checkbox" id="export-debts" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <div>
+                            <p class="font-medium text-wabi-text-primary">欠款資料</p>
+                            <p class="text-xs text-wabi-text-secondary">聯絡人及欠款紀錄</p>
+                        </div>
+                    </label>
+                    ` : ''}
+                    <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
+                        <input type="checkbox" id="export-categories" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <div>
+                            <p class="font-medium text-wabi-text-primary">自訂分類</p>
+                            <p class="text-xs text-wabi-text-secondary">自訂的收支分類</p>
+                        </div>
+                    </label>
+                </div>
+                <div class="flex space-x-3">
+                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
+                        <i class="fa-solid fa-download mr-2"></i>匯出
+                    </button>
+                    <button id="cancel-export-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                        取消
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+
+        modal.querySelector('#cancel-export-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        modal.querySelector('#confirm-export-btn').addEventListener('click', async () => {
+            const options = {
+                includeRecords: modal.querySelector('#export-records')?.checked ?? true,
+                includeAccounts: modal.querySelector('#export-accounts')?.checked ?? true,
+                includeDebts: modal.querySelector('#export-debts')?.checked ?? true,
+                includeCategories: modal.querySelector('#export-categories')?.checked ?? true,
+            };
+
+            try {
+                await this.dataService.exportData(options);
+                showToast('資料已成功匯出！', 'success');
+                closeModal();
+            } catch (error) {
+                console.error('匯出失敗:', error);
+                showToast('資料匯出失敗', 'error');
+            }
         });
     }
 
@@ -1589,6 +1668,15 @@ class EasyAccountingApp {
 
         const amountDisplay = document.getElementById('add-amount-display');
         const categoryGrid = document.getElementById('add-category-grid');
+        
+        // Back Button Logic
+        document.getElementById('add-page-close-btn').addEventListener('click', () => {
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.location.hash = '#home';
+            }
+        });
         const selectedCategoryUI = document.getElementById('add-selected-category');
         const noteInput = document.getElementById('add-note-input');
         const dateInput = document.getElementById('add-date-input');

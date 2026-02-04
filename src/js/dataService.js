@@ -437,15 +437,23 @@ class DataService {
   }
 
   // 匯出所有資料
-  async exportData() {
+  async exportData(options = {}) {
+    // Default options - include all data types
+    const {
+      includeRecords = true,
+      includeAccounts = true,
+      includeDebts = true,
+      includeCategories = true
+    } = options;
+
     try {
-      const records = await this.getRecords();
-      const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
-      const accounts = await this.getAccounts();
+      const records = includeRecords ? await this.getRecords() : [];
+      const customCategories = includeCategories ? JSON.parse(localStorage.getItem('customCategories') || 'null') : null;
+      const accounts = includeAccounts ? await this.getAccounts() : [];
       const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
       const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-      const contacts = await this.getContacts();
-      const debts = await this.getDebts();
+      const contacts = includeDebts ? await this.getContacts() : [];
+      const debts = includeDebts ? await this.getDebts() : [];
 
       const exportData = {
         version: '2.2.0', // Version 2.2.0 includes debt management
@@ -549,36 +557,110 @@ class DataService {
             }
           }
 
-          // 5. 匯入欠款
+          // 5. 匯入欠款 (Phase 1: Insert & Map IDs)
+          // We use direct DB insertion instead of addDebt to preserve imported state (amounts, payments, etc.)
+          const oldDebtIdToNewIdMap = new Map();
+          const debtsToUpdate = []; // Keep track for Phase 2 linking
+
           if (data.debts && Array.isArray(data.debts)) {
+            const tx = this.db.transaction('debts', 'readwrite');
             for (const debt of data.debts) {
+                const oldId = debt.id;
                 const { id, ...debtData } = debt;
-                // Update contactId to new ID
+                
+                // Update contactId
                 if (debtData.contactId) {
                     debtData.contactId = oldContactIdToNewIdMap.get(debtData.contactId);
                 }
-                await this.addDebt(debtData);
+
+                // Insert directly to preserve logical state (amount, payments, settled)
+                const newId = await tx.store.add(debtData);
+                oldDebtIdToNewIdMap.set(oldId, newId);
+                debtsToUpdate.push({ newId, oldData: debt });
             }
+            await tx.done;
           }
 
           // 6. 匯入紀錄
-          let records = [];
+          const oldRecordIdToNewIdMap = new Map();
+          
+          let recordsSource = [];
           if (data.version && data.version.startsWith('2.')) {
-            records = data.records || []
+            recordsSource = data.records || []
           } else {
-            records = this.convertOldDataFormat(data)
+            recordsSource = this.convertOldDataFormat(data)
           }
 
-          const validRecords = records.filter(record => 
+          const validRecords = recordsSource.filter(record => 
             record.date && record.type && record.category && typeof record.amount === 'number'
           );
 
+          const txRecords = this.db.transaction('records', 'readwrite');
           for (const record of validRecords) {
-            // 如果是進階模式，更新 accountId
-            if (advancedModeEnabled && record.accountId !== undefined) {
-                record.accountId = oldAccountIdToNewIdMap.get(record.accountId);
+            const oldRecordId = record.id;
+            const { id, ...recordData } = record;
+
+            // Update accountId
+            if (advancedModeEnabled && recordData.accountId !== undefined) {
+                recordData.accountId = oldAccountIdToNewIdMap.get(recordData.accountId);
             }
-            await this.addRecord(record);
+
+            // Update debtId
+            if (recordData.debtId) {
+                recordData.debtId = oldDebtIdToNewIdMap.get(recordData.debtId);
+            }
+
+            // Add timestamp if missing or use existing, ensure new ID generation
+            if (!recordData.timestamp) recordData.timestamp = Date.now();
+            
+            const newRecordId = await txRecords.store.add(recordData);
+            if (oldRecordId) {
+                oldRecordIdToNewIdMap.set(oldRecordId, newRecordId);
+            }
+          }
+          await txRecords.done;
+
+          // 7. Update Debts (Phase 2: Link Records)
+          // Now that we have newRecordIds, we can update debt references
+          if (debtsToUpdate.length > 0) {
+            const txUpdate = this.db.transaction('debts', 'readwrite');
+            for (const item of debtsToUpdate) {
+                const debt = await txUpdate.store.get(item.newId);
+                if (debt) {
+                    let changed = false;
+
+                    // Link creation record
+                    if (item.oldData.recordId) {
+                        const newRecId = oldRecordIdToNewIdMap.get(item.oldData.recordId);
+                        if (newRecId) {
+                            debt.recordId = newRecId;
+                            changed = true;
+                        }
+                    }
+
+                    // Link payment records
+                    if (debt.payments && Array.isArray(debt.payments)) {
+                        const newPayments = debt.payments.map(p => {
+                            if (p.recordId) {
+                                const newRecId = oldRecordIdToNewIdMap.get(p.recordId);
+                                if (newRecId) {
+                                    changed = true;
+                                    return { ...p, recordId: newRecId };
+                                }
+                            }
+                            return p;
+                        });
+                        if (changed) {
+                            debt.payments = newPayments;
+                        }
+                    }
+
+                    if (changed) {
+                        await txUpdate.store.put(debt);
+                    }
+                }
+            }
+            await txUpdate.done;
           }
 
           resolve({ 
@@ -597,7 +679,7 @@ class DataService {
       }
 
       reader.readAsText(file)
-    })
+    }) 
   }
 
   // 清除所有記錄

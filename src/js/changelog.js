@@ -1,5 +1,18 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.0.8": {
+    date: "2026-02-04",
+    title: "匯出選項與欠款匯入修復",
+    features: [
+      "新增匯出資料選項對話框，可自由選擇要匯出的資料類型（紀錄、帳戶、欠款、分類）"
+    ],
+    bugfixes: [
+      "修復在欠款管理頁面還款後，聯絡人篩選條件被重置的問題"
+    ],
+    improvements: [
+      "記帳頁面左上角按鈕改為「返回」功能，提升操作體驗"
+    ]
+  },
   "2.1.0.7": {
     date: "2025-12-11",
     title: "欠款管理體驗優化",
@@ -360,7 +373,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.4'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.0.8'
   }
 
   // 獲取當前版本資訊
