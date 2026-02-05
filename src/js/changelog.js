@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.1.1": {
+    date: "2026-02-05",
+    title: "擴充功能商店優化",
+    features: [
+      "擴充功能商店介面全新改版，首頁顯示精選插件，支援檢視全部",
+      "新增即時搜尋功能，快速查找擴充功能",
+      "新增插件自動更新機制，支援一鍵更新至最新版本"
+    ],
+    bugfixes: [],
+    improvements: []
+  },
   "2.1.1.0": {
     date: "2026-02-04",
     title: "擴充功能系統 (Beta) 與命運大轉盤",
@@ -386,7 +397,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.1.0'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.1.1'
   }
 
   // 獲取當前版本資訊

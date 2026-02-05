@@ -6,13 +6,14 @@ export class PluginManager {
     this.app = app;
     this.plugins = new Map(); // id -> pluginModule
     this.customPages = new Map(); // routeId -> { title, renderFn }
+    this.hooks = new Map(); // hookName -> Set<callback>
     this.context = this.createPluginContext();
   }
 
   createPluginContext() {
     return {
       appName: 'Easy Accounting',
-      version: '2.1.0.8',
+      version: '2.1.1.1',
       ui: {
         showToast: (msg, type) => showToast(msg, type),
         registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
@@ -20,6 +21,10 @@ export class PluginManager {
         // Future hooks:
         // addSidebarItem: ...
         // addSettingItem: ...
+      },
+      events: {
+        on: (hookName, callback) => this.registerHook(hookName, callback),
+        off: (hookName, callback) => this.unregisterHook(hookName, callback)
       },
       hooks: {
           // Event listeners or interceptors can be added here
@@ -136,5 +141,57 @@ export class PluginManager {
 
   getCustomPage(routeId) {
       return this.customPages.get(routeId);
+  }
+
+  registerHook(hookName, callback) {
+      if (!this.hooks.has(hookName)) {
+          this.hooks.set(hookName, new Set());
+      }
+      this.hooks.get(hookName).add(callback);
+      console.log(`Hook registered: ${hookName}`);
+  }
+
+  unregisterHook(hookName, callback) {
+      if (this.hooks.has(hookName)) {
+          this.hooks.get(hookName).delete(callback);
+      }
+  }
+
+  async triggerHook(hookName, payload) {
+      if (!this.hooks.has(hookName)) return payload;
+      
+      let currentPayload = payload;
+      for (const callback of this.hooks.get(hookName)) {
+          try {
+              // Hooks can modify payload by returning new value (for 'before' hooks)
+              // Or just execute side effects (for 'after' hooks)
+              const result = await callback(currentPayload);
+              if (result !== undefined && result !== null) {
+                  currentPayload = result;
+              }
+          } catch (e) {
+              console.error(`Error in hook ${hookName}:`, e);
+          }
+      }
+      return currentPayload;
+  }
+
+  /**
+   * Compare two version strings.
+   * Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal.
+   */
+  compareVersions(v1, v2) {
+      if (!v1 || !v2) return 0;
+      const p1 = v1.split('.').map(Number);
+      const p2 = v2.split('.').map(Number);
+      const len = Math.max(p1.length, p2.length);
+      
+      for (let i = 0; i < len; i++) {
+          const num1 = p1[i] || 0;
+          const num2 = p2[i] || 0;
+          if (num1 > num2) return 1;
+          if (num1 < num2) return -1;
+      }
+      return 0;
   }
 }

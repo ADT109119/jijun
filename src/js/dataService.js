@@ -11,6 +11,18 @@ class DataService {
     this.dbVersion = 5 // Schema version 5: Add plugin system
     this.db = null
     this.init()
+    this.hookProvider = null; // Function to trigger hooks
+  }
+
+  setHookProvider(fn) {
+      this.hookProvider = fn;
+  }
+
+  async triggerHook(hookName, payload) {
+      if (this.hookProvider) {
+          return await this.hookProvider(hookName, payload);
+      }
+      return payload;
   }
 
   async init() {
@@ -201,10 +213,19 @@ class DataService {
     }
 
     try {
+      // Hook: Before Save
+      let recordToSave = recordWithTimestamp;
+      recordToSave = await this.triggerHook('onRecordSaveBefore', recordToSave);
+      if (!recordToSave) return null; // Cancelled
+
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
-      const result = await store.add(recordWithTimestamp)
+      const result = await store.add(recordToSave)
       await tx.done
+      
+      // Hook: After Save
+      await this.triggerHook('onRecordSaveAfter', { ...recordToSave, id: result });
+
       return result
     } catch (error) {
       console.error('新增記錄失敗:', error)
@@ -264,9 +285,24 @@ class DataService {
       const record = await store.get(id)
       
       if (record) {
-        const updatedRecord = { ...record, ...updates }
+        // Hook: Before Update
+        const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates });
+        if (!updatesWithHook) throw new Error('Update cancelled by plugin');
+        // If hook returns object, expect { updates: ... } or just updates? 
+        // Let's assume hook returns the modified updates object or falsy to cancel.
+        // Actually, triggerHook returns 'currentPayload'.
+        // If payload is { old, updates }, hook receives that.
+        // If hook returns modified payload, we use payload.updates.
+        
+        const finalUpdates = updatesWithHook.updates || updates;
+        
+        const updatedRecord = { ...record, ...finalUpdates }
         await store.put(updatedRecord)
         await tx.done
+        
+        // Hook: After Update
+        await this.triggerHook('onRecordUpdateAfter', updatedRecord);
+
         return updatedRecord
       }
       
@@ -286,8 +322,17 @@ class DataService {
     try {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
+      
+      // Hook: Before Delete
+      const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
+      if (!shouldDelete) throw new Error('Delete cancelled by plugin');
+
       await store.delete(id)
       await tx.done
+      
+      // Hook: After Delete
+      await this.triggerHook('onRecordDeleteAfter', { id });
+
       return true
     } catch (error) {
       console.error('刪除記錄失敗:', error)

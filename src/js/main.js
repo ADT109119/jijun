@@ -71,6 +71,11 @@ class EasyAccountingApp {
         
         // Initialize plugins
         await this.pluginManager.init();
+
+        // Connect DataService hooks to PluginManager
+        this.dataService.setHookProvider(async (hookName, payload) => {
+             return await this.pluginManager.triggerHook(hookName, payload);
+        });
         
         // Handle initial route after plugins are loaded
         this.handleRouteChange();
@@ -118,9 +123,12 @@ class EasyAccountingApp {
 
     setupEventListeners() {
         window.addEventListener('hashchange', () => this.handleRouteChange());
+        document.addEventListener('click', (e) => {
+             this.pluginManager.triggerHook('onPageClick', e);
+        });
     }
 
-    handleRouteChange() {
+    async handleRouteChange() {
         const hash = window.location.hash || '#home';
         if (hash === this.currentHash) return;
         this.currentHash = hash;
@@ -136,38 +144,59 @@ class EasyAccountingApp {
 
         switch (page) {
             case 'home':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'home');
                 this.renderHomePage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'home');
                 break;
             case 'records':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'records');
                 this.renderRecordsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'records');
                 break;
             case 'add':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'add');
                 this.renderAddPage(recordId);
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'add');
                 break;
             case 'stats':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'stats');
                 this.renderStatsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'stats');
                 break;
             case 'settings':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'settings');
                 this.renderSettingsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'settings');
                 break;
             case 'accounts':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'accounts');
                 this.renderAccountsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'accounts');
                 break;
             case 'recurring':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'recurring');
                 this.renderRecurringPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'recurring');
                 break;
             case 'debts':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'debts');
                 this.renderDebtsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'debts');
                 break;
             case 'contacts':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'contacts');
                 this.renderContactsPage();
-                break;
-            case 'contacts':
-                this.renderContactsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'contacts');
                 break;
             case 'plugins':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'plugins');
                 this.renderPluginsPage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'plugins');
                 break;
+            case 'store':
+                await this.pluginManager.triggerHook('onPageRenderBefore', 'store');
+                this.renderStorePage();
+                await this.pluginManager.triggerHook('onPageRenderAfter', 'store');
                 break;
             default:
                 const customPage = this.pluginManager.getCustomPage(page);
@@ -175,7 +204,9 @@ class EasyAccountingApp {
                 if (customPage) {
                     this.appContainer.innerHTML = ''; // Clear container
                     try {
+                        await this.pluginManager.triggerHook('onPageRenderBefore', page);
                         customPage.renderFn(this.appContainer);
+                        await this.pluginManager.triggerHook('onPageRenderAfter', page);
                     } catch (e) {
                         console.error('Error rendering custom page:', e);
                         showToast('頁面載入失敗', 'error');
@@ -572,13 +603,36 @@ class EasyAccountingApp {
         
         // Load Store Data
         try {
-            const res = await fetch('plugins/index.json');
+            const res = await fetch(`plugins/index.json?t=${Date.now()}`);
             if (res.ok) {
                 const storePlugins = await res.json();
                 const storeContainer = document.getElementById('store-list-container');
                 
-                storeContainer.innerHTML = storePlugins.map(p => {
-                    const isInstalled = plugins.some(installed => installed.id === p.id);
+                storeContainer.innerHTML = storePlugins.slice(0, 3).map(p => {
+                    const installed = plugins.find(i => i.id === p.id);
+                    let btnHtml = '';
+                    
+                    if (installed) {
+                        if (this.pluginManager.compareVersions(p.version, installed.version) > 0) {
+                             // Update available
+                             btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow"
+                                data-url="${p.file}" data-id="${p.id}">
+                                更新 (v${p.version})
+                            </button>`;
+                        } else {
+                             // Already installed & up to date
+                             btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>
+                                已安裝
+                            </button>`;
+                        }
+                    } else {
+                        // Not installed
+                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-white hover:bg-opacity-90 shadow"
+                            data-url="${p.file}" data-id="${p.id}">
+                            安裝
+                        </button>`;
+                    }
+
                     return `
                     <div class="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
                         <div class="flex items-center gap-4">
@@ -590,12 +644,17 @@ class EasyAccountingApp {
                                 <p class="text-sm text-wabi-text-secondary line-clamp-1">${p.description}</p>
                             </div>
                         </div>
-                        <button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 ${isInstalled ? 'bg-green-100 text-green-700 cursor-default' : 'bg-wabi-primary text-white hover:bg-opacity-90 shadow'}"
-                            data-url="${p.file}" data-id="${p.id}" ${isInstalled ? 'disabled' : ''}>
-                            ${isInstalled ? '已安裝' : '安裝'}
-                        </button>
+                        ${btnHtml}
                     </div>
                 `}).join('');
+
+                if (storePlugins.length > 3) {
+                    storeContainer.innerHTML += `
+                        <a href="#store" class="block w-full py-3 text-center text-wabi-primary font-bold bg-wabi-primary/5 rounded-xl hover:bg-wabi-primary/10 transition-colors mt-3">
+                            查看更多擴充功能 (${storePlugins.length})
+                        </a>
+                    `;
+                }
 
                 // Bind Install Events
                 document.querySelectorAll('.store-install-btn').forEach(btn => {
@@ -2440,6 +2499,121 @@ class EasyAccountingApp {
                 console.error('Service Worker registration failed:', error);
             }
         }
+    }
+    async renderStorePage() {
+        this.appContainer.innerHTML = `
+            <div class="page active p-4 pb-24 h-full flex flex-col bg-wabi-bg">
+                <header class="flex items-center gap-4 mb-4 shrink-0 bg-white p-4 -m-4 mb-4 shadow-sm border-b border-gray-100 sticky top-0 z-10">
+                    <a href="#plugins" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
+                        <i class="fa-solid fa-chevron-left text-xl"></i>
+                    </a>
+                    <div class="flex-1 relative">
+                        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        <input type="text" id="store-search" class="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-full outline-none focus:ring-2 focus:ring-wabi-primary transition-all placeholder-gray-400" placeholder="搜尋擴充功能...">
+                    </div>
+                </header>
+                
+                <div id="full-store-list" class="flex-1 overflow-y-auto space-y-3 pb-8">
+                     <div class="text-center py-12 text-wabi-text-secondary animate-pulse">載入中...</div>
+                </div>
+            </div>
+        `;
+
+        const plugins = await this.pluginManager.getInstalledPlugins();
+        
+        try {
+            const res = await fetch(`plugins/index.json?t=${Date.now()}`);
+            if (res.ok) {
+                const storePlugins = await res.json();
+                this.renderStoreList(storePlugins, plugins);
+                
+                // Search Logic
+                document.getElementById('store-search').addEventListener('input', (e) => {
+                    const term = e.target.value.toLowerCase().trim();
+                    const filtered = storePlugins.filter(p => 
+                        p.name.toLowerCase().includes(term) || 
+                        p.description.toLowerCase().includes(term) ||
+                        (p.author && p.author.toLowerCase().includes(term))
+                    );
+                    this.renderStoreList(filtered, plugins);
+                });
+            }
+        } catch(e) {
+             document.getElementById('full-store-list').innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
+        }
+    }
+
+    renderStoreList(list, installedPlugins) {
+        const container = document.getElementById('full-store-list');
+        if (list.length === 0) {
+            container.innerHTML = `<div class="text-center py-12 text-gray-400">沒有找到相關插件</div>`;
+            return;
+        }
+
+        container.innerHTML = list.map(p => {
+             const installed = installedPlugins.find(i => i.id === p.id);
+             let btnHtml = '';
+             
+             if (installed) {
+                 if (this.pluginManager.compareVersions(p.version, installed.version) > 0) {
+                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`;
+                 } else {
+                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`;
+                 }
+             } else {
+                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-white hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
+             }
+
+             return `
+                    <div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                                <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-gray-800 text-lg">${p.name}</h4>
+                                <p class="text-sm text-gray-500 line-clamp-1">${p.description}</p>
+                                <p class="text-xs text-gray-400 mt-1">v${p.version} • ${p.author || 'Unknown'}</p>
+                            </div>
+                        </div>
+                        ${btnHtml}
+                    </div>
+             `;
+        }).join('');
+
+        // Bind Store Page Buttons
+        container.querySelectorAll('.store-install-btn').forEach(btn => {
+             if (!btn.disabled) {
+                btn.addEventListener('click', async () => {
+                    const originalText = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.textContent = '下載中...';
+                    
+                    try {
+                        const response = await fetch(btn.dataset.url);
+                        const script = await response.text();
+                        const file = new File([script], 'plugin.js', { type: 'text/javascript' });
+                        await this.pluginManager.installPlugin(file);
+                        showToast('安裝成功！', 'success');
+                        
+                        // Updates UI
+                        // Fetch latest status
+                        const newPlugins = await this.pluginManager.getAllPlugins();
+                        // Re-filter list based on current search?
+                        // Simple: just re-render current list with new status
+                        // Ideally we should keep search state.
+                        // For now, I will just simple re-render current visible list with updated status logic?
+                        // No, simplest is re-init page.
+                        this.renderStorePage();
+                    } catch (e) {
+                        console.error(e);
+                        showToast('安裝失敗', 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                });
+             }
+        });
     }
 }
 
