@@ -3,7 +3,8 @@ export default {
         id: 'com.example.wheel',
         name: '命運大轉盤',
         version: '1.0',
-        description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。'
+        description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
+        author: 'The walking fish 步行魚'
     },
     init(context) {
         this.context = context;
