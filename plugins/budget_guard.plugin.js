@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.budget_guard',
         name: '預算阻擋者',
-        version: '1.0',
+        version: '1.1',
         description: '設定單筆支出上限，防止衝動消費！',
         author: 'The walking fish 步行魚',
         icon: 'fa-shield-halved'
@@ -16,16 +16,21 @@ export default {
         context.ui.registerPage('budget-guard', '預算阻擋者設定', (container) => this.renderSettings(container));
         
         // Register Hook
-        context.events.on('onRecordSaveBefore', (record) => {
+        context.events.on('onRecordSaveBefore', async (record) => {
             if (record.type === 'expense') {
                 const limit = parseInt(this.limit, 10);
                 if (record.amount > limit) {
                     if (this.mode === 'block') {
-                        context.ui.showToast(`⚠️ 阻擋：金額超過單筆上限 $${limit}！`, 'error');
+                        // Show Blocking Modal
+                        await context.ui.showAlert('⚠️ 預算阻擋', `該筆消費 $${record.amount} 超過單筆上限 $${limit}！\n\n請調整金額。`);
                         return null; // Cancel save
                     } else {
-                        context.ui.showToast(`⚠️ 提醒：金額超過單筆上限 $${limit}！`, 'info');
-                        // Proceed with save
+                        // Show Warning Modal and Confirm
+                        const confirmed = await context.ui.showConfirm('⚠️ 預算提醒', `該筆消費 $${record.amount} 超過單筆上限 $${limit}！\n\n確定要繼續儲存嗎？`);
+                        if (!confirmed) {
+                            return null; // Cancel save if user says No
+                        }
+                        // Proceed with save if Yes
                     }
                 }
             }

@@ -12,7 +12,7 @@
     "id": "com.walkingfish.budget_guard",
     "name": "預算阻擋者",
     "description": "設定單筆支出上限，防止衝動消費！",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/budget_guard.plugin.js",
     "icon": "fa-shield-halved"
