@@ -2123,8 +2123,9 @@ class EasyAccountingApp {
 
                     let newRecordId = null;
                     if (isEditMode) {
-                        const numericId = parseInt(recordId, 10);
-                        await this.dataService.updateRecord(numericId, recordData);
+                        try {
+                            const numericId = parseInt(recordId, 10);
+                            await this.dataService.updateRecord(numericId, recordData);
                         
                         // If record has existing debt, check if amount changed and update
                         if (recordToEdit.debtId && recordToEdit.amount !== amount) {
@@ -2157,8 +2158,18 @@ class EasyAccountingApp {
                         } else {
                             showToast('更新成功！');
                         }
+                        
+                        // Proceed to navigation only on success
+                        window.location.hash = 'records';
+
+                    } catch (e) {
+                        console.error('Update failed or cancelled:', e);
+                        // Stay on page
+                        return;
+                    }
                     } else {
                         newRecordId = await this.dataService.addRecord(recordData);
+                        if (!newRecordId) return; // Cancelled by plugin or error
                         this.quickSelectManager.addRecord(recordData.type, recordData.category, recordData.description, recordData.accountId);
 
                         // Create debt record if enabled
@@ -2177,8 +2188,8 @@ class EasyAccountingApp {
                         } else {
                             showToast('儲存成功！');
                         }
+                        window.location.hash = 'records';
                     }
-                    window.location.hash = 'records';
                 } else {
                     showToast('請輸入金額並選擇分類', 'error');
                 }

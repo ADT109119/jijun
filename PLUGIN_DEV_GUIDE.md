@@ -34,6 +34,8 @@ export default {
     - `title`: 頁面標題。
     - `renderFn(container)`: 渲染函式，接收一個 DOM 容器元素。
 - `navigateTo(hash)`: 導航至指定頁面 (例如 `'#home'`)。
+- `showConfirm(title, message)`: 顯示確認對話框 (Return `Promise<boolean>`)。
+- `showAlert(title, message)`: 顯示警告對話框 (Return `Promise<boolean>`)。
 
 ### `context.events`
 - `on(hookName, callback)`: 註冊事件監聽器。
@@ -56,7 +58,7 @@ export default {
 
 - **`onRecordSaveBefore`**: 新增紀錄前觸發。
     - Payload: `record` 物件 (包含 `amount`, `category`, `type` 等)。
-    - **攔截**: 若回傳 `null` 或 `false`，將取消儲存。
+    - **攔截**: 若回傳 `null`，將取消儲存 (支援 async/await，可用於跳出確認視窗)。
     - **修改**: 若回傳修改後的 `record` 物件，將儲存修改後的資料。
 - **`onRecordSaveAfter`**: 新增紀錄後觸發。
     - Payload: `record` 物件 (包含新生成的 `id`)。
@@ -86,10 +88,14 @@ export default {
         description: '防止單筆高額消費'
     },
     init(context) {
-        context.events.on('onRecordSaveBefore', (record) => {
+        context.events.on('onRecordSaveBefore', async (record) => {
             if (record.type === 'expense' && record.amount > 10000) {
-                context.ui.showToast('⚠️ 金額過大！已攔截高額消費。', 'error');
-                return null; // 取消儲存
+                // 使用確認對話框
+                const confirmed = await context.ui.showConfirm('⚠️ 高額消費確認', `金額 $${record.amount} 超過 $10,000，確定要儲存嗎？`);
+                
+                if (!confirmed) {
+                     return null; // 使用者選擇取消，攔截儲存
+                }
             }
             return record; // 允許儲存
         });

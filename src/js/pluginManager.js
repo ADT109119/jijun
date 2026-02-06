@@ -18,9 +18,8 @@ export class PluginManager {
         showToast: (msg, type) => showToast(msg, type),
         registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
         navigateTo: (hash) => { window.location.hash = hash; },
-        // Future hooks:
-        // addSidebarItem: ...
-        // addSettingItem: ...
+        showConfirm: (title, message) => this.showConfirmModal(title, message),
+        showAlert: (title, message) => this.showAlertModal(title, message)
       },
       events: {
         on: (hookName, callback) => this.registerHook(hookName, callback),
@@ -166,7 +165,13 @@ export class PluginManager {
               // Hooks can modify payload by returning new value (for 'before' hooks)
               // Or just execute side effects (for 'after' hooks)
               const result = await callback(currentPayload);
-              if (result !== undefined && result !== null) {
+              
+              // If hook returns null explicitly, it means "cancel" or "stop"
+              if (result === null) {
+                  return null;
+              }
+
+              if (result !== undefined) {
                   currentPayload = result;
               }
           } catch (e) {
@@ -193,5 +198,53 @@ export class PluginManager {
           if (num1 < num2) return -1;
       }
       return 0;
+  }
+
+  createModalBase(title, message, buttons) {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+      modal.innerHTML = `
+          <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100">
+              <h3 class="text-xl font-bold text-gray-800 mb-2">${title}</h3>
+              <p class="text-gray-600 mb-6">${message}</p>
+              <div class="flex gap-3 justify-end">
+                  ${buttons}
+              </div>
+          </div>
+      `;
+      document.body.appendChild(modal);
+      return modal;
+  }
+
+  showConfirmModal(title, message) {
+      return new Promise((resolve) => {
+          const btns = `
+              <button class="px-4 py-2 rounded-lg text-gray-500 hover:bg-gray-100 font-medium transition-colors" id="pm-modal-cancel">取消</button>
+              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-white hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-confirm">確定</button>
+          `;
+          const modal = this.createModalBase(title, message, btns);
+          
+          const close = (result) => {
+              modal.remove();
+              resolve(result);
+          };
+
+          modal.querySelector('#pm-modal-cancel').addEventListener('click', () => close(false));
+          modal.querySelector('#pm-modal-confirm').addEventListener('click', () => close(true));
+      });
+  }
+
+  showAlertModal(title, message) {
+      return new Promise((resolve) => {
+          const btns = `
+              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-white hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-ok">確定</button>
+          `;
+          const modal = this.createModalBase(title, message, btns);
+          
+          modal.querySelector('#pm-modal-ok').addEventListener('click', () => {
+              modal.remove();
+              resolve(true);
+          });
+      });
   }
 }
