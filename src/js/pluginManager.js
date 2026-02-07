@@ -6,6 +6,7 @@ export class PluginManager {
     this.app = app;
     this.plugins = new Map(); // id -> pluginModule
     this.customPages = new Map(); // routeId -> { title, renderFn }
+    this.homeWidgets = new Set();
     this.hooks = new Map(); // hookName -> Set<callback>
     this.context = this.createPluginContext();
   }
@@ -17,7 +18,13 @@ export class PluginManager {
       ui: {
         showToast: (msg, type) => showToast(msg, type),
         registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
+        registerHomeWidget: (renderFn) => this.registerHomeWidget(renderFn),
         navigateTo: (hash) => { window.location.hash = hash; },
+        openAddPage: (data) => {
+             if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));
+             // Append timestamp to force hashchange event even if already on #add
+             window.location.hash = `#add?t=${Date.now()}`;
+        },
         showConfirm: (title, message) => this.showConfirmModal(title, message),
         showAlert: (title, message) => this.showAlertModal(title, message)
       },
@@ -136,6 +143,25 @@ export class PluginManager {
       }
       this.customPages.set(routeId, { title, renderFn });
       console.log(`Registered custom page: #${routeId}`);
+  }
+
+  registerHomeWidget(renderFn) {
+      this.homeWidgets.add(renderFn);
+      console.log('Plugin home widget registered');
+  }
+
+  renderHomeWidgets(container) {
+      if (!container || this.homeWidgets.size === 0) return;
+      this.homeWidgets.forEach(renderFn => {
+          const widget = document.createElement('div');
+          widget.className = 'plugin-widget mb-4';
+          try {
+              renderFn(widget);
+              container.appendChild(widget);
+          } catch (e) {
+              console.error('Error rendering plugin widget:', e);
+          }
+      });
   }
 
   getCustomPage(routeId) {

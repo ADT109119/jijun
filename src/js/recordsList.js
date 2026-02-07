@@ -316,19 +316,19 @@ export class RecordsListManager {
 
                 return `
                     <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
-                        <div class="flex items-center gap-4">
-                            <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
-                                <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
-                            </div>
-                            <div class="flex flex-col justify-center">
-                                <div class="flex items-center gap-2">
-                                    <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
-                                    ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
-                                    ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
-                                </div>
-                                <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2">${record.description || '無備註'}</p>
-                            </div>
+                    <div class="flex items-center gap-4 flex-1 min-w-0">
+                        <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
+                            <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
                         </div>
+                        <div class="flex flex-col justify-center min-w-0">
+                            <div class="flex items-center gap-2">
+                                <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
+                                ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
+                                ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
+                            </div>
+                            <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${record.description || '無備註'}</p>
+                        </div>
+                    </div>
                         <div class="shrink-0 text-right">
                             ${displayLogic.showArrow ? `
                                 <p class="text-wabi-text-secondary text-base font-medium line-through">

@@ -145,17 +145,17 @@ class EasyAccountingApp {
         switch (page) {
             case 'home':
                 await this.pluginManager.triggerHook('onPageRenderBefore', 'home');
-                this.renderHomePage();
+                await this.renderHomePage();
                 await this.pluginManager.triggerHook('onPageRenderAfter', 'home');
                 break;
             case 'records':
                 await this.pluginManager.triggerHook('onPageRenderBefore', 'records');
-                this.renderRecordsPage();
+                await this.renderRecordsPage();
                 await this.pluginManager.triggerHook('onPageRenderAfter', 'records');
                 break;
             case 'add':
                 await this.pluginManager.triggerHook('onPageRenderBefore', 'add');
-                this.renderAddPage(recordId);
+                await this.renderAddPage(recordId);
                 await this.pluginManager.triggerHook('onPageRenderAfter', 'add');
                 break;
             case 'stats':
@@ -264,6 +264,9 @@ class EasyAccountingApp {
                 <!-- Budget Widget -->
                 <div id="budget-widget-container"></div>
 
+                <!-- Plugin Widgets -->
+                <div id="plugin-home-widgets" class="mb-6"></div>
+
                 <!-- Recent Transactions -->
                 <div>
                     <div class="flex justify-between items-center mb-4">
@@ -276,6 +279,7 @@ class EasyAccountingApp {
         `;
         this.setupHomePageEventListeners();
         await this.populateHomeMonthFilter();
+        this.pluginManager.renderHomeWidgets(document.getElementById('plugin-home-widgets'));
         await this.loadHomePageData();
     }
 
@@ -636,7 +640,7 @@ class EasyAccountingApp {
                     return `
                     <div class="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
                         <div class="flex items-center gap-4">
-                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl">
+                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl aspect-square">
                                 <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
                             </div>
                             <div>
@@ -766,9 +770,9 @@ class EasyAccountingApp {
                         <div class="flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                             <i class="${icon} text-2xl"></i>
                         </div>
-                        <div class="flex-1">
-                            <p class="font-medium text-wabi-text-primary">${name}</p>
-                            <p class="text-sm text-wabi-text-secondary">${record.description || formatDate(record.date, 'short')}</p>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-wabi-text-primary truncate">${name}</p>
+                            <p class="text-sm text-wabi-text-secondary line-clamp-2 break-all">${record.description || formatDate(record.date, 'short')}</p>
                         </div>
                         <div class="text-right">
                             <p class="font-medium ${isIncome ? 'text-wabi-income' : 'text-wabi-expense'}">${isIncome ? '+' : '-'} ${formatCurrency(record.amount)}</p>
@@ -1918,6 +1922,24 @@ class EasyAccountingApp {
         const debtPanel = document.getElementById('debt-panel');
         const toggleDebtBtn = document.getElementById('toggle-debt-btn');
 
+        // Plugin Support: Pre-fill from Session Storage
+        if (!recordId) {
+            const tempDataStr = sessionStorage.getItem('temp_add_data');
+            if (tempDataStr) {
+                try {
+                    const tempData = JSON.parse(tempDataStr);
+                    if (tempData.type) currentType = tempData.type;
+                    if (tempData.amount) currentAmount = tempData.amount.toString();
+                    if (tempData.category) selectedCategory = tempData.category;
+                    if (tempData.description && noteInput) noteInput.value = tempData.description;
+                    if (amountDisplay) amountDisplay.textContent = formatCurrency(currentAmount);
+                    sessionStorage.removeItem('temp_add_data');
+                } catch(e) {
+                    console.error('Error applying temp data:', e);
+                }
+            }
+        }
+
         // Setup debt panel if available
         if (toggleDebtBtn && debtPanel) {
             const loadContacts = async () => {
@@ -2578,7 +2600,7 @@ class EasyAccountingApp {
              return `
                     <div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
                         <div class="flex items-center gap-4">
-                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
+                            <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl aspect-square group-hover:scale-110 transition-transform">
                                 <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
                             </div>
                             <div>
@@ -2609,7 +2631,7 @@ class EasyAccountingApp {
                         
                         // Updates UI
                         // Fetch latest status
-                        const newPlugins = await this.pluginManager.getAllPlugins();
+                        const newPlugins = await this.pluginManager.getInstalledPlugins();
                         // Re-filter list based on current search?
                         // Simple: just re-render current list with new status
                         // Ideally we should keep search state.
