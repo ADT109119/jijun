@@ -1,6 +1,6 @@
 // 現代化 Service Worker
 // 使用統一的版本號和快取名稱
-const APP_VERSION = '2.1.1.1' // 版本號
+const APP_VERSION = '2.1.1.2' // 版本號
 const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
 const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
 const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
