@@ -465,7 +465,9 @@ class DataService {
       totalExpense: 0,
       incomeByCategory: {},
       expenseByCategory: {},
-      dailyTotals: {}
+      expenseByCategory: {},
+      dailyTotals: {},
+      records: records // Include filtered records in result
     }
 
     records.forEach(record => {

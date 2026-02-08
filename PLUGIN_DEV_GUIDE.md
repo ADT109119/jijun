@@ -33,9 +33,23 @@ export default {
     - `routeId`: 路由 ID (例如 `'my-page'`)，註冊後可透過 `#my-page` 訪問。
     - `title`: 頁面標題。
     - `renderFn(container)`: 渲染函式，接收一個 DOM 容器元素。
+- `registerHomeWidget(id, renderFn)`: 註冊首頁的小工具。
+    - `id`: 小工具唯一 ID。
+    - `renderFn(container)`: 渲染函式。
 - `navigateTo(hash)`: 導航至指定頁面 (例如 `'#home'`)。
 - `showConfirm(title, message)`: 顯示確認對話框 (Return `Promise<boolean>`)。
 - `showAlert(title, message)`: 顯示警告對話框 (Return `Promise<boolean>`)。
+
+### `context.data`
+- `getRecords()`: 取得所有記帳紀錄。
+- `addRecord(record)`: 新增一筆記帳紀錄。
+- `getAccounts()`: 取得所有帳戶資訊。
+- `getDebts()`: 取得所有欠款紀錄。
+- `addDebt(debt)`: 新增一筆欠款紀錄。
+- `getContacts()`: 取得所有聯絡人。
+- `addContact(contact)`: 新增一位聯絡人。
+- `getCategories(type)`: 取得分類列表 (`'expense'` 或 `'income'`)。
+- `getCategory(type, id)`: 取得特定分類資訊。
 
 ### `context.events`
 - `on(hookName, callback)`: 註冊事件監聽器。

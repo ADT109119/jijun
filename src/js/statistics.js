@@ -112,12 +112,45 @@ export class StatisticsManager {
             </div>
 
             <!-- Line Chart: Income/Expense Trend -->
-            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border">
+            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border mb-8">
                 <h2 class="text-base font-bold mb-4 text-wabi-primary">收支趨勢</h2>
                 <div class="relative h-48 w-full">
                     <canvas id="stats-trend-chart"></canvas>
                 </div>
             </div>
+
+            <!-- Heatmap: Annual Expense Activity -->
+            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border mb-8">
+                <h2 class="text-base font-bold mb-4 text-wabi-primary flex items-center gap-2">
+                    <i class="fa-solid fa-fire text-orange-500"></i> 年度消費熱力圖
+                </h2>
+                <div class="overflow-x-auto pb-2">
+                    <div id="stats-heatmap-container" class="min-w-[600px]">
+                        <!-- Grid will be injected here -->
+                    </div>
+                </div>
+                <div class="flex justify-end items-center gap-2 mt-2 text-xs text-wabi-text-secondary">
+                    <span>跟錢包過不去</span>
+                    <div class="flex gap-1">
+                        <div class="size-3 bg-red-100 rounded-sm"></div>
+                        <div class="size-3 bg-red-300 rounded-sm"></div>
+                        <div class="size-3 bg-red-500 rounded-sm"></div>
+                        <div class="size-3 bg-red-700 rounded-sm"></div>
+                    </div>
+                    <span>花錢如流水</span>
+                </div>
+            </div>
+
+            <!-- Top Expenses List (New) -->
+            <div class="rounded-xl bg-wabi-surface p-4 sm:p-6 shadow-sm border border-wabi-border mb-8">
+                <h2 class="text-base font-bold mb-4 text-wabi-primary flex items-center gap-2">
+                    <i class="fa-solid fa-ranking-star text-yellow-500"></i> 鉅額消費排行 (Top 5)
+                </h2>
+                <div id="stats-top-expenses-list" class="space-y-3">
+                    <!-- List injected here -->
+                </div>
+            </div>
+
             <!-- Modals container -->
             <div id="stats-modals-container"></div>
         `;
@@ -197,6 +230,48 @@ export class StatisticsManager {
         this.renderTrendChart(stats.dailyTotals, dateRange);
         this.renderExpenseDonutChart(stats.expenseByCategory);
         this.renderIncomeDonutChart(stats.incomeByCategory);
+        this.renderAnnualHeatmap(dateRange);
+        this.renderTopExpenses(stats.records); // Pass records
+    }
+
+    renderTopExpenses(records) {
+        const topList = records
+            .filter(r => r.type === 'expense')
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5);
+            
+        const container = this.container.querySelector('#stats-top-expenses-list');
+        if (!container) return;
+        
+        if (topList.length === 0) {
+            container.innerHTML = '<p class="text-sm text-center text-wabi-text-secondary">無消費紀錄</p>';
+            return;
+        }
+        
+        container.innerHTML = topList.map((r, index) => {
+            const category = this.categoryManager.getCategoryById('expense', r.category);
+            const categoryName = category ? category.name : (r.category === 'others' ? '其他' : r.category);
+            const icon = category ? category.icon : 'fa-solid fa-question';
+            
+            return `
+                <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
+                    <div class="flex items-center gap-3">
+                        <div class="flex size-8 items-center justify-center rounded-full bg-red-100 text-red-500 font-bold text-xs">
+                             ${index + 1}
+                        </div>
+                        <div>
+                             <p class="text-sm font-bold text-gray-800">${r.description || categoryName}</p>
+                             <div class="flex items-center gap-2 text-xs text-gray-400">
+                                 <span><i class="${icon} mr-1"></i>${categoryName}</span>
+                                 <span>•</span>
+                                 <span>${r.date}</span>
+                             </div>
+                        </div>
+                    </div>
+                    <span class="font-bold text-wabi-expense">${formatCurrency(r.amount)}</span>
+                </div>
+            `;
+        }).join('');
     }
 
     updateSummaryCards(stats) {
@@ -484,6 +559,79 @@ export class StatisticsManager {
             }
         });
         this.modalsContainer.appendChild(modal);
+    }
+
+    async renderAnnualHeatmap(dateRange) {
+        const container = this.container.querySelector('#stats-heatmap-container');
+        if (!container) return;
+
+        // Clear previous content to prevent duplication
+        container.innerHTML = '';
+
+        // Determine target year from current filters
+        // Default to current year if no range provided (shouldn't happen via loadStatisticsData)
+        const targetDate = dateRange ? new Date(dateRange.startDate) : new Date();
+        const targetYear = targetDate.getFullYear();
+
+        // Fetch all expense records for the target year
+        const records = await this.dataService.getRecords({
+            startDate: `${targetYear}-01-01`,
+            endDate: `${targetYear}-12-31`,
+            type: 'expense'
+        });
+
+        // Group by date
+        const dailyCounts = {};
+        let maxAmount = 0;
+        records.forEach(r => {
+            const date = r.date; // YYYY-MM-DD
+            dailyCounts[date] = (dailyCounts[date] || 0) + r.amount;
+            if (dailyCounts[date] > maxAmount) maxAmount = dailyCounts[date];
+        });
+
+        // Generate grid (53 weeks * 7 days)
+        const startDate = new Date(targetYear, 0, 1);
+        
+        // CSS Grid
+        container.style.display = 'grid';
+        container.style.gridTemplateRows = 'repeat(7, 1fr)';
+        container.style.gridAutoFlow = 'column';
+        container.style.gap = '3px';
+
+        const dayMilliseconds = 24 * 60 * 60 * 1000;
+        
+        // We only show the target year
+        const isLeapYear = (targetYear % 4 === 0 && targetYear % 100 !== 0) || (targetYear % 400 === 0);
+        const daysInYear = isLeapYear ? 366 : 365;
+
+        for (let i = 0; i < daysInYear + (7 - (daysInYear % 7)); i++) { // Fill up the grid columns
+            const currentDate = new Date(startDate.getTime() + i * dayMilliseconds);
+            if (currentDate.getFullYear() > targetYear) {
+                 const cell = document.createElement('div');
+                 cell.className = 'size-3 rounded-sm bg-transparent';
+                 container.appendChild(cell);
+                 continue;
+            }
+
+            const dateStr = currentDate.toISOString().split('T')[0];
+            const amount = dailyCounts[dateStr] || 0;
+            
+            const cell = document.createElement('div');
+            // Default color
+            cell.className = 'size-3 rounded-sm bg-gray-100 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer relative group';
+            // Tooltip using title for now
+            cell.title = `${dateStr}: $${amount}`;
+
+            if (amount > 0) {
+                const intensity = amount / (maxAmount || 1);
+                if (intensity > 0.75) cell.className = 'size-3 rounded-sm bg-red-700 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
+                else if (intensity > 0.5) cell.className = 'size-3 rounded-sm bg-red-500 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
+                else if (intensity > 0.25) cell.className = 'size-3 rounded-sm bg-red-300 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
+                else cell.className = 'size-3 rounded-sm bg-red-100 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
+            }
+            
+            container.appendChild(cell);
+        }
     }
 
     destroy() {

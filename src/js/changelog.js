@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.1.3": {
+    date: "2026-02-08",
+    title: "統計分析強化與開發者支援",
+    features: [
+      "統計頁面新增「鉅額消費排行」，快速掌握最高支出項目",
+      "首頁小工具排序：支援自訂首頁小工具的排列順序，讓常用資訊觸手可及",
+      "擴充功能系統新增 `getAccounts`、`registerHomeWidget` 等 API，增強插件功能"
+    ],
+    bugfixes: [],
+    improvements: []
+  },
   "2.1.1.2": {
     date: "2026-02-07",
     title: "插件深度優化與介面修復",

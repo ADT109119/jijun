@@ -1,4 +1,5 @@
 import { showToast } from './utils.js';
+import Chart from 'chart.js/auto';
 
 export class PluginManager {
   constructor(dataService, app) {
@@ -6,7 +7,8 @@ export class PluginManager {
     this.app = app;
     this.plugins = new Map(); // id -> pluginModule
     this.customPages = new Map(); // routeId -> { title, renderFn }
-    this.homeWidgets = new Set();
+    this.homeWidgets = new Map(); // id -> renderFn
+    this.widgetOrder = []; 
     this.hooks = new Map(); // hookName -> Set<callback>
     this.context = this.createPluginContext();
   }
@@ -15,10 +17,24 @@ export class PluginManager {
     return {
       appName: 'Easy Accounting',
       version: '2.1.1.1',
+      lib: {
+        Chart: Chart
+      },
+      data: {
+        getRecords: () => this.dataService.getRecords(),
+        addRecord: (record) => this.dataService.addRecord(record),
+        getDebts: () => this.dataService.getDebts(),
+        addDebt: (debt) => this.dataService.addDebt(debt),
+        getContacts: () => this.dataService.getContacts(),
+        addContact: (contact) => this.dataService.addContact(contact),
+        getAccounts: () => this.dataService.getAccounts(),
+        getCategories: (type) => this.app.categoryManager.getAllCategories(type),
+        getCategory: (type, id) => this.app.categoryManager.getCategoryById(type, id)
+      },
       ui: {
         showToast: (msg, type) => showToast(msg, type),
         registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
-        registerHomeWidget: (renderFn) => this.registerHomeWidget(renderFn),
+        registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn),
         navigateTo: (hash) => { window.location.hash = hash; },
         openAddPage: (data) => {
              if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));
@@ -39,6 +55,8 @@ export class PluginManager {
   }
 
   async init() {
+    const savedOrder = await this.dataService.getSetting('widgetOrder');
+    this.widgetOrder = savedOrder ? savedOrder.value : [];
     await this.loadInstalledPlugins();
   }
 
@@ -145,27 +163,75 @@ export class PluginManager {
       console.log(`Registered custom page: #${routeId}`);
   }
 
-  registerHomeWidget(renderFn) {
-      this.homeWidgets.add(renderFn);
-      console.log('Plugin home widget registered');
+  registerHomeWidget(id, renderFn) {
+      if (typeof id !== 'string') {
+          console.warn('registerHomeWidget now expects (id, renderFn). Ignoring registration.');
+          return;
+      }
+      this.homeWidgets.set(id, renderFn);
+      
+      // If not in order list, append
+      if (!this.widgetOrder.includes(id)) {
+          this.widgetOrder.push(id);
+      }
+      console.log(`Plugin home widget registered: ${id}`);
   }
 
   renderHomeWidgets(container) {
       if (!container || this.homeWidgets.size === 0) return;
-      this.homeWidgets.forEach(renderFn => {
-          const widget = document.createElement('div');
-          widget.className = 'plugin-widget mb-4';
-          try {
-              renderFn(widget);
-              container.appendChild(widget);
-          } catch (e) {
-              console.error('Error rendering plugin widget:', e);
+      container.innerHTML = ''; // Clear container first
+
+      // 1. Render based on order
+      this.widgetOrder.forEach(id => {
+          const renderFn = this.homeWidgets.get(id);
+          if (renderFn) {
+              this.renderSingleWidget(container, id, renderFn);
+          }
+      });
+
+      // 2. Render any active widgets NOT in widgetOrder (cleanup/fallback)
+      this.homeWidgets.forEach((renderFn, id) => {
+          if (!this.widgetOrder.includes(id)) {
+              this.renderSingleWidget(container, id, renderFn);
           }
       });
   }
 
+  renderSingleWidget(container, id, renderFn) {
+      const widget = document.createElement('div');
+      widget.className = 'plugin-widget mb-4';
+      widget.dataset.pluginId = id;
+      try {
+          renderFn(widget);
+          container.appendChild(widget);
+      } catch (e) {
+          console.error(`Error rendering plugin widget ${id}:`, e);
+      }
+  }
+
+  async moveWidget(id, direction) {
+      const index = this.widgetOrder.indexOf(id);
+      if (index === -1) return;
+      
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= this.widgetOrder.length) return;
+      
+      // Swap
+      [this.widgetOrder[index], this.widgetOrder[newIndex]] = [this.widgetOrder[newIndex], this.widgetOrder[index]];
+      await this.saveWidgetOrder();
+  }
+
+  async saveWidgetOrder() {
+      await this.dataService.saveSetting({ key: 'widgetOrder', value: this.widgetOrder });
+  }
+
   getCustomPage(routeId) {
       return this.customPages.get(routeId);
+  }
+
+  getPluginName(id) {
+      const plugin = this.plugins.get(id);
+      return plugin ? plugin.meta.name : null;
   }
 
   registerHook(hookName, callback) {

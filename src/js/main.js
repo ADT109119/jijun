@@ -265,6 +265,12 @@ class EasyAccountingApp {
                 <div id="budget-widget-container"></div>
 
                 <!-- Plugin Widgets -->
+                <div class="flex items-center justify-between mb-2 mt-6">
+                     <h3 class="text-sm font-bold text-wabi-text-secondary">小工具</h3>
+                     <button id="manage-widgets-btn" class="text-xs text-wabi-primary hover:underline bg-wabi-primary/10 px-2 py-1 rounded">
+                        <i class="fa-solid fa-sort mr-1"></i>調整順序
+                     </button>
+                </div>
                 <div id="plugin-home-widgets" class="mb-6"></div>
 
                 <!-- Recent Transactions -->
@@ -280,7 +286,89 @@ class EasyAccountingApp {
         this.setupHomePageEventListeners();
         await this.populateHomeMonthFilter();
         this.pluginManager.renderHomeWidgets(document.getElementById('plugin-home-widgets'));
+        
+        // Manage Widgets Handler
+        const manageWidgetsBtn = document.getElementById('manage-widgets-btn');
+        if (manageWidgetsBtn) {
+            manageWidgetsBtn.addEventListener('click', () => this.showWidgetOrderModal());
+        }
+
         await this.loadHomePageData();
+    }
+
+    showWidgetOrderModal() {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+        
+        const renderList = () => {
+            const order = this.pluginManager.widgetOrder;
+            const activeWidgets = order.filter(id => this.pluginManager.homeWidgets.has(id));
+            
+            if (activeWidgets.length === 0) return '<p class="text-center text-gray-400 py-4">無可用的小工具</p>';
+
+            return activeWidgets.map((id, index) => {
+                const name = this.pluginManager.getPluginName(id) || '未知小工具';
+                return `
+                   <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2 transition-all">
+                       <span class="font-medium text-gray-700">${name}</span>
+                       <div class="flex gap-1">
+                           <button class="p-2 text-gray-400 hover:text-wabi-primary move-widget-btn hover:bg-white rounded-md transition-colors" data-id="${id}" data-dir="-1" ${index === 0 ? 'disabled class="p-2 text-gray-200 cursor-not-allowed"' : ''}>
+                                <i class="fa-solid fa-arrow-up"></i>
+                           </button>
+                           <button class="p-2 text-gray-400 hover:text-wabi-primary move-widget-btn hover:bg-white rounded-md transition-colors" data-id="${id}" data-dir="1" ${index === activeWidgets.length - 1 ? 'disabled class="p-2 text-gray-200 cursor-not-allowed"' : ''}>
+                                <i class="fa-solid fa-arrow-down"></i>
+                           </button>
+                       </div>
+                   </div>
+                `;
+            }).join('');
+        };
+
+        const updateContent = () => {
+            const listContainer = modal.querySelector('#widget-order-list');
+            if(listContainer) {
+                listContainer.innerHTML = renderList();
+                bindEvents();
+            }
+        }
+
+        modal.innerHTML = `
+            <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold text-gray-800">調整顯示順序</h3>
+                    <button id="close-widget-modal" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div id="widget-order-list" class="overflow-y-auto flex-1 mb-4">
+                    ${renderList()}
+                </div>
+                <div class="mt-auto pt-2 border-t border-gray-100">
+                     <p class="text-xs text-center text-gray-400">點擊箭頭調整順序</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const close = () => {
+            modal.remove();
+            // Re-render home widgets to reflect changes immediately
+            this.pluginManager.renderHomeWidgets(document.getElementById('plugin-home-widgets'));
+        };
+
+        modal.querySelector('#close-widget-modal').addEventListener('click', close);
+
+        const bindEvents = () => {
+            modal.querySelectorAll('.move-widget-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = btn.dataset.id;
+                    const dir = parseInt(btn.dataset.dir);
+                    await this.pluginManager.moveWidget(id, dir);
+                    updateContent();
+                });
+            });
+        };
+        bindEvents();
     }
 
     async renderRecordsPage() {
