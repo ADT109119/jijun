@@ -39,7 +39,7 @@
     "id": "com.walkingfish.achievements",
     "name": "記帳成就系統",
     "description": "讓記帳變好玩！解鎖徽章與成就。(v1.3 新增週末戰士、購物狂等)",
-    "version": "1.3",
+    "version": "1.4",
     "author": "The walking fish 步行魚",
     "file": "plugins/achievements.plugin.js",
     "icon": "fa-trophy"
@@ -48,7 +48,7 @@
     "id": "com.walkingfish.shopping_list",
     "name": "待辦購物清單",
     "description": "在首頁顯示購物清單，買完直接記帳！",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/shopping.plugin.js",
     "icon": "fa-list-check"
@@ -61,5 +61,23 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/currency.plugin.js",
     "icon": "fa-sack-dollar"
+  },
+  {
+    "id": "com.walkingfish.bill_splitter",
+    "name": "分帳神器",
+    "description": "聚餐旅遊分帳助手，自動計算並建立欠款紀錄。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "plugins/bill_splitter.plugin.js",
+    "icon": "fa-file-invoice-dollar"
+  },
+  {
+    "id": "com.walkingfish.analytics_pro",
+    "name": "進階圖表分析",
+    "description": "提供消費熱力圖與資產流向分析，深入了解您的財務狀況。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "plugins/analytics_pro.plugin.js",
+    "icon": "fa-chart-line"
   }
 ]

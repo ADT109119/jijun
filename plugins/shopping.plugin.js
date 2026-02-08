@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.shopping_list',
         name: '待辦購物清單',
-        version: '1.0',
+        version: '1.1',
         description: '在首頁顯示購物清單，買完直接記帳！',
         author: 'The walking fish 步行魚',
         icon: 'fa-list-check'
@@ -12,7 +12,8 @@ export default {
         this.items = JSON.parse(localStorage.getItem('shopping_list_items') || '[]');
         
         // Register Home Widget
-        context.ui.registerHomeWidget((container) => this.renderWidget(container));
+        // Register Home Widget
+        context.ui.registerHomeWidget('com.walkingfish.shopping_list', (container) => this.renderWidget(container));
     },
 
     save() {

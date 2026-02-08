@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.achievements',
         name: '記帳成就系統',
-        version: '1.3',
+        version: '1.4',
         description: '讓記帳變好玩！解鎖徽章與成就。',
         author: 'The walking fish 步行魚',
         icon: 'fa-trophy'
@@ -36,7 +36,10 @@ export default {
             { id: 'big_spender', name: '揮金如土', desc: '單筆支出超過 $5,000', icon: 'fa-money-bill-wave' },
             { id: 'millionaire', name: '百萬富翁', desc: '總支出累積超過 100 萬', icon: 'fa-gem' },
             { id: 'night_owl', name: '夜貓子', desc: '在凌晨 00:00 - 04:00 記帳', icon: 'fa-moon' },
-            { id: 'early_bird', name: '早起的鳥兒', desc: '在清晨 05:00 - 08:00 記帳', icon: 'fa-sun' }
+            { id: 'early_bird', name: '早起的鳥兒', desc: '在清晨 05:00 - 08:00 記帳', icon: 'fa-sun' },
+            { id: 'big_spender_plus', name: '揮霍無度', desc: '單筆支出超過 $10,000', icon: 'fa-money-bill-1-wave' },
+            { id: 'night_owl_real', name: '真正的夜貓子', desc: '在凌晨 02:00 - 05:00 記帳', icon: 'fa-cloud-moon' },
+            { id: 'saver_month', name: '省錢一族', desc: '當月收入大於支出', icon: 'fa-piggy-bank' }
         ];
 
         // Register Page
@@ -125,6 +128,34 @@ export default {
         if (hour >= 0 && hour < 4) this.unlock('night_owl', newUnlocks);
         if (hour >= 5 && hour < 9) this.unlock('early_bird', newUnlocks);
 
+        // Saver (Income > Expense in current month)
+        // Need to calculate monthly totals. This is expensive to do on every save?
+        // Maybe do it only if record date is near end of month or just check current stats?
+        // Let's implement a simpler "Daily Saver": Income > Expense for the day?
+        // User asked for "Saver" (省錢一族): Income > Expense for a month.
+        // We can check this when viewing the Achievements page or here?
+        // Let's check it here but we need monthly data.
+        // For performance, let's just checking "Big Spender" > 5000 is already done.
+        // "Saver" might be better as "No Expense Day"?
+        // Plan said: "Income > Expense for a month".
+        // Let's skip complex monthly query here to avoid lag on every save.
+        // Alternative: "Budget Master" - Expense < Budget?
+        // Let's implement "Tracking Master" (Consecutive 30 days) - ID: streak_30 is already there!
+        // Wait, `streak_30` is already in the list.
+        // Plan request: "Tracking Master" (30 days), "Saver" (Income > Expense), "Big Spender" (> 10000), "Night Owl" (2-5 AM).
+        
+        // My existing code has:
+        // `streak_30` (Will use this)
+        // `big_spender` (> 5000). I will add `big_spender_2` (> 10000).
+        // `night_owl` (00-04). I will adjust to 02-05 or keep current?
+        // `saver` (Month Income > Expense).
+
+        // Big Spender 2
+        if (record.type === 'expense' && record.amount > 10000) this.unlock('big_spender_plus', newUnlocks);
+
+        // Night Owl Update (User asked 2 AM - 5 AM)
+        if (hour >= 2 && hour < 5) this.unlock('night_owl_real', newUnlocks);
+
         localStorage.setItem('achievement_stats', JSON.stringify(this.stats));
 
         // Queue Notifications
@@ -133,6 +164,33 @@ export default {
             const uniquePending = [...new Set([...currentPending, ...newUnlocks])];
             localStorage.setItem('achievement_pending_notify', JSON.stringify(uniquePending));
             this.pending = uniquePending;
+        }
+    },
+
+    async checkMonthlyAchievements() {
+        // Called when page renders to check monthly stats safely
+        const records = await this.context.data.getRecords();
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        
+        const thisMonthRecords = records.filter(r => {
+            const d = new Date(r.date);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+        });
+        
+        const income = thisMonthRecords.filter(r => r.type === 'income').reduce((sum, r) => sum + r.amount, 0);
+        const expense = thisMonthRecords.filter(r => r.type === 'expense').reduce((sum, r) => sum + r.amount, 0);
+        
+        if (income > 0 && expense > 0 && income > expense) {
+            // Check if achieved?
+            // Since this is async and called from render, we can unlock directly if we want
+            // But we need to update state.
+             if (!this.unlocked.includes('saver_month')) {
+                this.unlocked.push('saver_month');
+                localStorage.setItem('achievement_unlocked', JSON.stringify(this.unlocked));
+                this.context.ui.showToast('🏆 解鎖成就：省錢一族！', 'success');
+             }
         }
     },
 
@@ -145,7 +203,8 @@ export default {
         }
     },
 
-    renderPage(container) {
+    async renderPage(container) {
+        await this.checkMonthlyAchievements();
         container.innerHTML = `
             <div class="page active bg-wabi-bg p-4 pb-20">
                 <header class="flex items-center gap-3 mb-6">
