@@ -6,6 +6,9 @@
 
 📋 **[查看完整更新日誌](CHANGE_LOG.md)** - 了解所有版本的詳細更新內容
 
+| ![](https://github.com/user-attachments/assets/a1c3ddab-6004-433d-bcdd-6b7d5cb1c59f) | ![](https://github.com/user-attachments/assets/f0e268d0-abec-4e5c-8384-38e0194dffb2) | ![](https://github.com/user-attachments/assets/07156d1d-3fef-4ac4-950d-46f61746e026)
+|------|------|------|
+
 ## 🚀 新功能特色與 UI/UX 改進
 
 ### ✨ 全新設計與視覺效果
