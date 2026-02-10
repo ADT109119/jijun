@@ -845,6 +845,9 @@ class EasyAccountingApp {
                                 <button id="sync-server-save-btn" class="px-3 py-2 bg-wabi-primary text-white rounded-lg text-sm font-medium hover:bg-wabi-primary/90">
                                     儲存
                                 </button>
+                                <button id="sync-server-reset-btn" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200" title="還原預設值">
+                                    <i class="fa-solid fa-rotate-left"></i>
+                                </button>
                             </div>
                             <p class="text-xs text-wabi-text-secondary">用於 Google OAuth 代理的伺服器地址</p>
                         </div>
@@ -961,6 +964,18 @@ class EasyAccountingApp {
                 if (!url) { showToast('請輸入伺服器 URL', 'error'); return; }
                 await this.syncService.setServerUrl(url);
                 showToast('伺服器 URL 已儲存', 'success');
+            });
+        }
+
+        // Server URL reset
+        const serverResetBtn = document.getElementById('sync-server-reset-btn');
+        if (serverResetBtn) {
+            serverResetBtn.addEventListener('click', async () => {
+                const defaultUrl = 'https://jijun-server.the-walking-fish.com';
+                const input = document.getElementById('sync-server-url-input');
+                if (input) input.value = defaultUrl;
+                await this.syncService.setServerUrl(defaultUrl);
+                showToast('已還原預設伺服器 URL', 'success');
             });
         }
 
