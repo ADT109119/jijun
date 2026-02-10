@@ -8,10 +8,11 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 5 // Schema version 5: Add plugin system
+    this.dbVersion = 6 // Schema version 6: Add sync_log
     this.db = null
     this.init()
     this.hookProvider = null; // Function to trigger hooks
+    this._syncDeviceId = localStorage.getItem('sync_device_id') || 'unknown';
   }
 
   setHookProvider(fn) {
@@ -103,6 +104,16 @@ class DataService {
                     const pluginStore = db.createObjectStore('plugins', { keyPath: 'id' });
                     // id: plugin identifier (e.g. 'com.example.myplugin')
                     // name, version, script (blob/string), enabled (bool)
+                }
+            }
+            // Schema version 6: Sync log for multi-device sync
+            if (oldVersion < 6) {
+                if (!db.objectStoreNames.contains('sync_log')) {
+                    const syncStore = db.createObjectStore('sync_log', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    syncStore.createIndex('timestamp', 'timestamp');
                 }
             }
           }
@@ -202,7 +213,7 @@ class DataService {
   }
 
   // 新增記錄
-  async addRecord(record) {
+  async addRecord(record, skipLog = false) {
     const recordWithTimestamp = {
       ...record,
       timestamp: Date.now()
@@ -215,8 +226,10 @@ class DataService {
     try {
       // Hook: Before Save
       let recordToSave = recordWithTimestamp;
-      recordToSave = await this.triggerHook('onRecordSaveBefore', recordToSave);
-      if (!recordToSave) return null; // Cancelled
+      if (!skipLog) {
+        recordToSave = await this.triggerHook('onRecordSaveBefore', recordToSave);
+        if (!recordToSave) return null; // Cancelled
+      }
 
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
@@ -224,7 +237,14 @@ class DataService {
       await tx.done
       
       // Hook: After Save
-      await this.triggerHook('onRecordSaveAfter', { ...recordToSave, id: result });
+      if (!skipLog) {
+        await this.triggerHook('onRecordSaveAfter', { ...recordToSave, id: result });
+      }
+
+      // Change tracking for sync
+      if (!skipLog) {
+        await this.logChange('add', 'records', result, { ...recordToSave, id: result });
+      }
 
       return result
     } catch (error) {
@@ -274,7 +294,7 @@ class DataService {
   }
 
   // 更新記錄
-  async updateRecord(id, updates) {
+  async updateRecord(id, updates, skipLog = false) {
     if (this.useLocalStorage) {
       return this.updateRecordInLocalStorage(id, updates)
     }
@@ -285,23 +305,22 @@ class DataService {
       const record = await store.get(id)
       
       if (record) {
-        // Hook: Before Update
-        const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates });
-        if (!updatesWithHook) throw new Error('Update cancelled by plugin');
-        // If hook returns object, expect { updates: ... } or just updates? 
-        // Let's assume hook returns the modified updates object or falsy to cancel.
-        // Actually, triggerHook returns 'currentPayload'.
-        // If payload is { old, updates }, hook receives that.
-        // If hook returns modified payload, we use payload.updates.
-        
-        const finalUpdates = updatesWithHook.updates || updates;
+        let finalUpdates = updates;
+        if (!skipLog) {
+          // Hook: Before Update
+          const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates });
+          if (!updatesWithHook) throw new Error('Update cancelled by plugin');
+          finalUpdates = updatesWithHook.updates || updates;
+        }
         
         const updatedRecord = { ...record, ...finalUpdates }
         await store.put(updatedRecord)
         await tx.done
         
-        // Hook: After Update
-        await this.triggerHook('onRecordUpdateAfter', updatedRecord);
+        if (!skipLog) {
+          await this.triggerHook('onRecordUpdateAfter', updatedRecord);
+          await this.logChange('update', 'records', id, updatedRecord);
+        }
 
         return updatedRecord
       }
@@ -314,7 +333,7 @@ class DataService {
   }
 
   // 刪除記錄
-  async deleteRecord(id) {
+  async deleteRecord(id, skipLog = false) {
     if (this.useLocalStorage) {
       return this.deleteRecordFromLocalStorage(id)
     }
@@ -323,15 +342,18 @@ class DataService {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       
-      // Hook: Before Delete
-      const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
-      if (!shouldDelete) throw new Error('Delete cancelled by plugin');
+      if (!skipLog) {
+        const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
+        if (!shouldDelete) throw new Error('Delete cancelled by plugin');
+      }
 
       await store.delete(id)
       await tx.done
       
-      // Hook: After Delete
-      await this.triggerHook('onRecordDeleteAfter', { id });
+      if (!skipLog) {
+        await this.triggerHook('onRecordDeleteAfter', { id });
+        await this.logChange('delete', 'records', id, null);
+      }
 
       return true
     } catch (error) {
@@ -761,6 +783,105 @@ class DataService {
     return await this.getRecords()
   }
 
+  // --- Sync Methods ---
+
+  /**
+   * 記錄變更到 sync_log（用於多裝置同步）
+   * @param {string} operation - 'add', 'update', 'delete'
+   * @param {string} storeName - object store 名稱
+   * @param {number|string} recordId - 記錄 ID
+   * @param {object|null} data - 記錄資料
+   */
+  async logChange(operation, storeName, recordId, data) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('sync_log', 'readwrite');
+      await tx.store.add({
+        operation,
+        storeName,
+        recordId,
+        data,
+        timestamp: Date.now(),
+        deviceId: this._syncDeviceId,
+      });
+      await tx.done;
+    } catch (err) {
+      console.warn('[DataService] logChange error:', err);
+    }
+  }
+
+  /**
+   * 取得指定時間戳之後的所有變更
+   * @param {number} sinceTimestamp - 起始時間戳
+   * @returns {Promise<Array>}
+   */
+  async getChangesSince(sinceTimestamp) {
+    if (this.useLocalStorage || !this.db) return [];
+    try {
+      const tx = this.db.transaction('sync_log', 'readonly');
+      const index = tx.store.index('timestamp');
+      const range = IDBKeyRange.lowerBound(sinceTimestamp, true);
+      return await index.getAll(range);
+    } catch (err) {
+      console.error('[DataService] getChangesSince error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * 清除指定時間戳之前的同步日誌
+   * @param {number} beforeTimestamp
+   */
+  async clearSyncLog(beforeTimestamp) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('sync_log', 'readwrite');
+      const index = tx.store.index('timestamp');
+      const range = IDBKeyRange.upperBound(beforeTimestamp);
+      let cursor = await index.openCursor(range);
+      while (cursor) {
+        await cursor.delete();
+        cursor = await cursor.continue();
+      }
+      await tx.done;
+    } catch (err) {
+      console.error('[DataService] clearSyncLog error:', err);
+    }
+  }
+
+  /**
+   * 匯出資料用於同步（回傳物件而非下載檔案）
+   * @returns {Promise<object>}
+   */
+  async exportDataForSync() {
+    const records = await this.getRecords();
+    const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
+    const accounts = await this.getAccounts();
+    const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
+    const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
+    const contacts = await this.getContacts();
+    const debts = await this.getDebts();
+
+    return {
+      version: '2.2.0',
+      exportDate: new Date().toISOString(),
+      settings: {
+        advancedAccountModeEnabled: advancedAccountModeEnabled?.value || false,
+        debtManagementEnabled: debtManagementEnabled?.value || false,
+      },
+      accounts,
+      records,
+      contacts,
+      debts,
+      customCategories,
+      metadata: {
+        totalRecords: records.length,
+        totalContacts: contacts.length,
+        totalDebts: debts.length,
+      },
+    };
+  }
+
   // --- Settings Methods ---
   async getSetting(key) {
     if (this.useLocalStorage) {
@@ -790,11 +911,12 @@ class DataService {
   }
 
   // --- Account Methods ---
-  async addAccount(account) {
+  async addAccount(account, skipLog = false) {
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
       const id = await tx.store.add(account);
       await tx.done;
+      if (!skipLog) await this.logChange('add', 'accounts', id, { ...account, id });
       return id;
     } catch (error) {
       console.error('Failed to add account:', error);
@@ -820,7 +942,7 @@ class DataService {
     }
   }
 
-  async updateAccount(id, updates) {
+  async updateAccount(id, updates, skipLog = false) {
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
@@ -828,6 +950,7 @@ class DataService {
         const updatedAccount = { ...account, ...updates };
         await tx.store.put(updatedAccount);
         await tx.done;
+        if (!skipLog) await this.logChange('update', 'accounts', id, updatedAccount);
         return updatedAccount;
       }
       throw new Error('Account not found');
@@ -837,13 +960,12 @@ class DataService {
     }
   }
 
-  async deleteAccount(id) {
-    // Note: This doesn't re-assign records from the deleted account.
-    // That logic should be handled at the application level.
+  async deleteAccount(id, skipLog = false) {
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
       await tx.store.delete(id);
       await tx.done;
+      if (!skipLog) await this.logChange('delete', 'accounts', id, null);
       return true;
     } catch (error) {
       throw error;
@@ -930,7 +1052,7 @@ class DataService {
   }
 
   // --- Contact Methods ---
-  async addContact(contact) {
+  async addContact(contact, skipLog = false) {
     try {
       const contactData = {
         name: contact.name,
@@ -940,6 +1062,7 @@ class DataService {
       const tx = this.db.transaction('contacts', 'readwrite');
       const id = await tx.store.add(contactData);
       await tx.done;
+      if (!skipLog) await this.logChange('add', 'contacts', id, { ...contactData, id });
       return id;
     } catch (error) {
       console.error('Failed to add contact:', error);
@@ -965,7 +1088,7 @@ class DataService {
     }
   }
 
-  async updateContact(id, updates) {
+  async updateContact(id, updates, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
@@ -973,6 +1096,7 @@ class DataService {
         const updatedContact = { ...contact, ...updates };
         await tx.store.put(updatedContact);
         await tx.done;
+        if (!skipLog) await this.logChange('update', 'contacts', id, updatedContact);
         return updatedContact;
       }
       throw new Error('Contact not found');
@@ -982,11 +1106,12 @@ class DataService {
     }
   }
 
-  async deleteContact(id) {
+  async deleteContact(id, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
       await tx.store.delete(id);
       await tx.done;
+      if (!skipLog) await this.logChange('delete', 'contacts', id, null);
       return true;
     } catch (error) {
       console.error(`Failed to delete contact ${id}:`, error);
@@ -995,7 +1120,7 @@ class DataService {
   }
 
   // --- Debt Methods ---
-  async addDebt(debt) {
+  async addDebt(debt, skipLog = false) {
     try {
       const amount = debt.amount;
       const debtData = {
@@ -1014,6 +1139,7 @@ class DataService {
       const tx = this.db.transaction('debts', 'readwrite');
       const id = await tx.store.add(debtData);
       await tx.done;
+      if (!skipLog) await this.logChange('add', 'debts', id, { ...debtData, id });
       return id;
     } catch (error) {
       console.error('Failed to add debt:', error);
@@ -1051,7 +1177,7 @@ class DataService {
     }
   }
 
-  async updateDebt(id, updates) {
+  async updateDebt(id, updates, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
       const debt = await tx.store.get(id);
@@ -1059,6 +1185,7 @@ class DataService {
         const updatedDebt = { ...debt, ...updates };
         await tx.store.put(updatedDebt);
         await tx.done;
+        if (!skipLog) await this.logChange('update', 'debts', id, updatedDebt);
         return updatedDebt;
       }
       throw new Error('Debt not found');
@@ -1068,11 +1195,12 @@ class DataService {
     }
   }
 
-  async deleteDebt(id) {
+  async deleteDebt(id, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
       await tx.store.delete(id);
       await tx.done;
+      if (!skipLog) await this.logChange('delete', 'debts', id, null);
       return true;
     } catch (error) {
       console.error(`Failed to delete debt ${id}:`, error);

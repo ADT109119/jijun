@@ -1,0 +1,24 @@
+{
+  "name": "easy-accounting-sync-server",
+  "version": "1.0.0",
+  "description": "輕鬆記帳雲端同步伺服器 — Google OAuth Proxy",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "standalone": "node src/standalone.js",
+    "start": "node src/standalone.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.63.0"
+  },
+  "keywords": [
+    "cloudflare-worker",
+    "oauth-proxy",
+    "accounting",
+    "sync"
+  ],
+  "author": "ADT109119",
+  "license": "MIT"
+}
