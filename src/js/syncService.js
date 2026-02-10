@@ -8,7 +8,7 @@
 import { showToast } from './utils.js';
 
 /** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
-const GOOGLE_CLIENT_ID = '958934342315-9nvgjb77jm62r45i1fhblcov0j1usrgd.apps.googleusercontent.com'; // 填入你的 Client ID
+const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
 
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
