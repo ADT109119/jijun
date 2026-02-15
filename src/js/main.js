@@ -837,15 +837,15 @@ class EasyAccountingApp {
                         <h3 class="text-wabi-primary text-base font-bold">伺服器設定</h3>
                         <div class="space-y-2">
                             <label class="text-sm text-wabi-text-secondary">同步伺服器 URL</label>
-                            <div class="flex gap-2">
+                            <div class="flex flex-wrap gap-2">
                                 <input type="url" id="sync-server-url-input"
-                                    class="flex-1 px-3 py-2 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary"
+                                    class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary"
                                     value="${serverUrl}"
                                     placeholder="https://jijun-server.the-walking-fish.com" />
-                                <button id="sync-server-save-btn" class="px-3 py-2 bg-wabi-primary text-white rounded-lg text-sm font-medium hover:bg-wabi-primary/90">
+                                <button id="sync-server-save-btn" class="px-3 py-2 bg-wabi-primary text-white rounded-lg text-sm font-medium hover:bg-wabi-primary/90 shrink-0">
                                     儲存
                                 </button>
-                                <button id="sync-server-reset-btn" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200" title="還原預設值">
+                                <button id="sync-server-reset-btn" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 shrink-0" title="還原預設值">
                                     <i class="fa-solid fa-rotate-left"></i>
                                 </button>
                             </div>
