@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.example.wheel',
         name: '命運大轉盤',
-        version: '1.0',
+        version: '1.1',
         description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
         author: 'The walking fish 步行魚'
     },
@@ -18,12 +18,13 @@ export default {
     },
 
     getData() {
-        const raw = localStorage.getItem(this.STORAGE_KEY);
-        return raw ? JSON.parse(raw) : { wheels: [] };
+        // Use 'data' as key, prefix will be handled by PluginStorage
+        const data = this.context.storage.getJSON('data');
+        return data || { wheels: [] };
     },
 
     saveData(data) {
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+        this.context.storage.setJSON('data', data);
     },
 
     render(container) {

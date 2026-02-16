@@ -1,5 +1,6 @@
 import { showToast } from './utils.js';
 import Chart from 'chart.js/auto';
+import { PluginStorage } from './pluginStorage.js';
 
 export class PluginManager {
   constructor(dataService, app) {
@@ -10,19 +11,25 @@ export class PluginManager {
     this.homeWidgets = new Map(); // id -> renderFn
     this.widgetOrder = []; 
     this.hooks = new Map(); // hookName -> Set<callback>
-    this.context = this.createPluginContext();
+    // Context creation is now per-plugin, so strictly speaking consistent single context is tricky if we want unique storage.
+    // However, for backward compatibility or general generic context, we can keep a base one or create deeply on load.
+    // We will change createPluginContext to accept an ID.
   }
 
-  createPluginContext() {
+  createPluginContext(pluginId) {
+    const storage = pluginId ? new PluginStorage(pluginId) : null;
+    
     return {
       appName: 'Easy Accounting',
       version: '2.1.1.1',
       lib: {
         Chart: Chart
       },
+      storage: storage, // Expose sandboxed storage
       data: {
         getRecords: () => this.dataService.getRecords(),
         addRecord: (record) => this.dataService.addRecord(record),
+        // ... (rest of data methods)
         getDebts: () => this.dataService.getDebts(),
         addDebt: (debt) => this.dataService.addDebt(debt),
         getContacts: () => this.dataService.getContacts(),
@@ -79,12 +86,72 @@ export class PluginManager {
 
   async loadPlugin(pluginData) {
     try {
-        const blob = new Blob([pluginData.script], { type: 'text/javascript' });
+        // Sandboxing: Shadow global storage objects
+        const sandboxedScript = `
+          const localStorage = {
+            getItem: () => { throw new Error("Access Denied: Please use context.storage.getItem()") },
+            setItem: () => { throw new Error("Access Denied: Please use context.storage.setItem()") },
+            removeItem: () => { throw new Error("Access Denied: Please use context.storage.removeItem()") },
+            clear: () => { throw new Error("Access Denied: Please use context.storage.clear()") },
+            key: () => { throw new Error("Access Denied: Please use context.storage") },
+            length: 0
+          };
+          const sessionStorage = {
+            getItem: () => { throw new Error("Access Denied: Please use context.storage") },
+            setItem: () => { throw new Error("Access Denied: Please use context.storage") },
+            removeItem: () => { throw new Error("Access Denied: Please use context.storage") },
+            clear: () => { throw new Error("Access Denied: Please use context.storage") }
+          };
+          const indexedDB = {
+            open: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") },
+            deleteDatabase: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") }
+          };
+          
+          // Enhanced Sandboxing: Shadow window and self
+          const _windowProxyHandler = {
+            get(target, prop) {
+               if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
+                   throw new Error("Access Denied: Please use context.storage");
+               }
+               
+               // Get value from original window
+               let value = Reflect.get(target, prop);
+               
+               // Bind functions to original target (critical for methods like cancelAnimationFrame, fetch, etc.)
+               if (typeof value === 'function') {
+                  const bound = value.bind(target);
+                  return bound;
+               }
+               return value;
+            },
+            set(target, prop, value) {
+               if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
+                    throw new Error("Access Denied: Cannot overwrite global storage");
+               }
+               return Reflect.set(target, prop, value);
+            }
+          };
+
+          // Fix: Capture real global object preventing TDZ with shadowed variables below
+          const _realGlobal = (new Function("return this"))();
+
+          const window = new Proxy(_realGlobal, _windowProxyHandler);
+          const self = window;
+          const globalThis = window; 
+          
+          // Prevent window.localStorage access if possible (non-configurable in some browsers, but we try)
+          // In module scope, 'this' is undefined, and we are shadowing globals.
+          
+          ${pluginData.script}
+        `;
+
+        const blob = new Blob([sandboxedScript], { type: 'text/javascript' });
         const url = URL.createObjectURL(blob);
         
         const module = await import(url);
         if (module.default && typeof module.default.init === 'function') {
-            module.default.init(this.context);
+            const context = this.createPluginContext(pluginData.id);
+            module.default.init(context);
             this.plugins.set(pluginData.id, module.default);
             console.log(`Plugin loaded: ${pluginData.name}`);
         } else {

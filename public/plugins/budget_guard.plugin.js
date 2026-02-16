@@ -2,15 +2,15 @@ export default {
     meta: {
         id: 'com.walkingfish.budget_guard',
         name: '預算阻擋者',
-        version: '1.1',
+        version: '1.2',
         description: '設定單筆支出上限，防止衝動消費！',
         author: 'The walking fish 步行魚',
         icon: 'fa-shield-halved'
     },
     init(context) {
         this.context = context;
-        this.limit = localStorage.getItem('budget_guard_limit') || 1000;
-        this.mode = localStorage.getItem('budget_guard_mode') || 'block'; // 'block' or 'warn'
+        this.limit = context.storage.getItem('limit') || 1000;
+        this.mode = context.storage.getItem('mode') || 'block'; // 'block' or 'warn'
 
         // Register Settings Page
         context.ui.registerPage('budget-guard', '預算阻擋者設定', (container) => this.renderSettings(container));
@@ -103,8 +103,8 @@ export default {
             if (val && !isNaN(val)) {
                 this.limit = val;
                 this.mode = mode;
-                localStorage.setItem('budget_guard_limit', val);
-                localStorage.setItem('budget_guard_mode', mode);
+                this.context.storage.setItem('limit', val);
+                this.context.storage.setItem('mode', mode);
                 
                 this.context.ui.showToast('設定已儲存', 'success');
                 setTimeout(() => window.location.hash = '#plugins', 1000);
