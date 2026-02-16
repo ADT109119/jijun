@@ -3,7 +3,7 @@
     "id": "com.example.wheel",
     "name": "命運大轉盤",
     "description": "做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/wheel.plugin.js",
     "icon": "fa-dharmachakra"
@@ -12,7 +12,7 @@
     "id": "com.walkingfish.budget_guard",
     "name": "預算阻擋者",
     "description": "設定單筆支出上限，防止衝動消費！",
-    "version": "1.1",
+    "version": "1.2",
     "author": "The walking fish 步行魚",
     "file": "plugins/budget_guard.plugin.js",
     "icon": "fa-shield-halved"
@@ -21,7 +21,7 @@
     "id": "com.walkingfish.pet",
     "name": "桌面寵物",
     "description": "一隻可愛的貓咪陪伴你記帳！(可拖曳、點擊互動)",
-    "version": "1.4",
+    "version": "1.5",
     "author": "The walking fish 步行魚",
     "file": "plugins/pet.plugin.js",
     "icon": "fa-cat"
@@ -39,7 +39,7 @@
     "id": "com.walkingfish.achievements",
     "name": "記帳成就系統",
     "description": "讓記帳變好玩！解鎖徽章與成就。(v1.3 新增週末戰士、購物狂等)",
-    "version": "1.4",
+    "version": "1.5",
     "author": "The walking fish 步行魚",
     "file": "plugins/achievements.plugin.js",
     "icon": "fa-trophy"
@@ -48,7 +48,7 @@
     "id": "com.walkingfish.shopping_list",
     "name": "待辦購物清單",
     "description": "在首頁顯示購物清單，買完直接記帳！",
-    "version": "1.1",
+    "version": "1.2",
     "author": "The walking fish 步行魚",
     "file": "plugins/shopping.plugin.js",
     "icon": "fa-list-check"

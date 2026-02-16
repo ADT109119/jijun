@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.achievements',
         name: '記帳成就系統',
-        version: '1.4',
+        version: '1.5',
         description: '讓記帳變好玩！解鎖徽章與成就。',
         author: 'The walking fish 步行魚',
         icon: 'fa-trophy'
@@ -17,11 +17,11 @@ export default {
             streak: 0,
             recordsToday: 0
         };
-        const savedStats = JSON.parse(localStorage.getItem('achievement_stats') || '{}');
+        const savedStats = context.storage.getJSON('stats') || {};
         this.stats = { ...defaultStats, ...savedStats };
 
-        this.unlocked = JSON.parse(localStorage.getItem('achievement_unlocked') || '[]');
-        this.pending = JSON.parse(localStorage.getItem('achievement_pending_notify') || '[]');
+        this.unlocked = context.storage.getJSON('unlocked') || [];
+        this.pending = context.storage.getJSON('pending_notify') || [];
 
         this.achievements = [
             { id: 'first_blood', name: '初出茅廬', desc: '完成第一筆記帳', icon: 'fa-baby' },
@@ -59,7 +59,7 @@ export default {
                     this.context.ui.showToast(`🏆 解鎖成就：${name}！`, 'success');
                 });
                 this.pending = [];
-                localStorage.setItem('achievement_pending_notify', '[]');
+                this.context.storage.setJSON('pending_notify', []);
             }, 500);
         }
     },
@@ -156,13 +156,13 @@ export default {
         // Night Owl Update (User asked 2 AM - 5 AM)
         if (hour >= 2 && hour < 5) this.unlock('night_owl_real', newUnlocks);
 
-        localStorage.setItem('achievement_stats', JSON.stringify(this.stats));
+        this.context.storage.setJSON('stats', this.stats);
 
         // Queue Notifications
         if (newUnlocks.length > 0) {
-            const currentPending = JSON.parse(localStorage.getItem('achievement_pending_notify') || '[]');
+            const currentPending = this.context.storage.getJSON('pending_notify') || [];
             const uniquePending = [...new Set([...currentPending, ...newUnlocks])];
-            localStorage.setItem('achievement_pending_notify', JSON.stringify(uniquePending));
+            this.context.storage.setJSON('pending_notify', uniquePending);
             this.pending = uniquePending;
         }
     },
@@ -188,7 +188,7 @@ export default {
             // But we need to update state.
              if (!this.unlocked.includes('saver_month')) {
                 this.unlocked.push('saver_month');
-                localStorage.setItem('achievement_unlocked', JSON.stringify(this.unlocked));
+                this.context.storage.setJSON('unlocked', this.unlocked);
                 this.context.ui.showToast('🏆 解鎖成就：省錢一族！', 'success');
              }
         }
@@ -197,7 +197,7 @@ export default {
     unlock(id, list) {
         if (!this.unlocked.includes(id)) {
             this.unlocked.push(id);
-            localStorage.setItem('achievement_unlocked', JSON.stringify(this.unlocked));
+            this.context.storage.setJSON('unlocked', this.unlocked);
             const ach = this.achievements.find(a => a.id === id);
             if (ach) list.push(ach.name);
         }

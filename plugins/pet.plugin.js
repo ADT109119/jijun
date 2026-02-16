@@ -2,14 +2,14 @@ export default {
     meta: {
         id: 'com.walkingfish.pet',
         name: '桌面寵物',
-        version: '1.4',
+        version: '1.5',
         description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
         author: 'The walking fish 步行魚',
         icon: 'fa-cat'
     },
     init(context) {
         // Load position or default
-        const savedPos = JSON.parse(localStorage.getItem('pet_plugin_pos') || 'null');
+        const savedPos = context.storage.getJSON('pos');
         
         // Create Pet Element
         const pet = document.createElement('div');
@@ -228,7 +228,7 @@ export default {
         };
 
         const savePosition = (x, y) => {
-            localStorage.setItem('pet_plugin_pos', JSON.stringify({ left: `${x}px`, top: `${y}px` }));
+            context.storage.setJSON('pos', { left: `${x}px`, top: `${y}px` });
         };
 
         // --- Logic: Wandering ---
