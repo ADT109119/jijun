@@ -55,6 +55,18 @@ export default {
 - `on(hookName, callback)`: 註冊事件監聽器。
 - `off(hookName, callback)`: 移除事件監聽器。
 
+### `context.storage` (New in v2.1.2.1)
+為了確保插件資料的安全性與隔離性，插件 **無法** 直接存取 `localStorage` 或 `indexedDB`。請使用 `context.storage` 進行資料存取。每個插件擁有獨立的儲存空間。
+
+- `setItem(key, value)`: 儲存字串資料。
+- `getItem(key)`: 讀取字串資料。
+- `removeItem(key)`: 刪除指定 key 的資料。
+- `clear()`: 清空該插件的所有資料。
+- `setJSON(key, object)`: 儲存 JSON 物件 (自動 stringify)。
+- `getJSON(key)`: 讀取 JSON 物件 (自動 parse)。
+
+> **注意**: 嘗試在插件中使用 `window.localStorage` 或 `indexedDB` 會拋出 `Access Denied` 錯誤。
+
 ## 3. 事件 Hook 列表
 
 您可以使用 `context.events.on` 監聽 App 的生命週期與資料事件。
