@@ -10,6 +10,7 @@ import { QuickSelectManager } from './quickSelectManager.js';
 import { DebtManager } from './debtManager.js';
 import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
+import { AdService } from './adService.js';
 
 class EasyAccountingApp {
     constructor() {
@@ -22,6 +23,7 @@ class EasyAccountingApp {
         this.debtManager = new DebtManager(this.dataService);
         this.pluginManager = new PluginManager(this.dataService, this);
         this.syncService = new SyncService(this.dataService);
+        this.adService = new AdService();
 
         this.appContainer = document.getElementById('app-container');
         this.navItems = document.querySelectorAll('.nav-item');
@@ -588,6 +590,24 @@ class EasyAccountingApp {
                         <div id="version-info" class="px-4 py-3 text-xs text-center text-wabi-text-secondary"></div>
                     </div>
 
+                    <!-- Sponsor the Author -->
+                    <div class="bg-wabi-surface rounded-xl">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">贊助作者</h3>
+                        <a href="https://buymeacoffee.com/thewalkingfish" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-gray-100/50">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-mug-hot"></i>
+                                </div>
+                                <p class="text-wabi-text-primary text-base font-normal">Buy me a Coffee</p>
+                            </div>
+                            <div class="shrink-0 text-wabi-text-secondary">
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            </div>
+                        </a>
+                        <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
+                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 24 小時', 'sponsor-reward-ad-btn')}
+                    </div>
+
                     <!-- Advanced Features -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">實驗功能</h3>
@@ -628,6 +648,11 @@ class EasyAccountingApp {
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
                     </div>
+
+                    <!-- Banner Ad -->
+                    <div id="settings-banner-ad" class="rounded-xl overflow-hidden"></div>
+
+                    <div class="pb-24"></div>
                 </div>
             </div>
         `;
@@ -646,6 +671,19 @@ class EasyAccountingApp {
                 window.location.hash = '#sync-settings';
             });
         }
+        // 贊助 - 觀看獎勵廣告以移除廣告 24 小時
+        const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn');
+        if (rewardAdBtn) {
+            rewardAdBtn.addEventListener('click', async () => {
+                const granted = await this.adService.showRewardedAd();
+                if (granted) {
+                    // 獎勵發放成功，重新渲染設定頁以隱藏 banner
+                    this.renderSettingsPage();
+                }
+            });
+        }
+        // 渲染底部橫幅廣告
+        this.adService.renderBannerAd(document.getElementById('settings-banner-ad'));
     }
 
     async renderPluginsPage() {
