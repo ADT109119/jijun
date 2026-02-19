@@ -604,8 +604,6 @@ class EasyAccountingApp {
                                 <i class="fa-solid fa-arrow-up-right-from-square"></i>
                             </div>
                         </a>
-                        <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
-                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 24 小時', 'sponsor-reward-ad-btn')}
                     </div>
 
                     <!-- Advanced Features -->
@@ -631,7 +629,7 @@ class EasyAccountingApp {
                              ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
                         </div>
                         <!-- Debt Management Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-t border-wabi-border mt-2 pt-2">
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                                     <i class="fa-solid fa-handshake"></i>
@@ -647,6 +645,9 @@ class EasyAccountingApp {
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
+
+                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 24 小時', 'sponsor-reward-ad-btn')}
+
                     </div>
 
                     <!-- Banner Ad -->
