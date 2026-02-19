@@ -14,11 +14,12 @@ const ADSENSE_CLIENT_ID = 'ca-pub-1250445032458691';
 const ADSENSE_AD_SLOT = '3474478906';
 const REWARDED_AD_UNIT_PATH = '/23341410483/jijun';
 
-// ── 腳本載入狀態 ────────────────────────────────────
+// ── 模組層級狀態 ────────────────────────────────────
 let adsenseLoaded = false;
 let gptLoaded = false;
 let adsenseLoadFailed = false;
 let gptLoadFailed = false;
+let gptServicesEnabled = false;
 
 // ── 動態載入外部腳本（adblocker 安全） ─────────────
 
@@ -81,6 +82,13 @@ async function ensureGptLoaded() {
     return success;
 }
 
+/** 安全解析 localStorage 時間戳 */
+function parseTimestamp(value) {
+    if (!value) return NaN;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 // ── AdService 類別 ──────────────────────────────────
 
 export class AdService {
@@ -89,6 +97,8 @@ export class AdService {
         this._rewardedSlot = null;
         this._rewardPayload = null;
         this._resolveReward = null;
+        this._hasResolved = false;
+        this._listeners = [];
         this._modal = null;
     }
 
@@ -97,9 +107,9 @@ export class AdService {
     /** 檢查是否處於無廣告期間 */
     isAdFree() {
         try {
-            const until = localStorage.getItem(AD_FREE_KEY);
-            if (!until) return false;
-            return Date.now() < parseInt(until, 10);
+            const until = parseTimestamp(localStorage.getItem(AD_FREE_KEY));
+            if (isNaN(until)) return false;
+            return Date.now() < until;
         } catch (e) {
             return false;
         }
@@ -108,9 +118,9 @@ export class AdService {
     /** 取得剩餘無廣告時間（毫秒） */
     getAdFreeRemaining() {
         try {
-            const until = localStorage.getItem(AD_FREE_KEY);
-            if (!until) return 0;
-            const remaining = parseInt(until, 10) - Date.now();
+            const until = parseTimestamp(localStorage.getItem(AD_FREE_KEY));
+            if (isNaN(until)) return 0;
+            const remaining = until - Date.now();
             return remaining > 0 ? remaining : 0;
         } catch (e) {
             return 0;
@@ -160,7 +170,6 @@ export class AdService {
         // 動態載入 AdSense（adblocker 安全）
         const loaded = await ensureAdsenseLoaded();
         if (!loaded) {
-            // AdSense 載入失敗，靜默處理，不影響主程式
             container.innerHTML = '';
             return;
         }
@@ -177,7 +186,6 @@ export class AdService {
             </div>
         `;
 
-        // 觸發 AdSense 廣告請求
         try {
             (window.adsbygoogle = window.adsbygoogle || []).push({});
         } catch (e) {
@@ -187,6 +195,19 @@ export class AdService {
     }
 
     // ── GPT 獎勵廣告 ────────────────────────────────
+
+    /** 安全 resolve，防止重複呼叫 */
+    _safeResolve(value) {
+        if (this._hasResolved) return;
+        this._hasResolved = true;
+        if (this._resolveReward) this._resolveReward(value);
+    }
+
+    /** 註冊 GPT 事件監聽並追蹤，供清理時移除 */
+    _addGptListener(type, handler) {
+        googletag.pubads().addEventListener(type, handler);
+        this._listeners.push({ type, handler });
+    }
 
     /**
      * 顯示獎勵廣告
@@ -210,9 +231,20 @@ export class AdService {
         return new Promise((resolve) => {
             this._resolveReward = resolve;
             this._rewardPayload = null;
+            this._hasResolved = false;
 
             googletag.cmd.push(() => {
                 try {
+                    // 前置檢查：確認 GPT API 完整可用
+                    if (!googletag.enums?.OutOfPageFormat?.REWARDED) {
+                        showToast('獎勵廣告格式不受支援', 'error');
+                        this._safeResolve(false);
+                        return;
+                    }
+
+                    // 顯示載入提示
+                    showToast('正在載入獎勵廣告...', 'success');
+
                     // 定義獎勵廣告 slot
                     this._rewardedSlot = googletag.defineOutOfPageSlot(
                         REWARDED_AD_UNIT_PATH,
@@ -222,55 +254,61 @@ export class AdService {
                     // 行動裝置檢查
                     if (!this._rewardedSlot) {
                         showToast('此裝置暫不支援獎勵廣告，請使用手機瀏覽器', 'error');
-                        resolve(false);
+                        this._safeResolve(false);
                         return;
                     }
 
                     this._rewardedSlot.addService(googletag.pubads());
 
                     // 廣告就緒 → 顯示確認彈窗
-                    googletag.pubads().addEventListener('rewardedSlotReady', (event) => {
+                    this._addGptListener('rewardedSlotReady', (event) => {
                         this._showConfirmModal(() => {
                             event.makeRewardedVisible();
                         });
                     });
 
                     // 獎勵發放
-                    googletag.pubads().addEventListener('rewardedSlotGranted', (event) => {
+                    this._addGptListener('rewardedSlotGranted', (event) => {
                         this._rewardPayload = event.payload;
                     });
 
                     // 廣告關閉
-                    googletag.pubads().addEventListener('rewardedSlotClosed', () => {
+                    this._addGptListener('rewardedSlotClosed', () => {
                         this._dismissModal();
-                        this._cleanupRewardedSlot();
 
                         if (this._rewardPayload) {
                             this._grantAdFree();
                             showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
-                            if (this._resolveReward) this._resolveReward(true);
+                            this._safeResolve(true);
                         } else {
                             showToast('未完成觀看，無法獲得獎勵', 'error');
-                            if (this._resolveReward) this._resolveReward(false);
+                            this._safeResolve(false);
                         }
+
+                        this._cleanupRewardedSlot();
                     });
 
                     // 無廣告可用
-                    googletag.pubads().addEventListener('slotRenderEnded', (event) => {
+                    this._addGptListener('slotRenderEnded', (event) => {
                         if (event.slot === this._rewardedSlot && event.isEmpty) {
                             showToast('目前沒有可用的獎勵廣告，請稍後再試', 'error');
                             this._cleanupRewardedSlot();
-                            if (this._resolveReward) this._resolveReward(false);
+                            this._safeResolve(false);
                         }
                     });
 
-                    googletag.enableServices();
+                    // enableServices 只呼叫一次
+                    if (!gptServicesEnabled) {
+                        googletag.enableServices();
+                        gptServicesEnabled = true;
+                    }
+
                     googletag.display(this._rewardedSlot);
                 } catch (e) {
                     console.error('獎勵廣告初始化失敗:', e);
                     showToast('廣告載入失敗，請稍後再試', 'error');
                     this._cleanupRewardedSlot();
-                    resolve(false);
+                    this._safeResolve(false);
                 }
             });
         });
@@ -311,7 +349,7 @@ export class AdService {
         this._modal.querySelector('#reward-cancel-btn').addEventListener('click', () => {
             this._dismissModal();
             this._cleanupRewardedSlot();
-            if (this._resolveReward) this._resolveReward(false);
+            this._safeResolve(false);
         });
     }
 
@@ -322,9 +360,23 @@ export class AdService {
         }
     }
 
-    // ── 清理 ────────────────────────────────────────
+    // ── 清理（含移除事件監聽） ────────────────────────
 
     _cleanupRewardedSlot() {
+        // 移除所有 GPT 事件監聽，避免累積
+        if (this._listeners.length > 0) {
+            try {
+                const pubads = googletag.pubads();
+                this._listeners.forEach(({ type, handler }) => {
+                    pubads.removeEventListener(type, handler);
+                });
+            } catch (e) {
+                // 靜默處理
+            }
+            this._listeners = [];
+        }
+
+        // 銷毀 slot
         if (this._rewardedSlot) {
             try {
                 googletag.destroySlots([this._rewardedSlot]);
@@ -333,6 +385,7 @@ export class AdService {
             }
             this._rewardedSlot = null;
         }
+
         this._rewardPayload = null;
     }
 }
