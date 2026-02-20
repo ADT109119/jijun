@@ -1,0 +1,47 @@
+[
+    {
+        "icon": "fa-brands fa-github",
+        "color": "#333",
+        "title": "為此專案按個 Star ⭐",
+        "description": "你的 Star 是我持續開發的動力！",
+        "buttonText": "前往 GitHub",
+        "url": "https://github.com/ADT109119/jijun",
+        "image": ""
+    },
+    {
+        "icon": "fa-brands fa-youtube",
+        "color": "#FF0000",
+        "title": "訂閱 The walking fish步行魚 頻道",
+        "description": "教學影片、開發日誌，不定期更新！",
+        "buttonText": "前往 YouTube",
+        "url": "https://www.youtube.com/@the_walking_fish",
+        "image": ""
+    },
+    {
+        "icon": "fa-solid fa-blog",
+        "color": "#6366f1",
+        "title": "逛逛我的 Blog",
+        "description": "技術文章、開發心得分享",
+        "buttonText": "前往 Blog",
+        "url": "https://the-walking-fish.com",
+        "image": ""
+    },
+    {
+        "icon": "",
+        "color": "#e5a822",
+        "title": "Nano Banana WaterMark Remover",
+        "description": "開源、純網頁前端，去除 Gemini Nano Banana 浮水印的工具",
+        "buttonText": "前往網站",
+        "url": "https://banana.the-walking-fish.com/",
+        "image": "https://github.com/ADT109119/NanoBananaWaterMarkRemover/blob/main/image/image.png?raw=true"
+    },
+    {
+        "icon": "",
+        "color": "#333",
+        "title": "分佈式 LLM 推理桌面應用程式",
+        "description": "一個基於 llama.cpp 的分佈式 LLM 推理程式，讓您能夠利用區域網路內的多台電腦協同進行大型語言模型的分佈式推理，使用 Electron 的製作跨平台桌面應用程式操作 UI。",
+        "buttonText": "前往 GitHub",
+        "url": "https://github.com/ADT109119/llamacpp-distributed-inference",
+        "image": "https://github.com/ADT109119/llamacpp-distributed-inference/blob/main/banner.png?raw=true"
+    }
+]

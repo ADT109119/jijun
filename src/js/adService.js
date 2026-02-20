@@ -15,33 +15,21 @@ const ADSENSE_AD_SLOT = '3474478906';
 const REWARDED_AD_UNIT_PATH = '/23341410483/jijun';
 
 // ── 內建推廣廣告（當獎勵廣告不可用時的備案） ──────────
-// 編輯此陣列即可新增/修改/移除推廣項目
-const INTERNAL_ADS = [
-    {
-        icon: 'fa-brands fa-github',
-        color: '#333',
-        title: '為專案按個 Star ⭐',
-        description: '你的 Star 是我持續開發的動力！',
-        buttonText: '前往 GitHub',
-        url: 'https://github.com/ADT109119/jijun',
-    },
-    {
-        icon: 'fa-brands fa-youtube',
-        color: '#FF0000',
-        title: '訂閱 YouTube 頻道',
-        description: '教學影片、開發日誌，不定期更新！',
-        buttonText: '前往 YouTube',
-        url: 'https://www.youtube.com/@the_walking_fish',
-    },
-    {
-        icon: 'fa-solid fa-blog',
-        color: '#6366f1',
-        title: '逛逛我的 Blog',
-        description: '技術文章、開發心得分享',
-        buttonText: '前往 Blog',
-        url: 'https://the-walking-fish.com',
-    },
-];
+// 資料來源：/internal-ads.json（放在 public/ 資料夾，方便編輯）
+let _internalAdsCache = null;
+
+async function loadInternalAds() {
+    if (_internalAdsCache) return _internalAdsCache;
+    try {
+        const res = await fetch('/internal-ads.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _internalAdsCache = await res.json();
+        return _internalAdsCache;
+    } catch (e) {
+        console.warn('內建推廣廣告資料載入失敗:', e);
+        return null;
+    }
+}
 
 // ── 模組層級狀態 ────────────────────────────────────
 let adsenseLoaded = false;
@@ -346,20 +334,32 @@ export class AdService {
      * 觀看 5 秒後可領取 24 小時無廣告獎勵
      * @returns {Promise<boolean>} 是否成功獲得獎勵
      */
-    _showInternalAd() {
+    async _showInternalAd() {
         const COUNTDOWN_SECONDS = 5;
 
+        // 載入推廣資料
+        const ads = await loadInternalAds();
+        if (!ads || ads.length === 0) {
+            showToast('目前沒有可用的獎勵廣告，請稍後再試', 'error');
+            return false;
+        }
+
         return new Promise((resolve) => {
-            // 隨機挑選一則內建廣告
-            const ad = INTERNAL_ADS[Math.floor(Math.random() * INTERNAL_ADS.length)];
+            // 隨機挑選一則
+            const ad = ads[Math.floor(Math.random() * ads.length)];
+
+            // 圖片區塊：有圖顯示圖片，沒圖顯示 icon
+            const heroHtml = ad.image
+                ? `<img src="${ad.image}" alt="${ad.title}" class="w-full rounded-xl mb-4 max-h-48 object-cover" />`
+                : `<div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: ${ad.color}15">
+                       <i class="${ad.icon} text-3xl" style="color: ${ad.color}"></i>
+                   </div>`;
 
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
             modal.innerHTML = `
                 <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
-                    <div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: ${ad.color}15">
-                        <i class="${ad.icon} text-3xl" style="color: ${ad.color}"></i>
-                    </div>
+                    ${heroHtml}
                     <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
                     <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
                     <a href="${ad.url}" target="_blank" rel="noopener noreferrer"
