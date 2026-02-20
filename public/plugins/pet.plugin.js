@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.pet',
         name: '桌面寵物',
-        version: '1.5',
+        version: '1.6',
         description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
         author: 'The walking fish 步行魚',
         icon: 'fa-cat'
@@ -19,55 +19,121 @@ export default {
         pet.innerHTML = `
             <svg viewBox="0 0 120 120" width="80" height="80" style="overflow: visible;">
                 <defs>
-                    <filter id="soft-glow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feGaussianBlur stdDeviation="1.5" result="blur"/>
-                        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#000" flood-opacity="0.15"/>
                     </filter>
                 </defs>
                 <g class="cat-wrapper">
                     <!-- Tail -->
-                    <path class="cat-tail" d="M90 90 Q 110 80, 100 50" stroke="#FF9A00" stroke-width="8" fill="none" stroke-linecap="round" />
+                    <g class="cat-tail">
+                        <path d="M 85 85 Q 115 85 110 50 Q 105 30 95 35 Q 85 40 85 70" fill="#ffb461" />
+                        <path d="M 85 85 Q 115 85 110 50 Q 105 30 95 35 Q 85 40 85 70" stroke="#f19022" stroke-width="2" fill="none" />
+                        <!-- Stripes on tail -->
+                        <path d="M 103 45 Q 106 48 108 45" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                        <path d="M 98 60 Q 101 63 103 60" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                    </g>
                     
-                    <!-- Legs (Back) -->
-                    <path class="cat-leg back-left" d="M35 90 L 35 105" stroke="#FF9A00" stroke-width="7" stroke-linecap="round" />
-                    <path class="cat-leg back-right" d="M85 90 L 85 105" stroke="#FF9A00" stroke-width="7" stroke-linecap="round" />
+                    <!-- Back Legs -->
+                    <g class="cat-leg back-left">
+                        <path d="M 25 80 Q 15 105 30 105 A 5 5 0 0 0 45 105 Q 40 80 45 80" fill="#ffb461" />
+                        <line x1="30" y1="100" x2="30" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="36" y1="100" x2="36" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M 25 80 Q 15 95 30 100" stroke="#f19022" stroke-width="2" fill="none" />
+                    </g>
+                    
+                    <g class="cat-leg back-right">
+                        <path d="M 95 80 Q 105 105 90 105 A 5 5 0 0 1 75 105 Q 80 80 75 80" fill="#ffb461" />
+                        <line x1="90" y1="100" x2="90" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="84" y1="100" x2="84" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M 95 80 Q 105 95 90 100" stroke="#f19022" stroke-width="2" fill="none" />
+                    </g>
 
-                    <!-- Body (Rounded Rectangle) -->
-                    <rect class="cat-body" x="25" y="60" width="70" height="45" rx="20" ry="20" fill="#FFB347" />
-                    <ellipse class="cat-belly" cx="60" cy="85" rx="20" ry="12" fill="#FFE5B4" />
+                    <!-- Body -->
+                    <g class="cat-body">
+                        <path d="M 35 55 Q 15 85 45 102 L 75 102 Q 105 85 85 55 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" />
+                        <!-- Belly -->
+                        <path d="M 45 65 Q 60 45 75 65 Q 80 95 60 98 Q 40 95 45 65 Z" fill="#fff5eb" stroke="#fff5eb" stroke-width="1" />
+                        
+                        <!-- Body stripes -->
+                        <path d="M 27 65 Q 37 65 39 70" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                        <path d="M 23 80 Q 33 80 35 85" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                        <path d="M 93 65 Q 83 65 81 70" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                        <path d="M 97 80 Q 87 80 85 85" stroke="#f19022" stroke-width="3" stroke-linecap="round" fill="none" />
+                    </g>
 
-                    <!-- Legs (Front) -->
-                    <path class="cat-leg front-left" d="M40 90 L 40 105" stroke="#FF9A00" stroke-width="7" stroke-linecap="round" />
-                    <path class="cat-leg front-right" d="M80 90 L 80 105" stroke="#FF9A00" stroke-width="7" stroke-linecap="round" />
+                    <!-- Front Legs -->
+                    <g class="cat-leg front-left">
+                        <path d="M 43 75 L 43 105 A 7 7 0 0 0 57 105 L 57 75 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" stroke-linejoin="round" />
+                        <line x1="48" y1="100" x2="48" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="52" y1="100" x2="52" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                    </g>
+
+                    <g class="cat-leg front-right">
+                        <path d="M 63 75 L 63 105 A 7 7 0 0 0 77 105 L 77 75 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" stroke-linejoin="round" />
+                        <line x1="68" y1="100" x2="68" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="72" y1="100" x2="72" y2="105" stroke="#f19022" stroke-width="2" stroke-linecap="round"/>
+                    </g>
+
+                    <!-- Collar -->
+                    <g class="cat-collar">
+                        <path d="M 38 58 Q 60 70 82 58" stroke="#ff4757" stroke-width="6" stroke-linecap="round" fill="none" />
+                        <!-- Bell -->
+                        <circle cx="60" cy="65" r="7" fill="#ffd32a" stroke="#d6a800" stroke-width="1" />
+                        <line x1="55" y1="65" x2="65" y2="65" stroke="#d6a800" stroke-width="2" stroke-linecap="round" />
+                        <circle cx="60" cy="67" r="1.5" fill="#d6a800" />
+                        <line x1="60" y1="67" x2="60" y2="72" stroke="#d6a800" stroke-width="2" stroke-linecap="round" />
+                    </g>
 
                     <!-- Head Group -->
                     <g class="cat-head">
                         <!-- Ears -->
-                        <path d="M25 45 L 20 20 L 45 35" fill="#FFB347" stroke="#E68A00" stroke-width="2" stroke-linejoin="round"/> <!-- Left -->
-                        <path d="M95 45 L 100 20 L 75 35" fill="#FFB347" stroke="#E68A00" stroke-width="2" stroke-linejoin="round"/> <!-- Right -->
-                        
-                        <!-- Inner Ears -->
-                        <path d="M28 42 L 25 28 L 40 36" fill="#FFE5B4" />
-                        <path d="M92 42 L 95 28 L 80 36" fill="#FFE5B4" />
-
-                        <!-- Face Shape -->
-                        <ellipse cx="60" cy="50" rx="40" ry="32" fill="#FFB347" stroke="#E68A00" stroke-width="2" />
-                        
-                        <!-- Eyes -->
-                        <g class="cat-eyes">
-                            <circle cx="45" cy="45" r="5" fill="#333" />
-                            <circle cx="75" cy="45" r="5" fill="#333" />
-                            <circle cx="47" cy="43" r="2" fill="white" />
-                            <circle cx="77" cy="43" r="2" fill="white" />
+                        <g class="cat-ear left">
+                            <path d="M 23 38 Q 12 5 35 12 Q 45 25 48 35 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" stroke-linejoin="round" />
+                            <path d="M 27 33 Q 22 17 34 19 Q 39 26 41 33 Z" fill="#ffb8b8" />
+                        </g>
+                        <g class="cat-ear right">
+                            <path d="M 97 38 Q 108 5 85 12 Q 75 25 72 35 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" stroke-linejoin="round" />
+                            <path d="M 93 33 Q 98 17 86 19 Q 81 26 79 33 Z" fill="#ffb8b8" />
                         </g>
 
-                        <!-- Snout -->
-                        <ellipse cx="60" cy="55" rx="6" ry="4" fill="#FFE5B4" />
-                        <path d="M58 56 L 60 58 L 62 56" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <!-- Face Shape -->
+                        <path d="M 16 48 Q 16 18 60 20 Q 104 18 104 48 Q 104 76 60 76 Q 16 76 16 48 Z" fill="#ffb461" stroke="#f19022" stroke-width="2" />
                         
-                        <!-- Cheeks -->
-                        <circle cx="35" cy="55" r="3" fill="#FFA07A" opacity="0.6" />
-                        <circle cx="85" cy="55" r="3" fill="#FFA07A" opacity="0.6" />
+                        <!-- Head Stripes -->
+                        <path d="M 60 20 L 60 30" stroke="#f19022" stroke-width="3" stroke-linecap="round" />
+                        <path d="M 52 23 L 52 30" stroke="#f19022" stroke-width="3" stroke-linecap="round" />
+                        <path d="M 68 23 L 68 30" stroke="#f19022" stroke-width="3" stroke-linecap="round" />
+
+                        <!-- Muzzle area -->
+                        <ellipse cx="60" cy="54" rx="18" ry="12" fill="#fff5eb" />
+
+                        <!-- Eyes -->
+                        <g class="cat-eyes">
+                            <circle cx="40" cy="46" r="7" fill="#2d3436" />
+                            <circle cx="80" cy="46" r="7" fill="#2d3436" />
+                            <!-- Catchlights -->
+                            <circle cx="37" cy="43" r="2.5" fill="#ffffff" />
+                            <circle cx="77" cy="43" r="2.5" fill="#ffffff" />
+                            <circle cx="42" cy="48" r="1.2" fill="#ffffff" />
+                            <circle cx="82" cy="48" r="1.2" fill="#ffffff" />
+                        </g>
+
+                        <!-- Nose & Mouth -->
+                        <path d="M 57 51 L 63 51 L 60 54 Z" fill="#ff7675" />
+                        <path d="M 55 56 Q 57.5 59 60 56 Q 62.5 59 65 56" fill="none" stroke="#2d3436" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+                        <!-- Whiskers -->
+                        <path d="M 28 50 Q 10 48 5 45" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+                        <path d="M 28 53 Q 10 53 5 53" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+                        <path d="M 28 56 Q 10 58 5 62" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+                        
+                        <path d="M 92 50 Q 110 48 115 45" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+                        <path d="M 92 53 Q 110 53 115 53" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+                        <path d="M 92 56 Q 110 58 115 62" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none" />
+
+                        <!-- Blush cheeks -->
+                        <ellipse cx="32" cy="56" rx="7" ry="3.5" fill="#ff7675" opacity="0.4" />
+                        <ellipse cx="88" cy="56" rx="7" ry="3.5" fill="#ff7675" opacity="0.4" />
                     </g>
                 </g>
             </svg>
@@ -94,6 +160,10 @@ export default {
         const style = document.createElement('style');
         style.textContent = `
             /* --- Animations --- */
+            @keyframes floatUp {
+                0% { opacity: 1; transform: translateY(0) scale(1) rotate(-10deg); }
+                100% { opacity: 0; transform: translateY(-40px) scale(1.5) rotate(10deg); }
+            }
             @keyframes tail-swish {
                 0%, 100% { transform: rotate(0deg); }
                 50% { transform: rotate(10deg); }
@@ -120,9 +190,9 @@ export default {
             }
 
             /* --- Element Targets --- */
-            .cat-tail { transform-origin: 90px 90px; animation: tail-swish 3s ease-in-out infinite; }
-            .cat-eyes { transform-origin: 60px 45px; animation: blink 4s infinite; }
-            .cat-head { animation: breathe 2s ease-in-out infinite; }
+            .cat-tail { transform-origin: 85px 85px; animation: tail-swish 3s ease-in-out infinite; }
+            .cat-eyes { transform-origin: 60px 46px; animation: blink 4s infinite; }
+            .cat-head { transform-origin: 60px 50px; animation: breathe 2s ease-in-out infinite; }
 
             /* --- States --- */
             
@@ -171,10 +241,13 @@ export default {
         // --- Interaction: Dragging ---
         let dragOffsetX = 0;
         let dragOffsetY = 0;
+        let isDraggingMotion = false;
+        let dragStartTime = 0;
 
         const startDrag = (e) => {
-            e.preventDefault();
             currentState = 'dragging';
+            isDraggingMotion = false;
+            dragStartTime = Date.now();
             clearTimeout(wanderTimer); // Stop wandering
             
             pet.classList.add('pet-scruffed');
@@ -191,7 +264,8 @@ export default {
 
         const onDrag = (e) => {
             if (currentState !== 'dragging') return;
-            e.preventDefault();
+            e.preventDefault(); // Prevent scrolling while dragging
+            isDraggingMotion = true;
 
             const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
             const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
@@ -223,6 +297,11 @@ export default {
 
             savePosition(newX, newY);
             
+            if (!isDraggingMotion && (Date.now() - dragStartTime < 400)) {
+                // Ignore native click later, trigger interaction now
+                triggerInteraction();
+            }
+
             // Resume wandering after a delay
             scheduleWander();
         };
@@ -321,20 +400,49 @@ export default {
             '加油！再堅持一下！',
             '要不要吃魚？🐟',
             '呼嚕呼嚕...💤',
-            '蹭蹭你～ ❤️'
+            '蹭蹭你～ ❤️',
+            '打起精神來喵！✨',
+            '理財就是理生活喵！'
         ];
 
-        // Click interaction (only if not dragged)
-        pet.addEventListener('click', (e) => {
-            if (currentState === 'dragging') return;
-            
+        const triggerInteraction = () => {
             const msg = messages[Math.floor(Math.random() * messages.length)];
             context.ui.showToast(msg, 'info');
             
-            pet.style.transform = isFlipped ? 'scaleX(-1) translateY(-10px)' : 'translateY(-10px)';
+            // Force animation reset
+            pet.style.transition = 'none';
+            pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
+            
+            // Add a lovely visual effect
+            const heart = document.createElement('div');
+            heart.textContent = '❤️';
+            heart.style.cssText = `
+                position: absolute;
+                left: 30px;
+                top: -10px;
+                font-size: 24px;
+                pointer-events: none;
+                animation: floatUp 1s ease-out forwards;
+                z-index: 10001;
+                filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+            `;
+            pet.appendChild(heart);
+            setTimeout(() => heart.remove(), 1000);
+
+            // Trigger jump
+            requestAnimationFrame(() => {
+                pet.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                pet.style.transform = isFlipped ? 'scaleX(-1) translateY(-20px)' : 'translateY(-20px)';
+            });
+
             setTimeout(() => {
                 pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
             }, 300);
+        };
+
+        // Prevent double trigger from native click
+        pet.addEventListener('click', (e) => {
+            e.preventDefault();
         });
 
         // Initialize Loop

@@ -21,7 +21,7 @@
     "id": "com.walkingfish.pet",
     "name": "桌面寵物",
     "description": "一隻可愛的貓咪陪伴你記帳！(可拖曳、點擊互動)",
-    "version": "1.5",
+    "version": "1.6",
     "author": "The walking fish 步行魚",
     "file": "plugins/pet.plugin.js",
     "icon": "fa-cat"
