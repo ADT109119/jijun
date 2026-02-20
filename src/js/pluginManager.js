@@ -11,53 +11,104 @@ export class PluginManager {
     this.homeWidgets = new Map(); // id -> renderFn
     this.widgetOrder = []; 
     this.hooks = new Map(); // hookName -> Set<callback>
-    // Context creation is now per-plugin, so strictly speaking consistent single context is tricky if we want unique storage.
-    // However, for backward compatibility or general generic context, we can keep a base one or create deeply on load.
-    // We will change createPluginContext to accept an ID.
   }
 
-  createPluginContext(pluginId) {
-    const storage = pluginId ? new PluginStorage(pluginId) : null;
-    
+  // ==================== 安全工具 ====================
+
+  /** 防止 XSS：將 HTML 特殊字元轉義 */
+  _escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ==================== 權限強制工具 ====================
+
+  /** 建立拒絕存取的 Proxy 替身 */
+  _denied(group, permNeeded) {
+    const label = PluginManager.PERMISSION_LABELS[permNeeded]?.label || permNeeded;
+    return new Proxy({}, {
+      get: (_, prop) => () => {
+        throw new Error(`Permission Denied: 此插件未取得「${label}」權限，無法呼叫 context.${group}.${prop}()`);
+      }
+    });
+  }
+
+  createPluginContext(pluginId, permissions = []) {
+    const has = (perm) => permissions.includes(perm);
+
+    // ---- storage ----
+    const storage = has('storage') && pluginId
+      ? new PluginStorage(pluginId)
+      : this._denied('storage', 'storage');
+
+    // ---- data ----
+    const dataRead = has('data:read') ? {
+      getRecords: () => this.dataService.getRecords(),
+      getDebts: () => this.dataService.getDebts(),
+      getContacts: () => this.dataService.getContacts(),
+      getAccounts: () => this.dataService.getAccounts(),
+      getCategories: (type) => this.app.categoryManager.getAllCategories(type),
+      getCategory: (type, id) => this.app.categoryManager.getCategoryById(type, id)
+    } : {};
+
+    const dataWrite = has('data:write') ? {
+      addRecord: (record) => this.dataService.addRecord(record),
+      addDebt: (debt) => this.dataService.addDebt(debt),
+      addContact: (contact) => this.dataService.addContact(contact),
+    } : {};
+
+    // 合併讀寫，未授權的方法以 Proxy 攔截
+    const dataApi = (has('data:read') || has('data:write'))
+      ? { ...dataRead, ...dataWrite }
+      : this._denied('data', 'data:read');
+
+    // 如果只有其中一種權限，補上另一種的拒絕訊息
+    if (has('data:read') && !has('data:write')) {
+      const writeDenied = this._denied('data', 'data:write');
+      dataApi.addRecord = writeDenied.addRecord;
+      dataApi.addDebt = writeDenied.addDebt;
+      dataApi.addContact = writeDenied.addContact;
+    }
+    if (has('data:write') && !has('data:read')) {
+      const readDenied = this._denied('data', 'data:read');
+      dataApi.getRecords = readDenied.getRecords;
+      dataApi.getDebts = readDenied.getDebts;
+      dataApi.getContacts = readDenied.getContacts;
+      dataApi.getAccounts = readDenied.getAccounts;
+      dataApi.getCategories = readDenied.getCategories;
+      dataApi.getCategory = readDenied.getCategory;
+    }
+
+    // ---- ui ----
+    const uiApi = has('ui') ? {
+      showToast: (msg, type) => showToast(msg, type),
+      registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
+      registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn),
+      navigateTo: (hash) => { window.location.hash = hash; },
+      openAddPage: (data) => {
+           if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));
+           window.location.hash = `#add?t=${Date.now()}`;
+      },
+      showConfirm: (title, message) => this.showConfirmModal(title, message),
+      showAlert: (title, message) => this.showAlertModal(title, message)
+    } : this._denied('ui', 'ui');
+
+    // ---- events（始終允許，為基礎能力）----
+    const eventsApi = {
+      on: (hookName, callback) => this.registerHook(hookName, callback),
+      off: (hookName, callback) => this.unregisterHook(hookName, callback)
+    };
+
     return {
       appName: 'Easy Accounting',
-      version: '2.1.1.1',
-      lib: {
-        Chart: Chart
-      },
-      storage: storage, // Expose sandboxed storage
-      data: {
-        getRecords: () => this.dataService.getRecords(),
-        addRecord: (record) => this.dataService.addRecord(record),
-        // ... (rest of data methods)
-        getDebts: () => this.dataService.getDebts(),
-        addDebt: (debt) => this.dataService.addDebt(debt),
-        getContacts: () => this.dataService.getContacts(),
-        addContact: (contact) => this.dataService.addContact(contact),
-        getAccounts: () => this.dataService.getAccounts(),
-        getCategories: (type) => this.app.categoryManager.getAllCategories(type),
-        getCategory: (type, id) => this.app.categoryManager.getCategoryById(type, id)
-      },
-      ui: {
-        showToast: (msg, type) => showToast(msg, type),
-        registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
-        registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn),
-        navigateTo: (hash) => { window.location.hash = hash; },
-        openAddPage: (data) => {
-             if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));
-             // Append timestamp to force hashchange event even if already on #add
-             window.location.hash = `#add?t=${Date.now()}`;
-        },
-        showConfirm: (title, message) => this.showConfirmModal(title, message),
-        showAlert: (title, message) => this.showAlertModal(title, message)
-      },
-      events: {
-        on: (hookName, callback) => this.registerHook(hookName, callback),
-        off: (hookName, callback) => this.unregisterHook(hookName, callback)
-      },
-      hooks: {
-          // Event listeners or interceptors can be added here
-      }
+      version: '2.1.2.1',
+      lib: { Chart: Chart },
+      storage,
+      data: dataApi,
+      ui: uiApi,
+      events: eventsApi,
+      hooks: {}
     };
   }
 
@@ -84,64 +135,94 @@ export class PluginManager {
     }
   }
 
+  // ==================== 沙盒包裝器 ====================
+
+  /** 生成沙盒前綴程式碼，根據權限阻擋全域儲存、危險 API 與網路存取 */
+  _getSandboxWrapper(permissions = []) {
+    const hasNetwork = permissions.includes('network');
+
+    // 網路 API 阻擋（僅在無 network 權限時生成）
+    const networkBlock = hasNetwork ? '' : `
+      const fetch = () => { throw new Error("Permission Denied: 此插件未取得「網路存取」權限，無法使用 fetch()") };
+      const XMLHttpRequest = function() { throw new Error("Permission Denied: 此插件未取得「網路存取」權限，無法使用 XMLHttpRequest") };
+      const WebSocket = function() { throw new Error("Permission Denied: 此插件未取得「網路存取」權限，無法使用 WebSocket") };
+      const EventSource = function() { throw new Error("Permission Denied: 此插件未取得「網路存取」權限，無法使用 EventSource") };
+    `;
+
+    // Proxy 中要阻擋的網路屬性清單
+    const networkProxyBlock = hasNetwork ? '' : `
+           if (prop === 'fetch' || prop === 'XMLHttpRequest' || prop === 'WebSocket' || prop === 'EventSource') {
+               throw new Error("Permission Denied: 此插件未取得「網路存取」權限");
+           }
+    `;
+
+    return `
+      // ===== Plugin Sandbox =====
+      // 最先取得真正的全域物件（必須在 Function 被覆蓋前執行）
+      const _realGlobal = (new Function("return this"))();
+
+      const localStorage = {
+        getItem: () => { throw new Error("Access Denied: Please use context.storage.getItem()") },
+        setItem: () => { throw new Error("Access Denied: Please use context.storage.setItem()") },
+        removeItem: () => { throw new Error("Access Denied: Please use context.storage.removeItem()") },
+        clear: () => { throw new Error("Access Denied: Please use context.storage.clear()") },
+        key: () => { throw new Error("Access Denied: Please use context.storage") },
+        length: 0
+      };
+      const sessionStorage = {
+        getItem: () => { throw new Error("Access Denied: Please use context.storage") },
+        setItem: () => { throw new Error("Access Denied: Please use context.storage") },
+        removeItem: () => { throw new Error("Access Denied: Please use context.storage") },
+        clear: () => { throw new Error("Access Denied: Please use context.storage") }
+      };
+      const indexedDB = {
+        open: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") },
+        deleteDatabase: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") }
+      };
+
+      // 網路 API 阻擋（根據權限動態生成）
+      ${networkBlock}
+
+      // 注意：Function/eval 透過 Proxy 攔截 window.Function / window.eval
+
+      const _windowProxyHandler = {
+        get(target, prop) {
+           if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
+               throw new Error("Access Denied: Please use context.storage");
+           }
+           if (prop === 'Function') {
+               throw new Error("Access Denied: Function constructor is not allowed in plugins.");
+           }
+           if (prop === 'eval') {
+               throw new Error("Access Denied: eval() is not allowed in plugins.");
+           }
+           ${networkProxyBlock}
+           let value = Reflect.get(target, prop);
+           if (typeof value === 'function') {
+              return value.bind(target);
+           }
+           return value;
+        },
+        set(target, prop, value) {
+           if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
+                throw new Error("Access Denied: Cannot overwrite global storage");
+           }
+           return Reflect.set(target, prop, value);
+        }
+      };
+
+      const window = new Proxy(_realGlobal, _windowProxyHandler);
+      const self = window;
+      const globalThis = window;
+      // ===== End Sandbox =====
+    `;
+  }
+
   async loadPlugin(pluginData) {
     try {
-        // Sandboxing: Shadow global storage objects
+        const perms = pluginData.permissions || [];
         const sandboxedScript = `
-          const localStorage = {
-            getItem: () => { throw new Error("Access Denied: Please use context.storage.getItem()") },
-            setItem: () => { throw new Error("Access Denied: Please use context.storage.setItem()") },
-            removeItem: () => { throw new Error("Access Denied: Please use context.storage.removeItem()") },
-            clear: () => { throw new Error("Access Denied: Please use context.storage.clear()") },
-            key: () => { throw new Error("Access Denied: Please use context.storage") },
-            length: 0
-          };
-          const sessionStorage = {
-            getItem: () => { throw new Error("Access Denied: Please use context.storage") },
-            setItem: () => { throw new Error("Access Denied: Please use context.storage") },
-            removeItem: () => { throw new Error("Access Denied: Please use context.storage") },
-            clear: () => { throw new Error("Access Denied: Please use context.storage") }
-          };
-          const indexedDB = {
-            open: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") },
-            deleteDatabase: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") }
-          };
-          
-          // Enhanced Sandboxing: Shadow window and self
-          const _windowProxyHandler = {
-            get(target, prop) {
-               if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
-                   throw new Error("Access Denied: Please use context.storage");
-               }
-               
-               // Get value from original window
-               let value = Reflect.get(target, prop);
-               
-               // Bind functions to original target (critical for methods like cancelAnimationFrame, fetch, etc.)
-               if (typeof value === 'function') {
-                  const bound = value.bind(target);
-                  return bound;
-               }
-               return value;
-            },
-            set(target, prop, value) {
-               if (prop === 'localStorage' || prop === 'sessionStorage' || prop === 'indexedDB') {
-                    throw new Error("Access Denied: Cannot overwrite global storage");
-               }
-               return Reflect.set(target, prop, value);
-            }
-          };
-
-          // Fix: Capture real global object preventing TDZ with shadowed variables below
-          const _realGlobal = (new Function("return this"))();
-
-          const window = new Proxy(_realGlobal, _windowProxyHandler);
-          const self = window;
-          const globalThis = window; 
-          
-          // Prevent window.localStorage access if possible (non-configurable in some browsers, but we try)
-          // In module scope, 'this' is undefined, and we are shadowing globals.
-          
+          ${this._getSandboxWrapper(perms)}
           ${pluginData.script}
         `;
 
@@ -150,7 +231,7 @@ export class PluginManager {
         
         const module = await import(url);
         if (module.default && typeof module.default.init === 'function') {
-            const context = this.createPluginContext(pluginData.id);
+            const context = this.createPluginContext(pluginData.id, pluginData.permissions || []);
             module.default.init(context);
             this.plugins.set(pluginData.id, module.default);
             console.log(`Plugin loaded: ${pluginData.name}`);
@@ -165,14 +246,90 @@ export class PluginManager {
     }
   }
 
-  async installPlugin(file) {
+  // ==================== 權限同意 ====================
+
+  /** 權限標籤對照表 */
+  static PERMISSION_LABELS = {
+    'storage':    { icon: 'fa-database',       label: '儲存空間',     desc: '允許在本機存取插件專屬的儲存空間' },
+    'data:read':  { icon: 'fa-eye',            label: '讀取帳務資料', desc: '允許讀取記帳紀錄、帳戶、欠款、分類等資料' },
+    'data:write': { icon: 'fa-pen-to-square',  label: '寫入帳務資料', desc: '允許新增或修改記帳紀錄、欠款、聯絡人' },
+    'ui':         { icon: 'fa-window-maximize', label: '使用者介面',   desc: '允許註冊頁面、顯示通知、首頁小工具' },
+    'network':    { icon: 'fa-globe',           label: '網路存取',     desc: '允許與外部伺服器通訊（如匯率查詢）' },
+  };
+
+  /**
+   * 顯示權限同意對話框
+   * @param {object} meta - 插件的 meta 資訊
+   * @param {string[]} permissions - 權限列表
+   * @returns {Promise<boolean>} 使用者是否同意
+   */
+  showPermissionConsent(meta, permissions = [], isUpdate = false) {
+    return new Promise((resolve) => {
+      const safeName = this._escapeHTML(meta.name || '未知插件');
+      const safeAuthor = this._escapeHTML(meta.author || '未知作者');
+      const safeDesc = this._escapeHTML(meta.description || '');
+
+      const permListHtml = permissions.length > 0
+        ? permissions.map(p => {
+            const info = PluginManager.PERMISSION_LABELS[p] || { icon: 'fa-question', label: p, desc: '未知權限' };
+            return `
+              <div class="flex items-start gap-3 py-2">
+                <div class="text-wabi-primary shrink-0 mt-0.5"><i class="fa-solid ${info.icon}"></i></div>
+                <div>
+                  <p class="text-sm font-medium text-gray-800">${this._escapeHTML(info.label)}</p>
+                  <p class="text-xs text-gray-500">${this._escapeHTML(info.desc)}</p>
+                </div>
+              </div>
+            `;
+          }).join('')
+        : '<p class="text-sm text-gray-500 py-2">此插件未聲明任何特殊權限。</p>';
+
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+      modal.innerHTML = `
+        <div class="bg-white rounded-xl max-w-sm w-full shadow-xl transform transition-all scale-100 overflow-hidden">
+          <div class="p-5">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl">
+                <i class="fa-solid ${meta.icon || 'fa-puzzle-piece'}"></i>
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-gray-800">${safeName}</h3>
+                <p class="text-xs text-gray-500">${safeAuthor}</p>
+              </div>
+            </div>
+            ${safeDesc ? `<p class="text-sm text-gray-600 mb-4">${safeDesc}</p>` : ''}
+            <div class="bg-gray-50 rounded-lg p-3 mb-4">
+              <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">${isUpdate ? '此更新新增了以下權限' : '此插件將要求以下權限'}</h4>
+              <div class="divide-y divide-gray-100">${permListHtml}</div>
+            </div>
+          </div>
+          <div class="flex border-t border-gray-200">
+            <button id="pm-perm-cancel" class="flex-1 py-3 text-gray-500 font-medium hover:bg-gray-50 transition-colors">取消</button>
+            <button id="pm-perm-accept" class="flex-1 py-3 text-white font-medium bg-wabi-primary hover:bg-wabi-primary/90 transition-colors">${isUpdate ? '同意並更新' : '安裝'}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      const close = (result) => { modal.remove(); resolve(result); };
+      modal.querySelector('#pm-perm-cancel').addEventListener('click', () => close(false));
+      modal.querySelector('#pm-perm-accept').addEventListener('click', () => close(true));
+    });
+  }
+
+  async installPlugin(file, storePluginInfo = null) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = async (e) => {
             const scriptContent = e.target.result;
             
-            // Validate by trying to import
-             const blob = new Blob([scriptContent], { type: 'text/javascript' });
+            // 驗證時也套用沙盒（驗證階段全面封鎖網路）
+             const sandboxedValidation = `
+               ${this._getSandboxWrapper([])}
+               ${scriptContent}
+             `;
+             const blob = new Blob([sandboxedValidation], { type: 'text/javascript' });
              const url = URL.createObjectURL(blob);
              let meta = {};
              try {
@@ -187,11 +344,51 @@ export class PluginManager {
              }
              URL.revokeObjectURL(url);
 
+            // 取得權限清單（優先從商店資訊，否則從 meta）
+            const permissions = storePluginInfo?.permissions || meta.permissions || [];
+
+            // 檢查是否為更新，並比對權限差異
+            let existingPlugin = null;
+            try {
+                const tx = this.dataService.db.transaction('plugins', 'readonly');
+                existingPlugin = await tx.store.get(meta.id);
+            } catch(e) { /* ignore */ }
+
+            if (existingPlugin) {
+                // 更新：比對新增的權限
+                const oldPerms = new Set(existingPlugin.permissions || []);
+                const newPerms = permissions.filter(p => !oldPerms.has(p));
+
+                if (newPerms.length > 0) {
+                    // 有新增權限，需要使用者同意
+                    const accepted = await this.showPermissionConsent(
+                      { ...meta, icon: storePluginInfo?.icon },
+                      newPerms,
+                      true // isUpdate flag
+                    );
+                    if (!accepted) {
+                        reject(new Error('使用者取消更新'));
+                        return;
+                    }
+                }
+            } else {
+                // 首次安裝：顯示完整權限同意
+                const accepted = await this.showPermissionConsent(
+                  { ...meta, icon: storePluginInfo?.icon },
+                  permissions
+                );
+                if (!accepted) {
+                    reject(new Error('使用者取消安裝'));
+                    return;
+                }
+            }
+
             const pluginData = {
                 id: meta.id || `plugin-${Date.now()}`,
                 name: meta.name || file.name,
                 version: meta.version || '1.0',
                 description: meta.description || '',
+                permissions: permissions,
                 script: scriptContent,
                 enabled: true,
                 installedAt: Date.now()
@@ -360,12 +557,16 @@ export class PluginManager {
   }
 
   createModalBase(title, message, buttons) {
+      // 防止 XSS：轉義來自插件的 title 與 message
+      const safeTitle = this._escapeHTML(title);
+      const safeMessage = this._escapeHTML(message);
+
       const modal = document.createElement('div');
       modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
       modal.innerHTML = `
           <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100">
-              <h3 class="text-xl font-bold text-gray-800 mb-2">${title}</h3>
-              <p class="text-gray-600 mb-6">${message}</p>
+              <h3 class="text-xl font-bold text-gray-800 mb-2">${safeTitle}</h3>
+              <p class="text-gray-600 mb-6">${safeMessage}</p>
               <div class="flex gap-3 justify-end">
                   ${buttons}
               </div>

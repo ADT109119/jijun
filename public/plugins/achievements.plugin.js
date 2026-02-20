@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.achievements',
         name: '記帳成就系統',
-        version: '1.5',
+        version: '1.6',
         description: '讓記帳變好玩！解鎖徽章與成就。',
         author: 'The walking fish 步行魚',
         icon: 'fa-trophy'

@@ -23,7 +23,38 @@ export default {
 };
 ```
 
-## 2. Context API
+## 2. 插件權限聲明 (New in v2.1.2.2)
+
+為了保護使用者隱私與系統安全，您必須在 `meta` 資訊中明確聲明插件所需要的權限，否則這些功能將在沙盒內遭到阻擋。
+
+```javascript
+// my-plugin.js
+export default {
+    meta: {
+        id: 'com.yourname.pluginname',
+        name: '插件名稱',
+        version: '1.0',
+        description: '插件描述',
+        author: '作者名稱',
+        permissions: ['ui', 'storage', 'data:read'] // 列出需要的權限
+    },
+    init(context) { /* ... */ }
+};
+```
+
+### 可用權限列表
+
+未宣告權限時，插件預設只能監聽 `context.events` 基礎事件，若呼叫越權 API，將會拋出 `Permission Denied` 錯誤。
+
+- **`storage`**：允許呼叫 `context.storage.*` 方法，在插件專屬層級讀取與寫入本機資料。
+- **`data:read`**：允許呼叫 `context.data` 內的各種讀取 API，如 `getRecords()`, `getDebts()`, `getAccounts()`, `getCategories()`, `getContacts()`。
+- **`data:write`**：允許呼叫 `context.data` 內的各種寫入 API，如 `addRecord()`, `addDebt()`, `addContact()`。
+- **`ui`**：允許與介面相關的操作，如 `context.ui.registerPage()`, `showToast()`, `showConfirm()`, `registerHomeWidget()`。
+- **`network`**：允許插件呼叫外部網路 API，如 `fetch()`, `XMLHttpRequest`, `WebSocket`, `EventSource`（未聲明此權限將在沙盒內直接被覆蓋攔截）。
+
+---
+
+## 3. Context API
 
 `init(context)` 方法會接收一個 `context` 物件，提供與 App 互動的介面。
 

@@ -2,8 +2,8 @@ export default {
     meta: {
         id: 'com.walkingfish.bill_splitter',
         name: '分帳神器',
-        version: '1.0',
-        description: '聚餐旅游分帳助手，自動計算並建立欠款紀錄。',
+        version: '1.1',
+        description: '聚餐旅遊分帳助手，自動計算並建立欠款紀錄。',
         author: 'The walking fish 步行魚',
         icon: 'fa-file-invoice-dollar'
     },

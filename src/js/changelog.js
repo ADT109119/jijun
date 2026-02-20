@@ -1,5 +1,17 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.2.2": {
+    date: "2026-02-20",
+    title: "插件權限與安全性增強",
+    features: [
+      "落實細粒度的插件權限系統 (storage, data:read, data:write, ui, network)",
+      "新增插件安裝與更新時的權限同意對話框",
+      "強化沙盒網路存取限制，阻擋未授權的 API 呼叫 (fetch, WebSocket 等)"
+    ],
+    bugfixes: [
+    ],
+    improvements: []
+  },
   "2.1.2.1": {
     date: "2026-02-17",
     title: "插件安全性增強",

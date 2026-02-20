@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.shopping_list',
         name: '待辦購物清單',
-        version: '1.2',
+        version: '1.3',
         description: '在首頁顯示購物清單，買完直接記帳！',
         author: 'The walking fish 步行魚',
         icon: 'fa-list-check'

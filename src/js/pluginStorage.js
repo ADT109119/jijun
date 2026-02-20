@@ -11,6 +11,10 @@ export class PluginStorage {
         if (!pluginId) {
             throw new Error('PluginStorage requires a pluginId.');
         }
+        // 驗證 pluginId 格式：僅允許英數字、點、底線、連字號
+        if (!/^[a-zA-Z0-9._-]+$/.test(pluginId)) {
+            throw new Error(`PluginStorage: Invalid pluginId format: "${pluginId}". Only alphanumeric, dots, underscores, and hyphens are allowed.`);
+        }
         this.pluginId = pluginId;
         this.prefix = `plugin_${pluginId}_`;
     }

@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.analytics_pro',
         name: '進階圖表分析',
-        version: '1.0',
+        version: '1.1',
         description: '新增資產趨勢與分類比較圖表。',
         author: 'The walking fish 步行魚',
         icon: 'fa-chart-line'

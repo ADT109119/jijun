@@ -815,15 +815,17 @@ class EasyAccountingApp {
                             try {
                                 const response = await fetch(btn.dataset.url);
                                 const script = await response.text();
-                                // Create a File object to reuse existing installPlugin (or refactor installPlugin to accept string)
-                                // We can just overload installPlugin or create a blob file.
                                 const file = new File([script], 'plugin.js', { type: 'text/javascript' });
-                                await this.pluginManager.installPlugin(file);
+                                // 找到對應的商店插件資訊，傳入權限與 icon
+                                const matchedPlugin = storePlugins.find(sp => sp.id === btn.dataset.id);
+                                await this.pluginManager.installPlugin(file, matchedPlugin || null);
                                 showToast('安裝成功！', 'success');
                                 this.renderPluginsPage();
                             } catch (e) {
                                 console.error(e);
-                                showToast('安裝失敗', 'error');
+                                if (e.message !== '使用者取消安裝' && e.message !== '使用者取消更新') {
+                                    showToast('安裝失敗', 'error');
+                                }
                                 btn.disabled = false;
                                 btn.textContent = '安裝';
                             }
@@ -3134,21 +3136,20 @@ class EasyAccountingApp {
                         const response = await fetch(btn.dataset.url);
                         const script = await response.text();
                         const file = new File([script], 'plugin.js', { type: 'text/javascript' });
-                        await this.pluginManager.installPlugin(file);
+                        // 找到對應的商店插件資訊，傳入權限與 icon
+                        const matchedPlugin = list.find(sp => sp.id === btn.dataset.id);
+                        await this.pluginManager.installPlugin(file, matchedPlugin || null);
                         showToast('安裝成功！', 'success');
                         
                         // Updates UI
                         // Fetch latest status
                         const newPlugins = await this.pluginManager.getInstalledPlugins();
-                        // Re-filter list based on current search?
-                        // Simple: just re-render current list with new status
-                        // Ideally we should keep search state.
-                        // For now, I will just simple re-render current visible list with updated status logic?
-                        // No, simplest is re-init page.
                         this.renderStorePage();
                     } catch (e) {
                         console.error(e);
-                        showToast('安裝失敗', 'error');
+                        if (e.message !== '使用者取消安裝' && e.message !== '使用者取消更新') {
+                            showToast('安裝失敗', 'error');
+                        }
                         btn.disabled = false;
                         btn.innerHTML = originalText;
                     }

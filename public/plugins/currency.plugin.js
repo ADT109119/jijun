@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.currency_helper',
         name: '簡易匯率換算',
-        version: '1.3',
+        version: '1.4',
         description: '在記帳頁面新增換算按鈕，開啟視窗後即時計算各國匯率。',
         author: 'The walking fish 步行魚',
         icon: 'fa-sack-dollar'
