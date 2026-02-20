@@ -3,81 +3,90 @@
     "id": "com.example.wheel",
     "name": "命運大轉盤",
     "description": "做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。",
-    "version": "1.1",
+    "version": "1.2",
     "author": "The walking fish 步行魚",
     "file": "plugins/wheel.plugin.js",
-    "icon": "fa-dharmachakra"
+    "icon": "fa-dharmachakra",
+    "permissions": ["storage", "ui"]
   },
   {
     "id": "com.walkingfish.budget_guard",
     "name": "預算阻擋者",
     "description": "設定單筆支出上限，防止衝動消費！",
-    "version": "1.2",
+    "version": "1.3",
     "author": "The walking fish 步行魚",
     "file": "plugins/budget_guard.plugin.js",
-    "icon": "fa-shield-halved"
+    "icon": "fa-shield-halved",
+    "permissions": ["storage", "data:read", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.pet",
     "name": "桌面寵物",
     "description": "一隻可愛的貓咪陪伴你記帳！(可拖曳、點擊互動)",
-    "version": "1.6",
+    "version": "1.7",
     "author": "The walking fish 步行魚",
     "file": "plugins/pet.plugin.js",
-    "icon": "fa-cat"
+    "icon": "fa-cat",
+    "permissions": ["storage", "ui"]
   },
   {
     "id": "com.example.hello",
     "name": "Hello World",
     "description": "顯示歡迎訊息的範例插件。",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/hello.plugin.js",
-    "icon": "fa-hand-spock"
+    "icon": "fa-hand-spock",
+    "permissions": ["ui"]
   },
   {
     "id": "com.walkingfish.achievements",
     "name": "記帳成就系統",
     "description": "讓記帳變好玩！解鎖徽章與成就。(v1.3 新增週末戰士、購物狂等)",
-    "version": "1.5",
+    "version": "1.6",
     "author": "The walking fish 步行魚",
     "file": "plugins/achievements.plugin.js",
-    "icon": "fa-trophy"
+    "icon": "fa-trophy",
+    "permissions": ["storage", "data:read", "ui"]
   },
   {
     "id": "com.walkingfish.shopping_list",
     "name": "待辦購物清單",
     "description": "在首頁顯示購物清單，買完直接記帳！",
-    "version": "1.2",
+    "version": "1.3",
     "author": "The walking fish 步行魚",
     "file": "plugins/shopping.plugin.js",
-    "icon": "fa-list-check"
+    "icon": "fa-list-check",
+    "permissions": ["storage", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.currency_helper",
     "name": "簡易匯率換算",
     "description": "即時匯率換算：在記帳頁面顯示各國貨幣對應金額，點擊即自動換算。(v1.3 更直覺的操作)",
-    "version": "1.3",
+    "version": "1.4",
     "author": "The walking fish 步行魚",
     "file": "plugins/currency.plugin.js",
-    "icon": "fa-sack-dollar"
+    "icon": "fa-sack-dollar",
+    "permissions": ["network", "ui"]
   },
   {
     "id": "com.walkingfish.bill_splitter",
     "name": "分帳神器",
     "description": "聚餐旅遊分帳助手，自動計算並建立欠款紀錄。",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/bill_splitter.plugin.js",
-    "icon": "fa-file-invoice-dollar"
+    "icon": "fa-file-invoice-dollar",
+    "permissions": ["data:read", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.analytics_pro",
     "name": "進階圖表分析",
     "description": "提供消費熱力圖與資產流向分析，深入了解您的財務狀況。",
-    "version": "1.0",
+    "version": "1.1",
     "author": "The walking fish 步行魚",
     "file": "plugins/analytics_pro.plugin.js",
-    "icon": "fa-chart-line"
+    "icon": "fa-chart-line",
+    "permissions": ["data:read", "ui"]
   }
 ]

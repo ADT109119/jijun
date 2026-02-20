@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.budget_guard',
         name: '預算阻擋者',
-        version: '1.2',
+        version: '1.3',
         description: '設定單筆支出上限，防止衝動消費！',
         author: 'The walking fish 步行魚',
         icon: 'fa-shield-halved'

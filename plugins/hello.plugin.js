@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.example.hello',
         name: 'Hello World Plugin',
-        version: '1.0',
+        version: '1.1',
         description: '這是一個範例插件，安裝後會顯示歡迎訊息。',
         author: 'The walking fish 步行魚'
     },

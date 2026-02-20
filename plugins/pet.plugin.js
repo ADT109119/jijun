@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.pet',
         name: '桌面寵物',
-        version: '1.6',
+        version: '1.7',
         description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
         author: 'The walking fish 步行魚',
         icon: 'fa-cat'
