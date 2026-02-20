@@ -676,15 +676,18 @@ class EasyAccountingApp {
         const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn');
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
-                const granted = await this.adService.showRewardedAd();
-                if (granted) {
-                    // 獎勵發放成功，重新渲染設定頁以隱藏 banner
-                    this.renderSettingsPage();
+                try {
+                    const granted = await this.adService.showRewardedAd();
+                    if (granted) {
+                        this.renderSettingsPage();
+                    }
+                } catch (e) {
+                    console.warn('獎勵廣告流程失敗:', e);
                 }
             });
         }
         // 渲染底部橫幅廣告
-        this.adService.renderBannerAd(document.getElementById('settings-banner-ad'));
+        this.adService.renderBannerAd(document.getElementById('settings-banner-ad')).catch(() => {});
     }
 
     async renderPluginsPage() {

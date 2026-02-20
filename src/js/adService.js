@@ -14,6 +14,35 @@ const ADSENSE_CLIENT_ID = 'ca-pub-1250445032458691';
 const ADSENSE_AD_SLOT = '3474478906';
 const REWARDED_AD_UNIT_PATH = '/23341410483/jijun';
 
+// ── 內建推廣廣告（當獎勵廣告不可用時的備案） ──────────
+// 編輯此陣列即可新增/修改/移除推廣項目
+const INTERNAL_ADS = [
+    {
+        icon: 'fa-brands fa-github',
+        color: '#333',
+        title: '為專案按個 Star ⭐',
+        description: '你的 Star 是我持續開發的動力！',
+        buttonText: '前往 GitHub',
+        url: 'https://github.com/ADT109119/jijun',
+    },
+    {
+        icon: 'fa-brands fa-youtube',
+        color: '#FF0000',
+        title: '訂閱 YouTube 頻道',
+        description: '教學影片、開發日誌，不定期更新！',
+        buttonText: '前往 YouTube',
+        url: 'https://www.youtube.com/@the_walking_fish',
+    },
+    {
+        icon: 'fa-solid fa-blog',
+        color: '#6366f1',
+        title: '逛逛我的 Blog',
+        description: '技術文章、開發心得分享',
+        buttonText: '前往 Blog',
+        url: 'https://the-walking-fish.com',
+    },
+];
+
 // ── 模組層級狀態 ────────────────────────────────────
 let adsenseLoaded = false;
 let gptLoaded = false;
@@ -224,8 +253,8 @@ export class AdService {
         // 動態載入 GPT（adblocker 安全）
         const loaded = await ensureGptLoaded();
         if (!loaded || typeof googletag === 'undefined') {
-            showToast('廣告服務無法載入（可能被廣告攔截器阻擋）', 'error');
-            return false;
+            // GPT 載入失敗，顯示內建推廣廣告作為備案
+            return this._showInternalAd();
         }
 
         return new Promise((resolve) => {
@@ -237,8 +266,7 @@ export class AdService {
                 try {
                     // 前置檢查：確認 GPT API 完整可用
                     if (!googletag.enums?.OutOfPageFormat?.REWARDED) {
-                        showToast('獎勵廣告格式不受支援', 'error');
-                        this._safeResolve(false);
+                        this._showInternalAd().then(v => this._safeResolve(v));
                         return;
                     }
 
@@ -253,8 +281,7 @@ export class AdService {
 
                     // 行動裝置檢查
                     if (!this._rewardedSlot) {
-                        showToast('此裝置暫不支援獎勵廣告，請使用手機瀏覽器', 'error');
-                        this._safeResolve(false);
+                        this._showInternalAd().then(v => this._safeResolve(v));
                         return;
                     }
 
@@ -288,12 +315,11 @@ export class AdService {
                         this._cleanupRewardedSlot();
                     });
 
-                    // 無廣告可用
+                    // 無廣告可用 → 顯示內建推廣廣告
                     this._addGptListener('slotRenderEnded', (event) => {
                         if (event.slot === this._rewardedSlot && event.isEmpty) {
-                            showToast('目前沒有可用的獎勵廣告，請稍後再試', 'error');
                             this._cleanupRewardedSlot();
-                            this._safeResolve(false);
+                            this._showInternalAd().then(v => this._safeResolve(v));
                         }
                     });
 
@@ -306,10 +332,92 @@ export class AdService {
                     googletag.display(this._rewardedSlot);
                 } catch (e) {
                     console.error('獎勵廣告初始化失敗:', e);
-                    showToast('廣告載入失敗，請稍後再試', 'error');
                     this._cleanupRewardedSlot();
-                    this._safeResolve(false);
+                    this._showInternalAd().then(v => this._safeResolve(v));
                 }
+            });
+        });
+    }
+
+    // ── 內建推廣廣告（備案） ────────────────────────
+
+    /**
+     * 顯示內建推廣廣告作為獎勵廣告備案
+     * 觀看 5 秒後可領取 24 小時無廣告獎勵
+     * @returns {Promise<boolean>} 是否成功獲得獎勵
+     */
+    _showInternalAd() {
+        const COUNTDOWN_SECONDS = 5;
+
+        return new Promise((resolve) => {
+            // 隨機挑選一則內建廣告
+            const ad = INTERNAL_ADS[Math.floor(Math.random() * INTERNAL_ADS.length)];
+
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: ${ad.color}15">
+                        <i class="${ad.icon} text-3xl" style="color: ${ad.color}"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
+                    <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
+                    <a href="${ad.url}" target="_blank" rel="noopener noreferrer"
+                       class="inline-flex items-center gap-1.5 text-sm font-medium mb-6 px-4 py-2 rounded-lg transition-colors hover:opacity-80"
+                       style="color: ${ad.color}; background: ${ad.color}10">
+                        ${ad.buttonText}
+                        <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                    </a>
+                    <div class="flex gap-3">
+                        <button data-action="cancel" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-gray-50 transition-colors">
+                            關閉
+                        </button>
+                        <button data-action="claim" disabled
+                                class="flex-1 py-2.5 rounded-lg text-white font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                style="background: ${ad.color}">
+                            <span data-countdown>等待 ${COUNTDOWN_SECONDS} 秒</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            const claimBtn = modal.querySelector('[data-action="claim"]');
+            const countdownSpan = modal.querySelector('[data-countdown]');
+            let remaining = COUNTDOWN_SECONDS;
+            let resolved = false;
+
+            // 倒數計時
+            const timer = setInterval(() => {
+                remaining--;
+                if (remaining > 0) {
+                    countdownSpan.textContent = `等待 ${remaining} 秒`;
+                } else {
+                    clearInterval(timer);
+                    claimBtn.disabled = false;
+                    countdownSpan.textContent = '領取獎勵 🎉';
+                }
+            }, 1000);
+
+            // 領取獎勵
+            claimBtn.addEventListener('click', () => {
+                if (resolved) return;
+                resolved = true;
+                clearInterval(timer);
+                modal.remove();
+                this._grantAdFree();
+                showToast('感謝支持！已啟用 24 小時無廣告模式 🎉', 'success');
+                resolve(true);
+            });
+
+            // 關閉（不領取）
+            modal.querySelector('[data-action="cancel"]').addEventListener('click', () => {
+                if (resolved) return;
+                resolved = true;
+                clearInterval(timer);
+                modal.remove();
+                resolve(false);
             });
         });
     }
