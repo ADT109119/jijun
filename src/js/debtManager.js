@@ -23,7 +23,7 @@ export class DebtManager {
     const contacts = await this.dataService.getContacts();
 
     container.innerHTML = `
-      <div class="page active p-4 pb-24">
+      <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
           <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -822,7 +822,7 @@ export class DebtManager {
     const contacts = await this.dataService.getContacts();
 
     container.innerHTML = `
-      <div class="page active p-4 pb-24">
+      <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
           <a href="#debts" class="text-wabi-text-secondary hover:text-wabi-primary">

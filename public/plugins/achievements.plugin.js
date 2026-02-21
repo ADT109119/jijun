@@ -206,7 +206,7 @@ export default {
     async renderPage(container) {
         await this.checkMonthlyAchievements();
         container.innerHTML = `
-            <div class="page active bg-wabi-bg p-4 pb-20">
+            <div class="page active bg-wabi-bg p-4 pb-20 md:pb-8 max-w-3xl mx-auto">
                 <header class="flex items-center gap-3 mb-6">
                      <button id="ach-back-btn" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
                         <i class="fa-solid fa-chevron-left text-xl"></i>

@@ -1,5 +1,17 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.2.3": {
+    date: "2026-02-21",
+    title: "電腦版介面適配",
+    features: [
+      "添加電腦版專屬左側邊欄介面，優化大螢幕操作體驗",
+      "新增電腦版記帳小鍵盤全域鍵盤支援，可直接使用實體鍵盤快速輸入金額與儲存"
+    ],
+    bugfixes: [
+    ],
+    improvements: [
+    ]
+  },
   "2.1.2.2": {
     date: "2026-02-20",
     title: "插件權限與安全性增強",
@@ -459,7 +471,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.1.1'
+    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.2.3'
   }
 
   // 獲取當前版本資訊

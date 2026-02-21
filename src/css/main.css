@@ -9,11 +9,23 @@ body {
     background-color: #F5F5F3; /* wabi-bg */
 }
 
+@media (min-width: 768px) {
+    body {
+        padding-bottom: 0px;
+    }
+}
+
 /* Page container styles */
 .page {
     display: none; /* Hidden by default */
     /* Removed absolute positioning to allow nav bar to be visible */
     padding-bottom: 80px; /* Ensure content is not hidden by nav bar */
+}
+
+@media (min-width: 768px) {
+    .page {
+        padding-bottom: 0px;
+    }
 }
 
 .page.active {

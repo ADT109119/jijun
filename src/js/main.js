@@ -84,6 +84,13 @@ class EasyAccountingApp {
         // Initialize sync service (restore saved tokens/settings)
         await this.syncService.init();
 
+        // Setup sidebar version info
+        const sidebarVersionInfo = document.getElementById('sidebar-version-info');
+        if (sidebarVersionInfo) {
+            const latestVersion = this.changelogManager.getAllVersions()[0];
+            sidebarVersionInfo.textContent = `版本 v${latestVersion.version}`;
+        }
+
         // Handle initial route after plugins are loaded
         this.handleRouteChange();
     }
@@ -243,7 +250,7 @@ class EasyAccountingApp {
 
     async renderHomePage() {
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24">
+            <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
                     <button id="home-month-selector-btn" class="text-2xl font-bold text-wabi-primary bg-transparent border-0 focus:ring-0 flex items-center gap-2">
@@ -383,7 +390,7 @@ class EasyAccountingApp {
 
     async renderRecordsPage() {
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24">
+            <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
                     <h1 class="text-wabi-primary text-xl font-bold text-center flex-1">記帳紀錄</h1>
@@ -448,7 +455,7 @@ class EasyAccountingApp {
         const showDebtBtn = !!debtEnabled?.value;
         
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-48"> <!-- Add padding-bottom to avoid overlap with fixed keypad -->
+            <div class="page active p-4 pb-48 md:pb-8 max-w-3xl mx-auto"> <!-- Add padding-bottom to avoid overlap with fixed keypad -->
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
                     <button id="add-page-close-btn" class="flex size-12 shrink-0 items-center justify-center">
@@ -504,7 +511,7 @@ class EasyAccountingApp {
                 <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
             </div>
             <!-- Note, Date, and Keypad -->
-            <div id="keypad-container" class="fixed bottom-20 left-0 right-0 bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
+            <div id="keypad-container" class="fixed bottom-20 md:bottom-0 left-0 md:left-64 right-0 md:max-w-3xl md:mx-auto md:border-x md:border-t md:border-wabi-border md:rounded-t-xl md:shadow-[0_0_15px_rgba(0,0,0,0.05)] bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
                 <!-- Account Selector & Quick Select Container -->
                 <div class="flex items-start px-4 pt-2 gap-2">
                     <div id="account-selector-container" class="w-1/4 shrink-0"></div>
@@ -532,7 +539,7 @@ class EasyAccountingApp {
 
     async renderStatsPage() {
         this.appContainer.innerHTML = `
-            <div class="page active">
+            <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
                     <h1 class="text-lg font-bold text-wabi-primary flex-1 text-center">收支分析</h1>
                 </header>
@@ -547,7 +554,7 @@ class EasyAccountingApp {
 
     async renderSettingsPage() {
         this.appContainer.innerHTML = `
-            <div class="page active">
+            <div class="page active max-w-3xl mx-auto">
                 <div class="flex items-center p-4 pb-2 justify-between bg-wabi-bg sticky top-0 z-10">
                     <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">設定</h2>
                 </div>
@@ -694,7 +701,7 @@ class EasyAccountingApp {
         const plugins = await this.pluginManager.getInstalledPlugins();
 
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24">
+            <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -866,7 +873,7 @@ class EasyAccountingApp {
         const backupIntervalValue = autoBackupInterval?.value || 'daily';
 
         this.appContainer.innerHTML = `
-            <div class="page active">
+            <div class="page active max-w-3xl mx-auto">
                 <div class="flex items-center p-4 pb-2 justify-between bg-wabi-bg sticky top-0 z-10">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
@@ -1541,7 +1548,7 @@ class EasyAccountingApp {
         }
 
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24">
+            <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -1719,7 +1726,7 @@ class EasyAccountingApp {
         }
 
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24">
+            <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -2909,6 +2916,28 @@ class EasyAccountingApp {
         document.querySelectorAll('.keypad-btn').forEach(btn => {
             btn.addEventListener('click', () => handleKeypad(btn.dataset.key));
         });
+
+        // Add physical keyboard listener for the add page
+        if (this._keypadListener) {
+            document.removeEventListener('keydown', this._keypadListener);
+        }
+        this._keypadListener = (e) => {
+            if (this.currentHash && !this.currentHash.startsWith('#add')) return;
+            if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            
+            const keyMap = {
+                '0': '0', '1': '1', '2': '2', '3': '3', '4': '4',
+                '5': '5', '6': '6', '7': '7', '8': '8', '9': '9',
+                '.': '.', 'Backspace': 'backspace', 'Enter': 'save', 'Delete': 'ac', 'Escape': 'ac'
+            };
+            if (keyMap[e.key]) {
+                e.preventDefault();
+                handleKeypad(keyMap[e.key]);
+            }
+        };
+        document.addEventListener('keydown', this._keypadListener);
+
         expenseBtn.addEventListener('click', () => { if (!isEditMode) { currentType = 'expense'; updateTypeUI(); } });
         incomeBtn.addEventListener('click', () => { if (!isEditMode) { currentType = 'income'; updateTypeUI(); } });
 
@@ -3045,7 +3074,7 @@ class EasyAccountingApp {
     }
     async renderStorePage() {
         this.appContainer.innerHTML = `
-            <div class="page active p-4 pb-24 h-full flex flex-col bg-wabi-bg">
+            <div class="page active p-4 pb-24 md:pb-8 h-full flex flex-col bg-wabi-bg max-w-3xl mx-auto">
                 <header class="flex items-center gap-4 mb-4 shrink-0 bg-white p-4 -m-4 mb-4 shadow-sm border-b border-gray-100 sticky top-0 z-10">
                     <a href="#plugins" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
                         <i class="fa-solid fa-chevron-left text-xl"></i>

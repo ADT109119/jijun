@@ -42,7 +42,7 @@ export default {
 
     renderSettings(container) {
         container.innerHTML = `
-            <div class="page active flex flex-col h-full bg-wabi-bg p-4">
+            <div class="page active flex flex-col h-full bg-wabi-bg p-4 max-w-3xl mx-auto">
                 <header class="flex items-center gap-3 mb-6">
                     <button id="bg-back-btn" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
