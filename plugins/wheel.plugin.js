@@ -31,7 +31,7 @@ export default {
         this.container = container;
         // Basic Layout
         container.innerHTML = `
-            <div class="page active flex flex-col h-full bg-wabi-bg">
+            <div class="page active flex flex-col h-full bg-wabi-bg max-w-3xl mx-auto">
                 <!-- Header -->
                 <header class="flex items-center justify-between p-4 bg-white border-b border-gray-200">
                     <div class="flex items-center gap-3">

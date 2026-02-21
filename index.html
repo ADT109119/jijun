@@ -59,40 +59,49 @@
             },
         }
     </script>
-  <script type="module" crossorigin src="/assets/main-BBZNOuol.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/main-PFUjPzTv.css">
+  <script type="module" crossorigin src="/assets/main-GtWRxvJO.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/main-DH6D8mjY.css">
   <script type="module">import.meta.url;import("_").catch(()=>1);(async function*(){})().next();if(location.protocol!="file:"){window.__vite_is_modern_browser=true}</script>
   <script type="module">!function(){if(window.__vite_is_modern_browser)return;console.warn("vite: loading legacy chunks, syntax error above and the same error below should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}();</script>
 </head>
 
 <body class="font-display bg-wabi-bg text-wabi-text-primary">
-    <div id="app-container" class="relative min-h-screen w-full">
+    <div id="app-container" class="relative min-h-screen w-full md:pl-64">
         <!-- Pages will be injected here -->
     </div>
 
     <!-- Bottom Navigation Bar -->
-    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center">
-        <a href="#home" data-page="home" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
-            <i class="fa-solid fa-house text-xl"></i>
-            <span class="text-xs mt-1">首頁</span>
+    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto">
+        <div class="hidden md:flex items-center justify-center mb-8 px-4">
+            <img src="icon/icon.png" alt="輕鬆記帳" class="w-8 h-8 mr-2 rounded-lg shadow-sm">
+            <h1 class="text-xl font-bold text-wabi-primary">輕鬆記帳 2.0</h1>
+        </div>
+        <a href="#home" data-page="home" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
+            <i class="fa-solid fa-house text-xl md:w-6 md:text-center"></i>
+            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">首頁</span>
         </a>
-        <a href="#records" data-page="records" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
-            <i class="fa-solid fa-list-ul text-xl"></i>
-            <span class="text-xs mt-1">明細</span>
+        <a href="#records" data-page="records" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
+            <i class="fa-solid fa-list-ul text-xl md:w-6 md:text-center"></i>
+            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">明細</span>
         </a>
-        <a href="#add" data-page="add" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
-            <div class="flex items-center justify-center w-14 h-14 rounded-full bg-wabi-accent text-wabi-primary shadow-lg -mt-8">
-                <i class="fa-solid fa-plus text-2xl"></i>
+        <a href="#add" data-page="add" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-3 md:px-8 md:my-2 hover:bg-black/5">
+            <div class="flex items-center justify-center w-14 h-14 rounded-full bg-wabi-accent text-wabi-primary shadow-lg -mt-8 md:mt-0 md:w-full md:h-12 md:rounded-xl md:shadow-md">
+                <i class="fa-solid fa-plus text-2xl md:text-xl"></i>
+                <span class="hidden md:inline ml-2 font-bold text-base">新增紀錄</span>
             </div>
         </a>
-        <a href="#stats" data-page="stats" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
-            <i class="fa-solid fa-chart-pie text-xl"></i>
-            <span class="text-xs mt-1">統計</span>
+        <a href="#stats" data-page="stats" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
+            <i class="fa-solid fa-chart-pie text-xl md:w-6 md:text-center"></i>
+            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">統計</span>
         </a>
-        <a href="#settings" data-page="settings" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full">
-            <i class="fa-solid fa-gear text-xl"></i>
-            <span class="text-xs mt-1">設定</span>
+        <a href="#settings" data-page="settings" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
+            <i class="fa-solid fa-gear text-xl md:w-6 md:text-center"></i>
+            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">設定</span>
         </a>
+        <div class="hidden md:flex mt-auto pb-4 pt-8 px-8 flex-col text-wabi-text-secondary disabled text-xs opacity-70 cursor-default">
+            <span id="sidebar-version-info">版本讀取中...</span>
+            <span class="mt-1">&copy; 2025 The walking fish 步行魚</span>
+        </div>
     </nav>
 
     <!-- Toast Notification -->
@@ -102,6 +111,6 @@
 
   <script nomodule>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
   <script nomodule crossorigin id="vite-legacy-polyfill" src="/assets/polyfills-legacy-CpT2reiI.js"></script>
-  <script nomodule crossorigin id="vite-legacy-entry" data-src="/assets/main-legacy-C3egHbFB.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+  <script nomodule crossorigin id="vite-legacy-entry" data-src="/assets/main-legacy-XH9QGVJ8.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
 </body>
 </html>
