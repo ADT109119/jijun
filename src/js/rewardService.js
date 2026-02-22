@@ -106,9 +106,9 @@ function parseTimestamp(value) {
     return Number.isFinite(parsed) ? parsed : NaN;
 }
 
-// ── AdService 類別 ──────────────────────────────────
+// ── RewardService 類別 ──────────────────────────────────
 
-export class AdService {
+export class RewardService {
 
     constructor() {
         this._rewardedSlot = null;
