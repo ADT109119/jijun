@@ -244,19 +244,13 @@
 
 ### 開發者更新指南
 發布新版本時只需：
-1. 修改 `public/serviceWorker.js` 中的 `APP_VERSION`
-2. 部署應用程式
-3. 用戶訪問時會自動檢測並提示更新
+1. 修改 `package.json` 中的 `version` 欄位。
+2. 執行 `npm run build`。
+3. 建置過程會自動將版本號注入到 `src/js/` 的 JS 檔案與 `dist/serviceWorker.js` 中。
+4. 部署應用程式，用戶訪問時會自動檢測並提示更新。
 
-```javascript
-// public/serviceWorker.js
-const APP_VERSION = '2.1.0.2' // 每次更新時增加版本號
-```
-
-版本資訊流程：
-- Service Worker 將版本號存儲到 localStorage
-- 應用程式從 localStorage 讀取並顯示版本
-- Changelog 自動讀取 localStorage 中的版本號
+> [!NOTE]
+> 採用新的「單一來源版本注入」機制後，不再需要手動修改 `serviceWorker.js` 中的版本號。
 
 ### 解決的問題
 - ✅ **PWA 快取問題**：徹底解決已安裝 PWA 無法更新的問題

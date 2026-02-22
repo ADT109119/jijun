@@ -10,7 +10,7 @@ class DataService {
     this.dbName = 'EasyAccountingDB'
     this.dbVersion = 6 // Schema version 6: Add sync_log
     this.db = null
-    this.init()
+    this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
     this._syncDeviceId = localStorage.getItem('sync_device_id') || 'unknown';
   }
@@ -486,7 +486,6 @@ class DataService {
       totalIncome: 0,
       totalExpense: 0,
       incomeByCategory: {},
-      expenseByCategory: {},
       expenseByCategory: {},
       dailyTotals: {},
       records: records // Include filtered records in result

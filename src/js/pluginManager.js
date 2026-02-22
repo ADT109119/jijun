@@ -102,7 +102,7 @@ export class PluginManager {
 
     return {
       appName: 'Easy Accounting',
-      version: '2.1.2.1',
+      version: __APP_VERSION__,
       lib: { Chart: Chart },
       storage,
       data: dataApi,

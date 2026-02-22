@@ -1,6 +1,21 @@
 // 工具函數模組
 
 /**
+ * 轉義 HTML 特殊字元，防止 XSS 攻擊
+ * @param {string} str - 要轉義的字串
+ * @returns {string} 轉義後的安全字串
+ */
+export function escapeHTML(str) {
+  if (str == null) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
  * 格式化日期為 YYYY-MM-DD 格式（避免時區問題）
  * @param {Date} date - 日期對象
  * @returns {string} 格式化後的日期字串
@@ -162,6 +177,10 @@ export function deepClone(obj) {
  * @returns {string} 唯一 ID
  */
 export function generateId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // Fallback：舊瀏覽器
   return Date.now().toString(36) + Math.random().toString(36).substr(2)
 }
 
@@ -237,13 +256,6 @@ export function getDateRange(period) {
       return {
         startDate: startOfMonth,
         endDate: endOfMonth
-      }
-    case 'year':
-      // 今年
-      const currentYear = today.getFullYear()
-      return {
-        startDate: `${currentYear}-01-01`,
-        endDate: `${currentYear}-12-31`
       }
     default:
       const defaultStr = formatDateToString(today)

@@ -1,6 +1,6 @@
 import DataService from './dataService.js';
 import { getCategoryName, getCategoryIcon } from './categories.js';
-import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange, calculateNextDueDate, shouldSkipDate } from './utils.js';
+import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange, calculateNextDueDate, shouldSkipDate, escapeHTML } from './utils.js';
 import { StatisticsManager } from './statistics.js';
 import { RecordsListManager } from './recordsList.js';
 import { BudgetManager } from './budgetManager.js';
@@ -18,7 +18,6 @@ class EasyAccountingApp {
         this.categoryManager = new CategoryManager();
         this.changelogManager = new ChangelogManager();
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
-        this.quickSelectManager = new QuickSelectManager();
         this.quickSelectManager = new QuickSelectManager();
         this.debtManager = new DebtManager(this.dataService);
         this.pluginManager = new PluginManager(this.dataService, this);
@@ -102,7 +101,11 @@ class EasyAccountingApp {
         for (const tx of recurringTxs) {
             let { nextDueDate } = tx;
 
-            while (nextDueDate && nextDueDate <= today) {
+            let iterations = 0;
+            const MAX_ITERATIONS = 365; // 安全上限：避免無限迴圈
+
+            while (nextDueDate && nextDueDate <= today && iterations < MAX_ITERATIONS) {
+                iterations++;
                 const dateToCheck = new Date(nextDueDate);
 
                 // Check if the date should be skipped
@@ -122,10 +125,13 @@ class EasyAccountingApp {
                     accountId: tx.accountId,
                 };
                 await this.dataService.addRecord(newRecord);
-                console.log(`Generated record for recurring transaction: ${tx.description}`);
 
                 // Calculate the next due date for the next iteration
                 nextDueDate = calculateNextDueDate(nextDueDate, tx.frequency, tx.interval);
+            }
+
+            if (iterations >= MAX_ITERATIONS) {
+                console.warn(`週期交易「${tx.description}」迭代次數超過上限 (${MAX_ITERATIONS})，已中止`);
             }
 
             // Update the recurring transaction with the final new due date
@@ -217,7 +223,7 @@ class EasyAccountingApp {
                 break;
             default:
                 const customPage = this.pluginManager.getCustomPage(page);
-                console.log('Routing check:', page, customPage); // Debug
+
                 if (customPage) {
                     this.appContainer.innerHTML = ''; // Clear container
                     try {
@@ -2035,7 +2041,7 @@ class EasyAccountingApp {
         modal.id = 'transfer-form-modal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
 
-        const accountOptions = accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('');
+        const accountOptions = accounts.map(acc => `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`).join('');
 
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
@@ -2222,7 +2228,7 @@ class EasyAccountingApp {
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">帳戶名稱</label>
-                    <input type="text" id="account-name-input" value="${accountToEdit?.name || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" required>
+                    <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" required>
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">初始餘額</label>

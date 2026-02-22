@@ -12,6 +12,10 @@
     "no-unused-vars": "warn",
     "no-console": "off",
     "prefer-const": "error",
-    "no-var": "error"
+    "no-var": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-fallthrough": "error",
+    "eqeqeq": ["error", "always"]
   }
 }

@@ -1,5 +1,22 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.2.4": {
+    date: "2026-02-22",
+    title: "程式架構優化",
+    features: [
+      "實作「單一來源版本注入」機制：所有版本號統一由 package.json 驅動，建置時自動注入 JS 與 Service Worker"
+    ],
+    bugfixes: [
+      "修正 P0 級 Bug：重複實例化 QuickSelectManager、重複的日期區間計算 case",
+      "修正 DataService 初始化競態問題，移除建構子內的隱式非同步呼叫",
+      "修正 HTML 注入漏洞，新增 escapeHTML 工具函式並套用於帳戶與轉帳名稱顯示"
+    ],
+    improvements: [
+      "強化週期性交易安全：新增 365 次迴圈迭代上限保護，防止異常規則導致無限迴圈",
+      "升級 generateId() 採用 crypto.randomUUID()，提升 ID 碰撞安全性與隨機性",
+      "加強 ESLint 靜態檢查規則 (eqeqeq, no-dupe-keys 等)，提升程式碼健壯性"
+    ]
+  },
   "2.1.2.3": {
     date: "2026-02-21",
     title: "電腦版介面適配",
@@ -471,7 +488,7 @@ export const CHANGELOG = {
 export class ChangelogManager {
   constructor() {
     // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
-    this.currentVersion = localStorage.getItem('app-current-version') || '2.1.2.3'
+    this.currentVersion = localStorage.getItem('app-current-version') || __APP_VERSION__
   }
 
   // 獲取當前版本資訊
