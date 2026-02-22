@@ -37,7 +37,19 @@
       "name": "快速記帳",
       "short_name": "記帳",
       "description": "快速新增一筆記帳記錄",
-      "url": "/?action=add",
+      "url": "/#add",
+      "icons": [
+        {
+          "src": "/icon/icon.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "查看明細",
+      "short_name": "明細",
+      "description": "查看記帳明細",
+      "url": "/#records",
       "icons": [
         {
           "src": "/icon/icon.png",
@@ -49,7 +61,7 @@
       "name": "查看統計",
       "short_name": "統計",
       "description": "查看收支統計分析",
-      "url": "/?action=stats",
+      "url": "/#stats",
       "icons": [
         {
           "src": "/icon/icon.png",
