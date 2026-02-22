@@ -137,7 +137,7 @@ export class SettingsPage {
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
                 try {
-                    const granted = await this.app.adService.showRewardedAd();
+                    const granted = await this.app.rewardService.showRewardedAd();
                     if (granted) {
                         this.render();
                     }
@@ -147,7 +147,7 @@ export class SettingsPage {
             });
         }
         // 渲染底部橫幅廣告
-        this.app.adService.renderBannerAd(document.getElementById('settings-banner-ad')).catch(() => {});
+        this.app.rewardService.renderBannerAd(document.getElementById('settings-banner-ad')).catch(() => {});
 
         // PWA install button visibility
         if (this.app.deferredInstallPrompt) {

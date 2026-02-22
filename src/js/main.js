@@ -7,7 +7,7 @@ import { QuickSelectManager } from './quickSelectManager.js';
 import { DebtManager } from './debtManager.js';
 import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
-import { AdService } from './adService.js';
+import { RewardService } from './rewardService.js';
 import { Router } from './router.js';
 
 import { HomePage } from './pages/homePage.js';
@@ -33,7 +33,7 @@ class EasyAccountingApp {
         this.debtManager = new DebtManager(this.dataService);
         this.pluginManager = new PluginManager(this.dataService, this);
         this.syncService = new SyncService(this.dataService);
-        this.adService = new AdService();
+        this.rewardService = new RewardService();
 
         this.appContainer = document.getElementById('app-container');
 
