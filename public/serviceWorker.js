@@ -1,3 +1,4 @@
+/* global clients */
 // 現代化 Service Worker
 // 使用統一的版本號和快取名稱
 const APP_VERSION = '2.1.2.3' // 版本號
@@ -14,7 +15,7 @@ const urlsToCache = [
   '/src/js/main.js',
   '/src/js/dataService.js',
   '/src/js/utils.js',
-  '/src/js/categories.js'
+  '/src/js/categories.js',
 ]
 
 // 需要網路優先的檔案（經常變動）
@@ -32,21 +33,24 @@ const cacheFirstUrls = [
   '.jpeg',
   '.svg',
   '.woff',
-  '.woff2'
+  '.woff2',
 ]
 
 // 安裝事件
 self.addEventListener('install', event => {
   console.log(`Service Worker v${APP_VERSION} 安裝中...`)
-  
+
   event.waitUntil(
-    caches.open(STATIC_CACHE)
+    caches
+      .open(STATIC_CACHE)
       .then(cache => {
         console.log('快取核心檔案中...')
-        return cache.addAll(urlsToCache.map(url => {
-          // 為每個 URL 添加版本參數以強制更新
-          return new Request(url, { cache: 'reload' })
-        }))
+        return cache.addAll(
+          urlsToCache.map(url => {
+            // 為每個 URL 添加版本參數以強制更新
+            return new Request(url, { cache: 'reload' })
+          })
+        )
       })
       .then(() => {
         console.log(`Service Worker v${APP_VERSION} 安裝完成`)
@@ -62,7 +66,7 @@ self.addEventListener('install', event => {
 // 啟用事件
 self.addEventListener('activate', event => {
   console.log(`Service Worker v${APP_VERSION} 啟用中...`)
-  
+
   event.waitUntil(
     Promise.all([
       // 清理舊版本快取
@@ -78,21 +82,21 @@ self.addEventListener('activate', event => {
         )
       }),
       // 立即控制所有客戶端
-      self.clients.claim()
+      self.clients.claim(),
     ]).then(() => {
       console.log(`Service Worker v${APP_VERSION} 啟用完成`)
-      
+
       // 通知所有客戶端更新完成
       self.clients.matchAll().then(clients => {
         clients.forEach(client => {
           client.postMessage({
             type: 'SW_UPDATED',
-            version: APP_VERSION
+            version: APP_VERSION,
           })
           // 同時發送版本資訊
           client.postMessage({
             type: 'VERSION_INFO',
-            version: APP_VERSION
+            version: APP_VERSION,
           })
         })
       })
@@ -113,7 +117,7 @@ self.addEventListener('fetch', event => {
   }
 
   const url = new URL(event.request.url)
-  
+
   // 判斷快取策略
   if (shouldUseNetworkFirst(url.pathname)) {
     // 網路優先策略（用於經常變動的檔案）
@@ -142,7 +146,7 @@ async function networkFirst(request) {
   try {
     // 先嘗試從網路獲取
     const networkResponse = await fetch(request)
-    
+
     if (networkResponse && networkResponse.status === 200) {
       // 成功獲取，更新快取
       const cache = await caches.open(DYNAMIC_CACHE)
@@ -152,22 +156,22 @@ async function networkFirst(request) {
   } catch (error) {
     console.log('網路請求失敗，嘗試從快取獲取:', request.url)
   }
-  
+
   // 網路失敗，從快取獲取
   const cachedResponse = await caches.match(request)
   if (cachedResponse) {
     return cachedResponse
   }
-  
+
   // 如果是頁面請求且快取中沒有，返回離線頁面
   if (request.destination === 'document') {
     return caches.match('/index.html')
   }
-  
+
   // 其他情況返回網路錯誤
   return new Response('離線狀態，無法載入資源', {
     status: 503,
-    statusText: 'Service Unavailable'
+    statusText: 'Service Unavailable',
   })
 }
 
@@ -178,35 +182,35 @@ async function cacheFirst(request) {
   if (cachedResponse) {
     return cachedResponse
   }
-  
+
   try {
     // 快取中沒有，從網路獲取
     const networkResponse = await fetch(request)
-    
+
     if (networkResponse && networkResponse.status === 200) {
       // 成功獲取，存入快取
       const cache = await caches.open(DYNAMIC_CACHE)
-      
+
       // 只快取同源請求
       if (request.url.startsWith(self.location.origin)) {
         cache.put(request, networkResponse.clone())
       }
-      
+
       return networkResponse
     }
-    
+
     return networkResponse
   } catch (error) {
     console.log('網路和快取都失敗:', request.url)
-    
+
     // 如果是頁面請求，返回離線頁面
     if (request.destination === 'document') {
       return caches.match('/index.html')
     }
-    
+
     return new Response('資源無法載入', {
       status: 503,
-      statusText: 'Service Unavailable'
+      statusText: 'Service Unavailable',
     })
   }
 }
@@ -216,16 +220,17 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting()
   }
-  
+
   if (event.data && event.data.type === 'GET_VERSION') {
     // 回應版本資訊請求
     event.ports[0]?.postMessage({
       type: 'VERSION_INFO',
-      version: APP_VERSION
-    }) || event.source?.postMessage({
-      type: 'VERSION_INFO',
-      version: APP_VERSION
-    })
+      version: APP_VERSION,
+    }) ||
+      event.source?.postMessage({
+        type: 'VERSION_INFO',
+        version: APP_VERSION,
+      })
   }
 })
 
@@ -239,13 +244,11 @@ self.addEventListener('push', event => {
       vibrate: [100, 50, 100],
       data: {
         dateOfArrival: Date.now(),
-        primaryKey: 1
-      }
+        primaryKey: 1,
+      },
     }
 
-    event.waitUntil(
-      self.registration.showNotification('輕鬆記帳', options)
-    )
+    event.waitUntil(self.registration.showNotification('輕鬆記帳', options))
   }
 })
 
@@ -254,7 +257,5 @@ self.addEventListener('notificationclick', event => {
   console.log('通知被點擊:', event.notification.tag)
   event.notification.close()
 
-  event.waitUntil(
-    clients.openWindow('/')
-  )
+  event.waitUntil(clients.openWindow('/'))
 })

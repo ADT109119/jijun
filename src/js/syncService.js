@@ -5,17 +5,18 @@
  * Worker 僅負責 OAuth token exchange（因 client_secret 不能暴露在前端）。
  */
 
-import { showToast } from './utils.js';
+import { showToast } from './utils.js'
 
 /** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
-const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
+const GOOGLE_CLIENT_ID =
+  '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com' // 填入你的 Client ID
 
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
-];
+]
 
 /**
  * @class SyncService
@@ -27,34 +28,34 @@ export class SyncService {
    */
   constructor(dataService) {
     /** @type {import('./dataService.js').default} */
-    this.dataService = dataService;
+    this.dataService = dataService
 
     /** @type {string|null} */
-    this.accessToken = null;
+    this.accessToken = null
 
     /** @type {string|null} */
-    this.refreshToken = null;
+    this.refreshToken = null
 
     /** @type {number|null} token 過期時間 (epoch ms) */
-    this.tokenExpiresAt = null;
+    this.tokenExpiresAt = null
 
     /** @type {object|null} Google user profile */
-    this.userInfo = null;
+    this.userInfo = null
 
     /** @type {string} 同步/驗證伺服器 URL */
-    this.serverUrl = 'https://jijun-server.the-walking-fish.com';
+    this.serverUrl = 'https://jijun-server.the-walking-fish.com'
 
     /** @type {number|null} 自動同步 interval ID */
-    this._autoSyncIntervalId = null;
+    this._autoSyncIntervalId = null
 
     /** @type {number|null} 自動備份 interval ID */
-    this._autoBackupIntervalId = null;
+    this._autoBackupIntervalId = null
 
     /** @type {string} 裝置唯一 ID */
-    this.deviceId = this.getDeviceId();
+    this.deviceId = this.getDeviceId()
 
     /** @type {boolean} 是否正在同步中 */
-    this._syncing = false;
+    this._syncing = false
   }
 
   // ──────────────────────────────────────────────
@@ -66,43 +67,52 @@ export class SyncService {
    */
   async init() {
     try {
-      const tokenData = await this.dataService.getSetting('sync_tokens');
+      const tokenData = await this.dataService.getSetting('sync_tokens')
       if (tokenData?.value) {
-        this.accessToken = tokenData.value.access_token || null;
-        this.refreshToken = tokenData.value.refresh_token || null;
-        this.tokenExpiresAt = tokenData.value.expires_at || null;
-        this.userInfo = tokenData.value.user_info || null;
+        this.accessToken = tokenData.value.access_token || null
+        this.refreshToken = tokenData.value.refresh_token || null
+        this.tokenExpiresAt = tokenData.value.expires_at || null
+        this.userInfo = tokenData.value.user_info || null
       }
 
-      const serverSetting = await this.dataService.getSetting('sync_server_url');
+      const serverSetting = await this.dataService.getSetting('sync_server_url')
       if (serverSetting?.value) {
-        this.serverUrl = serverSetting.value;
+        this.serverUrl = serverSetting.value
       }
 
       // 如果已登入且 token 快過期，嘗試刷新
       if (this.refreshToken && this.isTokenExpiringSoon()) {
-        await this.refreshAccessToken();
+        await this.refreshAccessToken()
       }
 
       // 檢查是否需要啟動自動同步
-      const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
+      const autoSyncSetting =
+        await this.dataService.getSetting('sync_auto_enabled')
       if (autoSyncSetting?.value && this.isSignedIn()) {
-        const intervalSetting = await this.dataService.getSetting('sync_auto_interval');
-        const intervalMs = (intervalSetting?.value || 'daily') === 'daily'
-          ? 24 * 60 * 60 * 1000
-          : (intervalSetting?.value === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000);
-        this.startAutoSync(intervalMs);
+        const intervalSetting =
+          await this.dataService.getSetting('sync_auto_interval')
+        const intervalMs =
+          (intervalSetting?.value || 'daily') === 'daily'
+            ? 24 * 60 * 60 * 1000
+            : intervalSetting?.value === 'weekly'
+              ? 7 * 24 * 60 * 60 * 1000
+              : 30 * 24 * 60 * 60 * 1000
+        this.startAutoSync(intervalMs)
       }
 
       // 檢查是否需要啟動自動備份
-      const autoBackupSetting = await this.dataService.getSetting('sync_auto_backup_enabled');
+      const autoBackupSetting = await this.dataService.getSetting(
+        'sync_auto_backup_enabled'
+      )
       if (autoBackupSetting?.value && this.isSignedIn()) {
-        const backupIntervalSetting = await this.dataService.getSetting('sync_auto_backup_interval');
-        const interval = backupIntervalSetting?.value || 'daily';
-        this.startAutoBackup(interval);
+        const backupIntervalSetting = await this.dataService.getSetting(
+          'sync_auto_backup_interval'
+        )
+        const interval = backupIntervalSetting?.value || 'daily'
+        this.startAutoBackup(interval)
       }
     } catch (err) {
-      console.error('[SyncService] init error:', err);
+      console.error('[SyncService] init error:', err)
     }
   }
 
@@ -115,7 +125,7 @@ export class SyncService {
    * @returns {boolean}
    */
   isSignedIn() {
-    return !!(this.accessToken && this.refreshToken);
+    return !!(this.accessToken && this.refreshToken)
   }
 
   /**
@@ -123,8 +133,8 @@ export class SyncService {
    * @returns {boolean}
    */
   isTokenExpiringSoon() {
-    if (!this.tokenExpiresAt) return true;
-    return Date.now() > this.tokenExpiresAt - 5 * 60 * 1000;
+    if (!this.tokenExpiresAt) return true
+    return Date.now() > this.tokenExpiresAt - 5 * 60 * 1000
   }
 
   /**
@@ -132,10 +142,10 @@ export class SyncService {
    */
   async ensureValidToken() {
     if (this.isTokenExpiringSoon() && this.refreshToken) {
-      await this.refreshAccessToken();
+      await this.refreshAccessToken()
     }
     if (!this.accessToken) {
-      throw new Error('Not signed in');
+      throw new Error('Not signed in')
     }
   }
 
@@ -146,30 +156,30 @@ export class SyncService {
   async signIn() {
     return new Promise((resolve, reject) => {
       if (!window.google?.accounts?.oauth2) {
-        reject(new Error('Google Identity Services SDK 尚未載入'));
-        return;
+        reject(new Error('Google Identity Services SDK 尚未載入'))
+        return
       }
 
       const client = window.google.accounts.oauth2.initCodeClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: SCOPES.join(' '),
         ux_mode: 'popup',
-        callback: async (response) => {
+        callback: async response => {
           if (response.error) {
-            reject(new Error(response.error));
-            return;
+            reject(new Error(response.error))
+            return
           }
           try {
-            await this.handleAuthCallback(response.code);
-            resolve(true);
+            await this.handleAuthCallback(response.code)
+            resolve(true)
           } catch (err) {
-            reject(err);
+            reject(err)
           }
         },
-      });
+      })
 
-      client.requestCode();
-    });
+      client.requestCode()
+    })
   }
 
   /**
@@ -177,60 +187,60 @@ export class SyncService {
    * @param {string} code  Authorization code from Google
    */
   async handleAuthCallback(code) {
-    const serverUrl = this.serverUrl.replace(/\/+$/, '');
+    const serverUrl = this.serverUrl.replace(/\/+$/, '')
     const res = await fetch(`${serverUrl}/api/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, redirect_uri: 'postmessage' }),
-    });
+    })
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Token exchange failed (${res.status})`);
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `Token exchange failed (${res.status})`)
     }
 
-    const data = await res.json();
-    this.accessToken = data.access_token;
-    this.refreshToken = data.refresh_token;
-    this.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+    const data = await res.json()
+    this.accessToken = data.access_token
+    this.refreshToken = data.refresh_token
+    this.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000
 
     // 取得使用者資訊
-    await this.fetchUserInfo();
+    await this.fetchUserInfo()
 
     // 儲存 tokens
-    await this.saveTokens();
+    await this.saveTokens()
   }
 
   /**
    * 透過 Worker 刷新 access token
    */
   async refreshAccessToken() {
-    if (!this.refreshToken) throw new Error('No refresh token');
+    if (!this.refreshToken) throw new Error('No refresh token')
 
     try {
-      const serverUrl = this.serverUrl.replace(/\/+$/, '');
+      const serverUrl = this.serverUrl.replace(/\/+$/, '')
       const res = await fetch(`${serverUrl}/api/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: this.refreshToken }),
-      });
+      })
 
       if (!res.ok) {
         // Refresh token 可能已失效，清除登入狀態
         if (res.status === 400 || res.status === 401) {
-          await this.signOut();
-          throw new Error('Session expired, please sign in again');
+          await this.signOut()
+          throw new Error('Session expired, please sign in again')
         }
-        throw new Error(`Token refresh failed (${res.status})`);
+        throw new Error(`Token refresh failed (${res.status})`)
       }
 
-      const data = await res.json();
-      this.accessToken = data.access_token;
-      this.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
-      await this.saveTokens();
+      const data = await res.json()
+      this.accessToken = data.access_token
+      this.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000
+      await this.saveTokens()
     } catch (err) {
-      console.error('[SyncService] refreshAccessToken error:', err);
-      throw err;
+      console.error('[SyncService] refreshAccessToken error:', err)
+      throw err
     }
   }
 
@@ -241,12 +251,12 @@ export class SyncService {
     try {
       const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: { Authorization: `Bearer ${this.accessToken}` },
-      });
+      })
       if (res.ok) {
-        this.userInfo = await res.json();
+        this.userInfo = await res.json()
       }
     } catch (err) {
-      console.warn('[SyncService] fetchUserInfo error:', err);
+      console.warn('[SyncService] fetchUserInfo error:', err)
     }
   }
 
@@ -254,16 +264,22 @@ export class SyncService {
    * 登出 — 清除所有 token 和狀態
    */
   async signOut() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    this.tokenExpiresAt = null;
-    this.userInfo = null;
-    this.stopAutoSync();
-    this.stopAutoBackup();
+    this.accessToken = null
+    this.refreshToken = null
+    this.tokenExpiresAt = null
+    this.userInfo = null
+    this.stopAutoSync()
+    this.stopAutoBackup()
 
-    await this.dataService.saveSetting({ key: 'sync_tokens', value: null });
-    await this.dataService.saveSetting({ key: 'sync_auto_enabled', value: false });
-    await this.dataService.saveSetting({ key: 'sync_auto_backup_enabled', value: false });
+    await this.dataService.saveSetting({ key: 'sync_tokens', value: null })
+    await this.dataService.saveSetting({
+      key: 'sync_auto_enabled',
+      value: false,
+    })
+    await this.dataService.saveSetting({
+      key: 'sync_auto_backup_enabled',
+      value: false,
+    })
   }
 
   /**
@@ -278,7 +294,7 @@ export class SyncService {
         expires_at: this.tokenExpiresAt,
         user_info: this.userInfo,
       },
-    });
+    })
   }
 
   // ──────────────────────────────────────────────
@@ -290,7 +306,7 @@ export class SyncService {
    * @returns {string}
    */
   getServerUrl() {
-    return this.serverUrl;
+    return this.serverUrl
   }
 
   /**
@@ -298,8 +314,11 @@ export class SyncService {
    * @param {string} url
    */
   async setServerUrl(url) {
-    this.serverUrl = url.replace(/\/+$/, '');
-    await this.dataService.saveSetting({ key: 'sync_server_url', value: this.serverUrl });
+    this.serverUrl = url.replace(/\/+$/, '')
+    await this.dataService.saveSetting({
+      key: 'sync_server_url',
+      value: this.serverUrl,
+    })
   }
 
   // ──────────────────────────────────────────────
@@ -311,26 +330,26 @@ export class SyncService {
    * @returns {Promise<object>} 備份檔案的 metadata
    */
   async backupToDrive() {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
     // 備份前先清理舊備份
-    await this.cleanupOldBackups();
+    await this.cleanupOldBackups()
 
-    const exportData = await this.dataService.exportDataForSync();
-    exportData.backup_device = this.deviceId;
-    exportData.backup_timestamp = Date.now();
+    const exportData = await this.dataService.exportDataForSync()
+    exportData.backup_device = this.deviceId
+    exportData.backup_timestamp = Date.now()
 
-    const fileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    const fileContent = JSON.stringify(exportData);
+    const fileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    const fileContent = JSON.stringify(exportData)
 
     // 使用 multipart upload
     const metadata = {
       name: fileName,
       parents: ['appDataFolder'],
       mimeType: 'application/json',
-    };
+    }
 
-    const boundary = '-------314159265358979323846';
+    const boundary = '-------314159265358979323846'
     const body = [
       `--${boundary}`,
       'Content-Type: application/json; charset=UTF-8',
@@ -341,7 +360,7 @@ export class SyncService {
       '',
       fileContent,
       `--${boundary}--`,
-    ].join('\r\n');
+    ].join('\r\n')
 
     const res = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
@@ -353,20 +372,20 @@ export class SyncService {
         },
         body,
       }
-    );
+    )
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Backup failed (${res.status})`);
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error?.message || `Backup failed (${res.status})`)
     }
 
     // 記錄最後備份時間
     await this.dataService.saveSetting({
       key: 'sync_last_backup',
       value: { timestamp: Date.now(), fileName },
-    });
+    })
 
-    return await res.json();
+    return await res.json()
   }
 
   /**
@@ -374,18 +393,18 @@ export class SyncService {
    * @returns {Promise<Array>} 備份列表
    */
   async listBackups() {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'backup_'&fields=files(id,name,size,createdTime,modifiedTime)&orderBy=createdTime desc`,
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
+    )
 
-    if (!res.ok) throw new Error(`Failed to list backups (${res.status})`);
-    const data = await res.json();
-    return data.files || [];
+    if (!res.ok) throw new Error(`Failed to list backups (${res.status})`)
+    const data = await res.json()
+    return data.files || []
   }
 
   /**
@@ -394,17 +413,17 @@ export class SyncService {
    * @returns {Promise<object>} 備份資料
    */
   async restoreFromDrive(fileId) {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
+    )
 
-    if (!res.ok) throw new Error(`Failed to download backup (${res.status})`);
-    return await res.json();
+    if (!res.ok) throw new Error(`Failed to download backup (${res.status})`)
+    return await res.json()
   }
 
   /**
@@ -412,7 +431,7 @@ export class SyncService {
    * @param {string} fileId  Drive file ID
    */
   async deleteBackup(fileId) {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}`,
@@ -420,10 +439,10 @@ export class SyncService {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
+    )
 
     if (!res.ok && res.status !== 404) {
-      throw new Error(`Failed to delete backup (${res.status})`);
+      throw new Error(`Failed to delete backup (${res.status})`)
     }
   }
 
@@ -435,49 +454,54 @@ export class SyncService {
    * 將本地 change log 推送到 Google Drive
    */
   async pushChanges() {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
-    const lastPush = await this.dataService.getSetting('sync_last_push_timestamp');
-    const since = lastPush?.value || 0;
-    const changes = await this.dataService.getChangesSince(since);
+    const lastPush = await this.dataService.getSetting(
+      'sync_last_push_timestamp'
+    )
+    const since = lastPush?.value || 0
+    const changes = await this.dataService.getChangesSince(since)
 
-    if (changes.length === 0) return;
+    if (changes.length === 0) return
 
     const syncData = {
       deviceId: this.deviceId,
       timestamp: Date.now(),
       changes,
-    };
+    }
 
-    const fileName = `sync_log_${this.deviceId}.json`;
+    const fileName = `sync_log_${this.deviceId}.json`
 
     // 先找到已存在的 sync log file
-    const existingFileId = await this._findFile(fileName);
+    const existingFileId = await this._findFile(fileName)
 
     if (existingFileId) {
       // 下載現有內容，合併後更新
-      const existingData = await this._downloadFile(existingFileId);
-      const existing = existingData || { changes: [] };
-      existing.changes = [...(existing.changes || []), ...changes];
-      existing.timestamp = Date.now();
-      existing.deviceId = this.deviceId;
+      const existingData = await this._downloadFile(existingFileId)
+      const existing = existingData || { changes: [] }
+      existing.changes = [...(existing.changes || []), ...changes]
+      existing.timestamp = Date.now()
+      existing.deviceId = this.deviceId
 
-      await this._updateFile(existingFileId, JSON.stringify(existing));
+      await this._updateFile(existingFileId, JSON.stringify(existing))
     } else {
       // 建立新檔案
-      await this._createFile(fileName, JSON.stringify(syncData));
+      await this._createFile(fileName, JSON.stringify(syncData))
     }
 
     // 記錄推送的最新時間
-    const maxTimestamp = Math.max(...changes.map((c) => c.timestamp));
-    await this.dataService.saveSetting({ key: 'sync_last_push_timestamp', value: maxTimestamp });
+    const maxTimestamp = Math.max(...changes.map(c => c.timestamp))
+    await this.dataService.saveSetting({
+      key: 'sync_last_push_timestamp',
+      value: maxTimestamp,
+    })
   }
 
   /**
    * 從 Google Drive 拉取其他裝置的變更並合併
    */
   async pullChanges() {
-    await this.ensureValidToken();
+    await this.ensureValidToken()
 
     // 列出所有 sync log 檔案
     const res = await fetch(
@@ -485,53 +509,55 @@ export class SyncService {
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
+    )
 
-    if (!res.ok) throw new Error(`Failed to list sync logs (${res.status})`);
-    const data = await res.json();
-    const files = data.files || [];
+    if (!res.ok) throw new Error(`Failed to list sync logs (${res.status})`)
+    const data = await res.json()
+    const files = data.files || []
 
-    const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
-    const pullTimestamps = lastPull?.value || {};
+    const lastPull = await this.dataService.getSetting(
+      'sync_last_pull_timestamps'
+    )
+    const pullTimestamps = lastPull?.value || {}
 
-    let allRemoteChanges = [];
+    const allRemoteChanges = []
 
     for (const file of files) {
       // 跳過自己的 sync log
-      if (file.name === `sync_log_${this.deviceId}.json`) continue;
+      if (file.name === `sync_log_${this.deviceId}.json`) continue
 
-      const lastPullTime = pullTimestamps[file.name] || 0;
+      const lastPullTime = pullTimestamps[file.name] || 0
 
       // 如果檔案在上次拉取後有修改
       if (new Date(file.modifiedTime).getTime() > lastPullTime) {
-        const syncLog = await this._downloadFile(file.id);
+        const syncLog = await this._downloadFile(file.id)
         if (syncLog?.changes) {
           // 只取比上次拉取時間更新的變更
           const newChanges = syncLog.changes.filter(
-            (c) => c.timestamp > lastPullTime
-          );
-          allRemoteChanges.push(...newChanges);
+            c => c.timestamp > lastPullTime
+          )
+          allRemoteChanges.push(...newChanges)
         }
-        pullTimestamps[file.name] = Date.now();
+        pullTimestamps[file.name] = Date.now()
       }
     }
 
     if (allRemoteChanges.length > 0) {
       // 按時間排序
-      allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp);
-      await this.applyRemoteChanges(allRemoteChanges);
+      allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
+      await this.applyRemoteChanges(allRemoteChanges)
     }
 
     await this.dataService.saveSetting({
       key: 'sync_last_pull_timestamps',
       value: pullTimestamps,
-    });
+    })
 
     // 記錄最後同步時間
     await this.dataService.saveSetting({
       key: 'sync_last_sync',
       value: Date.now(),
-    });
+    })
   }
 
   /**
@@ -541,23 +567,23 @@ export class SyncService {
   async applyRemoteChanges(changes) {
     for (const change of changes) {
       try {
-        const { operation, storeName, recordId, data } = change;
+        const { operation, storeName, recordId, data } = change
 
         switch (operation) {
           case 'add':
-            await this._applyAdd(storeName, data);
-            break;
+            await this._applyAdd(storeName, data)
+            break
           case 'update':
-            await this._applyUpdate(storeName, recordId, data);
-            break;
+            await this._applyUpdate(storeName, recordId, data)
+            break
           case 'delete':
-            await this._applyDelete(storeName, recordId);
-            break;
+            await this._applyDelete(storeName, recordId)
+            break
           default:
-            console.warn('[SyncService] Unknown operation:', operation);
+            console.warn('[SyncService] Unknown operation:', operation)
         }
       } catch (err) {
-        console.error('[SyncService] Error applying change:', err, change);
+        console.error('[SyncService] Error applying change:', err, change)
       }
     }
   }
@@ -566,14 +592,14 @@ export class SyncService {
    * 執行完整同步（push + pull）
    */
   async performSync() {
-    if (this._syncing) return;
-    this._syncing = true;
+    if (this._syncing) return
+    this._syncing = true
 
     try {
-      await this.pushChanges();
-      await this.pullChanges();
+      await this.pushChanges()
+      await this.pullChanges()
     } finally {
-      this._syncing = false;
+      this._syncing = false
     }
   }
 
@@ -589,59 +615,66 @@ export class SyncService {
    */
   async cleanupOldBackups() {
     try {
-      const backups = await this.listBackups();
-      if (backups.length === 0) return;
+      const backups = await this.listBackups()
+      if (backups.length === 0) return
 
-      const now = Date.now();
-      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-      const ONE_YEAR = 365 * 24 * 60 * 60 * 1000;
+      const now = Date.now()
+      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
+      const ONE_YEAR = 365 * 24 * 60 * 60 * 1000
 
       // 分類備份
-      const toKeep = [];
-      const toDelete = [];
-      const monthlyBuckets = {}; // key: 'YYYY-MM', value: 該月最早的備份
+      const toKeep = []
+      const toDelete = []
+      const monthlyBuckets = {} // key: 'YYYY-MM', value: 該月最早的備份
 
       for (const backup of backups) {
-        const createdAt = new Date(backup.createdTime).getTime();
-        const age = now - createdAt;
+        const createdAt = new Date(backup.createdTime).getTime()
+        const age = now - createdAt
 
         if (age <= SEVEN_DAYS) {
           // 近 7 天 → 全部保留
-          toKeep.push(backup);
+          toKeep.push(backup)
         } else if (age <= ONE_YEAR) {
           // 7天~1年 → 每月保留第一筆（最早的）
-          const monthKey = new Date(backup.createdTime).toISOString().slice(0, 7); // 'YYYY-MM'
+          const monthKey = new Date(backup.createdTime)
+            .toISOString()
+            .slice(0, 7) // 'YYYY-MM'
           if (!monthlyBuckets[monthKey]) {
-            monthlyBuckets[monthKey] = { backup, createdAt };
+            monthlyBuckets[monthKey] = { backup, createdAt }
           } else if (createdAt < monthlyBuckets[monthKey].createdAt) {
             // 這筆更早，替換為保留的，把舊的加到刪除列表
-            toDelete.push(monthlyBuckets[monthKey].backup);
-            monthlyBuckets[monthKey] = { backup, createdAt };
+            toDelete.push(monthlyBuckets[monthKey].backup)
+            monthlyBuckets[monthKey] = { backup, createdAt }
           } else {
             // 這筆更晚，刪除
-            toDelete.push(backup);
+            toDelete.push(backup)
           }
         } else {
           // 超過 1 年 → 刪除
-          toDelete.push(backup);
+          toDelete.push(backup)
         }
       }
 
       // 執行刪除
       for (const backup of toDelete) {
         try {
-          await this.deleteBackup(backup.id);
-          console.log(`[SyncService] Deleted old backup: ${backup.name}`);
+          await this.deleteBackup(backup.id)
+          console.log(`[SyncService] Deleted old backup: ${backup.name}`)
         } catch (err) {
-          console.warn(`[SyncService] Failed to delete backup ${backup.name}:`, err);
+          console.warn(
+            `[SyncService] Failed to delete backup ${backup.name}:`,
+            err
+          )
         }
       }
 
       if (toDelete.length > 0) {
-        console.log(`[SyncService] Cleanup: deleted ${toDelete.length} old backups, kept ${toKeep.length + Object.keys(monthlyBuckets).length}`);
+        console.log(
+          `[SyncService] Cleanup: deleted ${toDelete.length} old backups, kept ${toKeep.length + Object.keys(monthlyBuckets).length}`
+        )
       }
     } catch (err) {
-      console.error('[SyncService] cleanupOldBackups error:', err);
+      console.error('[SyncService] cleanupOldBackups error:', err)
       // 清理失敗不應阻擋備份
     }
   }
@@ -651,28 +684,28 @@ export class SyncService {
    * @param {number} intervalMs 同步間隔（毫秒）
    */
   startAutoSync(intervalMs) {
-    this.stopAutoSync();
+    this.stopAutoSync()
 
     // 啟動後立即同步一次
-    this.performSync().catch((err) =>
+    this.performSync().catch(err =>
       console.error('[SyncService] Auto sync error:', err)
-    );
+    )
 
     this._autoSyncIntervalId = setInterval(() => {
-      this.performSync().catch((err) =>
+      this.performSync().catch(err =>
         console.error('[SyncService] Auto sync error:', err)
-      );
-    }, intervalMs);
+      )
+    }, intervalMs)
 
     // 頁面 visibility 變化時也觸發同步
     this._visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isSignedIn()) {
-        this.performSync().catch((err) =>
+        this.performSync().catch(err =>
           console.error('[SyncService] Visibility sync error:', err)
-        );
+        )
       }
-    };
-    document.addEventListener('visibilitychange', this._visibilityHandler);
+    }
+    document.addEventListener('visibilitychange', this._visibilityHandler)
   }
 
   /**
@@ -680,12 +713,12 @@ export class SyncService {
    */
   stopAutoSync() {
     if (this._autoSyncIntervalId) {
-      clearInterval(this._autoSyncIntervalId);
-      this._autoSyncIntervalId = null;
+      clearInterval(this._autoSyncIntervalId)
+      this._autoSyncIntervalId = null
     }
     if (this._visibilityHandler) {
-      document.removeEventListener('visibilitychange', this._visibilityHandler);
-      this._visibilityHandler = null;
+      document.removeEventListener('visibilitychange', this._visibilityHandler)
+      this._visibilityHandler = null
     }
   }
 
@@ -698,21 +731,24 @@ export class SyncService {
    * @param {'daily'|'3days'|'weekly'} interval 備份間隔
    */
   startAutoBackup(interval = 'daily') {
-    this.stopAutoBackup();
+    this.stopAutoBackup()
 
     const intervalMap = {
       daily: 24 * 60 * 60 * 1000,
       '3days': 3 * 24 * 60 * 60 * 1000,
       weekly: 7 * 24 * 60 * 60 * 1000,
-    };
-    const ms = intervalMap[interval] || intervalMap.daily;
+    }
+    const ms = intervalMap[interval] || intervalMap.daily
 
     // 檢查是否需要立即備份（上次備份已過期）
-    this._checkAndRunBackup(ms);
+    this._checkAndRunBackup(ms)
 
-    this._autoBackupIntervalId = setInterval(() => {
-      this._checkAndRunBackup(ms);
-    }, 60 * 60 * 1000); // 每小時檢查一次是否到期
+    this._autoBackupIntervalId = setInterval(
+      () => {
+        this._checkAndRunBackup(ms)
+      },
+      60 * 60 * 1000
+    ) // 每小時檢查一次是否到期
   }
 
   /**
@@ -721,19 +757,19 @@ export class SyncService {
    */
   async _checkAndRunBackup(intervalMs) {
     try {
-      if (!this.isSignedIn()) return;
+      if (!this.isSignedIn()) return
 
-      const lastBackup = await this.dataService.getSetting('sync_last_backup');
-      const lastTime = lastBackup?.value?.timestamp || 0;
-      const elapsed = Date.now() - lastTime;
+      const lastBackup = await this.dataService.getSetting('sync_last_backup')
+      const lastTime = lastBackup?.value?.timestamp || 0
+      const elapsed = Date.now() - lastTime
 
       if (elapsed >= intervalMs) {
-        console.log('[SyncService] Auto backup triggered');
-        await this.backupToDrive();
-        console.log('[SyncService] Auto backup completed');
+        console.log('[SyncService] Auto backup triggered')
+        await this.backupToDrive()
+        console.log('[SyncService] Auto backup completed')
       }
     } catch (err) {
-      console.error('[SyncService] Auto backup error:', err);
+      console.error('[SyncService] Auto backup error:', err)
     }
   }
 
@@ -742,8 +778,8 @@ export class SyncService {
    */
   stopAutoBackup() {
     if (this._autoBackupIntervalId) {
-      clearInterval(this._autoBackupIntervalId);
-      this._autoBackupIntervalId = null;
+      clearInterval(this._autoBackupIntervalId)
+      this._autoBackupIntervalId = null
     }
   }
 
@@ -756,12 +792,16 @@ export class SyncService {
    * @returns {string}
    */
   getDeviceId() {
-    let id = localStorage.getItem('sync_device_id');
+    let id = localStorage.getItem('sync_device_id')
     if (!id) {
-      id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 8);
-      localStorage.setItem('sync_device_id', id);
+      id =
+        'dev_' +
+        Date.now().toString(36) +
+        '_' +
+        Math.random().toString(36).substr(2, 8)
+      localStorage.setItem('sync_device_id', id)
     }
-    return id;
+    return id
   }
 
   // ──────────────────────────────────────────────
@@ -779,10 +819,10 @@ export class SyncService {
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.files?.[0]?.id || null;
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.files?.[0]?.id || null
   }
 
   /**
@@ -796,9 +836,9 @@ export class SyncService {
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
-    );
-    if (!res.ok) return null;
-    return await res.json();
+    )
+    if (!res.ok) return null
+    return await res.json()
   }
 
   /**
@@ -812,9 +852,9 @@ export class SyncService {
       name: fileName,
       parents: ['appDataFolder'],
       mimeType: 'application/json',
-    };
+    }
 
-    const boundary = '-------314159265358979323846';
+    const boundary = '-------314159265358979323846'
     const body = [
       `--${boundary}`,
       'Content-Type: application/json; charset=UTF-8',
@@ -825,7 +865,7 @@ export class SyncService {
       '',
       content,
       `--${boundary}--`,
-    ].join('\r\n');
+    ].join('\r\n')
 
     const res = await fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
@@ -837,10 +877,10 @@ export class SyncService {
         },
         body,
       }
-    );
+    )
 
-    if (!res.ok) throw new Error(`Failed to create file (${res.status})`);
-    return await res.json();
+    if (!res.ok) throw new Error(`Failed to create file (${res.status})`)
+    return await res.json()
   }
 
   /**
@@ -859,9 +899,9 @@ export class SyncService {
         },
         body: content,
       }
-    );
+    )
 
-    if (!res.ok) throw new Error(`Failed to update file (${res.status})`);
+    if (!res.ok) throw new Error(`Failed to update file (${res.status})`)
   }
 
   // ──────────────────────────────────────────────
@@ -875,19 +915,19 @@ export class SyncService {
   async _applyAdd(storeName, data) {
     switch (storeName) {
       case 'records':
-        await this.dataService.addRecord(data, true);
-        break;
+        await this.dataService.addRecord(data, true)
+        break
       case 'accounts':
-        await this.dataService.addAccount(data, true);
-        break;
+        await this.dataService.addAccount(data, true)
+        break
       case 'contacts':
-        await this.dataService.addContact(data, true);
-        break;
+        await this.dataService.addContact(data, true)
+        break
       case 'debts':
-        await this.dataService.addDebt(data, true);
-        break;
+        await this.dataService.addDebt(data, true)
+        break
       default:
-        console.warn('[SyncService] Unknown store for add:', storeName);
+        console.warn('[SyncService] Unknown store for add:', storeName)
     }
   }
 
@@ -899,19 +939,19 @@ export class SyncService {
   async _applyUpdate(storeName, recordId, data) {
     switch (storeName) {
       case 'records':
-        await this.dataService.updateRecord(recordId, data, true);
-        break;
+        await this.dataService.updateRecord(recordId, data, true)
+        break
       case 'accounts':
-        await this.dataService.updateAccount(recordId, data, true);
-        break;
+        await this.dataService.updateAccount(recordId, data, true)
+        break
       case 'contacts':
-        await this.dataService.updateContact(recordId, data, true);
-        break;
+        await this.dataService.updateContact(recordId, data, true)
+        break
       case 'debts':
-        await this.dataService.updateDebt(recordId, data, true);
-        break;
+        await this.dataService.updateDebt(recordId, data, true)
+        break
       default:
-        console.warn('[SyncService] Unknown store for update:', storeName);
+        console.warn('[SyncService] Unknown store for update:', storeName)
     }
   }
 
@@ -922,21 +962,21 @@ export class SyncService {
   async _applyDelete(storeName, recordId) {
     switch (storeName) {
       case 'records':
-        await this.dataService.deleteRecord(recordId, true);
-        break;
+        await this.dataService.deleteRecord(recordId, true)
+        break
       case 'accounts':
-        await this.dataService.deleteAccount(recordId, true);
-        break;
+        await this.dataService.deleteAccount(recordId, true)
+        break
       case 'contacts':
-        await this.dataService.deleteContact(recordId, true);
-        break;
+        await this.dataService.deleteContact(recordId, true)
+        break
       case 'debts':
-        await this.dataService.deleteDebt(recordId, true);
-        break;
+        await this.dataService.deleteDebt(recordId, true)
+        break
       default:
-        console.warn('[SyncService] Unknown store for delete:', storeName);
+        console.warn('[SyncService] Unknown store for delete:', storeName)
     }
   }
 }
 
-export default SyncService;
+export default SyncService

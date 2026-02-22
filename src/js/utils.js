@@ -23,8 +23,10 @@ export function formatCurrency(amount) {
     style: 'currency',
     currency: 'TWD',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  }).format(amount).replace('NT$', '$')
+    maximumFractionDigits: 2,
+  })
+    .format(amount)
+    .replace('NT$', '$')
 }
 
 /**
@@ -35,23 +37,23 @@ export function formatCurrency(amount) {
  */
 export function formatDate(date, format = 'short') {
   const dateObj = typeof date === 'string' ? new Date(date) : date
-  
+
   switch (format) {
     case 'short':
       return dateObj.toLocaleDateString('zh-TW', {
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
       })
     case 'long':
       return dateObj.toLocaleDateString('zh-TW', {
         year: 'numeric',
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
       })
     case 'month-day':
       return dateObj.toLocaleDateString('zh-TW', {
         month: 'short',
-        day: 'numeric'
+        day: 'numeric',
       })
     default:
       return dateObj.toLocaleDateString('zh-TW')
@@ -65,41 +67,46 @@ export function formatDate(date, format = 'short') {
  * @param {number} duration - 顯示時間（毫秒）
  */
 export function showToast(message, type = 'info', duration = 3000) {
-    const toast = document.getElementById('toast');
-    const toastMessage = document.getElementById('toast-message');
+  const toast = document.getElementById('toast')
+  const toastMessage = document.getElementById('toast-message')
 
-    if (!toast || !toastMessage) {
-        console.error('Toast elements not found in the DOM.');
-        return;
-    }
+  if (!toast || !toastMessage) {
+    console.error('Toast elements not found in the DOM.')
+    return
+  }
 
-    // Set message
-    toastMessage.textContent = message;
+  // Set message
+  toastMessage.textContent = message
 
-    // Reset classes
-    toast.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'bg-wabi-primary', 'toast-hide');
+  // Reset classes
+  toast.classList.remove(
+    'bg-wabi-income',
+    'bg-wabi-expense',
+    'bg-wabi-primary',
+    'toast-hide'
+  )
 
-    // Apply new classes based on type
-    switch (type) {
-        case 'success':
-            toast.classList.add('bg-wabi-income');
-            break;
-        case 'error':
-            toast.classList.add('bg-wabi-expense');
-            break;
-        case 'info':
-        default:
-            toast.classList.add('bg-wabi-primary');
-            break;
-    }
+  // Apply new classes based on type
+  switch (type) {
+    case 'success':
+      toast.classList.add('bg-wabi-income')
+      break
+    case 'error':
+      toast.classList.add('bg-wabi-expense')
+      break
+    case 'info':
+    default:
+      toast.classList.add('bg-wabi-primary')
+      break
+  }
 
-    // Show toast
-    toast.classList.add('toast-show');
+  // Show toast
+  toast.classList.add('toast-show')
 
-    // Hide after duration
-    setTimeout(() => {
-        toast.classList.replace('toast-show', 'toast-hide');
-    }, duration);
+  // Hide after duration
+  setTimeout(() => {
+    toast.classList.replace('toast-show', 'toast-hide')
+  }, duration)
 }
 
 /**
@@ -132,7 +139,7 @@ export function throttle(func, limit) {
     if (!inThrottle) {
       func.apply(this, args)
       inThrottle = true
-      setTimeout(() => inThrottle = false, limit)
+      setTimeout(() => (inThrottle = false), limit)
     }
   }
 }
@@ -149,7 +156,7 @@ export function deepClone(obj) {
   if (typeof obj === 'object') {
     const clonedObj = {}
     for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         clonedObj[key] = deepClone(obj[key])
       }
     }
@@ -182,39 +189,38 @@ export function isValidDate(dateString) {
  */
 export function getDateRange(period) {
   const today = new Date()
-  
+
   switch (period) {
-    case 'last7days':
+    case 'last7days': {
       // 近七日
       const sevenDaysAgo = new Date(today)
       sevenDaysAgo.setDate(today.getDate() - 6) // 包含今天，所以是 -6
       return {
         startDate: formatDateToString(sevenDaysAgo),
-        endDate: formatDateToString(today)
+        endDate: formatDateToString(today),
       }
-    case 'lastmonth':
+    }
+    case 'lastmonth': {
       // 上月
-      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const lastMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1
+      )
       const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
       return {
         startDate: formatDateToString(lastMonthStart),
-        endDate: formatDateToString(lastMonthEnd)
+        endDate: formatDateToString(lastMonthEnd),
       }
-    case 'year':
-      // 今年
-      const yearStart = new Date(today.getFullYear(), 0, 1)
-      const yearEnd = new Date(today.getFullYear(), 11, 31)
-      return {
-        startDate: formatDateToString(yearStart),
-        endDate: formatDateToString(yearEnd)
-      }
-    case 'today':
+    }
+    case 'today': {
       const todayStr = formatDateToString(today)
       return {
         startDate: todayStr,
-        endDate: todayStr
+        endDate: todayStr,
       }
-    case 'week':
+    }
+    case 'week': {
       // 本週
       const startOfWeek = new Date(today)
       startOfWeek.setDate(today.getDate() - today.getDay())
@@ -222,35 +228,39 @@ export function getDateRange(period) {
       endOfWeek.setDate(startOfWeek.getDate() + 6)
       return {
         startDate: formatDateToString(startOfWeek),
-        endDate: formatDateToString(endOfWeek)
+        endDate: formatDateToString(endOfWeek),
       }
-    case 'month':
+    }
+    case 'month': {
       // 本月 - 使用年月直接構造，避免時區問題
       const year = today.getFullYear()
       const month = today.getMonth() + 1 // getMonth() 返回 0-11，需要 +1
       const startOfMonth = `${year}-${month.toString().padStart(2, '0')}-01`
-      
+
       // 計算本月最後一天
       const lastDay = new Date(year, month, 0).getDate() // month 參數這裡不用 +1，因為 Date 構造函數中 month 是 0-based
       const endOfMonth = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`
-      
+
       return {
         startDate: startOfMonth,
-        endDate: endOfMonth
+        endDate: endOfMonth,
       }
-    case 'year':
+    }
+    case 'year': {
       // 今年
       const currentYear = today.getFullYear()
       return {
         startDate: `${currentYear}-01-01`,
-        endDate: `${currentYear}-12-31`
+        endDate: `${currentYear}-12-31`,
       }
-    default:
+    }
+    default: {
       const defaultStr = formatDateToString(today)
       return {
         startDate: defaultStr,
-        endDate: defaultStr
+        endDate: defaultStr,
       }
+    }
   }
 }
 
@@ -261,12 +271,12 @@ export function getDateRange(period) {
  * @returns {object} 包含 startDate 和 endDate 的對象
  */
 export function getMonthRange(year, monthIndex) {
-  const startOfMonth = new Date(year, monthIndex, 1);
-  const endOfMonth = new Date(year, monthIndex + 1, 0);
+  const startOfMonth = new Date(year, monthIndex, 1)
+  const endOfMonth = new Date(year, monthIndex + 1, 0)
   return {
     startDate: formatDateToString(startOfMonth),
-    endDate: formatDateToString(endOfMonth)
-  };
+    endDate: formatDateToString(endOfMonth),
+  }
 }
 
 /**
@@ -277,24 +287,24 @@ export function getMonthRange(year, monthIndex) {
  * @returns {string} 下一個到期日期 (YYYY-MM-DD)
  */
 export function calculateNextDueDate(currentDueDate, frequency, interval) {
-  const date = new Date(currentDueDate);
+  const date = new Date(currentDueDate)
   switch (frequency) {
     case 'daily':
-      date.setDate(date.getDate() + interval);
-      break;
+      date.setDate(date.getDate() + interval)
+      break
     case 'weekly':
-      date.setDate(date.getDate() + (interval * 7));
-      break;
+      date.setDate(date.getDate() + interval * 7)
+      break
     case 'monthly':
-      date.setMonth(date.getMonth() + interval);
-      break;
+      date.setMonth(date.getMonth() + interval)
+      break
     case 'yearly':
-      date.setFullYear(date.getFullYear() + interval);
-      break;
+      date.setFullYear(date.getFullYear() + interval)
+      break
     default:
-      throw new Error('Invalid frequency');
+      throw new Error('Invalid frequency')
   }
-  return formatDateToString(date);
+  return formatDateToString(date)
 }
 
 /**
@@ -305,30 +315,30 @@ export function calculateNextDueDate(currentDueDate, frequency, interval) {
  */
 export function shouldSkipDate(date, skipRules) {
   if (!skipRules || !Array.isArray(skipRules) || skipRules.length === 0) {
-    return false;
+    return false
   }
 
   for (const rule of skipRules) {
     if (!rule.values || rule.values.length === 0) {
-      continue;
+      continue
     }
-    const { type, values } = rule;
-    let match = false;
+    const { type, values } = rule
+    let match = false
     switch (type) {
       case 'dayOfWeek':
-        match = values.includes(date.getDay()); // 0 (Sun) to 6 (Sat)
-        break;
+        match = values.includes(date.getDay()) // 0 (Sun) to 6 (Sat)
+        break
       case 'dayOfMonth':
-        match = values.includes(date.getDate()); // 1 to 31
-        break;
+        match = values.includes(date.getDate()) // 1 to 31
+        break
       case 'monthOfYear':
-        match = values.includes(date.getMonth()); // 0 (Jan) to 11 (Dec)
-        break;
+        match = values.includes(date.getMonth()) // 0 (Jan) to 11 (Dec)
+        break
     }
     if (match) {
-      return true; // If any rule matches, skip the date
+      return true // If any rule matches, skip the date
     }
   }
 
-  return false; // If no rules matched, do not skip
+  return false // If no rules matched, do not skip
 }

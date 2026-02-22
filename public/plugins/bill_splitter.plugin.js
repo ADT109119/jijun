@@ -1,20 +1,24 @@
 export default {
-    meta: {
-        id: 'com.walkingfish.bill_splitter',
-        name: '分帳神器',
-        version: '1.1',
-        description: '聚餐旅遊分帳助手，自動計算並建立欠款紀錄。',
-        author: 'The walking fish 步行魚',
-        icon: 'fa-file-invoice-dollar'
-    },
-    
-    init(context) {
-        this.ctx = context;
-        this.ctx.ui.registerPage('split-bill', '分帳神器', (container) => this.render(container));
-        
-        // Add home widget entry
-        this.ctx.ui.registerHomeWidget('com.walkingfish.bill_splitter', (container) => {
-            container.innerHTML = `
+  meta: {
+    id: 'com.walkingfish.bill_splitter',
+    name: '分帳神器',
+    version: '1.1',
+    description: '聚餐旅遊分帳助手，自動計算並建立欠款紀錄。',
+    author: 'The walking fish 步行魚',
+    icon: 'fa-file-invoice-dollar',
+  },
+
+  init(context) {
+    this.ctx = context
+    this.ctx.ui.registerPage('split-bill', '分帳神器', container =>
+      this.render(container)
+    )
+
+    // Add home widget entry
+    this.ctx.ui.registerHomeWidget(
+      'com.walkingfish.bill_splitter',
+      container => {
+        container.innerHTML = `
                 <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors" id="open-splitter-widget">
                     <div class="flex items-center gap-3">
                         <div class="bg-indigo-500 text-white rounded-lg size-10 flex items-center justify-center">
@@ -27,23 +31,27 @@ export default {
                     </div>
                     <i class="fa-solid fa-chevron-right text-indigo-300"></i>
                 </div>
-            `;
-            container.querySelector('#open-splitter-widget').addEventListener('click', () => {
-                this.ctx.ui.navigateTo('#split-bill');
-            });
-        });
-    },
+            `
+        container
+          .querySelector('#open-splitter-widget')
+          .addEventListener('click', () => {
+            this.ctx.ui.navigateTo('#split-bill')
+          })
+      }
+    )
+  },
 
-    async render(container) {
-        const contacts = await this.ctx.data.getContacts();
-        const expenseCategories = await this.ctx.data.getCategories('expense');
-        let defaultCategory = expenseCategories.find(c => c.id === 'food') || 
-                              expenseCategories.find(c => c.id === 'others') || 
-                              expenseCategories[0];
-                              
-        const defaultCategoryId = defaultCategory ? defaultCategory.id : 'others';
+  async render(container) {
+    const contacts = await this.ctx.data.getContacts()
+    const expenseCategories = await this.ctx.data.getCategories('expense')
+    const defaultCategory =
+      expenseCategories.find(c => c.id === 'food') ||
+      expenseCategories.find(c => c.id === 'others') ||
+      expenseCategories[0]
 
-        container.innerHTML = `
+    const defaultCategoryId = defaultCategory ? defaultCategory.id : 'others'
+
+    container.innerHTML = `
             <div class="px-4 pb-24 pt-4 space-y-4">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                     <!-- Mode Switcher -->
@@ -80,12 +88,20 @@ export default {
                             
                             <!-- Contact List (Checkboxes) -->
                             <div class="space-y-2 max-h-48 overflow-y-auto mb-3 custom-scrollbar">
-                                ${contacts.length > 0 ? contacts.map(c => `
+                                ${
+                                  contacts.length > 0
+                                    ? contacts
+                                        .map(
+                                          c => `
                                     <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
                                         <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
                                         <span class="ml-3 font-medium text-gray-700">${c.name}</span>
                                     </label>
-                                `).join('') : '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'}
+                                `
+                                        )
+                                        .join('')
+                                    : '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'
+                                }
                             </div>
                             
                             <!-- Add New Contact -->
@@ -133,175 +149,202 @@ export default {
                     </button>
                 </div>
             </div>
-        `;
+        `
 
-        this.bindEvents(contacts, defaultCategoryId);
-    },
+    this.bindEvents(contacts, defaultCategoryId)
+  },
 
-    bindEvents(initialContacts, defaultCategoryId) {
-        let contacts = [...initialContacts];
-        const modeIPaidBtn = document.getElementById('mode-i-paid');
-        const modeFriendPaidBtn = document.getElementById('mode-friend-paid');
-        const payerSection = document.getElementById('payer-section');
-        const contactSection = document.getElementById('contact-section');
-        const amountInput = document.getElementById('split-amount');
-        const includeMeCb = document.getElementById('include-me');
-        const resultCard = document.getElementById('result-card');
-        const createBtn = document.getElementById('create-debt-btn');
-        const payerSelect = document.getElementById('payer-select');
-        const addContactBtn = document.getElementById('add-contact-btn');
-        const newContactInput = document.getElementById('new-contact-name');
-        const categorySelect = document.getElementById('split-category');
+  bindEvents(initialContacts, defaultCategoryId) {
+    const contacts = [...initialContacts]
+    const modeIPaidBtn = document.getElementById('mode-i-paid')
+    const modeFriendPaidBtn = document.getElementById('mode-friend-paid')
+    const payerSection = document.getElementById('payer-section')
+    const contactSection = document.getElementById('contact-section')
+    const amountInput = document.getElementById('split-amount')
+    const includeMeCb = document.getElementById('include-me')
+    const resultCard = document.getElementById('result-card')
+    const createBtn = document.getElementById('create-debt-btn')
+    const payerSelect = document.getElementById('payer-select')
+    const addContactBtn = document.getElementById('add-contact-btn')
+    const newContactInput = document.getElementById('new-contact-name')
+    const categorySelect = document.getElementById('split-category')
 
-        let mode = 'i-paid'; // or 'friend-paid'
+    let mode = 'i-paid' // or 'friend-paid'
 
-        const updateUI = () => {
-            const amount = parseFloat(amountInput.value) || 0;
-            const selectedContacts = [...document.querySelectorAll('input[name="split-contact"]:checked')];
-            let count = selectedContacts.length;
-            if (includeMeCb.checked) count++;
-            
-            if (count > 0 && amount > 0) {
-                const perPerson = Math.ceil(amount / count); // Use ceil to avoid decimals issues
-                document.getElementById('result-amount').textContent = `$${perPerson}`;
-                document.getElementById('preview-total').textContent = `$${amount}`;
-                resultCard.classList.remove('opacity-50', 'grayscale');
-                createBtn.disabled = false;
-                document.getElementById('split-count-display').textContent = `${count} 人分攤`;
-            } else {
-                resultCard.classList.add('opacity-50', 'grayscale');
-                createBtn.disabled = true;
-                document.getElementById('split-count-display').textContent = `${count} 人分攤`;
-            }
-        };
+    const updateUI = () => {
+      const amount = parseFloat(amountInput.value) || 0
+      const selectedContacts = [
+        ...document.querySelectorAll('input[name="split-contact"]:checked'),
+      ]
+      let count = selectedContacts.length
+      if (includeMeCb.checked) count++
 
-        const switchMode = (newMode) => {
-            mode = newMode;
-            if (mode === 'i-paid') {
-                modeIPaidBtn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm', 'font-bold');
-                modeIPaidBtn.classList.remove('text-gray-500', 'font-medium');
-                modeFriendPaidBtn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm', 'font-bold');
-                modeFriendPaidBtn.classList.add('text-gray-500', 'font-medium');
-                
-                payerSection.classList.add('hidden');
-                contactSection.classList.remove('hidden'); 
-                document.getElementById('result-title').textContent = '每人應付給您';
-                createBtn.textContent = '建立欠款與記帳紀錄';
-            } else {
-                modeFriendPaidBtn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm', 'font-bold');
-                modeFriendPaidBtn.classList.remove('text-gray-500', 'font-medium');
-                modeIPaidBtn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm', 'font-bold');
-                modeIPaidBtn.classList.add('text-gray-500', 'font-medium');
+      if (count > 0 && amount > 0) {
+        const perPerson = Math.ceil(amount / count) // Use ceil to avoid decimals issues
+        document.getElementById('result-amount').textContent = `$${perPerson}`
+        document.getElementById('preview-total').textContent = `$${amount}`
+        resultCard.classList.remove('opacity-50', 'grayscale')
+        createBtn.disabled = false
+        document.getElementById('split-count-display').textContent =
+          `${count} 人分攤`
+      } else {
+        resultCard.classList.add('opacity-50', 'grayscale')
+        createBtn.disabled = true
+        document.getElementById('split-count-display').textContent =
+          `${count} 人分攤`
+      }
+    }
 
-                payerSection.classList.remove('hidden');
-                contactSection.classList.remove('hidden'); 
-                document.getElementById('result-title').textContent = '您應付給對方';
-                createBtn.textContent = '建立欠款紀錄';
-            }
-            updateUI();
-        };
+    const switchMode = newMode => {
+      mode = newMode
+      if (mode === 'i-paid') {
+        modeIPaidBtn.classList.add(
+          'bg-white',
+          'text-indigo-600',
+          'shadow-sm',
+          'font-bold'
+        )
+        modeIPaidBtn.classList.remove('text-gray-500', 'font-medium')
+        modeFriendPaidBtn.classList.remove(
+          'bg-white',
+          'text-indigo-600',
+          'shadow-sm',
+          'font-bold'
+        )
+        modeFriendPaidBtn.classList.add('text-gray-500', 'font-medium')
 
-        modeIPaidBtn.addEventListener('click', () => switchMode('i-paid'));
-        modeFriendPaidBtn.addEventListener('click', () => switchMode('friend-paid'));
+        payerSection.classList.add('hidden')
+        contactSection.classList.remove('hidden')
+        document.getElementById('result-title').textContent = '每人應付給您'
+        createBtn.textContent = '建立欠款與記帳紀錄'
+      } else {
+        modeFriendPaidBtn.classList.add(
+          'bg-white',
+          'text-indigo-600',
+          'shadow-sm',
+          'font-bold'
+        )
+        modeFriendPaidBtn.classList.remove('text-gray-500', 'font-medium')
+        modeIPaidBtn.classList.remove(
+          'bg-white',
+          'text-indigo-600',
+          'shadow-sm',
+          'font-bold'
+        )
+        modeIPaidBtn.classList.add('text-gray-500', 'font-medium')
 
-        amountInput.addEventListener('input', updateUI);
-        includeMeCb.addEventListener('change', updateUI);
-        document.addEventListener('change', (e) => {
-            if (e.target.name === 'split-contact') updateUI();
-        });
+        payerSection.classList.remove('hidden')
+        contactSection.classList.remove('hidden')
+        document.getElementById('result-title').textContent = '您應付給對方'
+        createBtn.textContent = '建立欠款紀錄'
+      }
+      updateUI()
+    }
 
-        // Add Contact Logic
-        addContactBtn.addEventListener('click', async () => {
-             const name = newContactInput.value.trim();
-             if (name) {
-                 const newId = await this.ctx.data.addContact({ name });
-                 const newContact = { id: newId, name };
-                 contacts.push(newContact);
-                 
-                 // Refresh list (Quick hack: append label)
-                 const wrapper = document.querySelector('.custom-scrollbar');
-                 const label = document.createElement('label');
-                 label.className = 'flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors';
-                 label.innerHTML = `
+    modeIPaidBtn.addEventListener('click', () => switchMode('i-paid'))
+    modeFriendPaidBtn.addEventListener('click', () => switchMode('friend-paid'))
+
+    amountInput.addEventListener('input', updateUI)
+    includeMeCb.addEventListener('change', updateUI)
+    document.addEventListener('change', e => {
+      if (e.target.name === 'split-contact') updateUI()
+    })
+
+    // Add Contact Logic
+    addContactBtn.addEventListener('click', async () => {
+      const name = newContactInput.value.trim()
+      if (name) {
+        const newId = await this.ctx.data.addContact({ name })
+        const newContact = { id: newId, name }
+        contacts.push(newContact)
+
+        // Refresh list (Quick hack: append label)
+        const wrapper = document.querySelector('.custom-scrollbar')
+        const label = document.createElement('label')
+        label.className =
+          'flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors'
+        label.innerHTML = `
                       <input type="checkbox" name="split-contact" value="${newId}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" checked>
                       <span class="ml-3 font-medium text-gray-700">${name}</span>
-                 `;
-                 wrapper.appendChild(label);
-                 
-                 // Also update select if exists
-                 const option = document.createElement('option');
-                 option.value = newId;
-                 option.textContent = name;
-                 payerSelect.appendChild(option);
+                 `
+        wrapper.appendChild(label)
 
-                 newContactInput.value = '';
-                 updateUI();
-             }
-        });
+        // Also update select if exists
+        const option = document.createElement('option')
+        option.value = newId
+        option.textContent = name
+        payerSelect.appendChild(option)
 
-        createBtn.addEventListener('click', async () => {
-            const amount = parseFloat(amountInput.value);
-            const note = document.getElementById('split-note').value;
-            const categoryId = categorySelect.value || defaultCategoryId;
-            const selectedContacts = [...document.querySelectorAll('input[name="split-contact"]:checked')];
-            let count = selectedContacts.length;
-            if (includeMeCb.checked) count++;
-            
-            if (count === 0) return;
+        newContactInput.value = ''
+        updateUI()
+      }
+    })
 
-            const perPerson = Math.ceil(amount / count);
+    createBtn.addEventListener('click', async () => {
+      const amount = parseFloat(amountInput.value)
+      const note = document.getElementById('split-note').value
+      const categoryId = categorySelect.value || defaultCategoryId
+      const selectedContacts = [
+        ...document.querySelectorAll('input[name="split-contact"]:checked'),
+      ]
+      let count = selectedContacts.length
+      if (includeMeCb.checked) count++
 
-            if (mode === 'i-paid') {
-                 // 1. Create Expense Record for ME (Total Amount)
-                 await this.ctx.data.addRecord({
-                     amount: amount,
-                     type: 'expense',
-                     category: categoryId,
-                     date: new Date().toISOString().split('T')[0],
-                     description: `${note || '分帳'} (總額 $${amount}, ${count}人分)`
-                 });
+      if (count === 0) return
 
-                 // 2. Create Debts (Receivable) for selected contacts
-                 for (const cb of selectedContacts) {
-                     const contactId = parseInt(cb.value);
-                     await this.ctx.data.addDebt({
-                         contactId,
-                         type: 'receivable',
-                         amount: perPerson,
-                         date: new Date().toISOString().split('T')[0],
-                         description: `${note || '分帳'} (應付 $${perPerson})`
-                     });
-                 }
-                 this.ctx.ui.showToast(`已建立記帳與 ${selectedContacts.length} 筆欠款`);
-            } else {
-                // Friend Paid
-                // I owe Friend X.
-                // My Expense = perPerson (My Share).
-                
-                const payerId = parseInt(payerSelect.value);
-                const payerName = payerSelect.options[payerSelect.selectedIndex].text;
-                
-                const debtId = await this.ctx.data.addDebt({
-                    contactId: payerId,
-                    type: 'payable',
-                    amount: perPerson,
-                    date: new Date().toISOString().split('T')[0],
-                    description: `${note || '分帳'} (欠 ${payerName})`
-                });
+      const perPerson = Math.ceil(amount / count)
 
-                await this.ctx.data.addRecord({
-                    amount: perPerson,
-                    type: 'expense',
-                    category: categoryId,
-                    date: new Date().toISOString().split('T')[0],
-                    description: `${note || '分帳'} (欠 ${payerName})`,
-                    debtId: debtId
-                });
-                
-                this.ctx.ui.showToast(`已建立記帳與欠款紀錄`);
-            }
-            
-            this.ctx.ui.navigateTo('#records');
-        });
-    }
+      if (mode === 'i-paid') {
+        // 1. Create Expense Record for ME (Total Amount)
+        await this.ctx.data.addRecord({
+          amount: amount,
+          type: 'expense',
+          category: categoryId,
+          date: new Date().toISOString().split('T')[0],
+          description: `${note || '分帳'} (總額 $${amount}, ${count}人分)`,
+        })
+
+        // 2. Create Debts (Receivable) for selected contacts
+        for (const cb of selectedContacts) {
+          const contactId = parseInt(cb.value)
+          await this.ctx.data.addDebt({
+            contactId,
+            type: 'receivable',
+            amount: perPerson,
+            date: new Date().toISOString().split('T')[0],
+            description: `${note || '分帳'} (應付 $${perPerson})`,
+          })
+        }
+        this.ctx.ui.showToast(`已建立記帳與 ${selectedContacts.length} 筆欠款`)
+      } else {
+        // Friend Paid
+        // I owe Friend X.
+        // My Expense = perPerson (My Share).
+
+        const payerId = parseInt(payerSelect.value)
+        const payerName = payerSelect.options[payerSelect.selectedIndex].text
+
+        const debtId = await this.ctx.data.addDebt({
+          contactId: payerId,
+          type: 'payable',
+          amount: perPerson,
+          date: new Date().toISOString().split('T')[0],
+          description: `${note || '分帳'} (欠 ${payerName})`,
+        })
+
+        await this.ctx.data.addRecord({
+          amount: perPerson,
+          type: 'expense',
+          category: categoryId,
+          date: new Date().toISOString().split('T')[0],
+          description: `${note || '分帳'} (欠 ${payerName})`,
+          debtId: debtId,
+        })
+
+        this.ctx.ui.showToast(`已建立記帳與欠款紀錄`)
+      }
+
+      this.ctx.ui.navigateTo('#records')
+    })
+  },
 }

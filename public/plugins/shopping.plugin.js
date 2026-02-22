@@ -1,63 +1,68 @@
 export default {
-    meta: {
-        id: 'com.walkingfish.shopping_list',
-        name: '待辦購物清單',
-        version: '1.3',
-        description: '在首頁顯示購物清單，買完直接記帳！',
-        author: 'The walking fish 步行魚',
-        icon: 'fa-list-check'
-    },
-    init(context) {
-        this.context = context;
-        this.items = context.storage.getJSON('list') || [];
-        
-        // Register Home Widget
-        // Register Home Widget
-        context.ui.registerHomeWidget('com.walkingfish.shopping_list', (container) => this.renderWidget(container));
-    },
+  meta: {
+    id: 'com.walkingfish.shopping_list',
+    name: '待辦購物清單',
+    version: '1.3',
+    description: '在首頁顯示購物清單，買完直接記帳！',
+    author: 'The walking fish 步行魚',
+    icon: 'fa-list-check',
+  },
+  init(context) {
+    this.context = context
+    this.items = context.storage.getJSON('list') || []
 
-    save() {
-        this.context.storage.setJSON('list', this.items);
-    },
+    // Register Home Widget
+    // Register Home Widget
+    context.ui.registerHomeWidget('com.walkingfish.shopping_list', container =>
+      this.renderWidget(container)
+    )
+  },
 
-    addItem(name) {
-        if (!name.trim()) return;
-        this.items.push({ id: Date.now(), name: name.trim(), checked: false });
-        this.save();
-        this.renderList();
-    },
+  save() {
+    this.context.storage.setJSON('list', this.items)
+  },
 
-    async checkItem(id) {
-        const item = this.items.find(i => i.id === id);
-        if (!item) return;
+  addItem(name) {
+    if (!name.trim()) return
+    this.items.push({ id: Date.now(), name: name.trim(), checked: false })
+    this.save()
+    this.renderList()
+  },
 
-        // Confirm purchase
-        const confirmed = await this.context.ui.showConfirm('已購買？', `是否將 "${item.name}" 加入支出紀錄？`);
-        
-        if (confirmed) {
-            // Remove from list
-            this.items = this.items.filter(i => i.id !== id);
-            this.save();
-            this.renderList();
+  async checkItem(id) {
+    const item = this.items.find(i => i.id === id)
+    if (!item) return
 
-            // Navigate to Add Page with pre-filled data
-            this.context.ui.openAddPage({
-                type: 'expense',
-                description: item.name,
-                category: 'shopping' // Or let user choose
-            });
-        }
-    },
+    // Confirm purchase
+    const confirmed = await this.context.ui.showConfirm(
+      '已購買？',
+      `是否將 "${item.name}" 加入支出紀錄？`
+    )
 
-    deleteItem(id) {
-        this.items = this.items.filter(i => i.id !== id);
-        this.save();
-        this.renderList();
-    },
+    if (confirmed) {
+      // Remove from list
+      this.items = this.items.filter(i => i.id !== id)
+      this.save()
+      this.renderList()
 
-    renderWidget(container) {
-        this.container = container; 
-        container.innerHTML = `
+      // Navigate to Add Page with pre-filled data
+      this.context.ui.openAddPage({
+        type: 'expense',
+        description: item.name,
+        category: 'shopping', // Or let user choose
+      })
+    }
+  },
+
+  deleteItem(id) {
+    this.items = this.items.filter(i => i.id !== id)
+    this.save()
+    this.renderList()
+  },
+
+  renderWidget(container) {
+    this.container = container
+    container.innerHTML = `
             <div class="bg-white rounded-xl shadow-sm border border-wabi-border p-4">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="font-bold text-wabi-primary flex items-center gap-2">
@@ -78,34 +83,36 @@ export default {
                 </ul>
                 ${this.items.length === 0 ? '<p class="text-xs text-center text-gray-400 py-2">清單是空的，太棒了！</p>' : ''}
             </div>
-        `;
+        `
 
-        this.listEl = container.querySelector('#shop-list');
-        this.inputEl = container.querySelector('#shop-add-input');
-        
-        // Bind Events
-        container.querySelector('#shop-add-btn').addEventListener('click', () => {
-            this.addItem(this.inputEl.value);
-            this.inputEl.value = '';
-        });
+    this.listEl = container.querySelector('#shop-list')
+    this.inputEl = container.querySelector('#shop-add-input')
 
-        // Enter key
-        this.inputEl.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.addItem(this.inputEl.value);
-                this.inputEl.value = '';
-            }
-        });
+    // Bind Events
+    container.querySelector('#shop-add-btn').addEventListener('click', () => {
+      this.addItem(this.inputEl.value)
+      this.inputEl.value = ''
+    })
 
-        this.renderList();
-    },
+    // Enter key
+    this.inputEl.addEventListener('keypress', e => {
+      if (e.key === 'Enter') {
+        this.addItem(this.inputEl.value)
+        this.inputEl.value = ''
+      }
+    })
 
-    renderList() {
-        if (!this.listEl) return;
-        
-        this.container.querySelector('.count-badge').textContent = this.items.length;
-        
-        this.listEl.innerHTML = this.items.map(item => `
+    this.renderList()
+  },
+
+  renderList() {
+    if (!this.listEl) return
+
+    this.container.querySelector('.count-badge').textContent = this.items.length
+
+    this.listEl.innerHTML = this.items
+      .map(
+        item => `
             <li class="flex items-center justify-between group p-2 hover:bg-gray-50 rounded-lg transition-colors">
                 <div class="flex items-center gap-3 cursor-pointer item-click-area" data-id="${item.id}">
                     <div class="w-5 h-5 rounded border border-gray-300 flex items-center justify-center hover:border-wabi-primary transition-colors">
@@ -117,22 +124,24 @@ export default {
                     <i class="fa-solid fa-times"></i>
                 </button>
             </li>
-        `).join('');
+        `
+      )
+      .join('')
 
-        // Bind Item Events
-        this.listEl.querySelectorAll('.item-click-area').forEach(el => {
-            el.addEventListener('click', () => {
-                const id = parseInt(el.dataset.id, 10);
-                this.checkItem(id);
-            });
-        });
+    // Bind Item Events
+    this.listEl.querySelectorAll('.item-click-area').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = parseInt(el.dataset.id, 10)
+        this.checkItem(id)
+      })
+    })
 
-        this.listEl.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const id = parseInt(btn.dataset.id, 10);
-                this.deleteItem(id);
-            });
-        });
-    }
-};
+    this.listEl.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const id = parseInt(btn.dataset.id, 10)
+        this.deleteItem(id)
+      })
+    })
+  },
+}
