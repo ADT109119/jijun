@@ -1,5 +1,20 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.2.5": {
+    date: "2026-02-22",
+    title: "程式碼優化與 AdBlocker bug 修復",
+    features: [
+      "重構舊版單體 main.js 為使用 Router 和 Page 類別的模組化架構",
+      "建立獨立的 Router (src/js/router.js) 來處理基於 hash 的路由",
+      "將各頁面邏輯抽離至 src/js/pages/ 中的獨立類別 (例如：HomePage, AddPage, SettingsPage)"
+    ],
+    bugfixes: [
+      "重新命名 adService.js 為 rewardService.js，繞過廣告攔截器 (Ad-blocker) 的阻擋，修復應用程式在載入時崩潰的問題"
+    ],
+    improvements: [
+      "簡化 main.js，將其職責專注於初始化和依賴項注入"
+    ]
+  },
   "2.1.2.4": {
     date: "2026-02-22",
     title: "程式架構優化",

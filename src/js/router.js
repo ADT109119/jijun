@@ -4,6 +4,7 @@ export class Router {
     constructor(app) {
         this.app = app;
         this.routes = {};
+        this.currentHash = null;
         this.navItems = document.querySelectorAll('.nav-item');
     }
 
@@ -24,8 +25,8 @@ export class Router {
     async handleRouteChange() {
         const hash = window.location.hash || '#home';
         // Allow re-rendering same hash if needed? No, main.js prevented it.
-        if (hash === this.app.currentHash) return;
-        this.app.currentHash = hash;
+        if (hash === this.currentHash) return;
+        this.currentHash = hash;
 
         const [pageName, query] = hash.substring(1).split('?');
         const params = new URLSearchParams(query);

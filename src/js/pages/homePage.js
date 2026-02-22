@@ -106,9 +106,10 @@ export class HomePage {
         const month = parseInt(selectedMonth.split('-')[1]) - 1;
         const { startDate, endDate } = getMonthRange(year, month);
 
-        const stats = await this.app.dataService.getStatistics(startDate, endDate, null, true); // Exclude transfers from totals
-
-        let allRecords = await this.app.dataService.getRecords();
+        const [stats, allRecords] = await Promise.all([
+            this.app.dataService.getStatistics(startDate, endDate, null, true), // Exclude transfers from totals
+            this.app.dataService.getRecords()
+        ]);
         const recentRecords = allRecords.slice(0, 5);
 
         const balanceCardTitle = document.querySelector('.page.active .bg-wabi-surface p:first-child');

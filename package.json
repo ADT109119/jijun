@@ -1,6 +1,6 @@
 {
   "name": "easy-accounting-pwa",
-  "version": "2.1.2.4",
+  "version": "2.1.2.5",
   "description": "現代化輕鬆記帳 PWA 應用程式",
   "type": "module",
   "scripts": {

@@ -102,8 +102,6 @@ export class AddPage {
         const advancedMode = await this.app.dataService.getSetting('advancedAccountModeEnabled');
         const advancedModeEnabled = !!advancedMode?.value;
 
-        const debtManagement = await this.app.dataService.getSetting('debtManagementEnabled');
-        // const debtManagementEnabled = !!debtManagement?.value; // Unused variable in original code, but checked inside render
 
         let currentType = 'expense';
         let currentAmount = '0';
@@ -474,7 +472,7 @@ export class AddPage {
 
                         // Build contact options for edit
                         const contactOptions = contacts.map(c =>
-                            `<option value="${c.id}" ${c.id === debt.contactId ? 'selected' : ''}>${c.name}</option>`
+                            `<option value="${c.id}" ${c.id === debt.contactId ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
                         ).join('');
 
                         // Show debt info panel
@@ -630,7 +628,7 @@ export class AddPage {
             document.removeEventListener('keydown', this._keypadListener);
         }
         this._keypadListener = (e) => {
-            if (this.app.currentHash && !this.app.currentHash.startsWith('#add')) return;
+            if (this.app.router.currentHash && !this.app.router.currentHash.startsWith('#add')) return;
             if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
             if (e.ctrlKey || e.altKey || e.metaKey) return;
 
