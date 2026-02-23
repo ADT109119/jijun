@@ -274,6 +274,8 @@ export class SyncSettingsPage {
                                 const result = await this.app.dataService.importData(file);
                                 showToast(result.message, result.success ? 'success' : 'error');
                                 if (result.success) {
+                                    // Reset sync history to avoid replaying old changes
+                                    await this.app.syncService.markAllRemoteChangesAsPulled();
                                     this.app.currentHash = null;
                                     window.location.hash = '#home';
                                 }

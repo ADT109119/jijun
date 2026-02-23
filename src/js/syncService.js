@@ -551,7 +551,7 @@ export class SyncService {
             await this._applyUpdate(storeName, recordId, data);
             break;
           case 'delete':
-            await this._applyDelete(storeName, recordId);
+            await this._applyDelete(storeName, recordId, data);
             break;
           default:
             console.warn('[SyncService] Unknown operation:', operation);
@@ -559,6 +559,37 @@ export class SyncService {
       } catch (err) {
         console.error('[SyncService] Error applying change:', err, change);
       }
+    }
+  }
+
+  /**
+   * 標記所有遠端變更為已拉取（用於 Restore 後避免重複套用舊變更）
+   */
+  async markAllRemoteChangesAsPulled() {
+    await this.ensureValidToken();
+    try {
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
+          { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        );
+        if (!res.ok) throw new Error('Failed to list sync logs');
+        const data = await res.json();
+        const files = data.files || [];
+
+        const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
+        const pullTimestamps = lastPull?.value || {};
+
+        for (const file of files) {
+            pullTimestamps[file.name] = new Date(file.modifiedTime).getTime();
+        }
+
+        await this.dataService.saveSetting({
+            key: 'sync_last_pull_timestamps',
+            value: pullTimestamps
+        });
+        console.log('[SyncService] Marked all remote changes as pulled.');
+    } catch (err) {
+        console.error('[SyncService] markAllRemoteChangesAsPulled error:', err);
     }
   }
 
@@ -873,6 +904,16 @@ export class SyncService {
    * @param {object} data
    */
   async _applyAdd(storeName, data) {
+    // Check duplication by UUID
+    if (data.uuid) {
+        const existing = await this.dataService.getByUUID(storeName, data.uuid);
+        if (existing) {
+            // If exists, treat as update to avoid duplicate
+            await this._applyUpdateWithId(storeName, existing.id, data);
+            return;
+        }
+    }
+
     switch (storeName) {
       case 'records':
         await this.dataService.addRecord(data, true);
@@ -897,45 +938,81 @@ export class SyncService {
    * @param {object} data
    */
   async _applyUpdate(storeName, recordId, data) {
-    switch (storeName) {
-      case 'records':
-        await this.dataService.updateRecord(recordId, data, true);
-        break;
-      case 'accounts':
-        await this.dataService.updateAccount(recordId, data, true);
-        break;
-      case 'contacts':
-        await this.dataService.updateContact(recordId, data, true);
-        break;
-      case 'debts':
-        await this.dataService.updateDebt(recordId, data, true);
-        break;
-      default:
-        console.warn('[SyncService] Unknown store for update:', storeName);
+    // Try to find by UUID first
+    if (data.uuid) {
+        const existing = await this.dataService.getByUUID(storeName, data.uuid);
+        if (existing) {
+            await this._applyUpdateWithId(storeName, existing.id, data);
+            return;
+        } else {
+            // Not found by UUID, treat as Add (upsert)
+            await this._applyAdd(storeName, data);
+            return;
+        }
     }
+
+    // Legacy fallback (might fail or duplicate if ID mismatches, but unavoidable without UUID)
+    console.warn('[SyncService] Legacy update without UUID ignored:', storeName);
+  }
+
+  async _applyUpdateWithId(storeName, id, data) {
+    switch (storeName) {
+        case 'records':
+          await this.dataService.updateRecord(id, data, true);
+          break;
+        case 'accounts':
+          await this.dataService.updateAccount(id, data, true);
+          break;
+        case 'contacts':
+          await this.dataService.updateContact(id, data, true);
+          break;
+        case 'debts':
+          await this.dataService.updateDebt(id, data, true);
+          break;
+        default:
+          console.warn('[SyncService] Unknown store for update:', storeName);
+      }
   }
 
   /**
    * @param {string} storeName
    * @param {number|string} recordId
+   * @param {object} data (Optional, may contain UUID)
    */
-  async _applyDelete(storeName, recordId) {
-    switch (storeName) {
-      case 'records':
-        await this.dataService.deleteRecord(recordId, true);
-        break;
-      case 'accounts':
-        await this.dataService.deleteAccount(recordId, true);
-        break;
-      case 'contacts':
-        await this.dataService.deleteContact(recordId, true);
-        break;
-      case 'debts':
-        await this.dataService.deleteDebt(recordId, true);
-        break;
-      default:
-        console.warn('[SyncService] Unknown store for delete:', storeName);
+  async _applyDelete(storeName, recordId, data) {
+    // Try to find by UUID
+    if (data && data.uuid) {
+        const existing = await this.dataService.getByUUID(storeName, data.uuid);
+        if (existing) {
+            await this._applyDeleteWithId(storeName, existing.id);
+            return;
+        } else {
+            // Not found, maybe already deleted
+            return;
+        }
     }
+
+    // Legacy fallback
+    console.warn('[SyncService] Legacy delete without UUID ignored:', storeName);
+  }
+
+  async _applyDeleteWithId(storeName, id) {
+    switch (storeName) {
+        case 'records':
+          await this.dataService.deleteRecord(id, true);
+          break;
+        case 'accounts':
+          await this.dataService.deleteAccount(id, true);
+          break;
+        case 'contacts':
+          await this.dataService.deleteContact(id, true);
+          break;
+        case 'debts':
+          await this.dataService.deleteDebt(id, true);
+          break;
+        default:
+          console.warn('[SyncService] Unknown store for delete:', storeName);
+      }
   }
 }
 

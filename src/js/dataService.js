@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 6 // Schema version 6: Add sync_log
+    this.dbVersion = 7 // Schema version 7: UUIDs for sync deduplication
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
@@ -30,7 +30,7 @@ class DataService {
     try {
       if (openDB && typeof openDB === 'function') {
         this.db = await openDB(this.dbName, this.dbVersion, {
-          upgrade(db, oldVersion, newVersion, transaction) {
+          async upgrade(db, oldVersion, newVersion, transaction) {
             // Schema version 1
             if (oldVersion < 1) {
               if (!db.objectStoreNames.contains('records')) {
@@ -116,6 +116,33 @@ class DataService {
                     syncStore.createIndex('timestamp', 'timestamp');
                 }
             }
+            // Schema version 7: UUIDs for sync deduplication
+            if (oldVersion < 7) {
+                const stores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions'];
+                for (const storeName of stores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store = transaction.objectStore(storeName);
+                        if (!store.indexNames.contains('uuid')) {
+                            store.createIndex('uuid', 'uuid', { unique: true });
+                        }
+                        // Iterate and assign UUIDs to existing records
+                        let cursor = await store.openCursor();
+                        while (cursor) {
+                            const updateData = cursor.value;
+                            if (!updateData.uuid) {
+                                // Simple UUID v4 generator
+                                updateData.uuid = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID() :
+                                    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                                        return v.toString(16);
+                                    });
+                                await cursor.update(updateData);
+                            }
+                            cursor = await cursor.continue();
+                        }
+                    }
+                }
+            }
           }
         })
         
@@ -157,6 +184,17 @@ class DataService {
         console.error('資料遷移失敗:', error)
       }
     }
+  }
+
+  // 生成 UUID
+  generateUUID() {
+    if (self.crypto && self.crypto.randomUUID) {
+      return self.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   // 轉換舊資料格式
@@ -216,7 +254,8 @@ class DataService {
   async addRecord(record, skipLog = false) {
     const recordWithTimestamp = {
       ...record,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      uuid: record.uuid || this.generateUUID()
     }
 
     if (this.useLocalStorage) {
@@ -250,6 +289,19 @@ class DataService {
     } catch (error) {
       console.error('新增記錄失敗:', error)
       throw error
+    }
+  }
+
+  // Get by UUID (Generic)
+  async getByUUID(storeName, uuid) {
+    try {
+      if (this.useLocalStorage) return null;
+      const tx = this.db.transaction(storeName, 'readonly');
+      const index = tx.store.index('uuid');
+      return await index.get(uuid);
+    } catch (err) {
+      console.error(`Failed to get by UUID from ${storeName}:`, err);
+      return null;
     }
   }
 
@@ -342,7 +394,11 @@ class DataService {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       
+      let uuid = null;
       if (!skipLog) {
+        const record = await store.get(id);
+        uuid = record?.uuid;
+
         const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
         if (!shouldDelete) throw new Error('Delete cancelled by plugin');
       }
@@ -352,7 +408,7 @@ class DataService {
       
       if (!skipLog) {
         await this.triggerHook('onRecordDeleteAfter', { id });
-        await this.logChange('delete', 'records', id, null);
+        await this.logChange('delete', 'records', id, { uuid });
       }
 
       return true
@@ -366,6 +422,7 @@ class DataService {
   async addRecurringTransaction(transaction) {
     try {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      if (!transaction.uuid) transaction.uuid = this.generateUUID();
       const id = await tx.store.add(transaction);
       await tx.done;
       return id;
@@ -644,9 +701,30 @@ class DataService {
                 const oldId = debt.id;
                 const { id, ...debtData } = debt;
                 
+                // Ensure UUID
+                if (!debtData.uuid) debtData.uuid = this.generateUUID();
+
                 // Update contactId
                 if (debtData.contactId) {
                     debtData.contactId = oldContactIdToNewIdMap.get(debtData.contactId);
+                }
+
+                // Fix missing amount fields (e.g. from legacy data)
+                if (debtData.remainingAmount === undefined || debtData.remainingAmount === null) {
+                    debtData.remainingAmount = debtData.originalAmount ?? debtData.amount ?? 0;
+                }
+                if (debtData.originalAmount === undefined || debtData.originalAmount === null) {
+                    debtData.originalAmount = debtData.amount ?? debtData.remainingAmount ?? 0;
+                }
+
+                // Fix potential bug where remainingAmount is 0 but debt is not settled
+                if (debtData.remainingAmount === 0 && !debtData.settled) {
+                    const paid = (debtData.payments || []).reduce((sum, p) => sum + p.amount, 0);
+                    if (debtData.originalAmount > paid) {
+                        debtData.remainingAmount = debtData.originalAmount - paid;
+                    } else if (debtData.originalAmount > 0 && paid === 0) {
+                        debtData.remainingAmount = debtData.originalAmount;
+                    }
                 }
 
                 // Insert directly to preserve logical state (amount, payments, settled)
@@ -689,6 +767,9 @@ class DataService {
             // Add timestamp if missing or use existing, ensure new ID generation
             if (!recordData.timestamp) recordData.timestamp = Date.now();
             
+            // Ensure UUID
+            if (!recordData.uuid) recordData.uuid = this.generateUUID();
+
             const newRecordId = await txRecords.store.add(recordData);
             if (oldRecordId) {
                 oldRecordIdToNewIdMap.set(oldRecordId, newRecordId);
@@ -913,6 +994,7 @@ class DataService {
   async addAccount(account, skipLog = false) {
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
+      if (!account.uuid) account.uuid = this.generateUUID();
       const id = await tx.store.add(account);
       await tx.done;
       if (!skipLog) await this.logChange('add', 'accounts', id, { ...account, id });
@@ -962,9 +1044,14 @@ class DataService {
   async deleteAccount(id, skipLog = false) {
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+          const record = await tx.store.get(id);
+          uuid = record?.uuid;
+      }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'accounts', id, null);
+      if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
       return true;
     } catch (error) {
       throw error;
@@ -1056,7 +1143,8 @@ class DataService {
       const contactData = {
         name: contact.name,
         avatarFileId: contact.avatarFileId || null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        uuid: contact.uuid || this.generateUUID()
       };
       const tx = this.db.transaction('contacts', 'readwrite');
       const id = await tx.store.add(contactData);
@@ -1108,9 +1196,14 @@ class DataService {
   async deleteContact(id, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+          const record = await tx.store.get(id);
+          uuid = record?.uuid;
+      }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'contacts', id, null);
+      if (!skipLog) await this.logChange('delete', 'contacts', id, { uuid });
       return true;
     } catch (error) {
       console.error(`Failed to delete contact ${id}:`, error);
@@ -1133,7 +1226,8 @@ class DataService {
         settled: false,
         settledAt: null,
         payments: [],                // Partial payment history
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        uuid: debt.uuid || this.generateUUID()
       };
       const tx = this.db.transaction('debts', 'readwrite');
       const id = await tx.store.add(debtData);
@@ -1197,9 +1291,14 @@ class DataService {
   async deleteDebt(id, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+          const record = await tx.store.get(id);
+          uuid = record?.uuid;
+      }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'debts', id, null);
+      if (!skipLog) await this.logChange('delete', 'debts', id, { uuid });
       return true;
     } catch (error) {
       console.error(`Failed to delete debt ${id}:`, error);
