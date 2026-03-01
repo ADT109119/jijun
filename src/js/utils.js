@@ -6,7 +6,7 @@
  * @returns {string} 轉義後的安全字串
  */
 export function escapeHTML(str) {
-  if (str == null) return ''
+  if (str === null || str === undefined) return ''
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -164,7 +164,7 @@ export function deepClone(obj) {
   if (typeof obj === 'object') {
     const clonedObj = {}
     for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         clonedObj[key] = deepClone(obj[key])
       }
     }
@@ -203,7 +203,7 @@ export function getDateRange(period) {
   const today = new Date()
   
   switch (period) {
-    case 'last7days':
+    case 'last7days': {
       // 近七日
       const sevenDaysAgo = new Date(today)
       sevenDaysAgo.setDate(today.getDate() - 6) // 包含今天，所以是 -6
@@ -211,7 +211,8 @@ export function getDateRange(period) {
         startDate: formatDateToString(sevenDaysAgo),
         endDate: formatDateToString(today)
       }
-    case 'lastmonth':
+    }
+    case 'lastmonth': {
       // 上月
       const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
@@ -219,7 +220,8 @@ export function getDateRange(period) {
         startDate: formatDateToString(lastMonthStart),
         endDate: formatDateToString(lastMonthEnd)
       }
-    case 'year':
+    }
+    case 'year': {
       // 今年
       const yearStart = new Date(today.getFullYear(), 0, 1)
       const yearEnd = new Date(today.getFullYear(), 11, 31)
@@ -227,13 +229,15 @@ export function getDateRange(period) {
         startDate: formatDateToString(yearStart),
         endDate: formatDateToString(yearEnd)
       }
-    case 'today':
+    }
+    case 'today': {
       const todayStr = formatDateToString(today)
       return {
         startDate: todayStr,
         endDate: todayStr
       }
-    case 'week':
+    }
+    case 'week': {
       // 本週
       const startOfWeek = new Date(today)
       startOfWeek.setDate(today.getDate() - today.getDay())
@@ -243,7 +247,8 @@ export function getDateRange(period) {
         startDate: formatDateToString(startOfWeek),
         endDate: formatDateToString(endOfWeek)
       }
-    case 'month':
+    }
+    case 'month': {
       // 本月 - 使用年月直接構造，避免時區問題
       const year = today.getFullYear()
       const month = today.getMonth() + 1 // getMonth() 返回 0-11，需要 +1
@@ -257,12 +262,14 @@ export function getDateRange(period) {
         startDate: startOfMonth,
         endDate: endOfMonth
       }
-    default:
+    }
+    default: {
       const defaultStr = formatDateToString(today)
       return {
         startDate: defaultStr,
         endDate: defaultStr
       }
+    }
   }
 }
 

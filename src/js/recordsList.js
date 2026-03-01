@@ -98,7 +98,7 @@ export class RecordsListManager {
             ? { startDate: this.filters.customStartDate, endDate: this.filters.customEndDate }
             : getDateRange(this.filters.period);
 
-        let records = await this.dataService.getRecords({ 
+        const records = await this.dataService.getRecords({
             startDate: dateRange.startDate, 
             endDate: dateRange.endDate 
         });
@@ -245,7 +245,7 @@ export class RecordsListManager {
                 // - 收入 + 別人欠我: 顯示 $0，還清後 → 原額
                 // - 支出 + 我欠別人: 顯示 $0，還清後 → 原額
                 // - 收入 + 我欠別人 (先收): 顯示原額，還清後 → $0
-                let displayLogic = { showZero: false, showArrow: false, arrowToZero: false };
+                const displayLogic = { showZero: false, showArrow: false, arrowToZero: false };
                 
                 if (hasDebt && debt) {
                     if (isIncome && isReceivable) {

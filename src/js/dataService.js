@@ -101,7 +101,7 @@ class DataService {
             // Schema version 5: Plugin System
             if (oldVersion < 5) {
                 if (!db.objectStoreNames.contains('plugins')) {
-                    const pluginStore = db.createObjectStore('plugins', { keyPath: 'id' });
+                    db.createObjectStore('plugins', { keyPath: 'id' });
                     // id: plugin identifier (e.g. 'com.example.myplugin')
                     // name, version, script (blob/string), enabled (bool)
                 }
@@ -133,7 +133,7 @@ class DataService {
                                 // Simple UUID v4 generator
                                 updateData.uuid = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID() :
                                     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                                        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
                                         return v.toString(16);
                                     });
                                 await cursor.update(updateData);
@@ -192,7 +192,7 @@ class DataService {
       return self.crypto.randomUUID();
     }
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
   }
@@ -1042,20 +1042,16 @@ class DataService {
   }
 
   async deleteAccount(id, skipLog = false) {
-    try {
-      const tx = this.db.transaction('accounts', 'readwrite');
-      let uuid = null;
-      if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
-      }
-      await tx.store.delete(id);
-      await tx.done;
-      if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
-      return true;
-    } catch (error) {
-      throw error;
+    const tx = this.db.transaction('accounts', 'readwrite');
+    let uuid = null;
+    if (!skipLog) {
+        const record = await tx.store.get(id);
+        uuid = record?.uuid;
     }
+    await tx.store.delete(id);
+    await tx.done;
+    if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
+    return true;
   }
 
   // 清除所有帳戶

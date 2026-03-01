@@ -494,7 +494,7 @@ export class SyncService {
     const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
     const pullTimestamps = lastPull?.value || {};
 
-    let allRemoteChanges = [];
+    const allRemoteChanges = [];
 
     for (const file of files) {
       // 跳過自己的 sync log
