@@ -900,7 +900,7 @@ export class DebtManager {
 
   async showContactModal(contactToEdit = null) {
     const isEdit = !!contactToEdit;
-    let avatarFileId = contactToEdit?.avatarFileId || null;
+    const avatarFileId = contactToEdit?.avatarFileId || null;
     let avatarPreviewUrl = null;
 
     // Load existing avatar if editing

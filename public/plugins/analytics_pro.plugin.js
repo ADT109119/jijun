@@ -294,7 +294,7 @@ export default {
         // Let's assume accounts current balance is "Now".
         
         const accounts = await this.ctx.data.getAccounts();
-        let currentTotalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+        const currentTotalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
 
         // Date points: End of last 6 months + today
         const months = [];

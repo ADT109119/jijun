@@ -37,7 +37,7 @@ export default {
     async render(container) {
         const contacts = await this.ctx.data.getContacts();
         const expenseCategories = await this.ctx.data.getCategories('expense');
-        let defaultCategory = expenseCategories.find(c => c.id === 'food') || 
+        const defaultCategory = expenseCategories.find(c => c.id === 'food') ||
                               expenseCategories.find(c => c.id === 'others') || 
                               expenseCategories[0];
                               
@@ -139,7 +139,7 @@ export default {
     },
 
     bindEvents(initialContacts, defaultCategoryId) {
-        let contacts = [...initialContacts];
+        const contacts = [...initialContacts];
         const modeIPaidBtn = document.getElementById('mode-i-paid');
         const modeFriendPaidBtn = document.getElementById('mode-friend-paid');
         const payerSection = document.getElementById('payer-section');

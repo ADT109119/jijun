@@ -65,7 +65,7 @@ export default {
     },
 
     checkAchievements(record) {
-        let newUnlocks = [];
+        const newUnlocks = [];
         this.stats.totalRecords++;
         
         if (record.type === 'expense') {

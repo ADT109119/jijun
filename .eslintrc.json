@@ -1,7 +1,13 @@
 {
   "env": {
     "browser": true,
-    "es2021": true
+    "es2021": true,
+    "serviceworker": true,
+    "node": true
+  },
+  "globals": {
+    "__APP_VERSION__": "readonly",
+    "googletag": "readonly"
   },
   "extends": ["eslint:recommended"],
   "parserOptions": {
