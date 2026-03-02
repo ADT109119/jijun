@@ -536,13 +536,36 @@ export class SyncService {
 
   /**
    * 合併遠端變更到本地 IndexedDB（Last-Write-Wins）
+   * 套用順序：accounts → contacts → debts → records，確保被外鍵指向的記錄已存在。
    * @param {Array} changes 變更列表
    */
   async applyRemoteChanges(changes) {
+    // 分層：由不依賴到依賴順序套用
+    const storeOrder = ['accounts', 'contacts', 'debts', 'records', 'recurring_transactions'];
+    const buckets = {};
+    storeOrder.forEach(s => (buckets[s] = []));
+    const others = [];
+
     for (const change of changes) {
+      if (storeOrder.includes(change.storeName)) {
+        buckets[change.storeName].push(change);
+      } else {
+        others.push(change);
+      }
+    }
+
+    const ordered = [
+      ...buckets.accounts,
+      ...buckets.contacts,
+      ...buckets.debts,
+      ...buckets.records,
+      ...buckets.recurring_transactions,
+      ...others,
+    ];
+
+    for (const change of ordered) {
       try {
         const { operation, storeName, recordId, data } = change;
-
         switch (operation) {
           case 'add':
             await this._applyAdd(storeName, data);
@@ -896,37 +919,127 @@ export class SyncService {
   }
 
   // ──────────────────────────────────────────────
-  // Apply Remote Changes Helpers
+  // Apply Remote Changes — UUID Resolve Helpers
   // ──────────────────────────────────────────────
+
+  /**
+   * 將遠端 debt 的 contactUuid 解析為本地 contactId。
+   * @param {object} data
+   * @returns {object} 已修正 contactId 的 data
+   */
+  async _resolveDebtContactId(data) {
+    if (!data.contactUuid) return data;
+    try {
+      const contacts = await this.dataService.getContacts();
+      const matched = contacts.find(c => c.uuid === data.contactUuid);
+      return { ...data, contactId: matched ? matched.id : null };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
+   * 將遠端 debt 的 recordUuid 解析為本地 recordId。
+   * @param {object} data
+   * @returns {object} 已修正 recordId 的 data
+   */
+  async _resolveDebtRecordId(data) {
+    if (!data.recordUuid) return data;
+    try {
+      const rec = await this.dataService.getByUUID('records', data.recordUuid);
+      return { ...data, recordId: rec ? rec.id : null };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
+   * 將遠端 record 的 accountUuid 解析為本地 accountId。
+   * @param {object} data
+   * @returns {object} 已修正 accountId 的 data
+   */
+  async _resolveRecordAccountId(data) {
+    if (!data.accountUuid) return data;
+    try {
+      const accounts = await this.dataService.getAccounts();
+      const matched = accounts.find(a => a.uuid === data.accountUuid);
+      return { ...data, accountId: matched ? matched.id : null };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
+   * 將遠端 record 的 debtUuid 解析為本地 debtId。
+   * @param {object} data
+   * @returns {object} 已修正 debtId 的 data
+   */
+  async _resolveRecordDebtId(data) {
+    if (!data.debtUuid) return data;
+    try {
+      const debt = await this.dataService.getByUUID('debts', data.debtUuid);
+      return { ...data, debtId: debt ? debt.id : null };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
+   * 將遠端 recurring_transaction 的 accountUuid 解析為本地 accountId。
+   * @param {object} data
+   * @returns {object} 已修正 accountId 的 data
+   */
+  async _resolveRecurringAccountId(data) {
+    if (!data.accountUuid) return data;
+    try {
+      const accounts = await this.dataService.getAccounts();
+      const matched = accounts.find(a => a.uuid === data.accountUuid);
+      return { ...data, accountId: matched ? matched.id : null };
+    } catch (_) {
+      return data;
+    }
+  }
 
   /**
    * @param {string} storeName
    * @param {object} data
    */
   async _applyAdd(storeName, data) {
-    // Check duplication by UUID
+    // 如果 UUID 已存在則当新增處理，避免重複
     if (data.uuid) {
         const existing = await this.dataService.getByUUID(storeName, data.uuid);
         if (existing) {
-            // If exists, treat as update to avoid duplicate
             await this._applyUpdateWithId(storeName, existing.id, data);
             return;
         }
     }
 
     switch (storeName) {
-      case 'records':
-        await this.dataService.addRecord(data, true);
+      case 'records': {
+        // 同步時解析全部外鍵 UUID
+        let resolved = await this._resolveRecordAccountId(data);
+        resolved = await this._resolveRecordDebtId(resolved);
+        await this.dataService.addRecord(resolved, true);
         break;
+      }
       case 'accounts':
         await this.dataService.addAccount(data, true);
         break;
       case 'contacts':
         await this.dataService.addContact(data, true);
         break;
-      case 'debts':
-        await this.dataService.addDebt(data, true);
+      case 'debts': {
+        // 同步時解析 contactUuid → contactId， recordUuid → recordId
+        let resolved = await this._resolveDebtContactId(data);
+        resolved = await this._resolveDebtRecordId(resolved);
+        await this.dataService.addDebt(resolved, true);
         break;
+      }
+      case 'recurring_transactions': {
+        const resolved = await this._resolveRecurringAccountId(data);
+        await this.dataService.addRecurringTransaction(resolved);
+        break;
+      }
       default:
         console.warn('[SyncService] Unknown store for add:', storeName);
     }
@@ -957,18 +1070,31 @@ export class SyncService {
 
   async _applyUpdateWithId(storeName, id, data) {
     switch (storeName) {
-        case 'records':
-          await this.dataService.updateRecord(id, data, true);
+        case 'records': {
+          // 同步時解析全部外鍵 UUID
+          let resolved = await this._resolveRecordAccountId(data);
+          resolved = await this._resolveRecordDebtId(resolved);
+          await this.dataService.updateRecord(id, resolved, true);
           break;
+        }
         case 'accounts':
           await this.dataService.updateAccount(id, data, true);
           break;
         case 'contacts':
           await this.dataService.updateContact(id, data, true);
           break;
-        case 'debts':
-          await this.dataService.updateDebt(id, data, true);
+        case 'debts': {
+          // 同步時解析 contactUuid → contactId， recordUuid → recordId
+          let resolved = await this._resolveDebtContactId(data);
+          resolved = await this._resolveDebtRecordId(resolved);
+          await this.dataService.updateDebt(id, resolved, true);
           break;
+        }
+        case 'recurring_transactions': {
+          const resolved = await this._resolveRecurringAccountId(data);
+          await this.dataService.updateRecurringTransaction(id, resolved);
+          break;
+        }
         default:
           console.warn('[SyncService] Unknown store for update:', storeName);
       }

@@ -252,10 +252,29 @@ class DataService {
 
   // 新增記錄
   async addRecord(record, skipLog = false) {
+    // 補充 accountUuid / debtUuid 以便跨裝置同步時正確解析外鍵
+    let resolvedAccountUuid = record.accountUuid || null;
+    if (record.accountId && !resolvedAccountUuid) {
+      try {
+        const account = await this.db.get('accounts', record.accountId);
+        if (account?.uuid) resolvedAccountUuid = account.uuid;
+      } catch (_) { /* 查不到帳號不影響儲存 */ }
+    }
+
+    let resolvedDebtUuid = record.debtUuid || null;
+    if (record.debtId && !resolvedDebtUuid) {
+      try {
+        const debt = await this.db.get('debts', record.debtId);
+        if (debt?.uuid) resolvedDebtUuid = debt.uuid;
+      } catch (_) { /* 查不到欠款不影響儲存 */ }
+    }
+
     const recordWithTimestamp = {
       ...record,
       timestamp: Date.now(),
-      uuid: record.uuid || this.generateUUID()
+      uuid: record.uuid || this.generateUUID(),
+      ...(resolvedAccountUuid ? { accountUuid: resolvedAccountUuid } : {}),
+      ...(resolvedDebtUuid   ? { debtUuid:    resolvedDebtUuid    } : {}),
     }
 
     if (this.useLocalStorage) {
@@ -352,17 +371,40 @@ class DataService {
     }
 
     try {
+      // 若更新包含 accountId / debtId，同步更新對應 UUID
+      let extraUpdates = {};
+      if (updates.accountId !== undefined) {
+        if (updates.accountId) {
+          try {
+            const account = await this.db.get('accounts', updates.accountId);
+            if (account?.uuid) extraUpdates.accountUuid = account.uuid;
+          } catch (_) { /* 查不到帳號不影響更新 */ }
+        } else {
+          extraUpdates.accountUuid = null;
+        }
+      }
+      if (updates.debtId !== undefined) {
+        if (updates.debtId) {
+          try {
+            const debt = await this.db.get('debts', updates.debtId);
+            if (debt?.uuid) extraUpdates.debtUuid = debt.uuid;
+          } catch (_) { /* 查不到欠款不影響更新 */ }
+        } else {
+          extraUpdates.debtUuid = null;
+        }
+      }
+
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       const record = await store.get(id)
       
       if (record) {
-        let finalUpdates = updates;
+        let finalUpdates = { ...updates, ...extraUpdates };
         if (!skipLog) {
           // Hook: Before Update
-          const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates });
+          const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates: finalUpdates });
           if (!updatesWithHook) throw new Error('Update cancelled by plugin');
-          finalUpdates = updatesWithHook.updates || updates;
+          finalUpdates = updatesWithHook.updates || finalUpdates;
         }
         
         const updatedRecord = { ...record, ...finalUpdates }
@@ -421,9 +463,24 @@ class DataService {
   // --- Recurring Transaction Methods ---
   async addRecurringTransaction(transaction) {
     try {
-      const tx = this.db.transaction('recurring_transactions', 'readwrite');
       if (!transaction.uuid) transaction.uuid = this.generateUUID();
-      const id = await tx.store.add(transaction);
+
+      // 補充 accountUuid 以便跨裝置同步時正確解析 accountId
+      let accountUuid = transaction.accountUuid || null;
+      if (transaction.accountId && !accountUuid) {
+        try {
+          const account = await this.db.get('accounts', transaction.accountId);
+          if (account?.uuid) accountUuid = account.uuid;
+        } catch (_) { /* 查不到帳號不影響儲存 */ }
+      }
+
+      const dataToSave = {
+        ...transaction,
+        ...(accountUuid ? { accountUuid } : {}),
+      };
+
+      const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      const id = await tx.store.add(dataToSave);
       await tx.done;
       return id;
     } catch (error) {
@@ -443,10 +500,23 @@ class DataService {
 
   async updateRecurringTransaction(id, updates) {
     try {
+      // 若更新包含 accountId，同步更新 accountUuid
+      let extraUpdates = {};
+      if (updates.accountId !== undefined) {
+        if (updates.accountId) {
+          try {
+            const account = await this.db.get('accounts', updates.accountId);
+            if (account?.uuid) extraUpdates.accountUuid = account.uuid;
+          } catch (_) { /* 查不到帳號不影響更新 */ }
+        } else {
+          extraUpdates.accountUuid = null;
+        }
+      }
+
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const transaction = await tx.store.get(id);
       if (transaction) {
-        const updatedTransaction = { ...transaction, ...updates };
+        const updatedTransaction = { ...transaction, ...updates, ...extraUpdates };
         await tx.store.put(updatedTransaction);
         await tx.done;
         return updatedTransaction;
@@ -1136,12 +1206,20 @@ class DataService {
   // --- Contact Methods ---
   async addContact(contact, skipLog = false) {
     try {
-      const contactData = {
-        name: contact.name,
-        avatarFileId: contact.avatarFileId || null,
-        createdAt: Date.now(),
-        uuid: contact.uuid || this.generateUUID()
-      };
+      let contactData;
+      if (skipLog) {
+        // 同步接收路徑：保留所有傳入欄位
+        contactData = { ...contact, uuid: contact.uuid || this.generateUUID() };
+      } else {
+        // 正規新建路徑：使用明確欄位結構
+        contactData = {
+          name: contact.name,
+          avatarFileId: contact.avatarFileId || null,
+          createdAt: Date.now(),
+          uuid: contact.uuid || this.generateUUID()
+        };
+      }
+      delete contactData.id; // 讓 IndexedDB 自動產生，避免 key 衝突
       const tx = this.db.transaction('contacts', 'readwrite');
       const id = await tx.store.add(contactData);
       await tx.done;
@@ -1210,21 +1288,61 @@ class DataService {
   // --- Debt Methods ---
   async addDebt(debt, skipLog = false) {
     try {
-      const amount = debt.amount;
-      const debtData = {
-        type: debt.type, // 'receivable' | 'payable'
-        contactId: debt.contactId,
-        originalAmount: amount,      // Original debt amount
-        remainingAmount: amount,     // Remaining amount (for partial payments)
-        recordId: debt.recordId || null, // Linked record ID
-        date: debt.date,
-        description: debt.description || '',
-        settled: false,
-        settledAt: null,
-        payments: [],                // Partial payment history
-        createdAt: Date.now(),
-        uuid: debt.uuid || this.generateUUID()
-      };
+      // 補充 contactUuid / recordUuid 以便跨裝置同步時正確解析外鍵
+      let contactUuid = debt.contactUuid || null;
+      if (debt.contactId && !contactUuid) {
+        try {
+          const contact = await this.db.get('contacts', debt.contactId);
+          if (contact?.uuid) contactUuid = contact.uuid;
+        } catch (_) { /* 查不到聯絡人不影響儲存 */ }
+      }
+
+      let recordUuid = debt.recordUuid || null;
+      if (debt.recordId && !recordUuid) {
+        try {
+          const rec = await this.db.get('records', debt.recordId);
+          if (rec?.uuid) recordUuid = rec.uuid;
+        } catch (_) { /* 查不到紀錄不影響儲存 */ }
+      }
+
+      let debtData;
+
+      if (skipLog) {
+        // ── 同步接收路徑：保留所有傳入欄位（含 settled、payments、金額等）──
+        // 不可用硬編碼值（如 settled:false）覆寫從遠端接收的真實狀態
+        const amount = debt.amount ?? debt.originalAmount ?? debt.remainingAmount ?? 0;
+        debtData = {
+          ...debt,
+          contactUuid,
+          ...(recordUuid ? { recordUuid } : {}),
+          originalAmount: debt.originalAmount ?? amount,
+          remainingAmount: debt.remainingAmount ?? amount,
+          uuid: debt.uuid || this.generateUUID(),
+        };
+      } else {
+        // ── 正規新建路徑：使用明確初始化的欄位結構 ──
+        const amount = debt.amount;
+        debtData = {
+          type: debt.type, // 'receivable' | 'payable'
+          contactId: debt.contactId,
+          contactUuid,                 // 跨裝置同步：重映射 contactId
+          originalAmount: amount,      // Original debt amount
+          remainingAmount: amount,     // Remaining amount (for partial payments)
+          recordId: debt.recordId || null,
+          ...(recordUuid ? { recordUuid } : {}), // 跨裝置同步：重映射 recordId
+          date: debt.date,
+          description: debt.description || '',
+          settled: false,
+          settledAt: null,
+          payments: [],                // Partial payment history
+          createdAt: Date.now(),
+          uuid: debt.uuid || this.generateUUID()
+        };
+      }
+
+      // 移除 id（讓 IndexedDB 自動產生），避免 key 衝突
+      delete debtData.id;
+
       const tx = this.db.transaction('debts', 'readwrite');
       const id = await tx.store.add(debtData);
       await tx.done;
@@ -1268,10 +1386,33 @@ class DataService {
 
   async updateDebt(id, updates, skipLog = false) {
     try {
+      // 若更新包含 contactId / recordId，同步更新對應 UUID
+      let extraUpdates = {};
+      if (updates.contactId !== undefined) {
+        if (updates.contactId) {
+          try {
+            const contact = await this.db.get('contacts', updates.contactId);
+            if (contact?.uuid) extraUpdates.contactUuid = contact.uuid;
+          } catch (_) { /* 查不到聯絡人不影響更新 */ }
+        } else {
+          extraUpdates.contactUuid = null;
+        }
+      }
+      if (updates.recordId !== undefined) {
+        if (updates.recordId) {
+          try {
+            const record = await this.db.get('records', updates.recordId);
+            if (record?.uuid) extraUpdates.recordUuid = record.uuid;
+          } catch (_) { /* 查不到紀錄不影響更新 */ }
+        } else {
+          extraUpdates.recordUuid = null;
+        }
+      }
+
       const tx = this.db.transaction('debts', 'readwrite');
       const debt = await tx.store.get(id);
       if (debt) {
-        const updatedDebt = { ...debt, ...updates };
+        const updatedDebt = { ...debt, ...updates, ...extraUpdates };
         await tx.store.put(updatedDebt);
         await tx.done;
         if (!skipLog) await this.logChange('update', 'debts', id, updatedDebt);
