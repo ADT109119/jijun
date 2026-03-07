@@ -17,6 +17,10 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^7.2.0",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^7.6.0",
+    "@capacitor/core": "^8.2.0",
     "chart.js": "^4.4.0",
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^4.1.0",
@@ -29,5 +33,13 @@
     "輕鬆記帳"
   ],
   "author": "ADT109119",
-  "license": "MIT"
+  "license": "MIT",
+  "adConfig": {
+    "isTesting": true,
+    "adsenseClientId": "ca-pub-1250445032458691",
+    "adsenseAdSlot": "3474478906",
+    "gptRewardedAdUnitPath": "/23341410483/jijun",
+    "admobBannerId": "ca-app-pub-3940256099942544/6300978111",
+    "admobRewardedId": "ca-app-pub-3940256099942544/5224354917"
+  }
 }
