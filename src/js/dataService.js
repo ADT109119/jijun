@@ -281,6 +281,10 @@ class DataService {
       return this.addRecordToLocalStorage(recordWithTimestamp)
     }
 
+    // 同步接收路徑：移除來源裝置的 integer id，讓 IndexedDB 自動產生新 id
+    // 若保留來源 id，接收端可能因 key 衝突而静默失敗
+    if (skipLog) delete recordWithTimestamp.id;
+
     try {
       // Hook: Before Save
       let recordToSave = recordWithTimestamp;
@@ -1063,9 +1067,12 @@ class DataService {
   // --- Account Methods ---
   async addAccount(account, skipLog = false) {
     try {
-      const tx = this.db.transaction('accounts', 'readwrite');
       if (!account.uuid) account.uuid = this.generateUUID();
-      const id = await tx.store.add(account);
+      // 同步接收路徑：移除來源裝置的 integer id，讓 IndexedDB 自動產生新 id
+      const { id: _rid, ...accountWithoutId } = account;
+      const dataToAdd = skipLog ? accountWithoutId : account;
+      const tx = this.db.transaction('accounts', 'readwrite');
+      const id = await tx.store.add(dataToAdd);
       await tx.done;
       if (!skipLog) await this.logChange('add', 'accounts', id, { ...account, id });
       return id;

@@ -535,33 +535,39 @@ export class SyncService {
   }
 
   /**
-   * 合併遠端變更到本地 IndexedDB（Last-Write-Wins）
-   * 套用順序：accounts → contacts → debts → records，確保被外鍵指向的記錄已存在。
+   * 合併遠端變更到本地 IndexedDB（兩階段混合排序）
    * @param {Array} changes 變更列表
    */
   async applyRemoteChanges(changes) {
-    // 分層：由不依賴到依賴順序套用
-    const storeOrder = ['accounts', 'contacts', 'debts', 'records', 'recurring_transactions'];
-    const buckets = {};
-    storeOrder.forEach(s => (buckets[s] = []));
-    const others = [];
+    if (!changes || changes.length === 0) return;
 
-    for (const change of changes) {
-      if (storeOrder.includes(change.storeName)) {
-        buckets[change.storeName].push(change);
-      } else {
-        others.push(change);
-      }
-    }
+    // 定義建立依賴的拓撲順序 (Add階段限定)
+    const topoOrder = ['accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
-    const ordered = [
-      ...buckets.accounts,
-      ...buckets.contacts,
-      ...buckets.debts,
-      ...buckets.records,
-      ...buckets.recurring_transactions,
-      ...others,
-    ];
+    const adds = changes.filter(c => c.operation === 'add');
+    const updates = changes.filter(c => c.operation === 'update');
+    const deletes = changes.filter(c => c.operation === 'delete');
+
+    // 1. Add 階段：必須先依照依賴關係拓撲排序，確保基礎資料先建立
+    // 同一層級（或是未定義的 store）則依照時間先後發生順序（越舊的越先）
+    adds.sort((a, b) => {
+        const orderA = topoOrder.indexOf(a.storeName);
+        const orderB = topoOrder.indexOf(b.storeName);
+        
+        // 若兩個 store 皆在拓撲清單且權重不同，以拓撲為主
+        if (orderA !== -1 && orderB !== -1 && orderA !== orderB) {
+            return orderA - orderB;
+        }
+        // 否則退回到時間軸排序
+        return a.timestamp - b.timestamp;
+    });
+
+    // 2. Update 與 Delete 階段：嚴格遵守時間先後順序，確保最新狀態蓋掉舊狀態 (Last-Write-Wins)
+    updates.sort((a, b) => a.timestamp - b.timestamp);
+    deletes.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 依序執行：所有 Add -> 所有 Update -> 所有 Delete
+    const ordered = [...adds, ...updates, ...deletes];
 
     for (const change of ordered) {
       try {
