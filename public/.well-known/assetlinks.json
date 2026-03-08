@@ -1,8 +1,12 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "com.the_walking_fish.jijun.twa",
-        "sha256_cert_fingerprints": ["92:F4:86:AC:76:F0:92:73:D4:01:BF:AB:F5:F4:FA:1E:5C:A0:ED:12:4C:FC:A3:E3:7D:EE:B2:E0:DA:88:C6:1E"]
-      }
-    }]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.the_walking_fish.jijun.twa",
+      "sha256_cert_fingerprints": [
+        "92:F4:86:AC:76:F0:92:73:D4:01:BF:AB:F5:F4:FA:1E:5C:A0:ED:12:4C:FC:A3:E3:7D:EE:B2:E0:DA:88:C6:1E"
+      ]
+    }
+  }
+]

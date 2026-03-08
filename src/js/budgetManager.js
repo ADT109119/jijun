@@ -32,26 +32,32 @@ export class BudgetManager {
   async getBudgetStatus() {
     const dateRange = getDateRange('month')
     // Budget should not include transfers, so offset them
-    const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate, null, true);
-    
+    const stats = await this.dataService.getStatistics(
+      dateRange.startDate,
+      dateRange.endDate,
+      null,
+      true
+    )
+
     const spent = stats.totalExpense
     const remaining = Math.max(0, this.currentBudget - spent)
-    const percentage = this.currentBudget > 0 ? (spent / this.currentBudget) * 100 : 0
-    
+    const percentage =
+      this.currentBudget > 0 ? (spent / this.currentBudget) * 100 : 0
+
     return {
       budget: this.currentBudget,
       spent: spent,
       remaining: remaining,
       percentage: Math.min(100, percentage),
-      isOverBudget: spent > this.currentBudget
+      isOverBudget: spent > this.currentBudget,
     }
   }
 
   renderBudgetWidget() {
     return this.getBudgetStatus().then(status => {
-      const isOverBudget = status.isOverBudget;
-      const percentage = Math.min(100, status.percentage);
-      const waterLevel = 100 - percentage;
+      const isOverBudget = status.isOverBudget
+      const percentage = Math.min(100, status.percentage)
+      const waterLevel = 100 - percentage
 
       return `
         <div class="bg-wabi-surface p-4 rounded-lg shadow-sm border border-wabi-border mb-6">
@@ -62,7 +68,9 @@ export class BudgetManager {
             </button>
           </div>
           
-          ${status.budget > 0 ? `
+          ${
+            status.budget > 0
+              ? `
             <div class="budget-wave-container">
               <div class="budget-wave" style="top: ${waterLevel}%;"></div>
               <div class="budget-info">
@@ -73,12 +81,17 @@ export class BudgetManager {
                   <div class="text-xs text-wabi mt-1">${formatCurrency(status.spent)} / ${formatCurrency(status.budget)}</div>
               </div>
             </div>
-            ${isOverBudget ? `
+            ${
+              isOverBudget
+                ? `
               <div class="mt-3 p-2 bg-wabi-expense/10 border border-wabi-expense/20 rounded text-center">
                 <span class="text-wabi-expense text-sm">⚠️ 已超出預算 ${formatCurrency(status.spent - status.budget)}</span>
               </div>
-            ` : ''}
-          ` : `
+            `
+                : ''
+            }
+          `
+              : `
             <div class="text-center py-8">
               <div class="text-4xl mb-3">💰</div>
               <p class="text-wabi-text-secondary mb-4">設定每月預算來追蹤支出</p>
@@ -86,7 +99,8 @@ export class BudgetManager {
                 設定預算
               </button>
             </div>
-          `}
+          `
+          }
         </div>
       `
     })
@@ -98,8 +112,9 @@ export class BudgetManager {
 
     const modal = document.createElement('div')
     modal.id = 'budget-modal'
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
-    
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6">
         <h3 class="text-lg font-semibold mb-4 text-wabi-primary">設定每月預算</h3>
@@ -126,32 +141,36 @@ export class BudgetManager {
         </div>
       </div>
     `
-    
+
     document.body.appendChild(modal)
-    
+
     // 事件監聽
-    document.getElementById('save-budget-btn').addEventListener('click', async () => {
-      const amount = parseFloat(document.getElementById('budget-input').value)
-      if (amount >= 0) {
-        await this.saveBudget(amount)
-        this.closeBudgetModal()
-        if (window.app) {
-            window.app.loadBudgetWidget();
+    document
+      .getElementById('save-budget-btn')
+      .addEventListener('click', async () => {
+        const amount = parseFloat(document.getElementById('budget-input').value)
+        if (amount >= 0) {
+          await this.saveBudget(amount)
+          this.closeBudgetModal()
+          if (window.app) {
+            window.app.loadBudgetWidget()
+          }
         }
-      }
-    })
-    
-    document.getElementById('cancel-budget-btn').addEventListener('click', () => {
-      this.closeBudgetModal()
-    })
-    
+      })
+
+    document
+      .getElementById('cancel-budget-btn')
+      .addEventListener('click', () => {
+        this.closeBudgetModal()
+      })
+
     // 點擊背景關閉
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('click', e => {
       if (e.target === modal) {
         this.closeBudgetModal()
       }
     })
-    
+
     // 自動聚焦輸入框
     setTimeout(() => {
       document.getElementById('budget-input').focus()

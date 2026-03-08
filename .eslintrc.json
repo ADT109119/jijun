@@ -7,7 +7,13 @@
   },
   "globals": {
     "__APP_VERSION__": "readonly",
-    "googletag": "readonly"
+    "googletag": "readonly",
+    "__AD_ADSENSE_CLIENT_ID__": "readonly",
+    "__AD_ADSENSE_AD_SLOT__": "readonly",
+    "__AD_GPT_REWARDED_PATH__": "readonly",
+    "__AD_ADMOB_BANNER_ID__": "readonly",
+    "__AD_ADMOB_REWARDED_ID__": "readonly",
+    "__AD_IS_TESTING__": "readonly"
   },
   "extends": ["eslint:recommended"],
   "parserOptions": {
