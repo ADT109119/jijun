@@ -22,7 +22,7 @@ jobs:
 
             # Runs a single command using the runners shell
             - name: install dependencies
-              run: npm install
+              run: npm install --legacy-peer-deps
 
             # Runs a single command using the runners shell
             - name: try to build the project
