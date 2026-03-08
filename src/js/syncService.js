@@ -21,6 +21,10 @@ const SCOPES = [
  * @class SyncService
  * @description 提供 Google OAuth 登入、Drive 備份、多裝置同步功能
  */
+
+const isNative = typeof window !== 'undefined'
+    && window.Capacitor?.isNativePlatform?.() === true;
+
 export class SyncService {
   /**
    * @param {import('./dataService.js').default} dataService
@@ -140,13 +144,44 @@ export class SyncService {
   }
 
   /**
-   * 使用 Google Identity Services 發起 OAuth 登入
+   * 使用 Google Identity Services (Web) 或 GoogleAuth (Native) 發起 OAuth 登入
    * @returns {Promise<boolean>} 是否登入成功
    */
   async signIn() {
+    if (isNative) {
+      return this._signInNative();
+    }
+    return this._signInWeb();
+  }
+
+  /**
+   * 原生 App 登入：使用 @codetrix-studio/capacitor-google-auth
+   */
+  async _signInNative() {
+    try {
+      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+      await GoogleAuth.initialize(); // Initialize plugin
+      const result = await GoogleAuth.signIn();
+
+      if (!result.serverAuthCode) {
+        throw new Error('未取得 serverAuthCode (請確認 Google Cloud Console 設定了正確的 Web Client ID 且 forceCodeForRefreshToken為true)');
+      }
+
+      await this.handleAuthCallback(result.serverAuthCode);
+      return true;
+    } catch (e) {
+      console.error('[SyncService] Native signIn error:', e);
+      throw new Error('原生 Google 登入失敗: ' + (e.message || JSON.stringify(e)));
+    }
+  }
+
+  /**
+   * Web 登入：使用 Google Identity Services SDK
+   */
+  async _signInWeb() {
     return new Promise((resolve, reject) => {
       if (!window.google?.accounts?.oauth2) {
-        reject(new Error('Google Identity Services SDK 尚未載入'));
+        reject(new Error('Google Identity Services SDK 尚未載入 (WebView 中不支援此方式)'));
         return;
       }
 
@@ -254,6 +289,16 @@ export class SyncService {
    * 登出 — 清除所有 token 和狀態
    */
   async signOut() {
+    // 呼叫原生登出
+    if (isNative) {
+      try {
+        const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+        await GoogleAuth.signOut();
+      } catch (e) {
+        console.warn('[SyncService] Native signOut error:', e);
+      }
+    }
+
     this.accessToken = null;
     this.refreshToken = null;
     this.tokenExpiresAt = null;
