@@ -35,6 +35,8 @@ export class SettingsPage {
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">關於</h3>
                         ${this.createSettingItem('fa-solid fa-arrows-rotate', '檢查更新', 'check-update-btn')}
                         ${this.createSettingItem('fa-solid fa-file-lines', '更新日誌', 'changelog-btn')}
+                        ${this.createSettingItem('fa-solid fa-shield-halved', '隱私權政策', 'privacy-btn')}
+                        ${this.createSettingItem('fa-solid fa-scale-balanced', '授權條款', 'license-btn')}
                         <a href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-gray-100/50">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
@@ -204,6 +206,8 @@ export class SettingsPage {
 
         document.getElementById('check-update-btn').addEventListener('click', () => this.checkForUpdates());
         document.getElementById('changelog-btn').addEventListener('click', () => this.app.changelogManager.showChangelogModal());
+        document.getElementById('privacy-btn').addEventListener('click', () => { window.location.hash = '#privacy'; });
+        document.getElementById('license-btn').addEventListener('click', () => { window.location.hash = '#license'; });
 
         // New Listeners
         document.getElementById('force-update-btn').addEventListener('click', () => this.forceUpdate());

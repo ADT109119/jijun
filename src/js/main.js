@@ -22,6 +22,8 @@ import { StatsPage } from './pages/statsPage.js';
 import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
 import { StorePage } from './pages/storePage.js';
+import { PrivacyPage } from './pages/privacyPage.js';
+import { LicensePage } from './pages/licensePage.js';
 
 class EasyAccountingApp {
     constructor() {
@@ -111,6 +113,8 @@ class EasyAccountingApp {
         this.router.register('plugins', new PluginsPage(this));
         this.router.register('store', new StorePage(this));
         this.router.register('sync-settings', new SyncSettingsPage(this));
+        this.router.register('privacy', new PrivacyPage(this));
+        this.router.register('license', new LicensePage(this));
 
         // Start Router
         this.router.init();
