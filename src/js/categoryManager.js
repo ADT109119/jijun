@@ -1,5 +1,6 @@
 // 自定義分類管理模組
 import { CATEGORIES } from './categories.js'
+import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 
 export class CategoryManager {
   constructor() {
@@ -135,13 +136,12 @@ export class CategoryManager {
                   </span>
                 </button>
               </div>
+              <input type="text" id="icon-search-input" 
+                     placeholder="搜尋內建圖示... (例: heart)"
+                     class="w-full p-2 text-sm bg-transparent border border-wabi-border rounded-lg focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary mb-2">
             </div>
             <div class="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto border border-wabi-border rounded-lg p-3" id="icon-selector">
-              ${this.getAvailableIcons().map(icon => `
-                <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary" data-icon="${icon}">
-                  <i class="${icon}"></i>
-                </button>
-              `).join('')}
+              <!-- 圖標將從 JavaScript 動態渲染 -->
             </div>
           </div>
           
@@ -206,20 +206,64 @@ export class CategoryManager {
     // 預覽按鈕點擊
     previewIconBtn.addEventListener('click', updateIconPreview)
     
-    // 圖示選擇
-    document.querySelectorAll('.icon-option').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.icon-option').forEach(b => {
-          b.classList.remove('border-primary', 'bg-blue-50')
-          b.classList.add('border-gray-300')
+    // 圖示渲染邏輯
+    const iconSelector = document.getElementById('icon-selector')
+    
+    const bindIconSelection = () => {
+      document.querySelectorAll('.icon-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.icon-option').forEach(b => {
+            b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10')
+            b.classList.add('border-wabi-border')
+          })
+          btn.classList.remove('border-wabi-border')
+          btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10')
+          selectedIcon = btn.dataset.icon
+          // 更新自訂輸入框
+          customIconInput.value = selectedIcon
+          updateIconPreview()
         })
-        btn.classList.remove('border-gray-300')
-        btn.classList.add('border-primary', 'bg-blue-50')
-        selectedIcon = btn.dataset.icon
-        // 更新自訂輸入框
-        customIconInput.value = selectedIcon
-        updateIconPreview()
       })
+    }
+
+    const renderIcons = (icons) => {
+      iconSelector.innerHTML = icons.map(icon => `
+        <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${icon}" title="${icon}">
+          <i class="${icon}"></i>
+        </button>
+      `).join('')
+      
+      // 反白已選擇的圖標
+      if (selectedIcon) {
+         const btn = iconSelector.querySelector(`[data-icon="${selectedIcon}"]`)
+         if (btn) {
+             btn.classList.remove('border-wabi-border')
+             btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10')
+         }
+      }
+
+      bindIconSelection()
+    }
+
+    // 初始化顯示精選圖標
+    renderIcons(this.getAvailableIcons())
+
+    // 搜尋功能
+    const iconSearchInput = document.getElementById('icon-search-input')
+    iconSearchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim().toLowerCase()
+      if (!query) {
+        renderIcons(this.getAvailableIcons())
+        return
+      }
+      
+      const filteredIcons = FONT_AWESOME_ICONS.filter(icon => icon.toLowerCase().includes(query)).slice(0, 100) // 限制結果數量
+      
+      if (filteredIcons.length === 0) {
+          iconSelector.innerHTML = '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>'
+      } else {
+          renderIcons(filteredIcons)
+      }
     })
     
     // 顏色選擇

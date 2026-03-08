@@ -25,7 +25,7 @@ export class SettingsPage {
                     <!-- Data Management -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">資料管理</h3>
-                        ${this.createSettingItem('fa-solid fa-cloud', '雲端同步', 'cloud-sync-btn')}
+                        ${this.createSettingItem('fa-solid fa-cloud', '雲端備份&同步', 'cloud-sync-btn')}
                         ${this.createSettingItem('fa-solid fa-download', '匯出資料', 'export-data-btn')}
                         ${this.createSettingItem('fa-solid fa-upload', '匯入資料', 'import-data-btn')}
                         <input type="file" id="import-file-input" accept=".json" class="hidden">

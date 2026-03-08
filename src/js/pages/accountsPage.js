@@ -1,4 +1,5 @@
 import { formatCurrency, showToast, escapeHTML, formatDateToString } from '../utils.js';
+import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js';
 
 export class AccountsPage {
     constructor(app) {
@@ -129,27 +130,60 @@ export class AccountsPage {
         modal.id = 'account-form-modal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
         modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
-                <div>
-                    <label class="text-sm text-wabi-text-secondary">帳戶名稱</label>
-                    <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" required>
+                
+                <div class="flex-1 overflow-y-auto pr-2 space-y-4">
+                    <div>
+                        <label class="text-sm font-medium text-wabi-text-secondary">帳戶名稱</label>
+                        <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" required>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium text-wabi-text-secondary">初始餘額</label>
+                        <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-wabi-text-secondary mb-2">選擇圖示</label>
+                        <div class="mb-3">
+                            <div class="flex items-center space-x-2 mb-2">
+                                <input type="text" id="custom-icon-input" 
+                                       placeholder="設定預設 (如: fas fa-wallet)"
+                                       value="${accountToEdit?.icon || 'fa-solid fa-wallet'}"
+                                       class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-200/80 border border-wabi-border rounded-lg hover:bg-gray-300/80 transition-colors">
+                                  <span id="icon-preview" class="text-lg text-wabi-primary">
+                                    <i class="${accountToEdit?.icon || 'fa-solid fa-wallet'}"></i>
+                                  </span>
+                                </button>
+                            </div>
+                            <input type="text" id="icon-search-input" 
+                                   placeholder="搜尋內建圖示... (例: wallet)"
+                                   class="w-full p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary mb-2">
+                        </div>
+                        <div class="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto border border-wabi-border rounded-lg p-3 bg-wabi-surface" id="icon-selector">
+                            <!-- 圖標將從 JavaScript 動態渲染 -->
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-wabi-text-secondary mb-2">選擇顏色</label>
+                        <div class="grid grid-cols-6 gap-3 p-3 border border-wabi-border rounded-lg bg-wabi-surface" id="color-selector">
+                          ${this.getAvailableColors().map(color => `
+                            <button type="button" class="color-option w-8 h-8 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
+                            </button>
+                          `).join('')}
+                          <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-8 h-8 rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
+                            <i class="fas fa-palette text-wabi-text-secondary text-sm"></i>
+                            <input type="color" id="custom-color-picker-input" class="absolute w-0 h-0 opacity-0" value="#3B82F6">
+                          </label>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label class="text-sm text-wabi-text-secondary">初始餘額</label>
-                    <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface" ${isEdit ? 'disabled' : ''}>
-                </div>
-                <div>
-                    <label class="text-sm text-wabi-text-secondary">圖示 (Font Awesome)</label>
-                    <input type="text" id="account-icon-input" value="${accountToEdit?.icon || 'fa-solid fa-wallet'}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
-                </div>
-                <div>
-                    <label class="text-sm text-wabi-text-secondary">顏色 (Tailwind CSS)</label>
-                    <input type="text" id="account-color-input" value="${accountToEdit?.color || 'bg-blue-500'}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
-                </div>
-                <div class="flex gap-2 mt-6">
-                    <button id="save-account-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">儲存</button>
-                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+
+                <div class="flex gap-2 pt-4 border-t border-wabi-border mt-2">
+                    <button id="save-account-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">儲存</button>
+                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-gray-100/50 transition-colors">取消</button>
                 </div>
             </div>
         `;
@@ -162,6 +196,129 @@ export class AccountsPage {
             if (e.target === modal) closeModal();
         });
 
+        let selectedIcon = accountToEdit?.icon || 'fa-solid fa-wallet';
+        let selectedColor = accountToEdit?.color || 'bg-blue-500';
+
+        // 自訂圖標輸入
+        const customIconInput = document.getElementById('custom-icon-input');
+        const previewIconBtn = document.getElementById('preview-icon-btn');
+        const iconPreview = document.getElementById('icon-preview');
+
+        // 圖標預覽功能
+        const updateIconPreview = () => {
+          const iconClass = customIconInput.value.trim() || 'fa-solid fa-wallet';
+          iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
+          selectedIcon = iconClass;
+          document.querySelectorAll('.icon-option').forEach(b => {
+             b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10');
+             b.classList.add('border-wabi-border');
+          });
+        };
+
+        customIconInput.addEventListener('input', updateIconPreview);
+        customIconInput.addEventListener('keyup', updateIconPreview);
+        previewIconBtn.addEventListener('click', updateIconPreview);
+
+        // 圖示渲染邏輯
+        const iconSelector = document.getElementById('icon-selector');
+        
+        const bindIconSelection = () => {
+          document.querySelectorAll('.icon-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.querySelectorAll('.icon-option').forEach(b => {
+                b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10');
+                b.classList.add('border-wabi-border');
+              });
+              btn.classList.remove('border-wabi-border');
+              btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10');
+              selectedIcon = btn.dataset.icon;
+              customIconInput.value = selectedIcon;
+              updateIconPreview();
+            });
+          });
+        };
+
+        const renderIcons = (icons) => {
+          iconSelector.innerHTML = icons.map(icon => `
+            <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${icon}" title="${icon}">
+              <i class="${icon}"></i>
+            </button>
+          `).join('');
+          
+          if (selectedIcon) {
+             const btn = iconSelector.querySelector(`[data-icon="${selectedIcon}"]`);
+             if (btn) {
+                 btn.classList.remove('border-wabi-border');
+                 btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10');
+             }
+          }
+          bindIconSelection();
+        };
+
+        renderIcons(this.getAvailableIcons());
+
+        // 搜尋功能
+        const iconSearchInput = document.getElementById('icon-search-input');
+        iconSearchInput.addEventListener('input', (e) => {
+          const query = e.target.value.trim().toLowerCase();
+          if (!query) {
+            renderIcons(this.getAvailableIcons());
+            return;
+          }
+          const filteredIcons = FONT_AWESOME_ICONS.filter(icon => icon.toLowerCase().includes(query)).slice(0, 100);
+          if (filteredIcons.length === 0) {
+              iconSelector.innerHTML = '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>';
+          } else {
+              renderIcons(filteredIcons);
+          }
+        });
+
+        // 顏色選擇
+        const colorOptions = document.querySelectorAll('.color-option');
+        const customColorPickerInput = document.getElementById('custom-color-picker-input');
+        const customColorPickerLabel = document.getElementById('custom-color-picker-label');
+
+        const clearColorSelection = () => {
+          colorOptions.forEach(b => {
+            b.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+            b.classList.add('border-transparent');
+          });
+          customColorPickerLabel.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+          customColorPickerLabel.classList.add('border-dashed', 'border-wabi-border');
+          customColorPickerLabel.style.backgroundColor = 'transparent';
+        };
+
+        colorOptions.forEach(btn => {
+          btn.addEventListener('click', () => {
+            clearColorSelection();
+            btn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+            selectedColor = btn.dataset.color;
+          });
+        });
+
+        customColorPickerInput.addEventListener('input', (e) => {
+          clearColorSelection();
+          customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+          customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
+          customColorPickerLabel.style.backgroundColor = e.target.value;
+          selectedColor = e.target.value;
+        });
+
+        // 初始狀態
+        if (selectedColor) {
+          if (selectedColor.startsWith('#')) {
+            customColorPickerInput.value = selectedColor;
+            customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
+            customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
+            customColorPickerLabel.style.backgroundColor = selectedColor;
+          } else {
+            const selectedBtn = document.querySelector(`.color-option[data-color="${selectedColor}"]`);
+            if (selectedBtn) {
+              selectedBtn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+            }
+          }
+        }
+
         modal.querySelector('#save-account-btn').addEventListener('click', async () => {
             const name = document.getElementById('account-name-input').value;
             if (!name) {
@@ -172,8 +329,8 @@ export class AccountsPage {
             const accountData = {
                 name: name,
                 balance: parseFloat(document.getElementById('account-balance-input').value) || 0,
-                icon: document.getElementById('account-icon-input').value || 'fa-solid fa-wallet',
-                color: document.getElementById('account-color-input').value || 'bg-blue-500',
+                icon: selectedIcon,
+                color: selectedColor,
             };
 
             if (isEdit) {
@@ -290,5 +447,21 @@ export class AccountsPage {
             this.render(); // Re-render to show updated balances
             closeModal();
         });
+    }
+
+    getAvailableIcons() {
+      return [
+        'fas fa-wallet', 'fas fa-piggy-bank', 'fas fa-sack-dollar', 'fas fa-coins',
+        'fas fa-credit-card', 'fas fa-building-columns', 'fas fa-money-bill-wave', 'fas fa-vault'
+      ];
+    }
+
+    getAvailableColors() {
+      return [
+        'bg-slate-400', 'bg-stone-400', 'bg-red-400', 'bg-orange-400',
+        'bg-amber-400', 'bg-yellow-400', 'bg-lime-400', 'bg-green-400',
+        'bg-emerald-400', 'bg-teal-400', 'bg-cyan-400', 'bg-sky-400',
+        'bg-blue-400', 'bg-indigo-400', 'bg-violet-400', 'bg-purple-400'
+      ];
     }
 }

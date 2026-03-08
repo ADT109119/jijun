@@ -22,7 +22,7 @@ export class SyncSettingsPage {
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
                     </a>
-                    <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">雲端同步</h2>
+                    <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">雲端備份&同步</h2>
                     <div class="w-8"></div>
                 </div>
                 <div class="p-4 space-y-6 pb-24">

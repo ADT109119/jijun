@@ -1,7 +1,7 @@
 {
   "name": "easy-accounting-sync-server",
   "version": "1.0.0",
-  "description": "輕鬆記帳雲端同步伺服器 — Google OAuth Proxy",
+  "description": "輕鬆記帳雲端備份&同步伺服器 — Google OAuth Proxy",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
