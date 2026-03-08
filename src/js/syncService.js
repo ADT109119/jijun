@@ -587,7 +587,7 @@ export class SyncService {
     if (!changes || changes.length === 0) return;
 
     // 定義建立依賴的拓撲順序 (Add階段限定)
-    const topoOrder = ['accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
+    const topoOrder = ['custom_categories', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
     const adds = changes.filter(c => c.operation === 'add');
     const updates = changes.filter(c => c.operation === 'update');
@@ -1056,6 +1056,16 @@ export class SyncService {
    * @param {object} data
    */
   async _applyAdd(storeName, data) {
+    if (storeName === 'custom_categories') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.customCategories = data;
+            window.app.categoryManager.saveCustomCategories(true);
+        } else {
+            localStorage.setItem('customCategories', JSON.stringify(data));
+        }
+        return;
+    }
+
     // 如果 UUID 已存在則当新增處理，避免重複
     if (data.uuid) {
         const existing = await this.dataService.getByUUID(storeName, data.uuid);
@@ -1102,6 +1112,16 @@ export class SyncService {
    * @param {object} data
    */
   async _applyUpdate(storeName, recordId, data) {
+    if (storeName === 'custom_categories') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.customCategories = data;
+            window.app.categoryManager.saveCustomCategories(true);
+        } else {
+            localStorage.setItem('customCategories', JSON.stringify(data));
+        }
+        return;
+    }
+
     // Try to find by UUID first
     if (data.uuid) {
         const existing = await this.dataService.getByUUID(storeName, data.uuid);

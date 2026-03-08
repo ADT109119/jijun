@@ -28,7 +28,7 @@ import { LicensePage } from './pages/licensePage.js';
 class EasyAccountingApp {
     constructor() {
         this.dataService = new DataService();
-        this.categoryManager = new CategoryManager();
+        this.categoryManager = new CategoryManager(this.dataService);
         this.changelogManager = new ChangelogManager();
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
         this.quickSelectManager = new QuickSelectManager();

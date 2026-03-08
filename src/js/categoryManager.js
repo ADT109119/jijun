@@ -3,7 +3,8 @@ import { CATEGORIES } from './categories.js'
 import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 
 export class CategoryManager {
-  constructor() {
+  constructor(dataService = null) {
+    this.dataService = dataService;
     this.customCategories = this.loadCustomCategories()
   }
 
@@ -17,9 +18,12 @@ export class CategoryManager {
     }
   }
 
-  saveCustomCategories() {
+  saveCustomCategories(skipLog = false) {
     try {
       localStorage.setItem('customCategories', JSON.stringify(this.customCategories))
+      if (!skipLog && this.dataService) {
+        this.dataService.logChange('update', 'custom_categories', 'all', this.customCategories);
+      }
       return true
     } catch (error) {
       console.error('儲存自定義分類失敗:', error)
