@@ -11,27 +11,27 @@
  *   PORT                 — 監聽埠號（預設 8787）
  */
 
-import { createServer } from 'node:http';
-import { handleRequest } from './index.js';
+import { createServer } from 'node:http'
+import { handleRequest } from './index.js'
 
-const PORT = parseInt(process.env.PORT || '8787', 10);
+const PORT = parseInt(process.env.PORT || '8787', 10)
 
 const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '*',
-};
+}
 
 // ──────────────────────────────────────────────
 // Validate required environment variables
 // ──────────────────────────────────────────────
 
 if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-  console.error('❌ Missing required environment variables:');
-  if (!env.GOOGLE_CLIENT_ID) console.error('   - GOOGLE_CLIENT_ID');
-  if (!env.GOOGLE_CLIENT_SECRET) console.error('   - GOOGLE_CLIENT_SECRET');
-  console.error('\nPlease set them before starting the server.');
-  process.exit(1);
+  console.error('❌ Missing required environment variables:')
+  if (!env.GOOGLE_CLIENT_ID) console.error('   - GOOGLE_CLIENT_ID')
+  if (!env.GOOGLE_CLIENT_SECRET) console.error('   - GOOGLE_CLIENT_SECRET')
+  console.error('\nPlease set them before starting the server.')
+  process.exit(1)
 }
 
 // ──────────────────────────────────────────────
@@ -44,31 +44,31 @@ if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
  * @returns {Promise<Request>}
  */
 async function toWebRequest(req) {
-  const protocol = req.headers['x-forwarded-proto'] || 'http';
-  const host = req.headers.host || `localhost:${PORT}`;
-  const url = `${protocol}://${host}${req.url}`;
+  const protocol = req.headers['x-forwarded-proto'] || 'http'
+  const host = req.headers.host || `localhost:${PORT}`
+  const url = `${protocol}://${host}${req.url}`
 
-  const headers = new Headers();
+  const headers = new Headers()
   for (const [key, value] of Object.entries(req.headers)) {
-    if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+    if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value)
   }
 
-  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
-  let body = null;
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
+  let body = null
 
   if (hasBody) {
-    const chunks = [];
+    const chunks = []
     for await (const chunk of req) {
-      chunks.push(chunk);
+      chunks.push(chunk)
     }
-    body = Buffer.concat(chunks);
+    body = Buffer.concat(chunks)
   }
 
   return new Request(url, {
     method: req.method,
     headers,
     body,
-  });
+  })
 }
 
 // ──────────────────────────────────────────────
@@ -77,19 +77,22 @@ async function toWebRequest(req) {
 
 const server = createServer(async (req, res) => {
   try {
-    const webRequest = await toWebRequest(req);
-    const webResponse = await handleRequest(webRequest, env);
+    const webRequest = await toWebRequest(req)
+    const webResponse = await handleRequest(webRequest, env)
 
     // Convert Web Response → Node.js response
-    res.writeHead(webResponse.status, Object.fromEntries(webResponse.headers.entries()));
-    const responseBody = await webResponse.text();
-    res.end(responseBody);
+    res.writeHead(
+      webResponse.status,
+      Object.fromEntries(webResponse.headers.entries())
+    )
+    const responseBody = await webResponse.text()
+    res.end(responseBody)
   } catch (err) {
-    console.error('Server error:', err);
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Internal server error' }));
+    console.error('Server error:', err)
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Internal server error' }))
   }
-});
+})
 
 server.listen(PORT, () => {
   console.log(`
@@ -100,5 +103,5 @@ server.listen(PORT, () => {
 ║  📋 Health check: http://localhost:${String(PORT).padEnd(10)}║
 ║     /api/health                              ║
 ╚══════════════════════════════════════════════╝
-  `);
-});
+  `)
+})

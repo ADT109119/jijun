@@ -1,30 +1,45 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>輕鬆記帳 2.0</title>
-    
-    <meta name="description" content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。">
-    <meta name="keywords" content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本">
-    <meta name="author" content="ADT109119">
 
-    <link rel="manifest" href="/manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#F5F5F3">
+    <meta
+      name="description"
+      content="這是一個簡單、實用的網頁記帳程式，打開網頁，便可以開始記帳，且資料皆儲存於裝置上，不用擔心外流。本網頁使用了PWA技術，讓使用者在需要時，可將這個網頁像APP一樣安裝到裝置上。"
+    />
+    <meta
+      name="keywords"
+      content="記帳, 網頁, PWA, 網頁程式, 漸進式網頁程式, 輕鬆記帳, 網頁記帳, 網頁帳本"
+    />
+    <meta name="author" content="ADT109119" />
 
-    <link rel="apple-touch-icon" sizes="192x192" href="icon/icon.png">
-    <link rel="shortcut icon" href="icon/favicon.ico">
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="theme-color" content="#F5F5F3" />
+
+    <link rel="apple-touch-icon" sizes="192x192" href="icon/icon.png" />
+    <link rel="shortcut icon" href="icon/favicon.ico" />
 
     <!-- Tailwind CSS & Fonts -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+
     <!-- Font Awesome 6 CDN -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -36,76 +51,120 @@
     <!-- Google Identity Services SDK (for OAuth) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-    <link rel="stylesheet" href="src/css/main.css">
+    <link rel="stylesheet" href="src/css/main.css" />
     <script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "wabi-bg": "#F5F5F3",
-                        "wabi-primary": "#334A52",
-                        "wabi-expense": "#B95A5A",
-                        "wabi-income": "#6A9C89",
-                        "wabi-accent": "#E2B67A",
-                        "wabi-text-primary": "#2D3748",
-                        "wabi-text-secondary": "#718096",
-                        "wabi-surface": "#FFFFFF",
-                        "wabi-border": "#E2E8F0",
-                    },
-                    fontFamily: {
-                        "display": ["Inter", "Noto Sans TC", "sans-serif"]
-                    },
-                },
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'wabi-bg': '#F5F5F3',
+              'wabi-primary': '#334A52',
+              'wabi-expense': '#B95A5A',
+              'wabi-income': '#6A9C89',
+              'wabi-accent': '#E2B67A',
+              'wabi-text-primary': '#2D3748',
+              'wabi-text-secondary': '#718096',
+              'wabi-surface': '#FFFFFF',
+              'wabi-border': '#E2E8F0',
             },
-        }
+            fontFamily: {
+              display: ['Inter', 'Noto Sans TC', 'sans-serif'],
+            },
+          },
+        },
+      }
     </script>
-</head>
+  </head>
 
-<body class="font-display bg-wabi-bg text-wabi-text-primary">
+  <body class="font-display bg-wabi-bg text-wabi-text-primary">
     <div id="app-container" class="relative min-h-screen w-full md:pl-64">
-        <!-- Pages will be injected here -->
+      <!-- Pages will be injected here -->
     </div>
 
     <!-- Bottom Navigation Bar -->
-    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto">
-        <div class="hidden md:flex items-center justify-center mb-8 px-4">
-            <img src="icon/icon.png" alt="輕鬆記帳" class="w-8 h-8 mr-2 rounded-lg shadow-sm">
-            <h1 class="text-xl font-bold text-wabi-primary">輕鬆記帳 2.0</h1>
+    <nav
+      id="bottom-nav"
+      class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto"
+    >
+      <div class="hidden md:flex items-center justify-center mb-8 px-4">
+        <img
+          src="icon/icon.png"
+          alt="輕鬆記帳"
+          class="w-8 h-8 mr-2 rounded-lg shadow-sm"
+        />
+        <h1 class="text-xl font-bold text-wabi-primary">輕鬆記帳 2.0</h1>
+      </div>
+      <a
+        href="#home"
+        data-page="home"
+        class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5"
+      >
+        <i class="fa-solid fa-house text-xl md:w-6 md:text-center"></i>
+        <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium"
+          >首頁</span
+        >
+      </a>
+      <a
+        href="#records"
+        data-page="records"
+        class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5"
+      >
+        <i class="fa-solid fa-list-ul text-xl md:w-6 md:text-center"></i>
+        <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium"
+          >明細</span
+        >
+      </a>
+      <a
+        href="#add"
+        data-page="add"
+        class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-3 md:px-8 md:my-2 hover:bg-black/5"
+      >
+        <div
+          class="flex items-center justify-center w-14 h-14 rounded-full bg-wabi-accent text-wabi-primary shadow-lg -mt-8 md:mt-0 md:w-full md:h-12 md:rounded-xl md:shadow-md"
+        >
+          <i class="fa-solid fa-plus text-2xl md:text-xl"></i>
+          <span class="hidden md:inline ml-2 font-bold text-base"
+            >新增紀錄</span
+          >
         </div>
-        <a href="#home" data-page="home" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
-            <i class="fa-solid fa-house text-xl md:w-6 md:text-center"></i>
-            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">首頁</span>
-        </a>
-        <a href="#records" data-page="records" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
-            <i class="fa-solid fa-list-ul text-xl md:w-6 md:text-center"></i>
-            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">明細</span>
-        </a>
-        <a href="#add" data-page="add" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-3 md:px-8 md:my-2 hover:bg-black/5">
-            <div class="flex items-center justify-center w-14 h-14 rounded-full bg-wabi-accent text-wabi-primary shadow-lg -mt-8 md:mt-0 md:w-full md:h-12 md:rounded-xl md:shadow-md">
-                <i class="fa-solid fa-plus text-2xl md:text-xl"></i>
-                <span class="hidden md:inline ml-2 font-bold text-base">新增紀錄</span>
-            </div>
-        </a>
-        <a href="#stats" data-page="stats" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
-            <i class="fa-solid fa-chart-pie text-xl md:w-6 md:text-center"></i>
-            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">統計</span>
-        </a>
-        <a href="#settings" data-page="settings" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
-            <i class="fa-solid fa-gear text-xl md:w-6 md:text-center"></i>
-            <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium">設定</span>
-        </a>
-        <div class="hidden md:flex mt-auto pb-4 pt-8 px-8 flex-col text-wabi-text-secondary disabled text-xs opacity-70 cursor-default">
-            <span id="sidebar-version-info">版本讀取中...</span>
-            <span class="mt-1">&copy; 2025 The walking fish 步行魚</span>
-        </div>
+      </a>
+      <a
+        href="#stats"
+        data-page="stats"
+        class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5"
+      >
+        <i class="fa-solid fa-chart-pie text-xl md:w-6 md:text-center"></i>
+        <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium"
+          >統計</span
+        >
+      </a>
+      <a
+        href="#settings"
+        data-page="settings"
+        class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5"
+      >
+        <i class="fa-solid fa-gear text-xl md:w-6 md:text-center"></i>
+        <span class="text-xs mt-1 md:mt-0 md:ml-4 md:text-base font-medium"
+          >設定</span
+        >
+      </a>
+      <div
+        class="hidden md:flex mt-auto pb-4 pt-8 px-8 flex-col text-wabi-text-secondary disabled text-xs opacity-70 cursor-default"
+      >
+        <span id="sidebar-version-info">版本讀取中...</span>
+        <span class="mt-1">&copy; 2025 The walking fish 步行魚</span>
+      </div>
     </nav>
 
     <!-- Toast Notification -->
-    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-wabi-primary text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-all duration-300 z-50">
-        <span id="toast-message"></span>
+    <div
+      id="toast"
+      class="fixed top-5 left-1/2 -translate-x-1/2 bg-wabi-primary text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-all duration-300 z-50"
+    >
+      <span id="toast-message"></span>
     </div>
 
     <script type="module" src="src/js/main.js"></script>
-</body>
+  </body>
 </html>

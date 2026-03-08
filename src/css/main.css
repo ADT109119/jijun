@@ -4,113 +4,113 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
 
 body {
-    font-family: 'Inter', 'Noto Sans TC', sans-serif;
-    padding-bottom: 80px; /* Space for bottom navigation */
-    background-color: #F5F5F3; /* wabi-bg */
+  font-family: 'Inter', 'Noto Sans TC', sans-serif;
+  padding-bottom: 80px; /* Space for bottom navigation */
+  background-color: #f5f5f3; /* wabi-bg */
 }
 
 @media (min-width: 768px) {
-    body {
-        padding-bottom: 0px;
-    }
+  body {
+    padding-bottom: 0px;
+  }
 }
 
 /* Page container styles */
 .page {
-    display: none; /* Hidden by default */
-    /* Removed absolute positioning to allow nav bar to be visible */
-    padding-bottom: 80px; /* Ensure content is not hidden by nav bar */
+  display: none; /* Hidden by default */
+  /* Removed absolute positioning to allow nav bar to be visible */
+  padding-bottom: 80px; /* Ensure content is not hidden by nav bar */
 }
 
 @media (min-width: 768px) {
-    .page {
-        padding-bottom: 0px;
-    }
+  .page {
+    padding-bottom: 0px;
+  }
 }
 
 .page.active {
-    display: block; /* Show active page */
+  display: block; /* Show active page */
 }
 
 /* Bottom Navigation active state */
 .nav-item.active {
-    color: #334A52; /* wabi-primary */
+  color: #334a52; /* wabi-primary */
 }
 
 /* Add Record Page - Keyboard button active state */
 .keypad-btn:active {
-    transform: scale(0.95);
-    background-color: #e2e8f0;
+  transform: scale(0.95);
+  background-color: #e2e8f0;
 }
 
 /* Add Record Page - Category button active state */
 .category-button.active {
-    border-color: #B95A5A; /* wabi-expense */
-    background-color: #B95A5A1A; /* wabi-expense with opacity */
+  border-color: #b95a5a; /* wabi-expense */
+  background-color: #b95a5a1a; /* wabi-expense with opacity */
 }
 
 .category-button.active-income {
-    border-color: #6A9C89; /* wabi-income */
-    background-color: #6A9C891A; /* wabi-income with opacity */
+  border-color: #6a9c89; /* wabi-income */
+  background-color: #6a9c891a; /* wabi-income with opacity */
 }
 
 /* Toast animation */
 @keyframes slideInDown {
-    from {
-        opacity: 0;
-        transform: translate(-50%, -100%);
-    }
-    to {
-        opacity: 1;
-        transform: translate(-50%, 0);
-    }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .toast-show {
-    animation: slideInDown 0.3s ease-out forwards;
+  animation: slideInDown 0.3s ease-out forwards;
 }
 
 @keyframes slideOutUp {
-    from {
-        opacity: 1;
-        transform: translate(-50%, 0);
-    }
-    to {
-        opacity: 0;
-        transform: translate(-50%, -100%);
-    }
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -100%);
+  }
 }
 
 .toast-hide {
-    animation: slideOutUp 0.3s ease-in forwards;
+  animation: slideOutUp 0.3s ease-in forwards;
 }
 
 /* Budget Wave Widget */
 .budget-wave-container {
-    position: relative;
-    height: 150px;
-    background-color: #f0f4f8;
-    border-radius: 0.75rem;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+  position: relative;
+  height: 150px;
+  background-color: #f0f4f8;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .budget-info {
-    position: relative;
-    z-index: 10;
+  position: relative;
+  z-index: 10;
 }
 
 .budget-wave {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 100%;
-    background-color: #6A9C89; /* Fallback color */
-    transition: top 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  background-color: #6a9c89; /* Fallback color */
+  transition: top 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 @keyframes wave-scroll {
@@ -124,33 +124,33 @@ body {
 
 .budget-wave::before,
 .budget-wave::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    bottom: calc(100% - 40px); /* Position waves at the top of the water level */
-    right: 0;
-    height: 40px; /* Height of the SVG wave */
-    background-repeat: repeat-x;
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: calc(100% - 40px); /* Position waves at the top of the water level */
+  right: 0;
+  height: 40px; /* Height of the SVG wave */
+  background-repeat: repeat-x;
 }
 
 .budget-wave::before {
-    /* A smooth sine wave SVG */
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 250 10, 250 30, 500 20 S 750 10, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
-    background-size: 1000px 40px;
-    animation: wave-scroll 7s linear infinite;
-    z-index: 2;
+  /* A smooth sine wave SVG */
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 250 10, 250 30, 500 20 S 750 10, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
+  background-size: 1000px 40px;
+  animation: wave-scroll 7s linear infinite;
+  z-index: 2;
 }
 
 .budget-wave::after {
-    /* A slightly different wave */
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 200 30, 300 10, 500 20 S 800 30, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
-    background-size: 1000px 40px;
-    animation: wave-scroll 5s linear infinite reverse;
-    z-index: 1;
-    opacity: 0.5;
+  /* A slightly different wave */
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 200 30, 300 10, 500 20 S 800 30, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
+  background-size: 1000px 40px;
+  animation: wave-scroll 5s linear infinite reverse;
+  z-index: 1;
+  opacity: 0.5;
 }
 
 /* 記帳小鍵盤 */
 #account-selector-container:empty {
-    display: none;
+  display: none;
 }
