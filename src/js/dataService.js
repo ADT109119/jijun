@@ -655,7 +655,8 @@ class DataService {
 
     try {
       const records = includeRecords ? await this.getRecords() : [];
-      const customCategories = includeCategories ? JSON.parse(localStorage.getItem('customCategories') || 'null') : null;
+      const customCategoriesSetting = includeCategories ? await this.getSetting('custom_categories') : null;
+      const customCategories = customCategoriesSetting?.value || null;
       const accounts = includeAccounts ? await this.getAccounts() : [];
       const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
       const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
@@ -725,7 +726,7 @@ class DataService {
           await this.clearAllAccounts();
           await this.clearAllContacts();
           await this.clearAllDebts();
-          localStorage.removeItem('customCategories');
+          await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
           await this.saveSetting({ key: 'debtManagementEnabled', value: false });
 
@@ -739,7 +740,7 @@ class DataService {
 
           // 2. 匯入自訂分類
           if (data.customCategories) {
-            localStorage.setItem('customCategories', JSON.stringify(data.customCategories));
+            await this.saveSetting({ key: 'custom_categories', value: data.customCategories });
           }
 
           // 3. 匯入帳戶並建立 ID Map
@@ -1009,7 +1010,8 @@ class DataService {
    */
   async exportDataForSync() {
     const records = await this.getRecords();
-    const customCategories = JSON.parse(localStorage.getItem('customCategories') || 'null');
+    const customCategoriesSetting = await this.getSetting('custom_categories');
+    const customCategories = customCategoriesSetting?.value || null;
     const accounts = await this.getAccounts();
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');

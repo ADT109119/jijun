@@ -49,6 +49,7 @@ class EasyAccountingApp {
 
     async init() {
         await this.dataService.init();
+        await this.categoryManager.init();
 
         const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
         this.advancedModeEnabled = !!advancedModeSetting?.value;

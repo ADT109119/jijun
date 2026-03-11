@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.2.9": {
+    date: "2026-03-11",
+    title: "自訂分類同步修復與儲存優化",
+    features: [],
+    bugfixes: [
+      "修復自訂分類無法同步的問題，確保新增或編輯的分類能正確跨裝置同步"
+    ],
+    improvements: [
+      "優化儲存架構，將自訂分類資料從 localStorage 遷移至 IndexedDB 統一管理，提升存取效能"
+    ]
+  },
   "2.1.2.8": {
     date: "2026-03-08",
     title: "新增圖示搜尋功能",

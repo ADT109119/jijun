@@ -5,24 +5,42 @@ import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 export class CategoryManager {
   constructor(dataService = null) {
     this.dataService = dataService;
-    this.customCategories = this.loadCustomCategories()
+    this.customCategories = { expense: [], income: [] };
   }
 
-  loadCustomCategories() {
+  async init() {
+    if (!this.dataService) {
+      console.warn('CategoryManager: DataService not provided, falling back to empty categories');
+      return;
+    }
+
     try {
-      const saved = localStorage.getItem('customCategories')
-      return saved ? JSON.parse(saved) : { expense: [], income: [] }
+      let saved = await this.dataService.getSetting('custom_categories');
+      
+      // Migration from localStorage if IndexedDB is empty but localStorage has data
+      if (!saved || !saved.value) {
+        const localSaved = localStorage.getItem('customCategories');
+        if (localSaved) {
+          saved = { value: JSON.parse(localSaved) };
+          await this.dataService.saveSetting({ key: 'custom_categories', value: saved.value });
+        }
+      }
+
+      if (saved && saved.value) {
+         this.customCategories = saved.value;
+      }
     } catch (error) {
-      console.error('載入自定義分類失敗:', error)
-      return { expense: [], income: [] }
+      console.error('載入自定義分類失敗:', error);
     }
   }
 
-  saveCustomCategories(skipLog = false) {
+  async saveCustomCategories(skipLog = false) {
     try {
-      localStorage.setItem('customCategories', JSON.stringify(this.customCategories))
-      if (!skipLog && this.dataService) {
-        this.dataService.logChange('update', 'custom_categories', 'all', this.customCategories);
+      if (this.dataService) {
+        await this.dataService.saveSetting({ key: 'custom_categories', value: this.customCategories });
+        if (!skipLog) {
+          this.dataService.logChange('update', 'custom_categories', 'all', this.customCategories);
+        }
       }
       return true
     } catch (error) {
@@ -37,7 +55,7 @@ export class CategoryManager {
     return [...defaultCategories, ...customCategories]
   }
 
-  addCustomCategory(type, category) {
+  async addCustomCategory(type, category) {
     if (!this.customCategories[type]) {
       this.customCategories[type] = []
     }
@@ -49,10 +67,10 @@ export class CategoryManager {
     }
     
     this.customCategories[type].push(category)
-    return this.saveCustomCategories()
+    return await this.saveCustomCategories()
   }
 
-  removeCustomCategory(type, categoryId) {
+  async removeCustomCategory(type, categoryId) {
     if (!this.customCategories[type]) {
       return false
     }
@@ -63,10 +81,10 @@ export class CategoryManager {
     }
     
     this.customCategories[type].splice(index, 1)
-    return this.saveCustomCategories()
+    return await this.saveCustomCategories()
   }
 
-  updateCustomCategory(type, updatedCategory) {
+  async updateCustomCategory(type, updatedCategory) {
     if (!this.customCategories[type]) {
       return false
     }
@@ -75,7 +93,7 @@ export class CategoryManager {
       return false
     }
     this.customCategories[type][index] = updatedCategory
-    return this.saveCustomCategories()
+    return await this.saveCustomCategories()
   }
 
   getCustomCategoryById(type, categoryId) {
@@ -317,7 +335,7 @@ export class CategoryManager {
     }
     
     // 儲存分類
-    document.getElementById('save-category-btn').addEventListener('click', () => {
+    document.getElementById('save-category-btn').addEventListener('click', async () => {
       const name = document.getElementById('category-name').value.trim()
       
       if (!name) {
@@ -345,9 +363,9 @@ export class CategoryManager {
       
       let success = false
       if (categoryToEdit) {
-        success = this.updateCustomCategory(type, category)
+        success = await this.updateCustomCategory(type, category)
       } else {
-        success = this.addCustomCategory(type, category)
+        success = await this.addCustomCategory(type, category)
       }
 
       if (success) {
@@ -462,10 +480,10 @@ export class CategoryManager {
     
     // 刪除分類
     document.querySelectorAll('.delete-category-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const categoryId = btn.dataset.categoryId
         if (confirm('確定要刪除這個分類嗎？')) {
-          if (this.removeCustomCategory(type, categoryId)) {
+          if (await this.removeCustomCategory(type, categoryId)) {
             this.closeManageCategoriesModal()
             this.showManageCategoriesModal(type, onUpdateCallback) // Pass callback again
             if (onUpdateCallback) onUpdateCallback();
