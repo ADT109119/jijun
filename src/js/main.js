@@ -44,12 +44,26 @@ class EasyAccountingApp {
 
         this.router = new Router(this);
 
+        // Catch the beforeinstallprompt event early, before any async init logic
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent the mini-infobar from appearing on mobile
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            this.deferredInstallPrompt = e;
+            // Update UI to notify the user they can install the PWA if they are on settings page
+            const installBtnContainer = document.getElementById('install-pwa-btn-container');
+            if (installBtnContainer) {
+                installBtnContainer.classList.remove('hidden');
+            }
+        });
+
         this.init();
     }
 
     async init() {
         await this.dataService.init();
         await this.categoryManager.init();
+        await this.budgetManager.loadBudget();
 
         const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
         this.advancedModeEnabled = !!advancedModeSetting?.value;
@@ -60,18 +74,6 @@ class EasyAccountingApp {
         }
 
         this.registerServiceWorker();
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            // Prevent the mini-infobar from appearing on mobile
-            e.preventDefault();
-            // Stash the event so it can be triggered later.
-            this.deferredInstallPrompt = e;
-            // Update UI to notify the user they can install the PWA
-            const installBtnContainer = document.getElementById('install-pwa-btn-container');
-            if (installBtnContainer) {
-                installBtnContainer.classList.remove('hidden');
-            }
-        });
 
         // Hide install button if already in standalone mode
         if (window.matchMedia('(display-mode: standalone)').matches) {

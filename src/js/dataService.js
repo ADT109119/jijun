@@ -657,6 +657,8 @@ class DataService {
       const records = includeRecords ? await this.getRecords() : [];
       const customCategoriesSetting = includeCategories ? await this.getSetting('custom_categories') : null;
       const customCategories = customCategoriesSetting?.value || null;
+      const budgetSettingsSetting = await this.getSetting('budget_settings');
+      const budgetSettings = budgetSettingsSetting?.value || null;
       const accounts = includeAccounts ? await this.getAccounts() : [];
       const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
       const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
@@ -675,6 +677,7 @@ class DataService {
         contacts: contacts,
         debts: debts,
         customCategories: customCategories,
+        budgetSettings: budgetSettings,
         metadata: {
           totalRecords: records.length,
           totalContacts: contacts.length,
@@ -741,6 +744,9 @@ class DataService {
           // 2. 匯入自訂分類
           if (data.customCategories) {
             await this.saveSetting({ key: 'custom_categories', value: data.customCategories });
+          }
+          if (data.budgetSettings) {
+            await this.saveSetting({ key: 'budget_settings', value: data.budgetSettings });
           }
 
           // 3. 匯入帳戶並建立 ID Map
@@ -1012,6 +1018,8 @@ class DataService {
     const records = await this.getRecords();
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
+    const budgetSettingsSetting = await this.getSetting('budget_settings');
+    const budgetSettings = budgetSettingsSetting?.value || null;
     const accounts = await this.getAccounts();
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
@@ -1030,6 +1038,7 @@ class DataService {
       contacts,
       debts,
       customCategories,
+      budgetSettings,
       metadata: {
         totalRecords: records.length,
         totalContacts: contacts.length,
