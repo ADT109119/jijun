@@ -31,7 +31,8 @@
     "chart.js": "^4.4.0",
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^4.1.0",
-    "idb": "^8.0.0"
+    "idb": "^8.0.0",
+    "sortablejs": "^1.15.7"
   },
   "keywords": [
     "記帳",

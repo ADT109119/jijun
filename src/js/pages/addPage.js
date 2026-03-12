@@ -293,8 +293,8 @@ export class AddPage {
                 const colorClass = !cat.color.startsWith('#') ? cat.color : '';
 
                 btn.innerHTML = `
-                    <div class="flex size-14 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
-                        <i class="${cat.icon} text-3xl"></i>
+                    <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
+                        <i class="${cat.icon} text-2xl"></i>
                     </div>
                     <p class="text-xs text-center text-wabi-text-secondary">${cat.name}</p>
                 `;
@@ -308,7 +308,7 @@ export class AddPage {
             });
             const manageBtn = document.createElement('button');
             manageBtn.className = 'flex flex-col items-center gap-1 p-2 rounded-lg border-2 border-dashed border-wabi-border hover:border-wabi-primary';
-            manageBtn.innerHTML = `<div class="flex size-14 items-center justify-center rounded-full bg-wabi-bg"><i class="fa-solid fa-gear text-3xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
+            manageBtn.innerHTML = `<div class="flex size-12 items-center justify-center rounded-full bg-wabi-bg"><i class="fa-solid fa-gear text-2xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
             manageBtn.addEventListener('click', () => this.app.categoryManager.showManageCategoriesModal(currentType, renderCategories));
             categoryGrid.appendChild(manageBtn);
         };
@@ -677,7 +677,7 @@ export class AddPage {
         if (key === '') return `<div class="${specialClasses}"></div>`;
 
         return `
-            <button data-key="${key}" class="keypad-btn text-xl py-3 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
+            <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
                 ${content}
             </button>
         `;

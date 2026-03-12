@@ -6,7 +6,6 @@ export class BudgetManager {
     this.dataService = dataService
     this.currentBudget = 0
     this.categoryBudgets = {}
-    this.loadBudget()
   }
 
   async loadBudget() {

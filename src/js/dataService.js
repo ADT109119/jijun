@@ -657,6 +657,10 @@ class DataService {
       const records = includeRecords ? await this.getRecords() : [];
       const customCategoriesSetting = includeCategories ? await this.getSetting('custom_categories') : null;
       const customCategories = customCategoriesSetting?.value || null;
+      const categoryOrderSetting = includeCategories ? await this.getSetting('category_order') : null;
+      const categoryOrder = categoryOrderSetting?.value || null;
+      const hiddenCategoriesSetting = includeCategories ? await this.getSetting('hidden_categories') : null;
+      const hiddenCategories = hiddenCategoriesSetting?.value || null;
       const budgetSettingsSetting = await this.getSetting('budget_settings');
       const budgetSettings = budgetSettingsSetting?.value || null;
       const accounts = includeAccounts ? await this.getAccounts() : [];
@@ -677,6 +681,8 @@ class DataService {
         contacts: contacts,
         debts: debts,
         customCategories: customCategories,
+        categoryOrder: categoryOrder,
+        hiddenCategories: hiddenCategories,
         budgetSettings: budgetSettings,
         metadata: {
           totalRecords: records.length,
@@ -744,6 +750,12 @@ class DataService {
           // 2. 匯入自訂分類
           if (data.customCategories) {
             await this.saveSetting({ key: 'custom_categories', value: data.customCategories });
+          }
+          if (data.categoryOrder) {
+            await this.saveSetting({ key: 'category_order', value: data.categoryOrder });
+          }
+          if (data.hiddenCategories) {
+            await this.saveSetting({ key: 'hidden_categories', value: data.hiddenCategories });
           }
           if (data.budgetSettings) {
             await this.saveSetting({ key: 'budget_settings', value: data.budgetSettings });
@@ -1018,6 +1030,10 @@ class DataService {
     const records = await this.getRecords();
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
+    const categoryOrderSetting = await this.getSetting('category_order');
+    const categoryOrder = categoryOrderSetting?.value || null;
+    const hiddenCategoriesSetting = await this.getSetting('hidden_categories');
+    const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
     const accounts = await this.getAccounts();
@@ -1038,6 +1054,8 @@ class DataService {
       contacts,
       debts,
       customCategories,
+      categoryOrder,
+      hiddenCategories,
       budgetSettings,
       metadata: {
         totalRecords: records.length,

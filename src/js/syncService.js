@@ -1066,6 +1066,26 @@ export class SyncService {
         return;
     }
 
+    if (storeName === 'category_order') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.categoryOrder = data;
+            await window.app.categoryManager.saveCategorySettings(true);
+        } else {
+            localStorage.setItem('category_order', JSON.stringify(data));
+        }
+        return;
+    }
+
+    if (storeName === 'hidden_categories') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.hiddenCategories = data;
+            await window.app.categoryManager.saveCategorySettings(true);
+        } else {
+            localStorage.setItem('hidden_categories', JSON.stringify(data));
+        }
+        return;
+    }
+
     if (storeName === 'budget_settings') {
         if (window.app && window.app.budgetManager) {
             window.app.budgetManager.currentBudget = data.monthlyBudget || 0;
@@ -1133,6 +1153,26 @@ export class SyncService {
             window.app.categoryManager.saveCustomCategories(true);
         } else {
             localStorage.setItem('customCategories', JSON.stringify(data));
+        }
+        return;
+    }
+
+    if (storeName === 'category_order') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.categoryOrder = data;
+            await window.app.categoryManager.saveCategorySettings(true);
+        } else {
+            localStorage.setItem('category_order', JSON.stringify(data));
+        }
+        return;
+    }
+
+    if (storeName === 'hidden_categories') {
+        if (window.app && window.app.categoryManager) {
+            window.app.categoryManager.hiddenCategories = data;
+            await window.app.categoryManager.saveCategorySettings(true);
+        } else {
+            localStorage.setItem('hidden_categories', JSON.stringify(data));
         }
         return;
     }

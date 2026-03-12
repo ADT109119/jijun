@@ -1,11 +1,14 @@
 // 自定義分類管理模組
 import { CATEGORIES } from './categories.js'
 import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
+import Sortable from 'sortablejs'
 
 export class CategoryManager {
   constructor(dataService = null) {
     this.dataService = dataService;
     this.customCategories = { expense: [], income: [] };
+    this.categoryOrder = { expense: [], income: [] };
+    this.hiddenCategories = { expense: [], income: [] };
   }
 
   async init() {
@@ -29,8 +32,33 @@ export class CategoryManager {
       if (saved && saved.value) {
          this.customCategories = saved.value;
       }
+      
+      let order = await this.dataService.getSetting('category_order');
+      if (order && order.value) this.categoryOrder = order.value;
+      
+      let hidden = await this.dataService.getSetting('hidden_categories');
+      if (hidden && hidden.value) this.hiddenCategories = hidden.value;
+
     } catch (error) {
-      console.error('載入自定義分類失敗:', error);
+      console.error('載入分類設定失敗:', error);
+    }
+  }
+
+  async saveCategorySettings(skipLog = false) {
+    try {
+      if (this.dataService) {
+        await this.dataService.saveSetting({ key: 'category_order', value: this.categoryOrder });
+        await this.dataService.saveSetting({ key: 'hidden_categories', value: this.hiddenCategories });
+        
+        if (!skipLog) {
+            this.dataService.logChange('update', 'category_order', 'all', this.categoryOrder);
+            this.dataService.logChange('update', 'hidden_categories', 'all', this.hiddenCategories);
+        }
+      }
+      return true;
+    } catch (error) {
+       console.error('儲存分類設定失敗:', error);
+       return false;
     }
   }
 
@@ -49,10 +77,28 @@ export class CategoryManager {
     }
   }
 
-  getAllCategories(type) {
-    const defaultCategories = CATEGORIES[type] || []
-    const customCategories = this.customCategories[type] || []
-    return [...defaultCategories, ...customCategories]
+  getAllCategories(type, includeHidden = false) {
+    const defaultCategories = CATEGORIES[type] || [];
+    const customCategories = this.customCategories[type] || [];
+    let merged = [...defaultCategories, ...customCategories];
+    
+    // Sort by categoryOrder
+    const order = this.categoryOrder[type] || [];
+    merged.sort((a, b) => {
+        const indexA = order.indexOf(a.id);
+        const indexB = order.indexOf(b.id);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        return 0; // Maintain original order for new/unordered items
+    });
+    
+    if (!includeHidden) {
+        const hidden = this.hiddenCategories[type] || [];
+        merged = merged.filter(cat => !hidden.includes(cat.id));
+    }
+    
+    return merged;
   }
 
   async addCustomCategory(type, category) {
@@ -423,53 +469,138 @@ export class CategoryManager {
     ]
   }
 
+  async deleteCategoryWithFallback(type, categoryId, onUpdateCallback) {
+     const modal = document.createElement('div');
+     modal.id = 'delete-category-confirm-modal';
+     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4';
+     modal.innerHTML = `
+        <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
+            <div class="size-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fa-solid fa-triangle-exclamation text-2xl text-wabi-expense"></i>
+            </div>
+            <h3 class="text-xl font-bold text-wabi-expense mb-2">確定要刪除嗎？</h3>
+            <p class="text-wabi-text-primary font-medium mb-1">分類刪除後，相關記帳無法直接復原。</p>
+            <p class="text-wabi-text-secondary text-sm mb-6">系統將會把它們自動轉移至「其他」分類中保留。</p>
+            <div class="flex space-x-3">
+               <button id="confirm-delete-btn" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                  確認刪除
+               </button>
+               <button id="cancel-delete-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                  取消
+               </button>
+            </div>
+        </div>
+     `;
+     document.body.appendChild(modal);
+     
+     return new Promise((resolve) => {
+         const cleanup = () => { if (modal) modal.remove(); };
+         
+         document.getElementById('cancel-delete-btn').addEventListener('click', () => {
+             cleanup();
+             resolve(false);
+         });
+         
+         document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+             if (!this.dataService) {
+                 cleanup();
+                 resolve(false);
+                 return;
+             }
+             
+             const proceedFallback = async () => {
+                 const records = await this.dataService.getRecords({ type: type, category: categoryId });
+                 for (const record of records) {
+                     await this.dataService.updateRecord(record.id, { category: 'another' });
+                 }
+                 
+                 await this.removeCustomCategory(type, categoryId);
+                 
+                 if (this.categoryOrder[type]) {
+                     this.categoryOrder[type] = this.categoryOrder[type].filter(id => id !== categoryId);
+                 }
+                 if (this.hiddenCategories[type]) {
+                     this.hiddenCategories[type] = this.hiddenCategories[type].filter(id => id !== categoryId);
+                 }
+                 await this.saveCategorySettings();
+             };
+             
+             // Show loading maybe? We'll just await it
+             document.getElementById('confirm-delete-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+             try {
+                 await proceedFallback();
+                 cleanup();
+                 if (onUpdateCallback) onUpdateCallback();
+                 resolve(true);
+             } catch (e) {
+                 console.error('刪除與轉移失敗', e);
+                 alert('刪除與轉移過程發生錯誤。');
+                 cleanup();
+                 resolve(false);
+             }
+         });
+     });
+  }
+
   showManageCategoriesModal(type, onUpdateCallback = null) {
     const modal = document.createElement('div')
     modal.id = 'manage-categories-modal'
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
     
     const typeText = type === 'expense' ? '支出' : '收入'
-    const customCategories = this.customCategories[type] || []
+    const allCategories = this.getAllCategories(type, true); // Include hidden
+    const hiddenSet = new Set(this.hiddenCategories[type] || []);
     
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[80vh] flex flex-col">
-        <h3 class="text-lg font-semibold mb-4 text-wabi-primary">管理${typeText}分類</h3>
-        
-        <div class="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
-        ${customCategories.length > 0 ? `
-            ${customCategories.map(category => {
-              const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
-              const colorClass = !category.color.startsWith('#') ? category.color : '';
-              return `
-              <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
-                <div class="flex items-center space-x-3">
-                  <div class="w-4 h-4 rounded-full ${colorClass}" ${colorStyle}></div>
-                  <span class="text-xl text-wabi-text-primary"><i class="${category.icon}"></i></span>
-                  <span class="font-medium text-wabi-text-primary">${category.name}</span>
-                </div>
-                <div class="flex space-x-3">
-                  <button class="edit-category-btn text-wabi-accent hover:underline text-sm" data-category-id="${category.id}">
-                    編輯
-                  </button>
-                  <button class="delete-category-btn text-wabi-expense hover:underline text-sm" data-category-id="${category.id}">
-                    刪除
-                  </button>
-                </div>
-              </div>
-            `}).join('')}
-        ` : `
-          <div class="text-center py-8 text-wabi-text-secondary">
-            <i class="fa-regular fa-folder-open text-4xl mb-2"></i>
-            <p>尚未新增自定義分類</p>
-          </div>
-        `}
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-wabi-primary">管理${typeText}分類</h3>
+            <span class="text-xs text-wabi-text-secondary bg-gray-100 border border-gray-200 px-2 py-1 rounded shadow-sm">
+              <i class="fa-solid fa-grip-vertical mr-1"></i>按住左側拖曳排序
+            </span>
         </div>
         
-        <div class="flex space-x-3">
+        <div id="category-sortable-list" class="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
+        ${allCategories.map(category => {
+            const isHidden = hiddenSet.has(category.id);
+            const isCustom = category.isCustom;
+            const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
+            const colorClass = !category.color.startsWith('#') ? category.color : '';
+            
+            return `
+            <div class="sortable-item flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border shadow-sm transition-opacity duration-200 ${isHidden ? 'opacity-40' : ''}" data-id="${category.id}">
+              <div class="flex items-center space-x-3 flex-1 min-w-0">
+                <div class="drag-handle cursor-grab text-wabi-text-secondary pr-2 touch-none">
+                    <i class="fa-solid fa-grip-vertical"></i>
+                </div>
+                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
+                    <i class="${category.icon} text-lg"></i>
+                </div>
+                <span class="font-medium text-wabi-text-primary truncate">${category.name}</span>
+              </div>
+              <div class="flex space-x-1 shrink-0 ml-2">
+                <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
+                  <i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>
+                </button>
+                ${isCustom ? `
+                  <button class="edit-category-btn size-9 flex items-center justify-center rounded-full text-wabi-accent hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}">
+                    <i class="fa-solid fa-pen"></i>
+                  </button>
+                  <button class="delete-category-btn size-9 flex items-center justify-center rounded-full text-wabi-expense hover:bg-red-50 transition-colors" data-category-id="${category.id}">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                ` : `<div class="size-9"></div><div class="size-9"></div>`}
+              </div>
+            </div>
+            `
+        }).join('')}
+        </div>
+        
+        <div class="flex space-x-3 mt-auto pt-4 border-t border-wabi-border bg-wabi-bg">
           <button id="add-new-category-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
             新增分類
           </button>
-          <button id="close-manage-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="close-manage-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-200/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
             關閉
           </button>
         </div>
@@ -477,24 +608,60 @@ export class CategoryManager {
     `
     
     document.body.appendChild(modal)
+
+    // Init SortableJS
+    const listEl = document.getElementById('category-sortable-list');
+    const sortableInstance = new Sortable(listEl, {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'opacity-50',
+        onEnd: async (evt) => {
+            const items = listEl.querySelectorAll('.sortable-item');
+            const newOrder = Array.from(items).map(item => item.dataset.id);
+            this.categoryOrder[type] = newOrder;
+            await this.saveCategorySettings();
+            if (onUpdateCallback) onUpdateCallback();
+        }
+    });
+
+    // Toggle Hide
+    document.querySelectorAll('.toggle-hide-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const categoryId = btn.dataset.categoryId;
+            if (!this.hiddenCategories[type]) this.hiddenCategories[type] = [];
+            
+            const index = this.hiddenCategories[type].indexOf(categoryId);
+            if (index > -1) {
+                this.hiddenCategories[type].splice(index, 1);
+            } else {
+                this.hiddenCategories[type].push(categoryId);
+            }
+            await this.saveCategorySettings();
+            
+            this.closeManageCategoriesModal();
+            this.showManageCategoriesModal(type, onUpdateCallback);
+            if (onUpdateCallback) onUpdateCallback();
+        });
+    });
     
     // 刪除分類
     document.querySelectorAll('.delete-category-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const categoryId = btn.dataset.categoryId
-        if (confirm('確定要刪除這個分類嗎？')) {
-          if (await this.removeCustomCategory(type, categoryId)) {
-            this.closeManageCategoriesModal()
-            this.showManageCategoriesModal(type, onUpdateCallback) // Pass callback again
-            if (onUpdateCallback) onUpdateCallback();
-          }
+        const res = await this.deleteCategoryWithFallback(type, categoryId, onUpdateCallback);
+        if (res) {
+            this.closeManageCategoriesModal();
+            this.showManageCategoriesModal(type, onUpdateCallback);
         }
       })
     })
 
     // 編輯分類
     document.querySelectorAll('.edit-category-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const categoryId = btn.dataset.categoryId
         const categoryToEdit = this.getCustomCategoryById(type, categoryId)
         if (categoryToEdit) {
