@@ -12,8 +12,10 @@ export class SettingsPage {
                     <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">設定</h2>
                 </div>
                 <div class="p-4 space-y-6">
+                    <!-- Settings -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">應用程式</h3>
+                        
                         ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn')}
                         ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
                         <div id="install-pwa-btn-container" class="hidden">
@@ -108,6 +110,38 @@ export class SettingsPage {
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
 
+                        
+                        <!-- Daily Reminder Feature -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 py-3 justify-between border-b border-wabi-border/50">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-bell"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">每日提醒</p>
+                                    <p class="text-xs text-wabi-text-secondary">定時提醒記帳</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="reminder-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="reminder-settings-container" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
+                            <div class="mt-4 flex items-center justify-between">
+                                <label class="text-sm font-medium text-wabi-text-primary">提醒時間</label>
+                                <input type="time" id="reminder-time" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary p-2 outline-none">
+                            </div>
+                            <div class="mt-4">
+                                <label class="text-sm font-medium text-wabi-text-primary block mb-2">提醒條件</label>
+                                <select id="reminder-condition" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary w-full p-2 outline-none appearance-none">
+                                    <option value="always">時間到一律提醒</option>
+                                    <option value="no_records">當日尚未記帳才提醒</option>
+                                </select>
+                            </div>
+                        </div>
+
                         ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 24 小時', 'sponsor-reward-ad-btn')}
 
                     </div>
@@ -192,7 +226,7 @@ export class SettingsPage {
             const file = event.target.files[0];
             if (!file) return;
 
-            if (confirm('匯入資料將會覆蓋所有現有紀錄，確定要繼續嗎？')) {
+            this.showConfirmModal('匯入資料將會覆蓋所有現有紀錄，確定要繼續嗎？', async () => {
                 try {
                     await this.app.dataService.importData(file);
                     showToast('資料已成功匯入！正在重整...', 'success');
@@ -201,7 +235,8 @@ export class SettingsPage {
                     console.error('匯入失敗:', error);
                     showToast('資料匯入失敗', 'error');
                 }
-            }
+            });
+            importFileInput.value = ''; // Reset input
         });
 
         document.getElementById('check-update-btn').addEventListener('click', () => this.checkForUpdates());
@@ -313,6 +348,64 @@ export class SettingsPage {
                 window.location.hash = '#debts';
             });
         }
+
+        // Daily Reminder UI Setup
+        const reminderToggle = document.getElementById('reminder-toggle');
+        const reminderSettingsContainer = document.getElementById('reminder-settings-container');
+        const reminderTimeInput = document.getElementById('reminder-time');
+        const reminderConditionSelect = document.getElementById('reminder-condition');
+
+        if (reminderToggle) {
+            Promise.all([
+                this.app.dataService.getSetting('reminderEnabled'),
+                this.app.dataService.getSetting('reminderTime'),
+                this.app.dataService.getSetting('reminderCondition')
+            ]).then(([enabledSetting, timeSetting, conditionSetting]) => {
+                const isEnabled = !!enabledSetting?.value;
+                reminderToggle.checked = isEnabled;
+                reminderTimeInput.value = timeSetting?.value || '20:00';
+                reminderConditionSelect.value = conditionSetting?.value || 'no_records';
+                
+                if (isEnabled) {
+                    reminderSettingsContainer.classList.remove('hidden');
+                }
+            });
+
+            const updateReminderLogic = async () => {
+                const isEnabled = reminderToggle.checked;
+                const timeStr = reminderTimeInput.value || '20:00';
+                const condition = reminderConditionSelect.value || 'always';
+
+                await this.app.dataService.saveSetting({ key: 'reminderEnabled', value: isEnabled });
+                await this.app.dataService.saveSetting({ key: 'reminderTime', value: timeStr });
+                await this.app.dataService.saveSetting({ key: 'reminderCondition', value: condition });
+
+                if (isEnabled) {
+                    const hasPerm = await this.app.notificationService.requestPermission();
+                    if (!hasPerm) {
+                        showToast('請允許通知權限以使用此功能', 'warning');
+                        reminderToggle.checked = false;
+                        reminderSettingsContainer.classList.add('hidden');
+                        await this.app.dataService.saveSetting({ key: 'reminderEnabled', value: false });
+                        return;
+                    }
+                }
+                
+                await this.app.notificationService.applyCurrentSettings();
+            };
+
+            reminderToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    reminderSettingsContainer.classList.remove('hidden');
+                } else {
+                    reminderSettingsContainer.classList.add('hidden');
+                }
+                updateReminderLogic();
+            });
+
+            reminderTimeInput.addEventListener('change', updateReminderLogic);
+            reminderConditionSelect.addEventListener('change', updateReminderLogic);
+        }
     }
 
     async showExportOptionsModal() {
@@ -362,10 +455,10 @@ export class SettingsPage {
                     </label>
                 </div>
                 <div class="flex space-x-3">
-                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
+                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
                         <i class="fa-solid fa-download mr-2"></i>匯出
                     </button>
-                    <button id="cancel-export-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    <button id="cancel-export-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
                         取消
                     </button>
                 </div>
@@ -422,7 +515,7 @@ export class SettingsPage {
     }
 
     async forceUpdate() {
-        if (confirm('確定要強制更新嗎？這將會清除所有快取資料並重新載入 App。')) {
+        this.showConfirmModal('確定要強制更新嗎？這將會清除所有快取資料並重新載入 App。', async () => {
             showToast('強制更新中...');
             try {
                 const keys = await caches.keys();
@@ -432,7 +525,56 @@ export class SettingsPage {
                 console.error('強制更新失敗:', error);
                 showToast('強制更新失敗', 'error');
             }
-        }
+        });
+    }
+
+    showConfirmModal(message, onConfirm) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]';
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
+                <div class="size-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-2xl text-wabi-expense"></i>
+                </div>
+                <h3 class="text-xl font-bold text-wabi-expense mb-2">確認操作</h3>
+                <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
+                <div class="flex space-x-3">
+                    <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                        確定
+                    </button>
+                    <button id="settings-confirm-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                        取消
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#settings-confirm-cancel').addEventListener('click', () => modal.remove());
+        modal.querySelector('#settings-confirm-ok').addEventListener('click', () => {
+            modal.remove();
+            onConfirm();
+        });
+    }
+
+    showAlertModal(title, message, icon = 'fa-solid fa-circle-info', iconColor = 'text-wabi-primary') {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]';
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
+                <div class="size-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="${icon} text-2xl ${iconColor}"></i>
+                </div>
+                <h3 class="text-xl font-bold text-wabi-primary mb-2">${title}</h3>
+                <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
+                <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    我知道了
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('#settings-alert-ok').addEventListener('click', () => modal.remove());
     }
 
     showUpdateAvailable(registration) {

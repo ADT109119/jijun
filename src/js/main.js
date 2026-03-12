@@ -8,6 +8,7 @@ import { DebtManager } from './debtManager.js';
 import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
 import { RewardService } from './rewardService.js';
+import { NotificationService } from './notificationService.js';
 import { Router } from './router.js';
 
 import { HomePage } from './pages/homePage.js';
@@ -36,6 +37,7 @@ class EasyAccountingApp {
         this.pluginManager = new PluginManager(this.dataService, this);
         this.syncService = new SyncService(this.dataService);
         this.rewardService = new RewardService();
+        this.notificationService = new NotificationService(this.dataService);
 
         this.appContainer = document.getElementById('app-container');
 
@@ -88,13 +90,19 @@ class EasyAccountingApp {
         // Initialize plugins
         await this.pluginManager.init();
 
-        // Connect DataService hooks to PluginManager
+        // Connect DataService hooks to PluginManager & NotificationService
         this.dataService.setHookProvider(async (hookName, payload) => {
+             if (hookName === 'afterAddRecord') {
+                 this.notificationService.handleRecordAdded();
+             }
              return await this.pluginManager.triggerHook(hookName, payload);
         });
         
         // Initialize sync service (restore saved tokens/settings)
         await this.syncService.init();
+
+        // Initialize notification service
+        await this.notificationService.init();
 
         // Setup sidebar version info
         const sidebarVersionInfo = document.getElementById('sidebar-version-info');
