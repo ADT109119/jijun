@@ -1,6 +1,6 @@
 // 現代化 Service Worker
 // 使用統一的版本號和快取名稱
-const APP_VERSION = '2.1.3.0' // 版本號，2.1.2.3 版後在 build 時自動注入 package.json 的版本號
+const APP_VERSION = '2.1.3.1' // 版本號，2.1.2.3 版後在 build 時自動注入 package.json 的版本號
 const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
 const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
 const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
@@ -226,6 +226,47 @@ self.addEventListener('message', event => {
       type: 'VERSION_INFO',
       version: APP_VERSION
     })
+  }
+
+  // Handle Local PWA Notification Scheduling
+  if (event.data && event.data.type === 'SCHEDULE_REMINDER') {
+      const { title, body, timestamp } = event.data.payload;
+      
+      // Try to use experimental TimestampTrigger for offline scheduling
+      if ('showTrigger' in Notification.prototype) {
+          self.registration.showNotification(title, {
+              tag: 'daily-reminder',
+              body: body,
+              icon: '/icon/icon-192x192.png',
+              showTrigger: new TimestampTrigger(timestamp)
+          }).catch(err => console.error('Failed to schedule via TimestampTrigger:', err));
+      } else {
+          // Fallback: If browser doesn't support offline triggers, we just 
+          // set a timeout. This only works reliably while the browser/SW is kept alive.
+          const delay = timestamp - Date.now();
+          if (delay > 0) {
+              // Clear previous fallback timeout if exists
+              if (self.reminderTimeout) clearTimeout(self.reminderTimeout);
+              
+              self.reminderTimeout = setTimeout(() => {
+                  self.registration.showNotification(title, {
+                      tag: 'daily-reminder',
+                      body: body,
+                      icon: '/icon/icon-192x192.png'
+                  });
+              }, delay);
+          }
+      }
+  }
+
+  if (event.data && event.data.type === 'CANCEL_REMINDER') {
+      self.registration.getNotifications({ tag: 'daily-reminder' }).then(notifications => {
+          notifications.forEach(n => n.close());
+      });
+      if (self.reminderTimeout) {
+          clearTimeout(self.reminderTimeout);
+          self.reminderTimeout = null;
+      }
   }
 })
 
