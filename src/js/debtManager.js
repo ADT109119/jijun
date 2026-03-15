@@ -1,5 +1,5 @@
 // 欠款管理模組
-import { formatCurrency, formatDate, formatDateToString } from './utils.js';
+import { formatCurrency, formatDate, formatDateToString, showToast } from './utils.js';
 
 export class DebtManager {
   constructor(dataService) {
@@ -347,6 +347,9 @@ export class DebtManager {
               <button class="partial-payment-btn px-4 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${debt.id}">
                 部分
               </button>
+              <button class="edit-debt-btn px-4 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${debt.id}">
+                <i class="fa-solid fa-pen"></i>
+              </button>
               <button class="remind-debt-btn px-4 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${debt.id}">
                 <i class="fa-solid fa-paper-plane"></i>
               </button>
@@ -355,9 +358,19 @@ export class DebtManager {
               </button>
             </div>
           ` : `
-            <div class="flex items-center gap-2 mt-3 pt-3 border-t border-wabi-border text-sm text-wabi-text-secondary">
-              <i class="fa-solid fa-check-circle text-wabi-income"></i>
-              <span>已於 ${formatDate(new Date(debt.settledAt).toISOString().split('T')[0], 'short')} 結清</span>
+            <div class="flex items-center justify-between mt-3 pt-3 border-t border-wabi-border">
+              <div class="flex items-center gap-2 text-sm text-wabi-text-secondary">
+                <i class="fa-solid fa-check-circle text-wabi-income"></i>
+                <span>已於 ${formatDate(new Date(debt.settledAt).toISOString().split('T')[0], 'short')} 結清</span>
+              </div>
+              <div class="flex gap-2">
+                <button class="edit-debt-btn px-3 py-1 text-xs font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${debt.id}">
+                  編輯
+                </button>
+                <button class="delete-debt-btn px-3 py-1 text-xs font-medium text-wabi-expense border border-wabi-expense rounded-lg" data-id="${debt.id}">
+                  刪除
+                </button>
+              </div>
             </div>
           `}
         </div>
@@ -387,6 +400,7 @@ export class DebtManager {
         const debtId = parseInt(btn.dataset.id);
         if (confirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
           await this.dataService.settleDebt(debtId);
+          showToast('已結清欠款並產生記帳紀錄', 'success');
           // Maintain current filter state instead of full re-render
           await this.updateSummaryCards();
           await this.loadDebtList();
@@ -416,6 +430,7 @@ export class DebtManager {
         const debtId = parseInt(btn.dataset.id);
         if (confirm('確定要刪除此欠款記錄嗎？')) {
           await this.dataService.deleteDebt(debtId);
+          showToast('已刪除欠款紀錄', 'success');
           // Maintain current filter state
           await this.updateSummaryCards();
           await this.loadDebtList();
@@ -428,6 +443,15 @@ export class DebtManager {
       btn.addEventListener('click', async () => {
         const debtId = parseInt(btn.dataset.id);
         await this.showPaymentHistoryModal(debtId);
+      });
+    });
+
+    // Bind edit buttons
+    listContainer.querySelectorAll('.edit-debt-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const debtId = parseInt(btn.dataset.id);
+        const debt = await this.dataService.getDebt(debtId);
+        await this.showAddDebtModal(debt);
       });
     });
 
@@ -636,7 +660,7 @@ export class DebtManager {
         <!-- Amount -->
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">金額</label>
-          <input type="number" id="debt-amount" value="${debtToEdit?.amount || ''}" min="0" step="1" placeholder="輸入金額"
+          <input type="number" id="debt-amount" value="${debtToEdit?.originalAmount ?? debtToEdit?.amount ?? ''}" min="0" step="1" placeholder="輸入金額"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 
@@ -714,9 +738,26 @@ export class DebtManager {
       };
 
       if (isEdit) {
+        // 編輯模式下，同步更新 originalAmount 並根據已還金額重新計算 remainingAmount
+        debtData.originalAmount = amount;
+        const paidAmount = (debtToEdit.payments || []).reduce((sum, p) => sum + p.amount, 0);
+        const newRemaining = Math.max(0, amount - paidAmount);
+        debtData.remainingAmount = newRemaining;
+        
+        // 如果金額調整後導致餘額為 0，改為已結清；若餘額 > 0 且原本已結清則恢復為未結清
+        if (newRemaining === 0 && !debtToEdit.settled) {
+          debtData.settled = true;
+          debtData.settledAt = Date.now();
+        } else if (newRemaining > 0 && debtToEdit.settled) {
+          debtData.settled = false;
+          debtData.settledAt = null;
+        }
+
         await this.dataService.updateDebt(debtToEdit.id, debtData);
+        showToast('已更新欠款紀錄', 'success');
       } else {
         await this.dataService.addDebt(debtData);
+        showToast('已新增欠款紀錄', 'success');
       }
 
       closeModal();

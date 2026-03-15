@@ -1005,6 +1005,29 @@ export class SyncService {
   }
 
   /**
+   * 將遠端 debt 的 payments 陣列內的 recordUuid 解析為本地 recordId。
+   * @param {object} data
+   * @returns {object} 已修正 payments 內 recordId 的 data
+   */
+  async _resolveDebtPayments(data) {
+    if (!data.payments || !Array.isArray(data.payments)) return data;
+    try {
+      const newPayments = [];
+      for (const p of data.payments) {
+        if (p.recordUuid) {
+          const rec = await this.dataService.getByUUID('records', p.recordUuid);
+          newPayments.push({ ...p, recordId: rec ? rec.id : null });
+        } else {
+          newPayments.push(p);
+        }
+      }
+      return { ...data, payments: newPayments };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
    * 將遠端 record 的 ledgerUuid 解析為本地 ledgerId。
    * @param {object} data
    * @returns {object} 已修正 ledgerId 的 data
@@ -1169,12 +1192,20 @@ export class SyncService {
         let resolved = await this._resolveLedgerId(data);
         resolved = await this._resolveDebtContactId(resolved);
         resolved = await this._resolveDebtRecordId(resolved);
+        resolved = await this._resolveDebtPayments(resolved);
         const debtId = await this.dataService.addDebt(resolved, true);
 
-        // 如果該欠款關聯了一個紀錄，且該紀錄在本地已存在
+        // 如果該欠款關聯了一個紀錄 (包含初次建立紀錄與還款紀錄)，且該紀錄在本地已存在
         // 則反向更新該紀錄的 debtId，解決 topoOrder 造成的單向綁定問題
         if (resolved.recordId && debtId) {
             await this.dataService.updateRecord(resolved.recordId, { debtId: debtId }, true);
+        }
+        if (resolved.payments && Array.isArray(resolved.payments) && debtId) {
+          for (const p of resolved.payments) {
+            if (p.recordId) {
+              await this.dataService.updateRecord(p.recordId, { debtId: debtId }, true);
+            }
+          }
         }
         break;
       }
@@ -1286,11 +1317,19 @@ export class SyncService {
           let resolved = await this._resolveLedgerId(data);
           resolved = await this._resolveDebtContactId(resolved);
           resolved = await this._resolveDebtRecordId(resolved);
+          resolved = await this._resolveDebtPayments(resolved);
           await this.dataService.updateDebt(id, resolved, true);
 
-          // 同步更新關聯紀錄
+          // 同步更新關聯紀錄 (包含初次建立紀錄與還款紀錄)
           if (resolved.recordId) {
               await this.dataService.updateRecord(resolved.recordId, { debtId: id }, true);
+          }
+          if (resolved.payments && Array.isArray(resolved.payments)) {
+            for (const p of resolved.payments) {
+              if (p.recordId) {
+                await this.dataService.updateRecord(p.recordId, { debtId: id }, true);
+              }
+            }
           }
           break;
         }

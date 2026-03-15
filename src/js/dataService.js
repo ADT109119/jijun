@@ -484,6 +484,10 @@ class DataService {
           const updatesWithHook = await this.triggerHook('onRecordUpdateBefore', { old: record, updates: finalUpdates });
           if (!updatesWithHook) throw new Error('Update cancelled by plugin');
           finalUpdates = updatesWithHook.updates || finalUpdates;
+        } else {
+            // 同步模式 (skipLog=true): 來自遠端數據，保護本地核心關聯標識
+            delete finalUpdates.id; // 防止修改本機 integer key
+            if (record.uuid) finalUpdates.uuid = record.uuid; // 鎖定 UUID，避免 Unique Constraint 衝突
         }
         
         const updatedRecord = { ...record, ...finalUpdates }
@@ -602,7 +606,12 @@ class DataService {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const transaction = await tx.store.get(id);
       if (transaction) {
-        const updatedTransaction = { ...transaction, ...updates, ...extraUpdates };
+        let finalUpdates = { ...updates, ...extraUpdates };
+        if (skipLog) {
+            delete finalUpdates.id;
+            if (transaction.uuid) finalUpdates.uuid = transaction.uuid;
+        }
+        const updatedTransaction = { ...transaction, ...finalUpdates };
         await tx.store.put(updatedTransaction);
         await tx.done;
         if (!skipLog) await this.logChange('update', 'recurring_transactions', id, updatedTransaction);
@@ -1340,7 +1349,12 @@ class DataService {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
       if (account) {
-        const updatedAccount = { ...account, ...updates };
+        let finalUpdates = { ...updates };
+        if (skipLog) {
+            delete finalUpdates.id;
+            if (account.uuid) finalUpdates.uuid = account.uuid;
+        }
+        const updatedAccount = { ...account, ...finalUpdates };
         await tx.store.put(updatedAccount);
         await tx.done;
         if (!skipLog) await this.logChange('update', 'accounts', id, updatedAccount);
@@ -1502,7 +1516,12 @@ class DataService {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
       if (contact) {
-        const updatedContact = { ...contact, ...updates };
+        let finalUpdates = { ...updates };
+        if (skipLog) {
+            delete finalUpdates.id;
+            if (contact.uuid) finalUpdates.uuid = contact.uuid;
+        }
+        const updatedContact = { ...contact, ...finalUpdates };
         await tx.store.put(updatedContact);
         await tx.done;
         if (!skipLog) await this.logChange('update', 'contacts', id, updatedContact);
@@ -1666,7 +1685,20 @@ class DataService {
       const tx = this.db.transaction('debts', 'readwrite');
       const debt = await tx.store.get(id);
       if (debt) {
-        const updatedDebt = { ...debt, ...updates, ...extraUpdates };
+        // 同步路徑時 (skipLog=true)，數據來自遠端，可能包含遠端 ID 或 UUID
+        // 必須確保本地 UUID 不被意外覆蓋，除非遠端 UUID 確定是正確的關聯標識
+        // 通常同步時我們會根據 UUID 找到本地 ID，所以傳入的 updates.uuid 理應與本地相同
+        // 但為了保險起見，保護本地 uuid 與 id 不被 `...updates` 覆蓋
+        let finalUpdates = { ...updates, ...extraUpdates };
+        if (skipLog) {
+            delete finalUpdates.id;
+            // 確保不覆蓋本地 UUID
+            if (debt.uuid) {
+               finalUpdates.uuid = debt.uuid; 
+            }
+        }
+
+        const updatedDebt = { ...debt, ...finalUpdates };
         await tx.store.put(updatedDebt);
         await tx.done;
         if (!skipLog) await this.logChange('update', 'debts', id, updatedDebt);
@@ -1718,6 +1750,9 @@ class DataService {
       // Only create a transaction record if this debt was NOT linked to an existing expense
       // If it was linked (recordId exists), the expense was already recorded
       // Creating another record would cause double-counting
+      // Only create a transaction record if this debt was NOT linked to an existing expense/income
+      // If it was linked (recordId exists), the cash flow was already recorded at creation
+      // Creating another record would cause double-counting in statistics
       let newRecordId = null;
       if (!debt.recordId) {
         const contact = await this.getContact(debt.contactId);
@@ -1731,12 +1766,24 @@ class DataService {
           description: debt.type === 'receivable' 
             ? `收回欠款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`
             : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
+          ledgerId: debt.ledgerId,
           debtId: id
         };
         
         newRecordId = await this.addRecord(record);
       }
+      
       paymentRecord.recordId = newRecordId;
+      if (newRecordId) {
+        const newRecord = await this.getRecord(newRecordId);
+        if (newRecord?.uuid) {
+          paymentRecord.recordUuid = newRecord.uuid;
+        }
+      } else if (debt.recordUuid) {
+        // If linked to original record, use original record's UUID for identification in payments array
+        paymentRecord.recordUuid = debt.recordUuid;
+        paymentRecord.recordId = debt.recordId;
+      }
       
       // Update debt with new payment
       const updatedPayments = [...(debt.payments || []), paymentRecord];
@@ -1885,7 +1932,12 @@ class DataService {
       const tx = this.db.transaction('ledgers', 'readwrite');
       const ledger = await tx.store.get(id);
       if (!ledger) throw new Error('Ledger not found');
-      const updated = { ...ledger, ...updates };
+      let finalUpdates = { ...updates };
+      if (skipLog) {
+          delete finalUpdates.id;
+          if (ledger.uuid) finalUpdates.uuid = ledger.uuid;
+      }
+      const updated = { ...ledger, ...finalUpdates };
       await tx.store.put(updated);
       await tx.done;
       if (!skipLog) await this.logChange('update', 'ledgers', id, updated);
