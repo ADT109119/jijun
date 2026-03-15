@@ -27,6 +27,7 @@ export class SettingsPage {
                     <!-- Data Management -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">資料管理</h3>
+                        ${this.createSettingItem('fa-solid fa-book-bookmark', '帳本管理', 'manage-ledgers-btn')}
                         ${this.createSettingItem('fa-solid fa-cloud', '雲端備份&同步', 'cloud-sync-btn')}
                         ${this.createSettingItem('fa-solid fa-download', '匯出資料', 'export-data-btn')}
                         ${this.createSettingItem('fa-solid fa-upload', '匯入資料', 'import-data-btn')}
@@ -159,6 +160,13 @@ export class SettingsPage {
         if (managePluginsBtn) {
             managePluginsBtn.addEventListener('click', () => {
                 window.location.hash = '#plugins';
+            });
+        }
+        // Ledger management button
+        const manageLedgersBtn = document.getElementById('manage-ledgers-btn');
+        if (manageLedgersBtn) {
+            manageLedgersBtn.addEventListener('click', () => {
+                window.location.hash = '#ledgers';
             });
         }
         // Cloud sync button

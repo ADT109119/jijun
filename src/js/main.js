@@ -5,6 +5,7 @@ import { CategoryManager } from './categoryManager.js';
 import { ChangelogManager } from './changelog.js';
 import { QuickSelectManager } from './quickSelectManager.js';
 import { DebtManager } from './debtManager.js';
+import { LedgerManager } from './ledgerManager.js';
 import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
 import { RewardService } from './rewardService.js';
@@ -22,6 +23,7 @@ import { RecordsPage } from './pages/recordsPage.js';
 import { StatsPage } from './pages/statsPage.js';
 import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
+import { LedgersPage } from './pages/ledgersPage.js';
 import { StorePage } from './pages/storePage.js';
 import { PrivacyPage } from './pages/privacyPage.js';
 import { LicensePage } from './pages/licensePage.js';
@@ -34,6 +36,7 @@ class EasyAccountingApp {
         this.budgetManager = new BudgetManager(this.dataService, this.categoryManager);
         this.quickSelectManager = new QuickSelectManager();
         this.debtManager = new DebtManager(this.dataService);
+        this.ledgerManager = new LedgerManager(this.dataService, this);
         this.pluginManager = new PluginManager(this.dataService, this);
         this.syncService = new SyncService(this.dataService);
         this.rewardService = new RewardService();
@@ -66,6 +69,7 @@ class EasyAccountingApp {
         await this.dataService.init();
         await this.categoryManager.init();
         await this.budgetManager.loadBudget();
+        await this.ledgerManager.init();
 
         const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
         this.advancedModeEnabled = !!advancedModeSetting?.value;
@@ -104,6 +108,13 @@ class EasyAccountingApp {
         // Initialize notification service
         await this.notificationService.init();
 
+        // Setup sidebar ledger switcher
+        this.updateSidebarLedger();
+        const ledgerSwitcherBtn = document.getElementById('sidebar-ledger-switcher');
+        if (ledgerSwitcherBtn) {
+            ledgerSwitcherBtn.addEventListener('click', () => this.showLedgerSwitcherPopup());
+        }
+
         // Setup sidebar version info
         const sidebarVersionInfo = document.getElementById('sidebar-version-info');
         if (sidebarVersionInfo) {
@@ -121,6 +132,7 @@ class EasyAccountingApp {
         this.router.register('recurring', new RecurringPage(this));
         this.router.register('debts', new DebtsPage(this));
         this.router.register('contacts', new ContactsPage(this));
+        this.router.register('ledgers', new LedgersPage(this));
         this.router.register('plugins', new PluginsPage(this));
         this.router.register('store', new StorePage(this));
         this.router.register('sync-settings', new SyncSettingsPage(this));
@@ -133,7 +145,8 @@ class EasyAccountingApp {
 
     async processRecurringTransactions() {
         const today = formatDateToString(new Date());
-        const recurringTxs = await this.dataService.getRecurringTransactions();
+        // 處理所有帳本的週期交易（不限當前帳本）
+        const recurringTxs = await this.dataService.getRecurringTransactions({ allLedgers: true });
         
         for (const tx of recurringTxs) {
             let { nextDueDate } = tx;
@@ -152,7 +165,7 @@ class EasyAccountingApp {
                     continue;
                 }
 
-                // Generate a new record for this due date
+                // Generate a new record for this due date（帶上正確的 ledgerId）
                 const newRecord = {
                     type: tx.type,
                     amount: tx.amount,
@@ -160,6 +173,7 @@ class EasyAccountingApp {
                     description: tx.description,
                     date: nextDueDate,
                     accountId: tx.accountId,
+                    ledgerId: tx.ledgerId,
                 };
                 await this.dataService.addRecord(newRecord);
 
@@ -210,6 +224,80 @@ class EasyAccountingApp {
                 console.error('Service Worker registration failed:', error);
             }
         }
+    }
+
+    // ==================== 帳本切換器 ====================
+
+    /** 更新側邊欄帳本顯示 */
+    updateSidebarLedger() {
+        const ledger = this.ledgerManager.getActiveLedger();
+        if (!ledger) return;
+        const iconEl = document.getElementById('sidebar-ledger-icon');
+        const nameEl = document.getElementById('sidebar-ledger-name');
+        if (iconEl) {
+            iconEl.style.backgroundColor = ledger.color || '#334A52';
+            iconEl.innerHTML = `<i class="${ledger.icon || 'fa-solid fa-book'}"></i>`;
+        }
+        if (nameEl) nameEl.textContent = ledger.name;
+    }
+
+    /** 顯示帳本切換彈窗 */
+    showLedgerSwitcherPopup() {
+        // 移除已存在的彈窗
+        document.getElementById('ledger-switcher-popup')?.remove();
+
+        const ledgers = this.ledgerManager.getAllLedgers();
+        const activeLedgerId = this.dataService.activeLedgerId;
+
+        const popup = document.createElement('div');
+        popup.id = 'ledger-switcher-popup';
+        popup.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-[2px]';
+        popup.innerHTML = `
+            <div class="bg-wabi-bg rounded-xl max-w-xs w-full shadow-xl overflow-hidden">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-wabi-border">
+                    <h3 class="font-bold text-wabi-primary">切換帳本</h3>
+                    <button id="close-ledger-popup" class="text-wabi-text-secondary hover:text-wabi-primary p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+                <div class="max-h-64 overflow-y-auto p-2 space-y-1">
+                    ${ledgers.map(l => `
+                        <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
+                            ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-gray-50 border border-transparent'}"
+                            data-id="${l.id}">
+                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm" style="background-color: ${l.color || '#334A52'}">
+                                <i class="${l.icon || 'fa-solid fa-book'}"></i>
+                            </div>
+                            <span class="text-sm font-medium text-wabi-text-primary truncate flex-1 text-left">${l.name}</span>
+                            ${l.id === activeLedgerId ? '<i class="fa-solid fa-check text-wabi-primary text-sm shrink-0"></i>' : ''}
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="border-t border-wabi-border p-2">
+                    <a href="#ledgers" id="manage-ledgers-link" class="flex items-center justify-center gap-2 py-2 text-sm text-wabi-primary hover:bg-wabi-primary/5 rounded-lg transition-colors">
+                        <i class="fa-solid fa-gear text-xs"></i> 管理帳本
+                    </a>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(popup);
+
+        // 關閉
+        const close = () => popup.remove();
+        popup.querySelector('#close-ledger-popup').addEventListener('click', close);
+        popup.addEventListener('click', (e) => { if (e.target === popup) close(); });
+        popup.querySelector('#manage-ledgers-link').addEventListener('click', close);
+
+        // 切換帳本
+        popup.querySelectorAll('.ledger-switch-item').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = parseInt(btn.dataset.id);
+                if (id === activeLedgerId) { close(); return; }
+                close();
+                await this.ledgerManager.switchLedger(id);
+                this.updateSidebarLedger();
+            });
+        });
     }
 }
 

@@ -69,9 +69,19 @@
 
     <!-- Bottom Navigation Bar -->
     <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto">
-        <div class="hidden md:flex items-center justify-center mb-8 px-4">
+        <div class="hidden md:flex items-center justify-center mb-4 px-4">
             <img src="icon/icon.png" alt="輕鬆記帳" class="w-8 h-8 mr-2 rounded-lg shadow-sm">
             <h1 class="text-xl font-bold text-wabi-primary">輕鬆記帳 2.0</h1>
+        </div>
+        <!-- 帳本切換器（桌面版側邊欄） -->
+        <div class="hidden md:block px-4 mb-4">
+            <button id="sidebar-ledger-switcher" class="w-full flex items-center gap-2.5 px-3 py-2.5 bg-wabi-primary/5 hover:bg-wabi-primary/10 rounded-xl border border-wabi-border transition-colors group">
+                <div id="sidebar-ledger-icon" class="flex items-center justify-center rounded-lg text-white shrink-0 size-8 text-xs" style="background-color: #334A52">
+                    <i class="fa-solid fa-book"></i>
+                </div>
+                <span id="sidebar-ledger-name" class="text-sm font-medium text-wabi-text-primary truncate flex-1 text-left">預設帳本</span>
+                <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary group-hover:text-wabi-primary transition-colors"></i>
+            </button>
         </div>
         <a href="#home" data-page="home" class="nav-item flex flex-col items-center justify-center text-wabi-text-secondary w-full h-full md:flex-row md:justify-start md:items-center md:h-auto md:py-4 md:px-8 hover:bg-black/5">
             <i class="fa-solid fa-house text-xl md:w-6 md:text-center"></i>

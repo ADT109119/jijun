@@ -6,6 +6,9 @@ export class HomePage {
     }
 
     async render() {
+        const activeLedger = this.app.ledgerManager.getActiveLedger();
+        const ledgerCount = this.app.ledgerManager.getAllLedgers().length;
+
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
@@ -14,9 +17,18 @@ export class HomePage {
                         <span id="home-month-display"></span>
                         <i class="fa-solid fa-chevron-down text-base"></i>
                     </button>
-                    <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
-                        <i class="fa-solid fa-gear text-xl"></i>
-                    </a>
+                    <div class="flex items-center gap-2">
+                        ${ledgerCount > 1 ? `
+                        <button id="home-ledger-btn" class="flex items-center gap-2 px-2.5 py-1.5 bg-wabi-primary/5 rounded-lg border border-wabi-border hover:bg-wabi-primary/10 transition-colors md:hidden" title="切換帳本">
+                            <div class="flex items-center justify-center rounded text-white shrink-0 size-6 text-xs" style="background-color: ${activeLedger?.color || '#334A52'}">
+                                <i class="${activeLedger?.icon || 'fa-solid fa-book'} text-[10px]"></i>
+                            </div>
+                            <span class="text-xs font-medium text-wabi-text-primary max-w-[60px] truncate">${activeLedger?.name || '預設帳本'}</span>
+                        </button>` : ''}
+                        <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
+                            <i class="fa-solid fa-gear text-xl"></i>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Balance Card -->
@@ -80,6 +92,10 @@ export class HomePage {
                     this.loadHomePageData(newMonthString);
                 });
             });
+        }
+        const homeLedgerBtn = document.getElementById('home-ledger-btn');
+        if (homeLedgerBtn) {
+            homeLedgerBtn.addEventListener('click', () => this.app.showLedgerSwitcherPopup());
         }
     }
 

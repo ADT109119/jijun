@@ -8,11 +8,14 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 7 // Schema version 7: UUIDs for sync deduplication
+    this.dbVersion = 9 // Schema version 9: Remove unique constraint for account name (multi-ledger support)
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
     this._syncDeviceId = localStorage.getItem('sync_device_id') || 'unknown';
+
+    /** @type {number} 當前啟用的帳本 ID（預設 1 = 預設帳本） */
+    this.activeLedgerId = parseInt(localStorage.getItem('activeLedgerId') || '1', 10);
   }
 
   setHookProvider(fn) {
@@ -143,6 +146,71 @@ class DataService {
                     }
                 }
             }
+            // Schema version 8: Multi-ledger support
+            if (oldVersion < 8) {
+                // 1. 建立 ledgers object store
+                if (!db.objectStoreNames.contains('ledgers')) {
+                    const ledgerStore = db.createObjectStore('ledgers', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    ledgerStore.createIndex('uuid', 'uuid', { unique: true });
+                }
+
+                // 2. 為所有資料 store 新增 ledgerId index
+                const dataStores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions'];
+                for (const storeName of dataStores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store = transaction.objectStore(storeName);
+                        if (!store.indexNames.contains('ledgerId')) {
+                            store.createIndex('ledgerId', 'ledgerId');
+                        }
+                    }
+                }
+
+                // 3. 插入預設帳本
+                const ledgerStore = transaction.objectStore('ledgers');
+                const defaultUuid = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID() :
+                    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
+                await ledgerStore.add({
+                    id: 1,
+                    uuid: defaultUuid,
+                    name: '預設帳本',
+                    icon: 'fa-solid fa-book',
+                    color: '#334A52',
+                    type: 'personal',
+                    createdAt: Date.now(),
+                });
+
+                // 4. 為所有現有資料打上 ledgerId = 1
+                for (const storeName of dataStores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store = transaction.objectStore(storeName);
+                        let cursor = await store.openCursor();
+                        while (cursor) {
+                            const data = cursor.value;
+                            if (data.ledgerId === undefined || data.ledgerId === null) {
+                                data.ledgerId = 1;
+                                await cursor.update(data);
+                            }
+                            cursor = await cursor.continue();
+                        }
+                    }
+                }
+            }
+            // Schema version 9: Remove unique constraint on account name
+            if (oldVersion < 9) {
+                if (db.objectStoreNames.contains('accounts')) {
+                    const accountStore = transaction.objectStore('accounts');
+                    if (accountStore.indexNames.contains('name')) {
+                        accountStore.deleteIndex('name');
+                    }
+                    accountStore.createIndex('name', 'name', { unique: false });
+                }
+            }
           }
         })
         
@@ -271,6 +339,7 @@ class DataService {
 
     const recordWithTimestamp = {
       ...record,
+      ledgerId: record.ledgerId ?? this.activeLedgerId,
       timestamp: Date.now(),
       uuid: record.uuid || this.generateUUID(),
       ...(resolvedAccountUuid ? { accountUuid: resolvedAccountUuid } : {}),
@@ -338,6 +407,12 @@ class DataService {
       const tx = this.db.transaction('records', 'readonly')
       const store = tx.objectStore('records')
       let records = await store.getAll()
+
+      // 帳本篩選（allLedgers = true 時跳過，用於匯出/備份）
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        records = records.filter(r => r.ledgerId === targetLedgerId);
+      }
 
       // 應用篩選器
       if (filters.startDate || filters.endDate) {
@@ -465,7 +540,7 @@ class DataService {
   }
 
   // --- Recurring Transaction Methods ---
-  async addRecurringTransaction(transaction) {
+  async addRecurringTransaction(transaction, skipLog = false) {
     try {
       if (!transaction.uuid) transaction.uuid = this.generateUUID();
 
@@ -480,12 +555,14 @@ class DataService {
 
       const dataToSave = {
         ...transaction,
+        ledgerId: transaction.ledgerId ?? this.activeLedgerId,
         ...(accountUuid ? { accountUuid } : {}),
       };
 
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const id = await tx.store.add(dataToSave);
       await tx.done;
+      if (!skipLog) await this.logChange('add', 'recurring_transactions', id, dataToSave);
       return id;
     } catch (error) {
       console.error('Failed to add recurring transaction:', error);
@@ -493,16 +570,21 @@ class DataService {
     }
   }
 
-  async getRecurringTransactions() {
+  async getRecurringTransactions(filters = {}) {
     try {
-      return await this.db.getAll('recurring_transactions');
+      let items = await this.db.getAll('recurring_transactions');
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        items = items.filter(t => t.ledgerId === targetLedgerId);
+      }
+      return items;
     } catch (error) {
       console.error('Failed to get recurring transactions:', error);
       return [];
     }
   }
 
-  async updateRecurringTransaction(id, updates) {
+  async updateRecurringTransaction(id, updates, skipLog = false) {
     try {
       // 若更新包含 accountId，同步更新 accountUuid
       let extraUpdates = {};
@@ -523,6 +605,7 @@ class DataService {
         const updatedTransaction = { ...transaction, ...updates, ...extraUpdates };
         await tx.store.put(updatedTransaction);
         await tx.done;
+        if (!skipLog) await this.logChange('update', 'recurring_transactions', id, updatedTransaction);
         return updatedTransaction;
       }
       throw new Error('Recurring transaction not found');
@@ -532,11 +615,17 @@ class DataService {
     }
   }
 
-  async deleteRecurringTransaction(id) {
+  async deleteRecurringTransaction(id, skipLog = false) {
     try {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+          const rt = await tx.store.get(id);
+          uuid = rt?.uuid;
+      }
       await tx.store.delete(id);
       await tx.done;
+      if (!skipLog) await this.logChange('delete', 'recurring_transactions', id, { uuid });
       return true;
     } catch (error) {
       console.error(`Failed to delete recurring transaction ${id}:`, error);
@@ -654,40 +743,56 @@ class DataService {
     } = options;
 
     try {
-      const records = includeRecords ? await this.getRecords() : [];
+      const ledgers = await this.getLedgers();
+      const records = includeRecords ? await this.getRecords({ allLedgers: true }) : [];
       const customCategoriesSetting = includeCategories ? await this.getSetting('custom_categories') : null;
       const customCategories = customCategoriesSetting?.value || null;
       const categoryOrderSetting = includeCategories ? await this.getSetting('category_order') : null;
       const categoryOrder = categoryOrderSetting?.value || null;
       const hiddenCategoriesSetting = includeCategories ? await this.getSetting('hidden_categories') : null;
       const hiddenCategories = hiddenCategoriesSetting?.value || null;
-      const budgetSettingsSetting = await this.getSetting('budget_settings');
-      const budgetSettings = budgetSettingsSetting?.value || null;
-      const accounts = includeAccounts ? await this.getAccounts() : [];
+      
+      const allSettings = await this.db.getAll('settings');
+      const budgetSettingsMap = {};
+      allSettings.forEach(s => {
+          if (s.key && (s.key === 'budget_settings' || s.key.startsWith('budget_settings_'))) {
+              budgetSettingsMap[s.key] = s.value;
+          }
+      });
+
+      const accounts = includeAccounts ? await this.getAccounts({ allLedgers: true }) : [];
       const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
       const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-      const contacts = includeDebts ? await this.getContacts() : [];
-      const debts = includeDebts ? await this.getDebts() : [];
+      const contacts = includeDebts ? await this.getContacts({ allLedgers: true }) : [];
+      const debts = includeDebts ? await this.getDebts({ allLedgers: true }) : [];
+      let recurring_transactions = [];
+      try {
+          recurring_transactions = await this.db.getAll('recurring_transactions');
+      } catch (e) {}
 
       const exportData = {
-        version: '2.2.0', // Version 2.2.0 includes debt management
+        version: '2.3.0',
         exportDate: new Date().toISOString(),
         settings: {
             advancedAccountModeEnabled: advancedAccountModeEnabled?.value || false,
             debtManagementEnabled: debtManagementEnabled?.value || false,
         },
+        activeLedgerId: this.activeLedgerId,
+        ledgers: ledgers,
         accounts: accounts,
         records: records,
         contacts: contacts,
         debts: debts,
+        recurring_transactions: recurring_transactions,
         customCategories: customCategories,
         categoryOrder: categoryOrder,
         hiddenCategories: hiddenCategories,
-        budgetSettings: budgetSettings,
+        budgetSettingsMap: budgetSettingsMap,
         metadata: {
           totalRecords: records.length,
           totalContacts: contacts.length,
           totalDebts: debts.length,
+          totalLedgers: ledgers.length,
           dateRange: {
             start: records.length > 0 ? Math.min(...records.map(r => new Date(r.date).getTime())) : null,
             end: records.length > 0 ? Math.max(...records.map(r => new Date(r.date).getTime())) : null
@@ -735,6 +840,13 @@ class DataService {
           await this.clearAllAccounts();
           await this.clearAllContacts();
           await this.clearAllDebts();
+          if (!this.useLocalStorage) {
+            try {
+              const txR = this.db.transaction('recurring_transactions', 'readwrite');
+              await txR.store.clear();
+              await txR.done;
+            } catch (e) {}
+          }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
           await this.saveSetting({ key: 'debtManagementEnabled', value: false });
@@ -757,33 +869,83 @@ class DataService {
           if (data.hiddenCategories) {
             await this.saveSetting({ key: 'hidden_categories', value: data.hiddenCategories });
           }
-          if (data.budgetSettings) {
+          
+          // 3. 匯入帳本 (ledgers) 及建立 mapped ID
+          const oldLedgerIdToNewIdMap = new Map();
+          if (data.ledgers && Array.isArray(data.ledgers) && data.ledgers.length > 0) {
+              if (!this.useLocalStorage) {
+                  try {
+                      const txL = this.db.transaction('ledgers', 'readwrite');
+                      await txL.store.clear();
+                      await txL.done;
+                  } catch(e){}
+              }
+              for (const ledger of data.ledgers) {
+                  const oldId = ledger.id;
+                  const { id, ...ledgerData } = ledger;
+                  // Ensure UUID for avoid PK collision in sync
+                  if (!ledgerData.uuid) ledgerData.uuid = this.generateUUID();
+                  const tx = this.db.transaction('ledgers', 'readwrite');
+                  const newId = await tx.store.add(ledgerData);
+                  await tx.done;
+                  oldLedgerIdToNewIdMap.set(oldId, newId);
+              }
+              if (data.activeLedgerId && oldLedgerIdToNewIdMap.has(data.activeLedgerId)) {
+                  this.setActiveLedger(oldLedgerIdToNewIdMap.get(data.activeLedgerId));
+              } else {
+                  this.setActiveLedger(oldLedgerIdToNewIdMap.values().next().value || 1);
+              }
+          }
+
+          const getMappedLedgerId = (oldLedgerId) => {
+              if (oldLedgerId !== undefined && oldLedgerIdToNewIdMap.has(oldLedgerId)) {
+                  return oldLedgerIdToNewIdMap.get(oldLedgerId);
+              }
+              return this.activeLedgerId;
+          };
+
+          if (data.budgetSettingsMap) {
+            for (const [key, val] of Object.entries(data.budgetSettingsMap)) {
+                let newKey = key;
+                if (newKey !== 'budget_settings') {
+                    // rewrite ledger id if it has one
+                    const parts = newKey.split('_');
+                    const lId = parseInt(parts[2]);
+                    if (!isNaN(lId) && oldLedgerIdToNewIdMap.has(lId)) {
+                        newKey = `budget_settings_${oldLedgerIdToNewIdMap.get(lId)}`;
+                    }
+                }
+                await this.saveSetting({ key: newKey, value: val });
+            }
+          } else if (data.budgetSettings) {
             await this.saveSetting({ key: 'budget_settings', value: data.budgetSettings });
           }
 
-          // 3. 匯入帳戶並建立 ID Map
+          // 4. 匯入帳戶並建立 ID Map
           const oldAccountIdToNewIdMap = new Map();
           if (advancedModeEnabled && data.accounts && Array.isArray(data.accounts)) {
             for (const account of data.accounts) {
                 const oldId = account.id;
                 const { id, ...accountData } = account;
+                accountData.ledgerId = getMappedLedgerId(accountData.ledgerId);
                 const newId = await this.addAccount(accountData);
                 oldAccountIdToNewIdMap.set(oldId, newId);
             }
           }
 
-          // 4. 匯入聯絡人並建立 ID Map
+          // 5. 匯入聯絡人並建立 ID Map
           const oldContactIdToNewIdMap = new Map();
           if (data.contacts && Array.isArray(data.contacts)) {
             for (const contact of data.contacts) {
                 const oldId = contact.id;
                 const { id, ...contactData } = contact;
+                contactData.ledgerId = getMappedLedgerId(contactData.ledgerId);
                 const newId = await this.addContact(contactData);
                 oldContactIdToNewIdMap.set(oldId, newId);
             }
           }
 
-          // 5. 匯入欠款 (Phase 1: Insert & Map IDs)
+          // 6. 匯入欠款 (Phase 1: Insert & Map IDs)
           // We use direct DB insertion instead of addDebt to preserve imported state (amounts, payments, etc.)
           const oldDebtIdToNewIdMap = new Map();
           const debtsToUpdate = []; // Keep track for Phase 2 linking
@@ -796,6 +958,9 @@ class DataService {
                 
                 // Ensure UUID
                 if (!debtData.uuid) debtData.uuid = this.generateUUID();
+
+                // Ensure ledgerId
+                debtData.ledgerId = getMappedLedgerId(debtData.ledgerId);
 
                 // Update contactId
                 if (debtData.contactId) {
@@ -828,7 +993,7 @@ class DataService {
             await tx.done;
           }
 
-          // 6. 匯入紀錄
+          // 7. 匯入紀錄
           const oldRecordIdToNewIdMap = new Map();
           
           let recordsSource = [];
@@ -863,6 +1028,9 @@ class DataService {
             // Ensure UUID
             if (!recordData.uuid) recordData.uuid = this.generateUUID();
 
+            // Ensure ledgerId
+            recordData.ledgerId = getMappedLedgerId(recordData.ledgerId);
+
             const newRecordId = await txRecords.store.add(recordData);
             if (oldRecordId) {
                 oldRecordIdToNewIdMap.set(oldRecordId, newRecordId);
@@ -870,7 +1038,7 @@ class DataService {
           }
           await txRecords.done;
 
-          // 7. Update Debts (Phase 2: Link Records)
+          // 8. Update Debts (Phase 2: Link Records)
           // Now that we have newRecordIds, we can update debt references
           if (debtsToUpdate.length > 0) {
             const txUpdate = this.db.transaction('debts', 'readwrite');
@@ -913,6 +1081,22 @@ class DataService {
             await txUpdate.done;
           }
 
+          // 9. 匯入 Recurring Transactions
+          if (data.recurring_transactions && Array.isArray(data.recurring_transactions)) {
+              const txRecur = this.db.transaction('recurring_transactions', 'readwrite');
+              for (const rt of data.recurring_transactions) {
+                  const { id, ...rtData } = rt;
+                  if (!rtData.uuid) rtData.uuid = this.generateUUID();
+                  rtData.ledgerId = getMappedLedgerId(rtData.ledgerId);
+                  
+                  if (rtData.accountId !== undefined && oldAccountIdToNewIdMap.has(rtData.accountId)) {
+                      rtData.accountId = oldAccountIdToNewIdMap.get(rtData.accountId);
+                  }
+                  await txRecur.store.add(rtData);
+              }
+              await txRecur.done;
+          }
+
           resolve({ 
             success: true, 
             message: `成功匯入 ${validRecords.length} 筆記錄`,
@@ -951,9 +1135,9 @@ class DataService {
     }
   }
 
-  // 獲取所有記錄（用於匯出）
+  // 獲取所有記錄（用於匯出，包含所有帳本）
   async getAllRecords() {
-    return await this.getRecords()
+    return await this.getRecords({ allLedgers: true })
   }
 
   // --- Sync Methods ---
@@ -968,12 +1152,24 @@ class DataService {
   async logChange(operation, storeName, recordId, data) {
     if (this.useLocalStorage || !this.db) return;
     try {
+      let syncData = data;
+      // Add ledgerUuid if record has ledgerId but no ledgerUuid
+      if (syncData && syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
+        try {
+          const ltx = this.db.transaction('ledgers', 'readonly');
+          const ledger = await ltx.store.get(syncData.ledgerId);
+          if (ledger && ledger.uuid) {
+            syncData = { ...syncData, ledgerUuid: ledger.uuid };
+          }
+        } catch(e) {}
+      }
+
       const tx = this.db.transaction('sync_log', 'readwrite');
       await tx.store.add({
         operation,
         storeName,
         recordId,
-        data,
+        data: syncData,
         timestamp: Date.now(),
         deviceId: this._syncDeviceId,
       });
@@ -1027,7 +1223,8 @@ class DataService {
    * @returns {Promise<object>}
    */
   async exportDataForSync() {
-    const records = await this.getRecords();
+    // 匯出時包含所有帳本的資料
+    const records = await this.getRecords({ allLedgers: true });
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
     const categoryOrderSetting = await this.getSetting('category_order');
@@ -1036,19 +1233,21 @@ class DataService {
     const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
-    const accounts = await this.getAccounts();
+    const accounts = await this.getAccounts({ allLedgers: true });
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-    const contacts = await this.getContacts();
-    const debts = await this.getDebts();
+    const contacts = await this.getContacts({ allLedgers: true });
+    const debts = await this.getDebts({ allLedgers: true });
+    const ledgers = await this.getLedgers();
 
     return {
-      version: '2.2.0',
+      version: '2.3.0',
       exportDate: new Date().toISOString(),
       settings: {
         advancedAccountModeEnabled: advancedAccountModeEnabled?.value || false,
         debtManagementEnabled: debtManagementEnabled?.value || false,
       },
+      ledgers,
       accounts,
       records,
       contacts,
@@ -1061,6 +1260,7 @@ class DataService {
         totalRecords: records.length,
         totalContacts: contacts.length,
         totalDebts: debts.length,
+        totalLedgers: ledgers.length,
       },
     };
   }
@@ -1100,10 +1300,11 @@ class DataService {
       // 同步接收路徑：移除來源裝置的 integer id，讓 IndexedDB 自動產生新 id
       const { id: _rid, ...accountWithoutId } = account;
       const dataToAdd = skipLog ? accountWithoutId : account;
+      dataToAdd.ledgerId = dataToAdd.ledgerId ?? this.activeLedgerId;
       const tx = this.db.transaction('accounts', 'readwrite');
       const id = await tx.store.add(dataToAdd);
       await tx.done;
-      if (!skipLog) await this.logChange('add', 'accounts', id, { ...account, id });
+      if (!skipLog) await this.logChange('add', 'accounts', id, { ...dataToAdd, id });
       return id;
     } catch (error) {
       console.error('Failed to add account:', error);
@@ -1120,9 +1321,14 @@ class DataService {
     }
   }
 
-  async getAccounts() {
+  async getAccounts(filters = {}) {
     try {
-      return await this.db.getAll('accounts');
+      let accounts = await this.db.getAll('accounts');
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        accounts = accounts.filter(a => a.ledgerId === targetLedgerId);
+      }
+      return accounts;
     } catch (error) {
       console.error('Failed to get accounts:', error);
       return [];
@@ -1255,6 +1461,7 @@ class DataService {
           uuid: contact.uuid || this.generateUUID()
         };
       }
+      contactData.ledgerId = contactData.ledgerId ?? this.activeLedgerId;
       delete contactData.id; // 讓 IndexedDB 自動產生，避免 key 衝突
       const tx = this.db.transaction('contacts', 'readwrite');
       const id = await tx.store.add(contactData);
@@ -1276,9 +1483,14 @@ class DataService {
     }
   }
 
-  async getContacts() {
+  async getContacts(filters = {}) {
     try {
-      return await this.db.getAll('contacts');
+      let contacts = await this.db.getAll('contacts');
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        contacts = contacts.filter(c => c.ledgerId === targetLedgerId);
+      }
+      return contacts;
     } catch (error) {
       console.error('Failed to get contacts:', error);
       return [];
@@ -1345,7 +1557,6 @@ class DataService {
 
       if (skipLog) {
         // ── 同步接收路徑：保留所有傳入欄位（含 settled、payments、金額等）──
-        // 不可用硬編碼值（如 settled:false）覆寫從遠端接收的真實狀態
         const amount = debt.amount ?? debt.originalAmount ?? debt.remainingAmount ?? 0;
         debtData = {
           ...debt,
@@ -1361,21 +1572,22 @@ class DataService {
         debtData = {
           type: debt.type, // 'receivable' | 'payable'
           contactId: debt.contactId,
-          contactUuid,                 // 跨裝置同步：重映射 contactId
-          originalAmount: amount,      // Original debt amount
-          remainingAmount: amount,     // Remaining amount (for partial payments)
+          contactUuid,
+          originalAmount: amount,
+          remainingAmount: amount,
           recordId: debt.recordId || null,
-          ...(recordUuid ? { recordUuid } : {}), // 跨裝置同步：重映射 recordId
+          ...(recordUuid ? { recordUuid } : {}),
           date: debt.date,
           description: debt.description || '',
           settled: false,
           settledAt: null,
-          payments: [],                // Partial payment history
+          payments: [],
           createdAt: Date.now(),
           uuid: debt.uuid || this.generateUUID()
         };
       }
 
+      debtData.ledgerId = debtData.ledgerId ?? this.activeLedgerId;
       // 移除 id（讓 IndexedDB 自動產生），避免 key 衝突
       delete debtData.id;
 
@@ -1402,7 +1614,13 @@ class DataService {
   async getDebts(filters = {}) {
     try {
       let debts = await this.db.getAll('debts');
-      
+
+      // 帳本篩選
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        debts = debts.filter(d => d.ledgerId === targetLedgerId);
+      }
+
       if (filters.contactId !== undefined) {
         debts = debts.filter(d => d.contactId === filters.contactId);
       }
@@ -1591,6 +1809,132 @@ class DataService {
     } catch (error) {
       console.error('Failed to get debt summary:', error);
       return { totalReceivable: 0, totalPayable: 0, byContact: [] };
+    }
+  }
+
+  // ==================== 帳本管理 ====================
+
+  /**
+   * 切換當前帳本
+   * @param {number} ledgerId
+   */
+  setActiveLedger(ledgerId) {
+    this.activeLedgerId = ledgerId;
+    localStorage.setItem('activeLedgerId', String(ledgerId));
+  }
+
+  /**
+   * 新增帳本
+   * @param {object} ledger { name, icon, color, type }
+   * @returns {Promise<number>} 新帳本 ID
+   */
+  async addLedger(ledger, skipLog = false) {
+    try {
+      const data = {
+        name: ledger.name,
+        icon: ledger.icon || 'fa-solid fa-book',
+        color: ledger.color || '#334A52',
+        type: ledger.type || 'personal',
+        uuid: ledger.uuid || this.generateUUID(),
+        createdAt: Date.now(),
+      };
+      const tx = this.db.transaction('ledgers', 'readwrite');
+      const id = await tx.store.add(data);
+      await tx.done;
+      if (!skipLog) await this.logChange('add', 'ledgers', id, { ...data, id });
+      return id;
+    } catch (error) {
+      console.error('Failed to add ledger:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 取得單一帳本
+   * @param {number} id
+   */
+  async getLedger(id) {
+    try {
+      return await this.db.get('ledgers', id);
+    } catch (error) {
+      console.error(`Failed to get ledger ${id}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 取得所有帳本
+   * @returns {Promise<Array>}
+   */
+  async getLedgers() {
+    try {
+      return await this.db.getAll('ledgers');
+    } catch (error) {
+      console.error('Failed to get ledgers:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 更新帳本
+   * @param {number} id
+   * @param {object} updates
+   */
+  async updateLedger(id, updates, skipLog = false) {
+    try {
+      const tx = this.db.transaction('ledgers', 'readwrite');
+      const ledger = await tx.store.get(id);
+      if (!ledger) throw new Error('Ledger not found');
+      const updated = { ...ledger, ...updates };
+      await tx.store.put(updated);
+      await tx.done;
+      if (!skipLog) await this.logChange('update', 'ledgers', id, updated);
+      return updated;
+    } catch (error) {
+      console.error(`Failed to update ledger ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 刪除帳本 + 連帶刪除所有歸屬該帳本的資料
+   * @param {number} id 帳本 ID（不可刪除預設帳本 id=1）
+   */
+  async deleteLedger(id, skipLog = false) {
+    if (id === 1) throw new Error('不可刪除預設帳本');
+    try {
+      // 連帶刪除歸屬此帳本的所有資料
+      const dataStores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions'];
+      for (const storeName of dataStores) {
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const index = tx.store.index('ledgerId');
+        let cursor = await index.openCursor(IDBKeyRange.only(id));
+        while (cursor) {
+          await cursor.delete();
+          cursor = await cursor.continue();
+        }
+        await tx.done;
+      }
+
+      const tx = this.db.transaction('ledgers', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+          const ledger = await tx.store.get(id);
+          uuid = ledger?.uuid;
+      }
+      await tx.store.delete(id);
+      await tx.done;
+
+      if (!skipLog) await this.logChange('delete', 'ledgers', id, { uuid });
+
+      // 若當前帳本被刪除，切回預設帳本
+      if (this.activeLedgerId === id) {
+        this.setActiveLedger(1);
+      }
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete ledger ${id}:`, error);
+      throw error;
     }
   }
 }

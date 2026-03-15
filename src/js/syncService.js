@@ -587,7 +587,7 @@ export class SyncService {
     if (!changes || changes.length === 0) return;
 
     // 定義建立依賴的拓撲順序 (Add階段限定)
-    const topoOrder = ['custom_categories', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
+    const topoOrder = ['custom_categories', 'ledgers', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
     const adds = changes.filter(c => c.operation === 'add');
     const updates = changes.filter(c => c.operation === 'update');
@@ -1005,6 +1005,24 @@ export class SyncService {
   }
 
   /**
+   * 將遠端 record 的 ledgerUuid 解析為本地 ledgerId。
+   * @param {object} data
+   * @returns {object} 已修正 ledgerId 的 data
+   */
+  async _resolveLedgerId(data) {
+    if (!data.ledgerUuid) return data;
+    try {
+      const ledgers = await this.dataService.getLedgers();
+      const matched = ledgers.find(l => l.uuid === data.ledgerUuid);
+      // fallback to active ledger if not found (or should we throw?)
+      // generally we should have received the ledger object right before it because of topoOrder
+      return { ...data, ledgerId: matched ? matched.id : this.dataService.activeLedgerId };
+    } catch (_) {
+      return data;
+    }
+  }
+
+  /**
    * 將遠端 record 的 accountUuid 解析為本地 accountId。
    * @param {object} data
    * @returns {object} 已修正 accountId 的 data
@@ -1012,7 +1030,7 @@ export class SyncService {
   async _resolveRecordAccountId(data) {
     if (!data.accountUuid) return data;
     try {
-      const accounts = await this.dataService.getAccounts();
+      const accounts = await this.dataService.getAccounts({ allLedgers: true });
       const matched = accounts.find(a => a.uuid === data.accountUuid);
       return { ...data, accountId: matched ? matched.id : null };
     } catch (_) {
@@ -1043,12 +1061,25 @@ export class SyncService {
   async _resolveRecurringAccountId(data) {
     if (!data.accountUuid) return data;
     try {
-      const accounts = await this.dataService.getAccounts();
+      const accounts = await this.dataService.getAccounts({ allLedgers: true });
       const matched = accounts.find(a => a.uuid === data.accountUuid);
       return { ...data, accountId: matched ? matched.id : null };
     } catch (_) {
       return data;
     }
+  }
+
+  async _resolveAllForeignKeys(storeName, data) {
+      if (!data) return data;
+      let resolved = await this._resolveLedgerId(data);
+      if (storeName === 'records' || storeName === 'debts') {
+          resolved = await this._resolveRecordAccountId(resolved);
+          resolved = await this._resolveRecordDebtId(resolved);
+      }
+      if (storeName === 'recurring_transactions') {
+          resolved = await this._resolveRecurringAccountId(resolved);
+      }
+      return resolved;
   }
 
   /**
@@ -1091,8 +1122,8 @@ export class SyncService {
             window.app.budgetManager.currentBudget = data.monthlyBudget || 0;
             window.app.budgetManager.categoryBudgets = data.categoryBudgets || {};
             await window.app.budgetManager.saveBudget(window.app.budgetManager.currentBudget, window.app.budgetManager.categoryBudgets, true);
-            if (typeof window.app.loadBudgetWidget === 'function') {
-                window.app.loadBudgetWidget(); // Auto refresh if available
+            if (window.app && window.app.router && window.app.router.routes['home'] && typeof window.app.router.routes['home'].loadBudgetWidget === 'function') {
+                window.app.router.routes['home'].loadBudgetWidget(); // Auto refresh if available
             }
         } else {
             localStorage.setItem('monthlyBudget', data.monthlyBudget || 0);
@@ -1101,7 +1132,7 @@ export class SyncService {
         return;
     }
 
-    // 如果 UUID 已存在則当新增處理，避免重複
+    // 如果 UUID 已存在則當新增處理，避免重複
     if (data.uuid) {
         const existing = await this.dataService.getByUUID(storeName, data.uuid);
         if (existing) {
@@ -1111,28 +1142,39 @@ export class SyncService {
     }
 
     switch (storeName) {
+      case 'ledgers': {
+        await this.dataService.addLedger(data, true);
+        break;
+      }
       case 'records': {
         // 同步時解析全部外鍵 UUID
-        let resolved = await this._resolveRecordAccountId(data);
+        let resolved = await this._resolveLedgerId(data);
+        resolved = await this._resolveRecordAccountId(resolved);
         resolved = await this._resolveRecordDebtId(resolved);
         await this.dataService.addRecord(resolved, true);
         break;
       }
-      case 'accounts':
-        await this.dataService.addAccount(data, true);
+      case 'accounts': {
+        let resolved = await this._resolveLedgerId(data);
+        await this.dataService.addAccount(resolved, true);
         break;
-      case 'contacts':
-        await this.dataService.addContact(data, true);
+      }
+      case 'contacts': {
+        let resolved = await this._resolveLedgerId(data);
+        await this.dataService.addContact(resolved, true);
         break;
+      }
       case 'debts': {
         // 同步時解析 contactUuid → contactId， recordUuid → recordId
-        let resolved = await this._resolveDebtContactId(data);
+        let resolved = await this._resolveLedgerId(data);
+        resolved = await this._resolveDebtContactId(resolved);
         resolved = await this._resolveDebtRecordId(resolved);
         await this.dataService.addDebt(resolved, true);
         break;
       }
       case 'recurring_transactions': {
-        const resolved = await this._resolveRecurringAccountId(data);
+        let resolved = await this._resolveLedgerId(data);
+        resolved = await this._resolveRecurringAccountId(resolved);
         await this.dataService.addRecurringTransaction(resolved);
         break;
       }
@@ -1182,8 +1224,8 @@ export class SyncService {
             window.app.budgetManager.currentBudget = data.monthlyBudget || 0;
             window.app.budgetManager.categoryBudgets = data.categoryBudgets || {};
             await window.app.budgetManager.saveBudget(window.app.budgetManager.currentBudget, window.app.budgetManager.categoryBudgets, true);
-            if (typeof window.app.loadBudgetWidget === 'function') {
-                window.app.loadBudgetWidget(); // Auto refresh if available
+            if (window.app && window.app.router && window.app.router.routes['home'] && typeof window.app.router.routes['home'].loadBudgetWidget === 'function') {
+                window.app.router.routes['home'].loadBudgetWidget(); // Auto refresh if available
             }
         } else {
             localStorage.setItem('monthlyBudget', data.monthlyBudget || 0);
@@ -1211,28 +1253,39 @@ export class SyncService {
 
   async _applyUpdateWithId(storeName, id, data) {
     switch (storeName) {
+        case 'ledgers': {
+          await this.dataService.updateLedger(id, data, true);
+          break;
+        }
         case 'records': {
           // 同步時解析全部外鍵 UUID
-          let resolved = await this._resolveRecordAccountId(data);
+          let resolved = await this._resolveLedgerId(data);
+          resolved = await this._resolveRecordAccountId(resolved);
           resolved = await this._resolveRecordDebtId(resolved);
           await this.dataService.updateRecord(id, resolved, true);
           break;
         }
-        case 'accounts':
-          await this.dataService.updateAccount(id, data, true);
+        case 'accounts': {
+          let resolved = await this._resolveLedgerId(data);
+          await this.dataService.updateAccount(id, resolved, true);
           break;
-        case 'contacts':
-          await this.dataService.updateContact(id, data, true);
+        }
+        case 'contacts': {
+          let resolved = await this._resolveLedgerId(data);
+          await this.dataService.updateContact(id, resolved, true);
           break;
+        }
         case 'debts': {
           // 同步時解析 contactUuid → contactId， recordUuid → recordId
-          let resolved = await this._resolveDebtContactId(data);
+          let resolved = await this._resolveLedgerId(data);
+          resolved = await this._resolveDebtContactId(resolved);
           resolved = await this._resolveDebtRecordId(resolved);
           await this.dataService.updateDebt(id, resolved, true);
           break;
         }
         case 'recurring_transactions': {
-          const resolved = await this._resolveRecurringAccountId(data);
+          let resolved = await this._resolveLedgerId(data);
+          resolved = await this._resolveRecurringAccountId(resolved);
           await this.dataService.updateRecurringTransaction(id, resolved);
           break;
         }
@@ -1265,6 +1318,9 @@ export class SyncService {
 
   async _applyDeleteWithId(storeName, id) {
     switch (storeName) {
+        case 'ledgers':
+          await this.dataService.deleteLedger(id, true);
+          break;
         case 'records':
           await this.dataService.deleteRecord(id, true);
           break;
@@ -1276,6 +1332,9 @@ export class SyncService {
           break;
         case 'debts':
           await this.dataService.deleteDebt(id, true);
+          break;
+        case 'recurring_transactions':
+          await this.dataService.deleteRecurringTransaction(id, true);
           break;
         default:
           console.warn('[SyncService] Unknown store for delete:', storeName);
