@@ -1169,7 +1169,13 @@ export class SyncService {
         let resolved = await this._resolveLedgerId(data);
         resolved = await this._resolveDebtContactId(resolved);
         resolved = await this._resolveDebtRecordId(resolved);
-        await this.dataService.addDebt(resolved, true);
+        const debtId = await this.dataService.addDebt(resolved, true);
+
+        // 如果該欠款關聯了一個紀錄，且該紀錄在本地已存在
+        // 則反向更新該紀錄的 debtId，解決 topoOrder 造成的單向綁定問題
+        if (resolved.recordId && debtId) {
+            await this.dataService.updateRecord(resolved.recordId, { debtId: debtId }, true);
+        }
         break;
       }
       case 'recurring_transactions': {
@@ -1281,6 +1287,11 @@ export class SyncService {
           resolved = await this._resolveDebtContactId(resolved);
           resolved = await this._resolveDebtRecordId(resolved);
           await this.dataService.updateDebt(id, resolved, true);
+
+          // 同步更新關聯紀錄
+          if (resolved.recordId) {
+              await this.dataService.updateRecord(resolved.recordId, { debtId: id }, true);
+          }
           break;
         }
         case 'recurring_transactions': {
