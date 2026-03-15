@@ -1,0 +1,1 @@
+System.register(["./main-legacy-Bqk8PLNR.js","./index-legacy-SWHnebfV.js"],function(e,t){"use strict";var o,n;return{setters:[e=>{o=e._},e=>{n=e.r}],execute:function(){e("GoogleAuth",n("GoogleAuth",{web:()=>o(()=>t.import("./web-legacy-u-2OkqAa.js"),void 0).then(e=>new e.GoogleAuthWeb)}))}}});
