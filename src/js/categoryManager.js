@@ -5,69 +5,97 @@ import Sortable from 'sortablejs'
 
 export class CategoryManager {
   constructor(dataService = null) {
-    this.dataService = dataService;
-    this.customCategories = { expense: [], income: [] };
-    this.categoryOrder = { expense: [], income: [] };
-    this.hiddenCategories = { expense: [], income: [] };
+    this.dataService = dataService
+    this.customCategories = { expense: [], income: [] }
+    this.categoryOrder = { expense: [], income: [] }
+    this.hiddenCategories = { expense: [], income: [] }
   }
 
   async init() {
     if (!this.dataService) {
-      console.warn('CategoryManager: DataService not provided, falling back to empty categories');
-      return;
+      console.warn(
+        'CategoryManager: DataService not provided, falling back to empty categories'
+      )
+      return
     }
 
     try {
-      let saved = await this.dataService.getSetting('custom_categories');
-      
+      let saved = await this.dataService.getSetting('custom_categories')
+
       // Migration from localStorage if IndexedDB is empty but localStorage has data
       if (!saved || !saved.value) {
-        const localSaved = localStorage.getItem('customCategories');
+        const localSaved = localStorage.getItem('customCategories')
         if (localSaved) {
-          saved = { value: JSON.parse(localSaved) };
-          await this.dataService.saveSetting({ key: 'custom_categories', value: saved.value });
+          saved = { value: JSON.parse(localSaved) }
+          await this.dataService.saveSetting({
+            key: 'custom_categories',
+            value: saved.value,
+          })
         }
       }
 
       if (saved && saved.value) {
-         this.customCategories = saved.value;
+        this.customCategories = saved.value
       }
-      
-      let order = await this.dataService.getSetting('category_order');
-      if (order && order.value) this.categoryOrder = order.value;
-      
-      let hidden = await this.dataService.getSetting('hidden_categories');
-      if (hidden && hidden.value) this.hiddenCategories = hidden.value;
 
+      const order = await this.dataService.getSetting('category_order')
+      if (order && order.value) this.categoryOrder = order.value
+
+      const hidden = await this.dataService.getSetting('hidden_categories')
+      if (hidden && hidden.value) this.hiddenCategories = hidden.value
     } catch (error) {
-      console.error('載入分類設定失敗:', error);
+      console.error('載入分類設定失敗:', error)
     }
   }
 
   async saveCategorySettings(skipLog = false) {
     try {
       if (this.dataService) {
-        await this.dataService.saveSetting({ key: 'category_order', value: this.categoryOrder });
-        await this.dataService.saveSetting({ key: 'hidden_categories', value: this.hiddenCategories });
-        
+        await this.dataService.saveSetting({
+          key: 'category_order',
+          value: this.categoryOrder,
+        })
+        await this.dataService.saveSetting({
+          key: 'hidden_categories',
+          value: this.hiddenCategories,
+        })
+
         if (!skipLog) {
-            this.dataService.logChange('update', 'category_order', 'all', this.categoryOrder);
-            this.dataService.logChange('update', 'hidden_categories', 'all', this.hiddenCategories);
+          this.dataService.logChange(
+            'update',
+            'category_order',
+            'all',
+            this.categoryOrder
+          )
+          this.dataService.logChange(
+            'update',
+            'hidden_categories',
+            'all',
+            this.hiddenCategories
+          )
         }
       }
-      return true;
+      return true
     } catch (error) {
-       console.error('儲存分類設定失敗:', error);
-       return false;
+      console.error('儲存分類設定失敗:', error)
+      return false
     }
   }
 
   async saveCustomCategories(skipLog = false) {
     try {
       if (this.dataService) {
-        await this.dataService.saveSetting({ key: 'custom_categories', value: this.customCategories });
+        await this.dataService.saveSetting({
+          key: 'custom_categories',
+          value: this.customCategories,
+        })
         if (!skipLog) {
-          this.dataService.logChange('update', 'custom_categories', 'all', this.customCategories);
+          this.dataService.logChange(
+            'update',
+            'custom_categories',
+            'all',
+            this.customCategories
+          )
         }
       }
       return true
@@ -78,40 +106,42 @@ export class CategoryManager {
   }
 
   getAllCategories(type, includeHidden = false) {
-    const defaultCategories = CATEGORIES[type] || [];
-    const customCategories = this.customCategories[type] || [];
-    let merged = [...defaultCategories, ...customCategories];
-    
+    const defaultCategories = CATEGORIES[type] || []
+    const customCategories = this.customCategories[type] || []
+    let merged = [...defaultCategories, ...customCategories]
+
     // Sort by categoryOrder
-    const order = this.categoryOrder[type] || [];
+    const order = this.categoryOrder[type] || []
     merged.sort((a, b) => {
-        const indexA = order.indexOf(a.id);
-        const indexB = order.indexOf(b.id);
-        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-        if (indexA !== -1) return -1;
-        if (indexB !== -1) return 1;
-        return 0; // Maintain original order for new/unordered items
-    });
-    
+      const indexA = order.indexOf(a.id)
+      const indexB = order.indexOf(b.id)
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB
+      if (indexA !== -1) return -1
+      if (indexB !== -1) return 1
+      return 0 // Maintain original order for new/unordered items
+    })
+
     if (!includeHidden) {
-        const hidden = this.hiddenCategories[type] || [];
-        merged = merged.filter(cat => !hidden.includes(cat.id));
+      const hidden = this.hiddenCategories[type] || []
+      merged = merged.filter(cat => !hidden.includes(cat.id))
     }
-    
-    return merged;
+
+    return merged
   }
 
   async addCustomCategory(type, category) {
     if (!this.customCategories[type]) {
       this.customCategories[type] = []
     }
-    
+
     // 檢查是否已存在
-    const exists = this.customCategories[type].some(cat => cat.id === category.id)
+    const exists = this.customCategories[type].some(
+      cat => cat.id === category.id
+    )
     if (exists) {
       return false
     }
-    
+
     this.customCategories[type].push(category)
     return await this.saveCustomCategories()
   }
@@ -120,12 +150,14 @@ export class CategoryManager {
     if (!this.customCategories[type]) {
       return false
     }
-    
-    const index = this.customCategories[type].findIndex(cat => cat.id === categoryId)
+
+    const index = this.customCategories[type].findIndex(
+      cat => cat.id === categoryId
+    )
     if (index === -1) {
       return false
     }
-    
+
     this.customCategories[type].splice(index, 1)
     return await this.saveCustomCategories()
   }
@@ -134,7 +166,9 @@ export class CategoryManager {
     if (!this.customCategories[type]) {
       return false
     }
-    const index = this.customCategories[type].findIndex(cat => cat.id === updatedCategory.id)
+    const index = this.customCategories[type].findIndex(
+      cat => cat.id === updatedCategory.id
+    )
     if (index === -1) {
       return false
     }
@@ -143,38 +177,45 @@ export class CategoryManager {
   }
 
   getCustomCategoryById(type, categoryId) {
-    return this.customCategories[type]?.find(cat => cat.id === categoryId) || null
+    return (
+      this.customCategories[type]?.find(cat => cat.id === categoryId) || null
+    )
   }
 
   getCategoryById(type, categoryId) {
-    const defaultCategory = CATEGORIES[type]?.find(cat => cat.id === categoryId);
-    if (defaultCategory) return defaultCategory;
+    const defaultCategory = CATEGORIES[type]?.find(cat => cat.id === categoryId)
+    if (defaultCategory) return defaultCategory
 
-    const customCategory = this.getCustomCategoryById(type, categoryId);
-    if (customCategory) return customCategory;
+    const customCategory = this.getCustomCategoryById(type, categoryId)
+    if (customCategory) return customCategory
 
     // If not found in the specified type, check the other type as a fallback
-    const otherType = type === 'expense' ? 'income' : 'expense';
-    const fallbackDefault = CATEGORIES[otherType]?.find(cat => cat.id === categoryId);
-    if (fallbackDefault) return fallbackDefault;
+    const otherType = type === 'expense' ? 'income' : 'expense'
+    const fallbackDefault = CATEGORIES[otherType]?.find(
+      cat => cat.id === categoryId
+    )
+    if (fallbackDefault) return fallbackDefault
 
-    const fallbackCustom = this.getCustomCategoryById(otherType, categoryId);
-    if (fallbackCustom) return fallbackCustom;
+    const fallbackCustom = this.getCustomCategoryById(otherType, categoryId)
+    if (fallbackCustom) return fallbackCustom
 
-    return null;
+    return null
   }
 
   isCustomCategory(type, categoryId) {
-    return this.customCategories[type]?.some(cat => cat.id === categoryId) || false
+    return (
+      this.customCategories[type]?.some(cat => cat.id === categoryId) || false
+    )
   }
 
   showAddCategoryModal(type, categoryToEdit = null, onUpdateCallback = null) {
     const modal = document.createElement('div')
     modal.id = 'add-category-modal'
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
-    
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
     const typeText = type === 'expense' ? '支出' : '收入'
-    
+
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full max-h-[90vh] flex flex-col">
         <div class="p-6 border-b border-wabi-border">
@@ -216,10 +257,14 @@ export class CategoryManager {
           <div>
             <label class="block text-sm font-medium text-wabi-text-primary mb-2">選擇顏色</label>
             <div class="grid grid-cols-6 gap-3" id="color-selector">
-              ${this.getAvailableColors().map(color => `
+              ${this.getAvailableColors()
+                .map(
+                  color => `
                 <button type="button" class="color-option w-10 h-10 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
                 </button>
-              `).join('')}
+              `
+                )
+                .join('')}
               <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-10 h-10 rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
                 <i class="fas fa-palette text-wabi-text-secondary text-xl"></i>
                 <input type="color" id="custom-color-picker-input" class="absolute w-0 h-0 opacity-0" value="#888888">
@@ -240,12 +285,12 @@ export class CategoryManager {
         </div>
       </div>
     `
-    
+
     document.body.appendChild(modal)
-    
+
     let selectedIcon = categoryToEdit ? categoryToEdit.icon : ''
     let selectedColor = categoryToEdit ? categoryToEdit.color : ''
-    
+
     // 自訂圖標輸入
     const customIconInput = document.getElementById('custom-icon-input')
     const previewIconBtn = document.getElementById('preview-icon-btn')
@@ -273,10 +318,10 @@ export class CategoryManager {
 
     // 預覽按鈕點擊
     previewIconBtn.addEventListener('click', updateIconPreview)
-    
+
     // 圖示渲染邏輯
     const iconSelector = document.getElementById('icon-selector')
-    
+
     const bindIconSelection = () => {
       document.querySelectorAll('.icon-option').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -294,20 +339,24 @@ export class CategoryManager {
       })
     }
 
-    const renderIcons = (icons) => {
-      iconSelector.innerHTML = icons.map(icon => `
+    const renderIcons = icons => {
+      iconSelector.innerHTML = icons
+        .map(
+          icon => `
         <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${icon}" title="${icon}">
           <i class="${icon}"></i>
         </button>
-      `).join('')
-      
+      `
+        )
+        .join('')
+
       // 反白已選擇的圖標
       if (selectedIcon) {
-         const btn = iconSelector.querySelector(`[data-icon="${selectedIcon}"]`)
-         if (btn) {
-             btn.classList.remove('border-wabi-border')
-             btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10')
-         }
+        const btn = iconSelector.querySelector(`[data-icon="${selectedIcon}"]`)
+        if (btn) {
+          btn.classList.remove('border-wabi-border')
+          btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10')
+        }
       }
 
       bindIconSelection()
@@ -318,122 +367,163 @@ export class CategoryManager {
 
     // 搜尋功能
     const iconSearchInput = document.getElementById('icon-search-input')
-    iconSearchInput.addEventListener('input', (e) => {
+    iconSearchInput.addEventListener('input', e => {
       const query = e.target.value.trim().toLowerCase()
       if (!query) {
         renderIcons(this.getAvailableIcons())
         return
       }
-      
-      const filteredIcons = FONT_AWESOME_ICONS.filter(icon => icon.toLowerCase().includes(query)).slice(0, 100) // 限制結果數量
-      
+
+      const filteredIcons = FONT_AWESOME_ICONS.filter(icon =>
+        icon.toLowerCase().includes(query)
+      ).slice(0, 100) // 限制結果數量
+
       if (filteredIcons.length === 0) {
-          iconSelector.innerHTML = '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>'
+        iconSelector.innerHTML =
+          '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>'
       } else {
-          renderIcons(filteredIcons)
+        renderIcons(filteredIcons)
       }
     })
-    
+
     // 顏色選擇
-    const colorOptions = document.querySelectorAll('.color-option');
-    const customColorPickerInput = document.getElementById('custom-color-picker-input');
-    const customColorPickerLabel = document.getElementById('custom-color-picker-label');
+    const colorOptions = document.querySelectorAll('.color-option')
+    const customColorPickerInput = document.getElementById(
+      'custom-color-picker-input'
+    )
+    const customColorPickerLabel = document.getElementById(
+      'custom-color-picker-label'
+    )
 
     const clearColorSelection = () => {
       colorOptions.forEach(b => {
-        b.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
-        b.classList.add('border-transparent');
-      });
-      customColorPickerLabel.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-      customColorPickerLabel.classList.add('border-dashed', 'border-wabi-border');
-      customColorPickerLabel.style.backgroundColor = 'transparent';
-    };
-    
+        b.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent')
+        b.classList.add('border-transparent')
+      })
+      customColorPickerLabel.classList.remove(
+        'border-wabi-primary',
+        'ring-2',
+        'ring-wabi-accent',
+        'border-solid'
+      )
+      customColorPickerLabel.classList.add(
+        'border-dashed',
+        'border-wabi-border'
+      )
+      customColorPickerLabel.style.backgroundColor = 'transparent'
+    }
+
     colorOptions.forEach(btn => {
       btn.addEventListener('click', () => {
-        clearColorSelection();
-        btn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
-        selectedColor = btn.dataset.color;
-      });
-    });
+        clearColorSelection()
+        btn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent')
+        selectedColor = btn.dataset.color
+      })
+    })
 
-    customColorPickerInput.addEventListener('input', (e) => {
-      clearColorSelection();
-      customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-      customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
-      customColorPickerLabel.style.backgroundColor = e.target.value;
-      selectedColor = e.target.value;
-    });
+    customColorPickerInput.addEventListener('input', e => {
+      clearColorSelection()
+      customColorPickerLabel.classList.add(
+        'border-wabi-primary',
+        'ring-2',
+        'ring-wabi-accent',
+        'border-solid'
+      )
+      customColorPickerLabel.classList.remove(
+        'border-dashed',
+        'border-wabi-border'
+      )
+      customColorPickerLabel.style.backgroundColor = e.target.value
+      selectedColor = e.target.value
+    })
 
     // 初始狀態
     if (selectedColor) {
       if (selectedColor.startsWith('#')) {
-        customColorPickerInput.value = selectedColor;
-        customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-        customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
-        customColorPickerLabel.style.backgroundColor = selectedColor;
+        customColorPickerInput.value = selectedColor
+        customColorPickerLabel.classList.add(
+          'border-wabi-primary',
+          'ring-2',
+          'ring-wabi-accent',
+          'border-solid'
+        )
+        customColorPickerLabel.classList.remove(
+          'border-dashed',
+          'border-wabi-border'
+        )
+        customColorPickerLabel.style.backgroundColor = selectedColor
       } else {
-        const selectedBtn = document.querySelector(`.color-option[data-color="${selectedColor}"]`);
+        const selectedBtn = document.querySelector(
+          `.color-option[data-color="${selectedColor}"]`
+        )
         if (selectedBtn) {
-          selectedBtn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
+          selectedBtn.classList.add(
+            'border-wabi-primary',
+            'ring-2',
+            'ring-wabi-accent'
+          )
         }
       }
     }
-    
-    // 儲存分類
-    document.getElementById('save-category-btn').addEventListener('click', async () => {
-      const name = document.getElementById('category-name').value.trim()
-      
-      if (!name) {
-        alert('請輸入分類名稱')
-        return
-      }
-      
-      if (!selectedIcon) {
-        alert('請選擇圖示')
-        return
-      }
-      
-      if (!selectedColor) {
-        alert('請選擇顏色')
-        return
-      }
-      
-      const category = {
-        id: categoryToEdit ? categoryToEdit.id : 'custom_' + Date.now(),
-        name: name,
-        icon: selectedIcon,
-        color: selectedColor,
-        isCustom: true
-      }
-      
-      let success = false
-      if (categoryToEdit) {
-        success = await this.updateCustomCategory(type, category)
-      } else {
-        success = await this.addCustomCategory(type, category)
-      }
 
-      if (success) {
-        this.closeAddCategoryModal()
-        if (onUpdateCallback) onUpdateCallback();
-      } else {
-        alert(categoryToEdit ? '更新分類失敗' : '新增分類失敗')
-      }
-    })
-    
+    // 儲存分類
+    document
+      .getElementById('save-category-btn')
+      .addEventListener('click', async () => {
+        const name = document.getElementById('category-name').value.trim()
+
+        if (!name) {
+          alert('請輸入分類名稱')
+          return
+        }
+
+        if (!selectedIcon) {
+          alert('請選擇圖示')
+          return
+        }
+
+        if (!selectedColor) {
+          alert('請選擇顏色')
+          return
+        }
+
+        const category = {
+          id: categoryToEdit ? categoryToEdit.id : 'custom_' + Date.now(),
+          name: name,
+          icon: selectedIcon,
+          color: selectedColor,
+          isCustom: true,
+        }
+
+        let success = false
+        if (categoryToEdit) {
+          success = await this.updateCustomCategory(type, category)
+        } else {
+          success = await this.addCustomCategory(type, category)
+        }
+
+        if (success) {
+          this.closeAddCategoryModal()
+          if (onUpdateCallback) onUpdateCallback()
+        } else {
+          alert(categoryToEdit ? '更新分類失敗' : '新增分類失敗')
+        }
+      })
+
     // 取消按鈕
-    document.getElementById('cancel-category-btn').addEventListener('click', () => {
-      this.closeAddCategoryModal()
-    })
-    
+    document
+      .getElementById('cancel-category-btn')
+      .addEventListener('click', () => {
+        this.closeAddCategoryModal()
+      })
+
     // 點擊背景關閉
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('click', e => {
       if (e.target === modal) {
         this.closeAddCategoryModal()
       }
     })
-    
+
     // 自動聚焦
     setTimeout(() => {
       document.getElementById('category-name').focus()
@@ -449,31 +539,68 @@ export class CategoryManager {
 
   getAvailableIcons() {
     return [
-      'fas fa-pizza-slice', 'fas fa-coffee', 'fas fa-shopping-cart', 'fas fa-car',
-      'fas fa-gas-pump', 'fas fa-film', 'fas fa-gamepad', 'fas fa-mobile-alt',
-      'fas fa-pills', 'fas fa-hospital', 'fas fa-book', 'fas fa-pen',
-      'fas fa-tshirt', 'fas fa-shoe-prints', 'fas fa-home', 'fas fa-lightbulb',
-      'fas fa-tools', 'fas fa-bullseye', 'fas fa-palette', 'fas fa-music',
-      'fas fa-camera', 'fas fa-plane', 'fas fa-umbrella-beach', 'fas fa-gift',
-      'fas fa-money-bill-wave', 'fas fa-chart-line', 'fas fa-trophy', 'fas fa-star',
-      'fas fa-heart', 'fas fa-fire', 'fas fa-bolt', 'fas fa-gem'
+      'fas fa-pizza-slice',
+      'fas fa-coffee',
+      'fas fa-shopping-cart',
+      'fas fa-car',
+      'fas fa-gas-pump',
+      'fas fa-film',
+      'fas fa-gamepad',
+      'fas fa-mobile-alt',
+      'fas fa-pills',
+      'fas fa-hospital',
+      'fas fa-book',
+      'fas fa-pen',
+      'fas fa-tshirt',
+      'fas fa-shoe-prints',
+      'fas fa-home',
+      'fas fa-lightbulb',
+      'fas fa-tools',
+      'fas fa-bullseye',
+      'fas fa-palette',
+      'fas fa-music',
+      'fas fa-camera',
+      'fas fa-plane',
+      'fas fa-umbrella-beach',
+      'fas fa-gift',
+      'fas fa-money-bill-wave',
+      'fas fa-chart-line',
+      'fas fa-trophy',
+      'fas fa-star',
+      'fas fa-heart',
+      'fas fa-fire',
+      'fas fa-bolt',
+      'fas fa-gem',
     ]
   }
 
   getAvailableColors() {
     return [
-      'bg-slate-400', 'bg-stone-400', 'bg-red-400', 'bg-orange-400',
-      'bg-amber-400', 'bg-yellow-400', 'bg-lime-400', 'bg-green-400',
-      'bg-emerald-400', 'bg-teal-400', 'bg-cyan-400', 'bg-sky-400',
-      'bg-blue-400', 'bg-indigo-400', 'bg-violet-400', 'bg-purple-400'
+      'bg-slate-400',
+      'bg-stone-400',
+      'bg-red-400',
+      'bg-orange-400',
+      'bg-amber-400',
+      'bg-yellow-400',
+      'bg-lime-400',
+      'bg-green-400',
+      'bg-emerald-400',
+      'bg-teal-400',
+      'bg-cyan-400',
+      'bg-sky-400',
+      'bg-blue-400',
+      'bg-indigo-400',
+      'bg-violet-400',
+      'bg-purple-400',
     ]
   }
 
   async deleteCategoryWithFallback(type, categoryId, onUpdateCallback) {
-     const modal = document.createElement('div');
-     modal.id = 'delete-category-confirm-modal';
-     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4';
-     modal.innerHTML = `
+    const modal = document.createElement('div')
+    modal.id = 'delete-category-confirm-modal'
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4'
+    modal.innerHTML = `
         <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
             <div class="size-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <i class="fa-solid fa-triangle-exclamation text-2xl text-wabi-expense"></i>
@@ -490,67 +617,84 @@ export class CategoryManager {
                </button>
             </div>
         </div>
-     `;
-     document.body.appendChild(modal);
-     
-     return new Promise((resolve) => {
-         const cleanup = () => { if (modal) modal.remove(); };
-         
-         document.getElementById('cancel-delete-btn').addEventListener('click', () => {
-             cleanup();
-             resolve(false);
-         });
-         
-         document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
-             if (!this.dataService) {
-                 cleanup();
-                 resolve(false);
-                 return;
-             }
-             
-             const proceedFallback = async () => {
-                 const records = await this.dataService.getRecords({ type: type, category: categoryId });
-                 for (const record of records) {
-                     await this.dataService.updateRecord(record.id, { category: 'another' });
-                 }
-                 
-                 await this.removeCustomCategory(type, categoryId);
-                 
-                 if (this.categoryOrder[type]) {
-                     this.categoryOrder[type] = this.categoryOrder[type].filter(id => id !== categoryId);
-                 }
-                 if (this.hiddenCategories[type]) {
-                     this.hiddenCategories[type] = this.hiddenCategories[type].filter(id => id !== categoryId);
-                 }
-                 await this.saveCategorySettings();
-             };
-             
-             // Show loading maybe? We'll just await it
-             document.getElementById('confirm-delete-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-             try {
-                 await proceedFallback();
-                 cleanup();
-                 if (onUpdateCallback) onUpdateCallback();
-                 resolve(true);
-             } catch (e) {
-                 console.error('刪除與轉移失敗', e);
-                 alert('刪除與轉移過程發生錯誤。');
-                 cleanup();
-                 resolve(false);
-             }
-         });
-     });
+     `
+    document.body.appendChild(modal)
+
+    return new Promise(resolve => {
+      const cleanup = () => {
+        if (modal) modal.remove()
+      }
+
+      document
+        .getElementById('cancel-delete-btn')
+        .addEventListener('click', () => {
+          cleanup()
+          resolve(false)
+        })
+
+      document
+        .getElementById('confirm-delete-btn')
+        .addEventListener('click', async () => {
+          if (!this.dataService) {
+            cleanup()
+            resolve(false)
+            return
+          }
+
+          const proceedFallback = async () => {
+            const records = await this.dataService.getRecords({
+              type: type,
+              category: categoryId,
+            })
+            for (const record of records) {
+              await this.dataService.updateRecord(record.id, {
+                category: 'another',
+              })
+            }
+
+            await this.removeCustomCategory(type, categoryId)
+
+            if (this.categoryOrder[type]) {
+              this.categoryOrder[type] = this.categoryOrder[type].filter(
+                id => id !== categoryId
+              )
+            }
+            if (this.hiddenCategories[type]) {
+              this.hiddenCategories[type] = this.hiddenCategories[type].filter(
+                id => id !== categoryId
+              )
+            }
+            await this.saveCategorySettings()
+          }
+
+          // Show loading maybe? We'll just await it
+          document.getElementById('confirm-delete-btn').innerHTML =
+            '<i class="fa-solid fa-spinner fa-spin"></i>'
+          try {
+            await proceedFallback()
+            cleanup()
+            if (onUpdateCallback) onUpdateCallback()
+            resolve(true)
+          } catch (e) {
+            console.error('刪除與轉移失敗', e)
+            alert('刪除與轉移過程發生錯誤。')
+            cleanup()
+            resolve(false)
+          }
+        })
+    })
   }
 
   showManageCategoriesModal(type, onUpdateCallback = null) {
     const modal = document.createElement('div')
     modal.id = 'manage-categories-modal'
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
-    
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
     const typeText = type === 'expense' ? '支出' : '收入'
-    const allCategories = this.getAllCategories(type, true); // Include hidden
-    const hiddenSet = new Set(this.hiddenCategories[type] || []);
-    
+    const allCategories = this.getAllCategories(type, true) // Include hidden
+    const hiddenSet = new Set(this.hiddenCategories[type] || [])
+
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[80vh] flex flex-col">
         <div class="flex items-center justify-between mb-4">
@@ -561,12 +705,17 @@ export class CategoryManager {
         </div>
         
         <div id="category-sortable-list" class="flex-1 overflow-y-auto space-y-3 mb-6 pr-2">
-        ${allCategories.map(category => {
-            const isHidden = hiddenSet.has(category.id);
-            const isCustom = category.isCustom;
-            const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
-            const colorClass = !category.color.startsWith('#') ? category.color : '';
-            
+        ${allCategories
+          .map(category => {
+            const isHidden = hiddenSet.has(category.id)
+            const isCustom = category.isCustom
+            const colorStyle = category.color.startsWith('#')
+              ? `style="background-color: ${category.color}"`
+              : ''
+            const colorClass = !category.color.startsWith('#')
+              ? category.color
+              : ''
+
             return `
             <div class="sortable-item flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border shadow-sm transition-opacity duration-200 ${isHidden ? 'opacity-40' : ''}" data-id="${category.id}">
               <div class="flex items-center space-x-3 flex-1 min-w-0">
@@ -582,18 +731,23 @@ export class CategoryManager {
                 <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
                   <i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>
                 </button>
-                ${isCustom ? `
+                ${
+                  isCustom
+                    ? `
                   <button class="edit-category-btn size-9 flex items-center justify-center rounded-full text-wabi-accent hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}">
                     <i class="fa-solid fa-pen"></i>
                   </button>
                   <button class="delete-category-btn size-9 flex items-center justify-center rounded-full text-wabi-expense hover:bg-red-50 transition-colors" data-category-id="${category.id}">
                     <i class="fa-solid fa-trash-can"></i>
                   </button>
-                ` : `<div class="size-9"></div><div class="size-9"></div>`}
+                `
+                    : `<div class="size-9"></div><div class="size-9"></div>`
+                }
               </div>
             </div>
             `
-        }).join('')}
+          })
+          .join('')}
         </div>
         
         <div class="flex space-x-3 mt-auto pt-4 border-t border-wabi-border bg-wabi-bg">
@@ -606,62 +760,66 @@ export class CategoryManager {
         </div>
       </div>
     `
-    
+
     document.body.appendChild(modal)
 
     // Init SortableJS
-    const listEl = document.getElementById('category-sortable-list');
+    const listEl = document.getElementById('category-sortable-list')
     const sortableInstance = new Sortable(listEl, {
-        animation: 150,
-        handle: '.drag-handle',
-        ghostClass: 'opacity-50',
-        onEnd: async (evt) => {
-            const items = listEl.querySelectorAll('.sortable-item');
-            const newOrder = Array.from(items).map(item => item.dataset.id);
-            this.categoryOrder[type] = newOrder;
-            await this.saveCategorySettings();
-            if (onUpdateCallback) onUpdateCallback();
-        }
-    });
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'opacity-50',
+      onEnd: async evt => {
+        const items = listEl.querySelectorAll('.sortable-item')
+        const newOrder = Array.from(items).map(item => item.dataset.id)
+        this.categoryOrder[type] = newOrder
+        await this.saveCategorySettings()
+        if (onUpdateCallback) onUpdateCallback()
+      },
+    })
 
     // Toggle Hide
     document.querySelectorAll('.toggle-hide-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const categoryId = btn.dataset.categoryId;
-            if (!this.hiddenCategories[type]) this.hiddenCategories[type] = [];
-            
-            const index = this.hiddenCategories[type].indexOf(categoryId);
-            if (index > -1) {
-                this.hiddenCategories[type].splice(index, 1);
-            } else {
-                this.hiddenCategories[type].push(categoryId);
-            }
-            await this.saveCategorySettings();
-            
-            this.closeManageCategoriesModal();
-            this.showManageCategoriesModal(type, onUpdateCallback);
-            if (onUpdateCallback) onUpdateCallback();
-        });
-    });
-    
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
+        const categoryId = btn.dataset.categoryId
+        if (!this.hiddenCategories[type]) this.hiddenCategories[type] = []
+
+        const index = this.hiddenCategories[type].indexOf(categoryId)
+        if (index > -1) {
+          this.hiddenCategories[type].splice(index, 1)
+        } else {
+          this.hiddenCategories[type].push(categoryId)
+        }
+        await this.saveCategorySettings()
+
+        this.closeManageCategoriesModal()
+        this.showManageCategoriesModal(type, onUpdateCallback)
+        if (onUpdateCallback) onUpdateCallback()
+      })
+    })
+
     // 刪除分類
     document.querySelectorAll('.delete-category-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
+      btn.addEventListener('click', async e => {
+        e.stopPropagation()
         const categoryId = btn.dataset.categoryId
-        const res = await this.deleteCategoryWithFallback(type, categoryId, onUpdateCallback);
+        const res = await this.deleteCategoryWithFallback(
+          type,
+          categoryId,
+          onUpdateCallback
+        )
         if (res) {
-            this.closeManageCategoriesModal();
-            this.showManageCategoriesModal(type, onUpdateCallback);
+          this.closeManageCategoriesModal()
+          this.showManageCategoriesModal(type, onUpdateCallback)
         }
       })
     })
 
     // 編輯分類
     document.querySelectorAll('.edit-category-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
         const categoryId = btn.dataset.categoryId
         const categoryToEdit = this.getCustomCategoryById(type, categoryId)
         if (categoryToEdit) {
@@ -670,20 +828,24 @@ export class CategoryManager {
         }
       })
     })
-    
+
     // 新增分類
-    document.getElementById('add-new-category-btn').addEventListener('click', () => {
-      this.closeManageCategoriesModal()
-      this.showAddCategoryModal(type, null, onUpdateCallback) // Pass callback
-    })
-    
+    document
+      .getElementById('add-new-category-btn')
+      .addEventListener('click', () => {
+        this.closeManageCategoriesModal()
+        this.showAddCategoryModal(type, null, onUpdateCallback) // Pass callback
+      })
+
     // 關閉按鈕
-    document.getElementById('close-manage-btn').addEventListener('click', () => {
-      this.closeManageCategoriesModal()
-    })
-    
+    document
+      .getElementById('close-manage-btn')
+      .addEventListener('click', () => {
+        this.closeManageCategoriesModal()
+      })
+
     // 點擊背景關閉
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('click', e => {
       if (e.target === modal) {
         this.closeManageCategoriesModal()
       }
