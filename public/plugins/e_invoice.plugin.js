@@ -124,18 +124,19 @@ export default {
         try {
             html5QrCode = new window.Html5Qrcode("reader");
             
-            // 1. 強制硬體參數：高解析度 + 連續自動對焦
-            const cameraConstraints = {
-                facingMode: "environment",
-                width: { min: 720, ideal: 1280, max: 1920 },
-                height: { min: 720, ideal: 1280, max: 1920 },
-                advanced: [{ focusMode: "continuous" }]
-            };
+            // 1. 第一個參數：嚴格遵守只能有 facingMode 一個 Key
+            const cameraConfig = { facingMode: "environment" };
 
-            // 2. 掃描器參數設定
+            // 2. 第二個參數：掃描器與進階視訊設定
             const scannerConfig = { 
                 fps: 15, 
-                qrbox: { width: 220, height: 220 } 
+                qrbox: { width: 220, height: 220 },
+                videoConstraints: {
+                    facingMode: "environment",
+                    width: { min: 720, ideal: 1280, max: 1920 },
+                    height: { min: 720, ideal: 1280, max: 1920 },
+                    advanced: [{ focusMode: "continuous" }]
+                }
             };
 
             // 3. 限制只辨識 QR Code
@@ -144,7 +145,7 @@ export default {
             }
 
             await html5QrCode.start(
-                cameraConstraints, 
+                cameraConfig, 
                 scannerConfig,
                 (decodedText) => { this.handleScanResult(decodedText, html5QrCode, closeModal); },
                 () => { /* 忽略幀錯誤 */ }
@@ -156,7 +157,7 @@ export default {
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
             }
         } catch (e) {
-            console.error(e);
+            console.error('啟動失敗詳細錯誤:', e);
             const loadingEl = document.getElementById('reader-loading');
             if (loadingEl) {
                 loadingEl.innerHTML = `
