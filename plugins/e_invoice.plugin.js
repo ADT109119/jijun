@@ -181,13 +181,8 @@ export default {
     async handleScanResult(qrData, scanner, closeModal) {
         if (!qrData || qrData.length < 37) return;
 
-        // 掃描到資料後立刻停止相機，避免背景繼續耗電或重複觸發
-        if (scanner && scanner.isScanning) {
-            try {
-                await scanner.stop();
-                scanner.clear();
-            } catch(e) { }
-        }
+        // 1. 成功掃描到內容，立刻關閉掃描視窗，讓後續的 Modal 可以正常顯示在最上層
+        await closeModal();
 
         try {
             const invNum = qrData.substring(0, 10);
@@ -204,16 +199,7 @@ export default {
             const endMonth = startMonth + 1;
             const periodStr = `${rocYear}年${String(startMonth).padStart(2, '0')}-${String(endMonth).padStart(2, '0')}月`;
 
-            const invoiceData = {
-                number: invNum,
-                amount: totalAmount,
-                date: dateStr,
-                period: periodStr,
-                scannedAt: Date.now(),
-                isWinning: null 
-            };
-
-            // 檢查是否為重複發票
+            // 2. 檢查是否為重複發票
             let invoices = [];
             try {
                 const stored = await this.context.storage.getItem('invoices');
@@ -223,28 +209,63 @@ export default {
             const isDuplicate = invoices.some(inv => inv.number === invNum);
 
             if (isDuplicate) {
-                // 如果已存在，彈出確認視窗詢問是否接續未完成的記帳
+                // 相機 Modal 已關閉，Confirm 視窗現在能完美呈現在最上層
                 const wantToRecordAgain = await this.context.ui.showConfirm(
                     '發票已掃描過', 
                     `這張發票 (${invNum}) 已經存在掃描紀錄中。<br><br>請問您是要重新將金額帶入記帳頁面嗎？`
                 );
                 
                 if (wantToRecordAgain) {
-                    this.fillAddForm(invoiceData);
+                    // 若是重複掃描，為了避免覆蓋舊紀錄，直接建構簡易假資料帶入表單即可
+                    this.fillAddForm({ number: invNum, amount: totalAmount });
                 }
-                closeModal();
                 return;
             }
+
+            // 3. 嘗試取得店家名稱 (發票格式第 45-52 碼為賣方統編)
+            const sellerBan = qrData.length >= 53 ? qrData.substring(45, 53) : '';
+            let storeName = '';
+
+            if (sellerBan && sellerBan !== '00000000' && /^\d{8}$/.test(sellerBan)) {
+                try {
+                    // 為了避免網路卡頓影響體驗，加上 2 秒的逾時限制
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 2000); 
+                    
+                    const res = await fetch(`https://company.g0v.ronny.tw/api/show/${sellerBan}`, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.data) {
+                            storeName = data.data['公司名稱'] || data.data['商業名稱'] || '';
+                            // 過濾常見的長尾後綴，讓名稱更簡潔乾淨 (例如: 統一超商股份有限公司 -> 統一超商)
+                            storeName = storeName.replace(/股份有限公司|有限公司|企業行|實業|商行/g, '').trim();
+                        }
+                    }
+                } catch (e) {
+                    // 逾時或無網路，則靜默忽略，單純顯示發票號碼
+                }
+            }
+
+            const invoiceData = {
+                number: invNum,
+                amount: totalAmount,
+                date: dateStr,
+                period: periodStr,
+                storeName: storeName,
+                sellerBan: sellerBan,
+                scannedAt: Date.now(),
+                isWinning: null 
+            };
 
             // 全新發票：儲存並帶入表單
             await this.saveInvoice(invoiceData, invoices);
             this.context.ui.showToast(`成功掃描發票: ${invNum}`, 'success');
             this.fillAddForm(invoiceData);
-            closeModal();
 
         } catch (e) {
             this.context.ui.showToast('發票解析失敗，請重新掃描', 'error');
-            closeModal();
         }
     },
 
@@ -257,7 +278,12 @@ export default {
     fillAddForm(invoiceData) {
         const noteInput = document.getElementById('add-note-input');
         const currentNote = noteInput ? noteInput.value.trim() : '';
-        const newNote = currentNote ? `${currentNote} (發票:${invoiceData.number})` : `發票號碼: ${invoiceData.number}`;
+        
+        // 將店家名稱帶入備註最前方，格式為：[店家名稱] 既有備註 (發票號碼)
+        const storeText = invoiceData.storeName ? `[${invoiceData.storeName}] ` : '';
+        const newNote = currentNote 
+            ? `${storeText}${currentNote} (發票:${invoiceData.number})` 
+            : `${storeText}發票號碼: ${invoiceData.number}`;
 
         this.context.ui.openAddPage({
             amount: invoiceData.amount,
@@ -491,11 +517,14 @@ export default {
                     const y = inv.date.substring(0, 3);
                     const m = inv.date.substring(3, 5);
                     const d = inv.date.substring(5, 7);
+                    
+                    // 若有紀錄店家名稱，也顯示在清單上
+                    const storeBadge = inv.storeName ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-2">${inv.storeName}</span>` : '';
 
                     return `
                         <div class="bg-white p-4 rounded-xl shadow-sm border ${borderClass} flex justify-between items-center transition-all hover:shadow-md">
                             <div>
-                                <div class="font-bold text-gray-800 text-lg tracking-widest font-mono">${inv.number}</div>
+                                <div class="font-bold text-gray-800 text-lg tracking-widest font-mono flex items-center">${inv.number} ${storeBadge}</div>
                                 <div class="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
                                     <i class="fa-regular fa-calendar-check opacity-70"></i> ${y}/${m}/${d}
                                 </div>
