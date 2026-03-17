@@ -23,7 +23,7 @@ export default {
         this.registerInvoiceListPage();
         this.registerWidget();
 
-        // 背景檢查中獎 (延遲 5 秒執行避免影響首頁載入)
+        // 背景檢查中獎
         setTimeout(() => this.initBackgroundCheck(), 5000);
     },
 
@@ -79,18 +79,19 @@ export default {
                     </button>
                 </div>
 
-                <div class="p-4 flex flex-col items-center w-full">
-                    <div class="relative w-full max-w-[300px] aspect-square bg-black rounded-lg overflow-hidden shadow-inner">
+                <div class="p-5 flex flex-col items-center w-full">
+                    <div class="relative w-full max-w-[280px] aspect-square bg-black rounded-lg overflow-hidden shadow-inner">
                         <div id="reader" class="w-full h-full border-none"></div>
                         <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-white text-sm bg-black z-10 transition-opacity duration-300">
                             <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
                             <p class="mt-2 tracking-wider">正在啟動高畫質相機...</p>
                         </div>
                     </div>
-                    <p class="text-xs text-gray-500 mt-5 text-center leading-relaxed">
-                        請將鏡頭對準電子發票 <span class="font-bold text-gray-700">左側</span> 的 QR Code。<br>
-                        <span class="text-red-500 font-bold bg-red-50 px-2 py-1 rounded mt-1 inline-block">💡 提示：請保持 10~15 公分距離，太近會無法對焦</span>
-                    </p>
+                    
+                    <div class="mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px]">
+                        <i class="fa-solid fa-circle-info text-gray-400"></i>
+                        <span>請保持 10~15 公分距離以利對焦</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -124,10 +125,7 @@ export default {
         try {
             html5QrCode = new window.Html5Qrcode("reader");
             
-            // 1. 第一個參數：嚴格遵守只能有 facingMode 一個 Key
             const cameraConfig = { facingMode: "environment" };
-
-            // 2. 第二個參數：掃描器與進階視訊設定
             const scannerConfig = { 
                 fps: 15, 
                 qrbox: { width: 220, height: 220 },
@@ -139,7 +137,6 @@ export default {
                 }
             };
 
-            // 3. 限制只辨識 QR Code
             if (window.Html5QrcodeSupportedFormats && window.Html5QrcodeSupportedFormats.QR_CODE !== undefined) {
                 scannerConfig.formatsToSupport = [ window.Html5QrcodeSupportedFormats.QR_CODE ];
             }
@@ -184,6 +181,7 @@ export default {
     async handleScanResult(qrData, scanner, closeModal) {
         if (!qrData || qrData.length < 37) return;
 
+        // 掃描到資料後立刻停止相機，避免背景繼續耗電或重複觸發
         if (scanner && scanner.isScanning) {
             try {
                 await scanner.stop();
@@ -215,32 +213,44 @@ export default {
                 isWinning: null 
             };
 
-            const isSaved = await this.saveInvoice(invoiceData);
-            if (isSaved) {
-                this.context.ui.showToast(`成功掃描發票: ${invNum}`, 'success');
-                this.fillAddForm(invoiceData);
+            // 檢查是否為重複發票
+            let invoices = [];
+            try {
+                const stored = await this.context.storage.getItem('invoices');
+                if (stored) invoices = JSON.parse(stored);
+            } catch (e) { }
+
+            const isDuplicate = invoices.some(inv => inv.number === invNum);
+
+            if (isDuplicate) {
+                // 如果已存在，彈出確認視窗詢問是否接續未完成的記帳
+                const wantToRecordAgain = await this.context.ui.showConfirm(
+                    '發票已掃描過', 
+                    `這張發票 (${invNum}) 已經存在掃描紀錄中。<br><br>請問您是要重新將金額帶入記帳頁面嗎？`
+                );
+                
+                if (wantToRecordAgain) {
+                    this.fillAddForm(invoiceData);
+                }
+                closeModal();
+                return;
             }
+
+            // 全新發票：儲存並帶入表單
+            await this.saveInvoice(invoiceData, invoices);
+            this.context.ui.showToast(`成功掃描發票: ${invNum}`, 'success');
+            this.fillAddForm(invoiceData);
             closeModal();
+
         } catch (e) {
             this.context.ui.showToast('發票解析失敗，請重新掃描', 'error');
             closeModal();
         }
     },
 
-    async saveInvoice(invoiceData) {
-        let invoices = [];
-        try {
-            const stored = await this.context.storage.getItem('invoices');
-            if (stored) invoices = JSON.parse(stored);
-        } catch (e) { }
-
-        if (invoices.some(inv => inv.number === invoiceData.number)) {
-            this.context.ui.showToast('這張發票已經掃描過囉！', 'warning');
-            return false;
-        }
-
-        invoices.push(invoiceData);
-        await this.context.storage.setItem('invoices', JSON.stringify(invoices));
+    async saveInvoice(invoiceData, currentInvoices) {
+        currentInvoices.push(invoiceData);
+        await this.context.storage.setItem('invoices', JSON.stringify(currentInvoices));
         return true;
     },
 
