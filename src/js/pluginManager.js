@@ -336,8 +336,7 @@ export class PluginManager {
              try {
                  // @ts-ignore
         /* @vite-ignore */
-        const importUrl = `${url}?t=${Date.now()}`;
-        const module = await import(importUrl);
+        const module = await import(url);
                  meta = module.default?.meta || {};
              } catch(err) {
                  URL.revokeObjectURL(url);
