@@ -1,8 +1,8 @@
 export default {
     meta: {
         id: 'com.walkingfish.e_invoice',
-        name: '電子發票掃描',
-        version: '1.0',
+        name: '電子發票掃描 (Beta 版)',
+        version: '0.9',
         description: '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
         author: 'The walking fish 步行魚',
         icon: 'fa-qrcode',
@@ -42,7 +42,7 @@ export default {
         const btn = document.createElement('button');
         btn.id = 'einvoice-scan-btn';
         btn.className = 'text-sm text-wabi-primary bg-wabi-primary/10 px-3 py-1.5 rounded-lg hover:bg-wabi-primary/20 transition-colors flex items-center gap-2 mr-2';
-        btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> 掃描發票';
+        btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> 掃描發票 <span class="text-[10px] bg-wabi-primary text-white px-1 rounded">Beta</span>';
 
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -72,7 +72,7 @@ export default {
             <div class="bg-white rounded-xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative">
                 <div class="flex justify-between items-center p-4 bg-gray-50 border-b border-gray-200">
                     <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-                        <i class="fa-solid fa-qrcode text-wabi-primary"></i> 掃描發票
+                        <i class="fa-solid fa-qrcode text-wabi-primary"></i> 掃描發票 <span class="text-xs font-normal text-gray-500">(Beta)</span>
                     </h3>
                     <button id="einvoice-close-btn" class="text-gray-400 hover:text-gray-600 focus:outline-none">
                         <i class="fa-solid fa-times text-xl"></i>
@@ -84,10 +84,13 @@ export default {
                         <div id="reader" class="w-full h-full border-none"></div>
                         <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-white text-sm bg-black z-10 transition-opacity duration-300">
                             <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p class="mt-2 tracking-wider">正在啟動相機...</p>
+                            <p class="mt-2 tracking-wider">正在啟動高畫質相機...</p>
                         </div>
                     </div>
-                    <p class="text-xs text-gray-500 mt-5 text-center leading-relaxed">請將鏡頭對準電子發票左側的 QR Code。<br>若無法掃描，請確認已授予相機權限。</p>
+                    <p class="text-xs text-gray-500 mt-5 text-center leading-relaxed">
+                        請將鏡頭對準電子發票 <span class="font-bold text-gray-700">左側</span> 的 QR Code。<br>
+                        <span class="text-red-500 font-bold bg-red-50 px-2 py-1 rounded mt-1 inline-block">💡 提示：請保持 10~15 公分距離，太近會無法對焦</span>
+                    </p>
                 </div>
             </div>
         `;
@@ -120,9 +123,29 @@ export default {
 
         try {
             html5QrCode = new window.Html5Qrcode("reader");
+            
+            // 1. 強制硬體參數：高解析度 + 連續自動對焦
+            const cameraConstraints = {
+                facingMode: "environment",
+                width: { min: 720, ideal: 1280, max: 1920 },
+                height: { min: 720, ideal: 1280, max: 1920 },
+                advanced: [{ focusMode: "continuous" }]
+            };
+
+            // 2. 掃描器參數設定
+            const scannerConfig = { 
+                fps: 15, 
+                qrbox: { width: 220, height: 220 } 
+            };
+
+            // 3. 限制只辨識 QR Code
+            if (window.Html5QrcodeSupportedFormats && window.Html5QrcodeSupportedFormats.QR_CODE !== undefined) {
+                scannerConfig.formatsToSupport = [ window.Html5QrcodeSupportedFormats.QR_CODE ];
+            }
+
             await html5QrCode.start(
-                { facingMode: "environment" }, 
-                { fps: 10, qrbox: { width: 250, height: 250 } },
+                cameraConstraints, 
+                scannerConfig,
                 (decodedText) => { this.handleScanResult(decodedText, html5QrCode, closeModal); },
                 () => { /* 忽略幀錯誤 */ }
             );
@@ -133,6 +156,7 @@ export default {
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
             }
         } catch (e) {
+            console.error(e);
             const loadingEl = document.getElementById('reader-loading');
             if (loadingEl) {
                 loadingEl.innerHTML = `
@@ -255,7 +279,6 @@ export default {
                     if (storedWin) existingWin = JSON.parse(storedWin);
                 } catch(e) {}
                 
-                // 混和新舊資料，確保歷史開獎不被覆蓋
                 winningData = { ...existingWin, ...winningData };
                 await this.context.storage.setItem('winning_numbers', JSON.stringify(winningData));
                 await this.context.storage.setItem('last_sync_winning_numbers', now);
@@ -271,7 +294,7 @@ export default {
         let newWinningCount = 0;
 
         for (const inv of invoices) {
-            if (inv.isWinning !== true) { // 沒對過或是未中獎都重對一次
+            if (inv.isWinning !== true) { 
                 const result = this.checkInvoiceWinning(inv.number, inv.period, winningData);
                 if (result !== null && result !== inv.isWinning) {
                     inv.isWinning = result;
@@ -291,13 +314,11 @@ export default {
 
     async fetchWinningNumbers() {
         try {
-            // 由於前台發送 API 通常有 CORS 限制，實務上需透過後端 Proxy
             const res = await fetch('https://api.invoice.tw/api/v1/invoice/latest'); 
             if (!res.ok) throw new Error('Network response was not ok');
             return await res.json();
         } catch (e) {
             console.warn('API 連線失敗，載入內建備用中獎號碼');
-            // 回傳真實的歷史中獎資料（作為防呆備用方案）
             return {
                 "114年11-12月": {
                     super: "97023797",
@@ -315,25 +336,21 @@ export default {
 
     checkInvoiceWinning(invoiceNumber, period, winningData) {
         const periodData = winningData[period];
-        if (!periodData) return null; // 尚未開獎或無此期資料
+        if (!periodData) return null;
 
         const { super: superNum, special, first } = periodData;
 
-        // 特別獎
         if (invoiceNumber === superNum) return true;
-        
-        // 特獎
         if (invoiceNumber === special) return true;
 
-        // 頭獎 ~ 六獎 (比對末 3 碼到末 8 碼)
         for (const f of first) {
-            for (let i = 0; i <= 5; i++) { // i=0: 8碼全中(頭獎), i=5: 3碼中(六獎)
+            for (let i = 0; i <= 5; i++) { 
                 const targetMatch = f.substring(i);
                 const myMatch = invoiceNumber.substring(i);
                 if (myMatch === targetMatch) return true;
             }
         }
-        return false; // 對獎完成，確認未中獎
+        return false; 
     },
 
     // ===== UI 註冊邏輯 =====
@@ -347,7 +364,7 @@ export default {
                             <i class="fa-solid fa-qrcode text-lg"></i>
                         </div>
                         <div>
-                            <div class="font-bold text-gray-800">發票管理</div>
+                            <div class="font-bold text-gray-800">發票管理 <span class="text-[10px] font-normal text-gray-400 border border-gray-200 px-1 rounded ml-1">Beta</span></div>
                             <div class="text-xs text-gray-500">掃描與自動對獎</div>
                         </div>
                     </div>
@@ -358,12 +375,11 @@ export default {
     },
 
     registerInvoiceListPage() {
-        this.context.ui.registerPage('invoice_list', '發票清單', async (container) => {
-            // 基本骨架：加入分頁導航與中獎號碼面板
+        this.context.ui.registerPage('invoice_list', '發票清單 (Beta)', async (container) => {
             container.innerHTML = `
                 <div class="p-4 flex flex-col h-full pb-20">
                     <div class="flex justify-between items-center mb-4 shrink-0">
-                        <h2 class="text-xl font-bold text-gray-800">發票管理</h2>
+                        <h2 class="text-xl font-bold text-gray-800">發票管理 <span class="text-sm font-normal text-gray-500">(Beta)</span></h2>
                         <button id="einvoice-sync-btn" class="text-sm text-wabi-primary px-3 py-1.5 bg-wabi-primary/10 rounded-lg hover:bg-wabi-primary/20 transition-colors flex items-center gap-2">
                             <i class="fa-solid fa-rotate"></i> 更新對獎
                         </button>
@@ -401,13 +417,11 @@ export default {
                     if (storedWin) winningData = JSON.parse(storedWin);
                 } catch(e) {}
 
-                // 取出所有存在過的期別
                 const periodsSet = new Set();
                 invoices.forEach(i => periodsSet.add(i.period));
                 Object.keys(winningData).forEach(p => periodsSet.add(p));
 
                 if (periodsSet.size === 0) {
-                    // 若完全沒資料，預設產生當前月份期別
                     const now = new Date();
                     const rocYear = now.getFullYear() - 1911;
                     const month = now.getMonth() + 1;
@@ -416,7 +430,6 @@ export default {
                     periodsSet.add(`${rocYear}年${String(startM).padStart(2, '0')}-${String(endM).padStart(2, '0')}月`);
                 }
 
-                // 排序：最新的月份在前面 (Index 0)
                 availablePeriods = Array.from(periodsSet).sort((a, b) => b.localeCompare(a));
             };
 
@@ -425,12 +438,10 @@ export default {
                 
                 const currentPeriod = availablePeriods[currentPeriodIndex];
                 
-                // 1. 更新翻頁器狀態
                 container.querySelector('#period-display').innerText = currentPeriod;
-                container.querySelector('#prev-period-btn').disabled = (currentPeriodIndex >= availablePeriods.length - 1); // 越往左邊越舊
-                container.querySelector('#next-period-btn').disabled = (currentPeriodIndex <= 0); // 越往右邊越新
+                container.querySelector('#prev-period-btn').disabled = (currentPeriodIndex >= availablePeriods.length - 1); 
+                container.querySelector('#next-period-btn').disabled = (currentPeriodIndex <= 0); 
 
-                // 2. 更新中獎號碼面板
                 const winData = winningData[currentPeriod];
                 const winContainer = container.querySelector('#winning-numbers-container');
                 const winContent = container.querySelector('#winning-numbers-content');
@@ -446,7 +457,6 @@ export default {
                     winContainer.classList.add('hidden');
                 }
 
-                // 3. 更新發票列表
                 const listContainer = container.querySelector('#einvoice-list-container');
                 const periodInvoices = invoices.filter(inv => inv.period === currentPeriod);
                 periodInvoices.sort((a, b) => b.scannedAt - a.scannedAt);
@@ -488,17 +498,16 @@ export default {
                 }).join('');
             };
 
-            // ===== 事件綁定 =====
             container.querySelector('#prev-period-btn').addEventListener('click', () => {
                 if (currentPeriodIndex < availablePeriods.length - 1) {
-                    currentPeriodIndex++; // 往左看更舊的月份
+                    currentPeriodIndex++; 
                     renderUI();
                 }
             });
 
             container.querySelector('#next-period-btn').addEventListener('click', () => {
                 if (currentPeriodIndex > 0) {
-                    currentPeriodIndex--; // 往右看較新的月份
+                    currentPeriodIndex--; 
                     renderUI();
                 }
             });
@@ -509,7 +518,7 @@ export default {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 對獎中...';
                 btn.disabled = true;
 
-                await this.initBackgroundCheck(true); // 強制觸發對獎與更新
+                await this.initBackgroundCheck(true); 
                 await loadData();
                 renderUI();
 
@@ -518,7 +527,6 @@ export default {
                 this.context.ui.showToast('對獎更新完成', 'success');
             });
 
-            // 初始載入
             await loadData();
             renderUI();
         });
