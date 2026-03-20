@@ -15,16 +15,17 @@ export class PluginStorage {
         if (!dataService) {
             throw new Error('PluginStorage requires a DataService instance.');
         }
-        // 驗證 pluginId 格式：僅允許英數字、點、底線、連字號
+        // 驗證 pluginId 格式：僅允許英數字、點、底線、連字號 (降級為警告以維持向後相容)
         if (!/^[a-zA-Z0-9._-]+$/.test(pluginId)) {
-            throw new Error(`PluginStorage: Invalid pluginId format: "${pluginId}". Only alphanumeric, dots, underscores, and hyphens are allowed.`);
+            console.warn(`PluginStorage: Sub-optimal pluginId format: "${pluginId}". Only alphanumeric, dots, underscores, and hyphens are recommended.`);
         }
         this.pluginId = pluginId;
         this.dataService = dataService;
         this.prefix = `plugin_${pluginId}_`;
-        this.cache = {}; // Memory cache for synchronous API
+        this.cache = Object.create(null); // Memory cache (no prototype for safe key access)
         this.saveTimeout = null;
         this.savePromiseResolve = null;
+        this.savePromise = null;
     }
 
     /**
@@ -42,9 +43,9 @@ export class PluginStorage {
         }
 
         if (pluginData && pluginData.storage) {
-            this.cache = { ...pluginData.storage };
+            this.cache = Object.assign(Object.create(null), pluginData.storage);
         } else {
-            this.cache = {};
+            this.cache = Object.create(null);
         }
 
         // 2. Migrate from localStorage to the cache
@@ -102,8 +103,16 @@ export class PluginStorage {
             });
         }
 
+        // 保存當前 Promise 的 resolve 引用
+        const currentResolve = this.savePromiseResolve;
+
         // Use a small delay to batch rapid consecutive writes
         this.saveTimeout = setTimeout(async () => {
+            // 切斷類別全域狀態，讓新來的寫入能產出下一輪的 Promise
+            this.saveTimeout = null;
+            this.savePromise = null;
+            this.savePromiseResolve = null;
+
             try {
                 const tx = this.dataService.db.transaction('plugins', 'readwrite');
                 const pluginData = await tx.store.get(this.pluginId);
@@ -116,11 +125,10 @@ export class PluginStorage {
             } catch (e) {
                 console.error(`[PluginStorage] Failed to save storage to DB for ${this.pluginId}`, e);
             } finally {
-                if (this.savePromiseResolve) {
-                    this.savePromiseResolve();
-                    this.savePromiseResolve = null;
+                // 呼叫該週期專屬的 Resolve
+                if (currentResolve) {
+                    currentResolve();
                 }
-                this.savePromise = null;
             }
         }, 50);
 
@@ -162,7 +170,7 @@ export class PluginStorage {
      * Clear all storage for this plugin.
      */
     clear() {
-        this.cache = {};
+        this.cache = Object.create(null);
         this._saveToDB();
     }
 

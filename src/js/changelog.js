@@ -1,5 +1,20 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.4.4": {
+    date: "2026-03-21",
+    title: "插件儲存引擎升級與安全強化",
+    features: [
+      "插件儲存引擎升級：PluginStorage 從同步 localStorage 遷移至非同步 IndexedDB，顯著提升大數據量下的讀寫性能與穩定性",
+      "相容性中介層：引入 In-Memory Cache 確保現有插件仍可使用同步 API (getItem/setItem) 無縫運作"
+    ],
+    bugfixes: [
+      "修復插件儲存原型污染風險：使用無原型物件 (Object.create(null)) 徹底杜絕插件存取到原生 JS 屬性的安全漏洞",
+      "修復 Debounce 寫入時序 Bug：優化非同步保存邏輯，解決極端頻繁寫入下的 Promise 解析衝突問題"
+    ],
+    improvements: [
+      "優化插件 ID 容錯性：降級嚴格驗證為警告，確保舊有 ID 不符合規範的插件仍能正常載入"
+    ]
+  },
   "2.1.4.3": {
     date: "2025-03-20",
     title: "智能關聯刪除與系統穩定性",
