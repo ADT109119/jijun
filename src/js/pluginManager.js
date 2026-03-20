@@ -34,12 +34,12 @@ export class PluginManager {
     });
   }
 
-  createPluginContext(pluginId, permissions = []) {
+  createPluginContext(pluginId, permissions = [], initializedStorage = null) {
     const has = (perm) => permissions.includes(perm);
 
     // ---- storage ----
-    const storage = has('storage') && pluginId
-      ? new PluginStorage(pluginId)
+    const storage = has('storage') && pluginId && initializedStorage
+      ? initializedStorage
       : this._denied('storage', 'storage');
 
     // ---- data ----
@@ -231,7 +231,13 @@ export class PluginManager {
         
         const module = await import(url);
         if (module.default && typeof module.default.init === 'function') {
-            const context = this.createPluginContext(pluginData.id, pluginData.permissions || []);
+            let storage = null;
+            if (perms.includes('storage')) {
+                storage = new PluginStorage(pluginData.id, this.dataService);
+                await storage.init();
+            }
+
+            const context = this.createPluginContext(pluginData.id, perms, storage);
             module.default.init(context);
             this.plugins.set(pluginData.id, module.default);
             console.log(`Plugin loaded: ${pluginData.name}`);
@@ -336,7 +342,7 @@ export class PluginManager {
              try {
                  // @ts-ignore
         /* @vite-ignore */
-        const module = await import(url);
+        const module = await import(url);
                  meta = module.default?.meta || {};
              } catch(err) {
                  URL.revokeObjectURL(url);
