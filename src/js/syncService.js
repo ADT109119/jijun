@@ -1336,7 +1336,7 @@ export class SyncService {
         case 'recurring_transactions': {
           let resolved = await this._resolveLedgerId(data);
           resolved = await this._resolveRecurringAccountId(resolved);
-          await this.dataService.updateRecurringTransaction(id, resolved);
+          await this.dataService.updateRecurringTransaction(id, resolved, true);
           break;
         }
         default:
