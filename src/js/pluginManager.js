@@ -255,6 +255,7 @@ export class PluginManager {
     'data:write': { icon: 'fa-pen-to-square',  label: '寫入帳務資料', desc: '允許新增或修改記帳紀錄、欠款、聯絡人' },
     'ui':         { icon: 'fa-window-maximize', label: '使用者介面',   desc: '允許註冊頁面、顯示通知、首頁小工具' },
     'network':    { icon: 'fa-globe',           label: '網路存取',     desc: '允許與外部伺服器通訊（如匯率查詢）' },
+    'camera':     { icon: 'fa-camera',          label: '相機權限',     desc: '允許透過相機掃描條碼或讀取影像' },
   };
 
   /**
@@ -335,7 +336,7 @@ export class PluginManager {
              try {
                  // @ts-ignore
         /* @vite-ignore */
-        const module = await import(url);
+        const module = await import(url);
                  meta = module.default?.meta || {};
              } catch(err) {
                  URL.revokeObjectURL(url);
