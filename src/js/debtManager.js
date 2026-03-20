@@ -428,10 +428,25 @@ export class DebtManager {
     listContainer.querySelectorAll('.delete-debt-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const debtId = parseInt(btn.dataset.id);
+        const debt = await this.dataService.getDebt(debtId);
+        
         if (confirm('確定要刪除此欠款記錄嗎？')) {
+          const recordId = debt?.recordId;
           await this.dataService.deleteDebt(debtId);
-          showToast('已刪除欠款紀錄', 'success');
-          // Maintain current filter state
+          
+          if (recordId) {
+              if (confirm('此欠款有關聯的記帳紀錄，是否也要一併刪除該紀錄？')) {
+                  await this.dataService.deleteRecord(recordId);
+                  showToast('欠款與關聯紀錄已刪除', 'success');
+              } else {
+                  // 清除紀錄上的反向引用，避免留下孤立指標
+                  await this.dataService.updateRecord(recordId, { debtId: null });
+                  showToast('已刪除欠款紀錄', 'success');
+              }
+          } else {
+              showToast('已刪除欠款紀錄', 'success');
+          }
+          
           await this.updateSummaryCards();
           await this.loadDebtList();
         }

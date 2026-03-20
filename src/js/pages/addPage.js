@@ -650,8 +650,27 @@ export class AddPage {
         if (isEditMode) {
             document.getElementById('delete-record-btn').addEventListener('click', async () => {
                 if (confirm('確定要刪除這筆紀錄嗎？')) {
-                    await this.app.dataService.deleteRecord(parseInt(recordId, 10));
-                    showToast('紀錄已刪除');
+                    const id = parseInt(recordId, 10);
+                    const record = await this.app.dataService.getRecord(id);
+                    const associatedDebtId = record?.debtId;
+                    
+                    await this.app.dataService.deleteRecord(id);
+                    
+                    if (associatedDebtId) {
+                        if (confirm('此紀錄有關聯的欠款，是否也要一併刪除該欠款？')) {
+                            await this.app.dataService.deleteDebt(associatedDebtId);
+                            showToast('紀錄與關聯欠款已刪除');
+                        } else {
+                            // 清除欠款上的反向引用，避免留下孤立指標
+                            await this.app.dataService.updateDebt(associatedDebtId, {
+                                recordId: null, recordUuid: null
+                            });
+                            showToast('紀錄已刪除');
+                        }
+                    } else {
+                        showToast('紀錄已刪除');
+                    }
+                    
                     window.location.hash = 'records';
                 }
             });

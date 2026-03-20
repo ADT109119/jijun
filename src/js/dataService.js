@@ -443,6 +443,19 @@ class DataService {
     }
   }
 
+  async getRecord(id) {
+    if (this.useLocalStorage) {
+      const records = JSON.parse(localStorage.getItem('records') || '[]');
+      return records.find(r => r.id === id);
+    }
+    try {
+      return await this.db.get('records', id);
+    } catch (error) {
+      console.error('獲取單條記錄失敗:', error);
+      return null;
+    }
+  }
+
   // 更新記錄
   async updateRecord(id, updates, skipLog = false) {
     if (this.useLocalStorage) {
@@ -1747,9 +1760,6 @@ class DataService {
         recordId: null
       };
       
-      // Only create a transaction record if this debt was NOT linked to an existing expense
-      // If it was linked (recordId exists), the expense was already recorded
-      // Creating another record would cause double-counting
       // Only create a transaction record if this debt was NOT linked to an existing expense/income
       // If it was linked (recordId exists), the cash flow was already recorded at creation
       // Creating another record would cause double-counting in statistics

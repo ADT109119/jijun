@@ -1,5 +1,18 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.4.3": {
+    date: "2025-03-20",
+    title: "智能關聯刪除與系統穩定性",
+    features: [
+      "智能關聯刪除：刪除有關聯的紀錄或欠款時，提供連同刪除選項，並自動清理孤立引用"
+    ],
+    bugfixes: [
+      "同步穩定性提升：補足 recurring_transactions 同步的 skipLog 參數",
+      "修復 getRecord 缺失導致的刪除報錯問題",
+      "清理程式碼中重複的注釋說明"
+    ],
+    improvements: []
+  },
   "2.1.4.2": {
     date: "2026-03-15",
     title: "欠款管理增強與同步優化",
@@ -11,8 +24,7 @@ export const CHANGELOG = {
     bugfixes: [
       "修復還款紀錄在跨裝置同步時無法正確顯示的問題",
     ],
-    improvements: [
-    ]
+    improvements: []
   },
   "2.1.4.1": {
     date: "2026-03-15",
