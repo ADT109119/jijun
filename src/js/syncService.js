@@ -10,9 +10,13 @@ import { showToast } from './utils.js';
 /** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
 const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
 
+/** @type {string} Google API Key（供 Google Picker 使用，請在 Google Cloud Console 產生 API 金鑰） */
+const GOOGLE_API_KEY = 'AIzaSyDcTWTpa2OGfX0IcOpcOTP2GTpPa8Za0fw'; // 填入您的 API Key
+
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
+  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
@@ -90,7 +94,11 @@ export class SyncService {
 
       // 檢查是否需要啟動自動同步
       const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
-      if (autoSyncSetting?.value && this.isSignedIn()) {
+      const isAutoSyncEnabled = autoSyncSetting?.value || false;
+      const ledgers = await this.dataService.getLedgers();
+      const hasShared = ledgers.some(l => l.isShared);
+      
+      if ((isAutoSyncEnabled || hasShared) && this.isSignedIn()) {
         const intervalSetting = await this.dataService.getSetting('sync_auto_interval');
         const intervalMs = (intervalSetting?.value || 'daily') === 'daily'
           ? 24 * 60 * 60 * 1000
@@ -668,15 +676,109 @@ export class SyncService {
   }
 
   /**
-   * 執行完整同步（push + pull）
+   * 將共用帳本的本地變更推送到各自的 Drive 共享檔案
    */
-  async performSync() {
+  async pushSharedLedgerChanges() {
+    await this.ensureValidToken();
+
+    const ledgers = await this.dataService.getLedgers();
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId && l.type === 'shared');
+
+    for (const ledger of sharedLedgers) {
+      try {
+        const lastPushKey = `sync_last_push_timestamp_shared_${ledger.sharedFileId}`;
+        const lastPush = await this.dataService.getSetting(lastPushKey);
+        const since = lastPush?.value || 0;
+        
+        const changes = await this.dataService.getChangesSince(since, { sharedLedgerUuid: ledger.uuid });
+        if (changes.length === 0) continue;
+
+        const existingData = await this._downloadFile(ledger.sharedFileId);
+        const existing = existingData || { changes: [] };
+        
+        // Append new changes
+        existing.changes = [...(existing.changes || []), ...changes];
+        existing.timestamp = Date.now();
+        existing.deviceId = this.deviceId;
+        
+        await this._updateFile(ledger.sharedFileId, JSON.stringify(existing));
+
+        // Update last push timestamp
+        const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
+        await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
+      } catch (e) {
+        console.warn(`[SyncService] pushSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
+      }
+    }
+  }
+
+  /**
+   * 從各個共用帳本檔案拉取遠端變更
+   */
+  async pullSharedLedgerChanges() {
+    await this.ensureValidToken();
+
+    const ledgers = await this.dataService.getLedgers();
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId && l.type === 'shared');
+
+    const lastPullSetting = await this.dataService.getSetting('sync_last_pull_timestamps');
+    const pullTimestamps = lastPullSetting?.value || {};
+    const allRemoteChanges = [];
+
+    for (const ledger of sharedLedgers) {
+      try {
+        // Query modified time before downloading
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${ledger.sharedFileId}?fields=modifiedTime`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        );
+        if (!res.ok) {
+            console.warn(`[SyncService] Failed to check shared ledger ${ledger.name} file status.`);
+            continue;
+        }
+        const meta = await res.json();
+        
+        const lastPullTime = pullTimestamps[`shared_${ledger.sharedFileId}`] || 0;
+        const modifiedTime = new Date(meta.modifiedTime).getTime();
+
+        if (modifiedTime > lastPullTime) {
+            const fileData = await this._downloadFile(ledger.sharedFileId);
+            if (fileData?.changes) {
+                // Ignore changes we pushed ourselves recently
+                const newChanges = fileData.changes.filter(c => c.timestamp > lastPullTime && c.deviceId !== this.deviceId);
+                allRemoteChanges.push(...newChanges);
+            }
+            pullTimestamps[`shared_${ledger.sharedFileId}`] = Date.now();
+        }
+      } catch (e) {
+        console.warn(`[SyncService] pullSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
+      }
+    }
+
+    if (allRemoteChanges.length > 0) {
+      allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp);
+      await this.applyRemoteChanges(allRemoteChanges);
+    }
+    await this.dataService.saveSetting({ key: 'sync_last_pull_timestamps', value: pullTimestamps });
+  }
+
+  /**
+   * 執行完整同步（push + pull + shared）
+   * @param {boolean} isManual 是否為手動觸發（忽略個人同步的關閉設定）
+   */
+  async performSync(isManual = false) {
     if (this._syncing) return;
     this._syncing = true;
 
     try {
-      await this.pushChanges();
-      await this.pullChanges();
+      const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
+      const isPersonalEnabled = isManual || !!(autoSyncSetting?.value);
+
+      if (isPersonalEnabled) await this.pushChanges();
+      await this.pushSharedLedgerChanges();
+      
+      if (isPersonalEnabled) await this.pullChanges();
+      await this.pullSharedLedgerChanges();
     } finally {
       this._syncing = false;
     }
@@ -759,12 +861,12 @@ export class SyncService {
     this.stopAutoSync();
 
     // 啟動後立即同步一次
-    this.performSync().catch((err) =>
+    this.performSync(false).catch((err) =>
       console.error('[SyncService] Auto sync error:', err)
     );
 
     this._autoSyncIntervalId = setInterval(() => {
-      this.performSync().catch((err) =>
+      this.performSync(false).catch((err) =>
         console.error('[SyncService] Auto sync error:', err)
       );
     }, intervalMs);
@@ -772,7 +874,7 @@ export class SyncService {
     // 頁面 visibility 變化時也觸發同步
     this._visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isSignedIn()) {
-        this.performSync().catch((err) =>
+        this.performSync(false).catch((err) =>
           console.error('[SyncService] Visibility sync error:', err)
         );
       }
@@ -946,6 +1048,118 @@ export class SyncService {
 
     if (!res.ok) throw new Error(`Failed to create file (${res.status})`);
     return await res.json();
+  }
+
+  /**
+   * 建立共用檔案到外部 (Drive Root)
+   * @param {string} fileName
+   * @param {string} content
+   * @returns {Promise<object>}
+   */
+  async _createSharedFile(fileName, content) {
+    const metadata = {
+      name: fileName,
+      // 不指定 parents，預設放在使用者的根目錄
+      mimeType: 'application/json',
+    };
+
+    const boundary = '-------314159265358979323846';
+    const body = [
+      `--${boundary}`,
+      'Content-Type: application/json; charset=UTF-8',
+      '',
+      JSON.stringify(metadata),
+      `--${boundary}`,
+      'Content-Type: application/json',
+      '',
+      content,
+      `--${boundary}--`,
+    ].join('\r\n');
+
+    const res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+
+    if (!res.ok) throw new Error(`Failed to create shared file (${res.status})`);
+    return await res.json();
+  }
+
+  /**
+   * 將指定檔案授權給其他 Email (Writer)
+   * @param {string} fileId
+   * @param {string} emailAddress
+   */
+  async grantFilePermission(fileId, emailAddress) {
+    await this.ensureValidToken();
+
+    const body = {
+        role: 'writer',
+        type: 'user',
+        emailAddress: emailAddress
+    };
+
+    const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=false`,
+        {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        }
+    );
+
+    if (!res.ok) {
+        let errStr = '';
+        try {
+            const errJson = await res.json();
+            errStr = errJson.error?.message || '';
+        } catch(e) {}
+        throw new Error(`Failed to grant permission (${res.status}): ${errStr}`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * 拿取檔案目前的權限清單
+   * @param {string} fileId
+   * @returns {Promise<Array>}
+   */
+  async getFilePermissions(fileId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,emailAddress,role,displayName)`,
+      { headers: { Authorization: `Bearer ${this.accessToken}` } }
+    );
+    if (!res.ok) throw new Error('Failed to get permissions');
+    const data = await res.json();
+    return data.permissions;
+  }
+
+  /**
+   * 移除檔案分享權限
+   * @param {string} fileId
+   * @param {string} permissionId
+   */
+  async removeFilePermission(fileId, permissionId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.accessToken}` }
+      }
+    );
+    if (!res.ok) throw new Error('Failed to remove permission');
   }
 
   /**
@@ -1389,6 +1603,74 @@ export class SyncService {
         default:
           console.warn('[SyncService] Unknown store for delete:', storeName);
       }
+  }
+
+  // ──────────────────────────────────────────────
+  // Google Picker API
+  // ──────────────────────────────────────────────
+
+  /**
+   * 打開 Google Picker 選擇共用帳本檔案
+   * 透過這個方式選取的/授權的檔案，會被 Google 自動賦予 drive.file 權限
+   * @param {string|string[]} [fileIds=null] - 若已知 File ID，可傳入加速授權流程
+   * @returns {Promise<string>} 回傳選擇的檔案 ID
+   */
+  async openSharedLedgerPicker(fileIds = null) {
+    if (typeof gapi === 'undefined') {
+      throw new Error('Google API 未載入');
+    }
+
+    return new Promise((resolve, reject) => {
+      gapi.load('picker', {
+        callback: () => {
+          const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+            .setMimeTypes('application/json');
+
+          const builder = new google.picker.PickerBuilder()
+            .addView(view)
+            .setTitle(fileIds ? '請同意授權存取此共用帳本' : '在「與我共用」尋找共用帳本 (EasyAccounting_Shared 開頭)')
+            .setOAuthToken(this.accessToken)
+            .setCallback((data) => {
+              if (data.action === google.picker.Action.PICKED) {
+                const file = data.docs[0];
+                resolve(file.id);
+              } else if (data.action === google.picker.Action.CANCEL) {
+                reject(new Error('使用者取消選擇'));
+              }
+            });
+
+          // 如果有 API Key 則設定，沒有也能跑（僅在公開連結或特殊情況下可能會有影響）
+          if (GOOGLE_API_KEY) {
+            builder.setDeveloperKey(GOOGLE_API_KEY);
+          }
+
+          // 解析 App ID
+          if (GOOGLE_CLIENT_ID) {
+            const appId = GOOGLE_CLIENT_ID.split('-')[0];
+            if (appId) {
+                builder.setAppId(appId);
+            }
+          }
+
+          // 新版 API 支援傳入已知 File ID（例如從輸入框貼上的代碼）進行無縫授權
+          if (fileIds) {
+            const idsString = Array.isArray(fileIds) ? fileIds.join(',') : fileIds;
+            if (typeof view.setFileIds === 'function') {
+                view.setFileIds(idsString);
+            } else {
+                // 退回最傳統的搜尋方式
+                view.setQuery(idsString); 
+            }
+          } else {
+            // 沒有提供 File ID 時，傳統的瀏覽模式
+            view.setMode(google.picker.DocsViewMode.LIST);
+          }
+            
+          const picker = builder.build();
+          picker.setVisible(true);
+        }
+      });
+    });
   }
 }
 

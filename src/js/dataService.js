@@ -1206,13 +1206,36 @@ class DataService {
    * @param {number} sinceTimestamp - 起始時間戳
    * @returns {Promise<Array>}
    */
-  async getChangesSince(sinceTimestamp) {
+  async getChangesSince(sinceTimestamp, options = {}) {
     if (this.useLocalStorage || !this.db) return [];
     try {
+      const isSharedSync = !!options.sharedLedgerUuid;
+      const targetUuid = options.sharedLedgerUuid;
+
+      const allLedgers = await this.db.getAll('ledgers');
+      const sharedUuids = new Set(allLedgers.filter(l => l.isShared).map(l => l.uuid));
+
       const tx = this.db.transaction('sync_log', 'readonly');
       const index = tx.store.index('timestamp');
       const range = IDBKeyRange.lowerBound(sinceTimestamp, true);
-      return await index.getAll(range);
+      const allChanges = await index.getAll(range);
+
+      return allChanges.filter(log => {
+        let logLedgerUuid = log.data?.ledgerUuid;
+        if (!logLedgerUuid && log.storeName === 'ledgers') {
+             logLedgerUuid = log.data?.uuid || null;
+        }
+
+        if (isSharedSync) {
+            return logLedgerUuid === targetUuid;
+        } else {
+            // For personal sync, filter OUT if it belongs to any shared ledger
+            if (logLedgerUuid) {
+               return !sharedUuids.has(logLedgerUuid);
+            }
+            return true; // global stuff (settings) synced personally
+        }
+      });
     } catch (err) {
       console.error('[DataService] getChangesSince error:', err);
       return [];
@@ -1244,9 +1267,26 @@ class DataService {
    * 匯出資料用於同步（回傳物件而非下載檔案）
    * @returns {Promise<object>}
    */
-  async exportDataForSync() {
-    // 匯出時包含所有帳本的資料
-    const records = await this.getRecords({ allLedgers: true });
+  async exportDataForSync(options = {}) {
+    const isSharedSync = !!options.sharedLedgerUuid;
+    const targetUuid = options.sharedLedgerUuid;
+
+    let ledgers = await this.getLedgers();
+    if (isSharedSync) {
+        ledgers = ledgers.filter(l => l.uuid === targetUuid);
+    } else {
+        ledgers = ledgers.filter(l => !l.isShared);
+    }
+    
+    const validLedgerIds = new Set(ledgers.map(l => l.id));
+
+    // Filter all relevant object stores based on validLedgerIds
+    const records = (await this.getRecords({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+    const accounts = (await this.getAccounts({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
+    const contacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
+    const debts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
+    const recurring_transactions = (await this.getRecurringTransactions({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
     const categoryOrderSetting = await this.getSetting('category_order');
@@ -1255,12 +1295,9 @@ class DataService {
     const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
-    const accounts = await this.getAccounts({ allLedgers: true });
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-    const contacts = await this.getContacts({ allLedgers: true });
-    const debts = await this.getDebts({ allLedgers: true });
-    const ledgers = await this.getLedgers();
+
 
     return {
       version: '2.3.0',
@@ -1274,10 +1311,13 @@ class DataService {
       records,
       contacts,
       debts,
-      customCategories,
-      categoryOrder,
-      hiddenCategories,
-      budgetSettings,
+      recurring_transactions,
+      ...(isSharedSync ? {} : {
+        customCategories,
+        categoryOrder,
+        hiddenCategories,
+        budgetSettings
+      }),
       metadata: {
         totalRecords: records.length,
         totalContacts: contacts.length,

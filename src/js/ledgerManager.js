@@ -164,6 +164,120 @@ export class LedgerManager {
         await this.init();
     }
 
+    /**
+     * 將指定的帳本轉為共用，並邀請外部 Email
+     * @param {number} ledgerId 
+     * @param {string} email 
+     * @returns {Promise<string>}
+     */
+    async shareLedger(ledgerId, email) {
+        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+            throw new Error('請先在設定中登入 Google 同步功能');
+        }
+        
+        const ledger = await this.dataService.getLedger(ledgerId);
+        if (!ledger) throw new Error('帳本不存在');
+
+        let fileId = ledger.sharedFileId;
+
+        if (ledger.isShared && fileId) {
+            // Already shared, just add permission
+            await this.app.syncService.grantFilePermission(fileId, email);
+            return fileId;
+        }
+
+        // 首次轉為共用帳本，產生初始備份
+        const exported = await this.dataService.exportDataForSync({ sharedLedgerUuid: ledger.uuid });
+        const changes = [];
+        
+        exported.ledgers.forEach(l => changes.push({ operation: 'add', storeName: 'ledgers', data: l, timestamp: Date.now() }));
+        exported.accounts.forEach(a => changes.push({ operation: 'add', storeName: 'accounts', data: a, timestamp: Date.now() }));
+        exported.contacts.forEach(c => changes.push({ operation: 'add', storeName: 'contacts', data: c, timestamp: Date.now() }));
+        exported.debts.forEach(d => changes.push({ operation: 'add', storeName: 'debts', data: d, timestamp: Date.now() }));
+        exported.recurring_transactions.forEach(r => changes.push({ operation: 'add', storeName: 'recurring_transactions', data: r, timestamp: Date.now() }));
+        exported.records.forEach(r => changes.push({ operation: 'add', storeName: 'records', data: r, timestamp: Date.now() }));
+        
+        const initSyncData = {
+            deviceId: this.app.syncService.deviceId,
+            timestamp: Date.now(),
+            changes: changes
+        };
+
+        const fileName = `EasyAccounting_Shared_${ledger.uuid}.json`;
+        const res = await this.app.syncService._createSharedFile(fileName, JSON.stringify(initSyncData));
+        fileId = res.id;
+
+        // 授權
+        await this.app.syncService.grantFilePermission(fileId, email);
+
+        // 更新本地帳本狀態
+        await this.dataService.updateLedger(ledgerId, { isShared: true, sharedFileId: fileId, type: 'shared' });
+        await this.init();
+
+        return fileId;
+    }
+
+    /**
+     * 加入共用帳本
+     * @param {string} fileId 
+     */
+    async joinSharedLedger(fileId) {
+        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+            throw new Error('請先在設定中登入 Google 同步功能');
+        }
+
+        const fileData = await this.app.syncService._downloadFile(fileId);
+        if (!fileData || !fileData.changes) {
+            throw new Error('無效的共用帳本檔案或無讀取權限');
+        }
+
+        // Apply shared data changes
+        await this.app.syncService.applyRemoteChanges(fileData.changes);
+
+        // Find the ledger added from changes
+        const ledgerChanges = fileData.changes.filter(c => c.storeName === 'ledgers' && (c.operation === 'add' || c.operation === 'update'));
+        if (ledgerChanges.length > 0) {
+            const uuid = ledgerChanges[0].data.uuid;
+            await this.init();
+            const ledger = this.ledgers.find(l => l.uuid === uuid);
+            if (ledger) {
+                // Mark local copy as shared and store fileId
+                await this.dataService.updateLedger(ledger.id, { isShared: true, sharedFileId: fileId, type: 'shared' });
+                await this.init();
+                
+                // Set last pull timestamp so we don't redownload the same logs
+                const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps') || { value: {} };
+                lastPull.value[`shared_${fileId}`] = Date.now();
+                await this.dataService.saveSetting({ key: 'sync_last_pull_timestamps', value: lastPull.value });
+                
+                return ledger.id;
+            }
+        }
+        throw new Error('無法從共用檔案解析帳本資訊');
+    }
+
+    /**
+     * 取得共用帳本的所有授權對象
+     * @param {number} ledgerId 
+     * @returns {Promise<Array>}
+     */
+    async getSharedUsers(ledgerId) {
+        const ledger = await this.dataService.getLedger(ledgerId);
+        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用');
+        return await this.app.syncService.getFilePermissions(ledger.sharedFileId);
+    }
+
+    /**
+     * 移除共用帳本的某個授權對象
+     * @param {number} ledgerId 
+     * @param {string} permissionId 
+     */
+    async removeSharedUser(ledgerId, permissionId) {
+        const ledger = await this.dataService.getLedger(ledgerId);
+        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用');
+        await this.app.syncService.removeFilePermission(ledger.sharedFileId, permissionId);
+    }
+
     /** 取得可用的顏色選項 */
     getColorOptions() {
         return LEDGER_COLORS;

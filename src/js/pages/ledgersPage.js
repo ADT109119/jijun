@@ -26,6 +26,9 @@ export class LedgersPage {
                         <i class="fa-solid fa-circle-info mr-1"></i>
                         建立多個帳本分開管理不同用途的帳務（如公司、家庭、個人等）。
                     </p>
+                    <button id="join-ledger-btn" class="w-full py-3 bg-wabi-primary/10 text-wabi-primary font-medium rounded-xl border border-wabi-primary/30 hover:bg-wabi-primary/20 transition-colors mb-4">
+                        <i class="fa-solid fa-cloud-arrow-down mr-2"></i>加入共用帳本
+                    </button>
                     ${ledgers.map(ledger => this._renderLedgerCard(ledger, ledger.id === activeLedgerId)).join('')}
                 </div>
             </div>
@@ -53,6 +56,7 @@ export class LedgersPage {
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
                         ${!isActive ? `<button class="switch-ledger-btn p-2 text-wabi-primary hover:bg-wabi-primary/10 rounded-lg transition-colors" data-id="${ledger.id}" title="切換到此帳本"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>` : ''}
+                        ${!isDefault ? `<button class="share-ledger-btn p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-500/10 rounded-lg transition-colors" data-id="${ledger.id}" title="分享此帳本"><i class="fa-solid fa-share-nodes"></i></button>` : ''}
                         <button class="edit-ledger-btn p-2 text-wabi-text-secondary hover:text-wabi-primary hover:bg-wabi-primary/10 rounded-lg transition-colors" data-id="${ledger.id}" title="編輯"><i class="fa-solid fa-pen"></i></button>
                         ${!isDefault ? `<button class="delete-ledger-btn p-2 text-wabi-text-secondary hover:text-wabi-expense hover:bg-wabi-expense/10 rounded-lg transition-colors" data-id="${ledger.id}" title="刪除"><i class="fa-solid fa-trash"></i></button>` : ''}
                     </div>
@@ -64,6 +68,15 @@ export class LedgersPage {
     _setupListeners() {
         // 新增帳本
         document.getElementById('add-ledger-btn')?.addEventListener('click', () => this._showEditModal(null));
+
+        // 加入共用帳本
+        document.getElementById('join-ledger-btn')?.addEventListener('click', () => {
+            if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+                showToast('請登入 Google 帳號', 'error');
+                return;
+            }
+            this._showJoinModal();
+        });
 
         // 切換帳本
         document.querySelectorAll('.switch-ledger-btn').forEach(btn => {
@@ -79,6 +92,15 @@ export class LedgersPage {
                 const id = parseInt(btn.dataset.id);
                 const ledger = this.app.ledgerManager.getAllLedgers().find(l => l.id === id);
                 if (ledger) this._showEditModal(ledger);
+            });
+        });
+
+        // 分享帳本
+        document.querySelectorAll('.share-ledger-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = parseInt(btn.dataset.id);
+                const ledger = this.app.ledgerManager.getAllLedgers().find(l => l.id === id);
+                if (ledger) this._showShareModal(ledger);
             });
         });
 
@@ -248,5 +270,270 @@ export class LedgersPage {
 
         // 自動聚焦
         nameInput.focus();
+    }
+
+    /**
+     * 分享帳本 Modal
+     * @param {object} ledger 
+     */
+    _showShareModal(ledger) {
+        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+            showToast('請登入 Google 帳號', 'error');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
+        
+        let contentHtml = `
+            <div class="bg-wabi-bg rounded-xl max-w-sm w-full p-6 shadow-xl relative">
+                <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+                <h3 class="text-lg font-bold text-wabi-primary mb-4">共用帳本：${ledger.name}</h3>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-wabi-text-secondary mb-3">請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。</p>
+                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">受邀人 Email</label>
+                    <input type="email" id="share-email-input" 
+                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                        placeholder="例如：friend@gmail.com" />
+                </div>
+
+                <div class="flex space-x-3 mt-6">
+                    <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                        產生並授權
+                    </button>
+                </div>
+                
+                ${ledger.sharedFileId ? `
+                <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p class="text-xs text-wabi-text-secondary mb-1">現有共用代碼（已啟用）：</p>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="text" readonly value="${ledger.sharedFileId}" class="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 outline-none" />
+                        <button class="copy-code-btn px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs transition-colors shrink-0">複製</button>
+                    </div>
+                    
+                    <div class="flex justify-center mb-4">
+                        <div id="qrcode-container" class="bg-white p-2 border border-gray-200 rounded-lg shadow-sm"></div>
+                    </div>
+
+                    <p class="text-xs font-bold text-wabi-text-primary mb-2">授權名單 (<span class="text-xs text-gray-500 font-normal">給予此代碼，或輸入對方的 Email 授權</span>)：</p>
+                    <div id="shared-users-list" class="space-y-2 max-h-40 overflow-y-auto pr-1">
+                        <div class="text-center text-gray-400 py-3 text-xs"><i class="fa-solid fa-spinner fa-spin"></i> 載入中...</div>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        modal.innerHTML = contentHtml;
+        document.body.appendChild(modal);
+
+        modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+        if (ledger.sharedFileId) {
+            // == 複製代碼 ==
+            modal.querySelector('.copy-code-btn')?.addEventListener('click', () => {
+                navigator.clipboard.writeText(ledger.sharedFileId).then(() => {
+                    showToast('已複製共用代碼', 'success');
+                }).catch(() => {
+                    showToast('複製失敗，請手動選取複製', 'error');
+                });
+            });
+
+            // == QR Code ==
+            const qrContainer = modal.querySelector('#qrcode-container');
+            if (typeof QRCode !== 'undefined') {
+                new QRCode(qrContainer, {
+                    text: ledger.sharedFileId,
+                    width: 120,
+                    height: 120,
+                    colorDark : "#2D3748",
+                    colorLight : "#ffffff",
+                });
+            } else {
+                qrContainer.innerHTML = '<span class="text-xs text-gray-400 p-2">QRCode 載入失敗</span>';
+            }
+
+            // == 讀取分享名單 ==
+            const usersListEl = modal.querySelector('#shared-users-list');
+            this.app.ledgerManager.getSharedUsers(ledger.id).then(users => {
+                usersListEl.innerHTML = '';
+                users.forEach(u => {
+                    const el = document.createElement('div');
+                    el.className = 'flex justify-between items-center bg-white p-2 rounded-lg border border-gray-100 shadow-sm';
+                    el.innerHTML = `
+                        <div class="truncate flex-1 min-w-0 mr-2">
+                            <p class="text-sm font-medium text-gray-700 truncate">${u.displayName || '未知使用者'}</p>
+                            <p class="text-xs text-gray-500 truncate">${u.emailAddress || '---'}</p>
+                        </div>
+                        ${u.role === 'owner' ? '<span class="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded shrink-0">擁有者</span>' : 
+                          '<button class="remove-user-btn text-red-500 hover:bg-red-50 size-7 flex items-center justify-center rounded transition-colors shrink-0" title="移除授權"><i class="fa-solid fa-user-minus"></i></button>'}
+                    `;
+                    
+                    if (u.role !== 'owner') {
+                        el.querySelector('.remove-user-btn').addEventListener('click', async () => {
+                            if (!confirm(`確定要移除「${u.emailAddress || u.displayName}」的共用權限嗎？`)) return;
+                            try {
+                                el.style.opacity = '0.5';
+                                await this.app.ledgerManager.removeSharedUser(ledger.id, u.id);
+                                el.remove();
+                                showToast('已移除該使用者的共用權限', 'success');
+                            } catch (e) {
+                                showToast('移除失敗：' + e.message, 'error');
+                                el.style.opacity = '1';
+                            }
+                        });
+                    }
+                    usersListEl.appendChild(el);
+                });
+            }).catch(e => {
+                usersListEl.innerHTML = `<div class="text-red-500 text-center py-2 text-xs">無法載入名單：${e.message}</div>`;
+            });
+        }
+
+        const submitBtn = modal.querySelector('#share-submit-btn');
+        const emailInput = modal.querySelector('#share-email-input');
+
+        submitBtn.addEventListener('click', async () => {
+            const email = emailInput.value.trim();
+            if (!email || !email.includes('@')) {
+                showToast('請輸入有效的 Email', 'error');
+                return;
+            }
+
+            const originalHTML = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>處理中...';
+            submitBtn.disabled = true;
+
+            try {
+                const fileId = await this.app.ledgerManager.shareLedger(ledger.id, email);
+                showToast('共用授權成功！請將代碼傳給對方', 'success');
+                modal.remove();
+                this._showShareModal(await this.app.dataService.getLedger(ledger.id)); // Reload with file ID
+            } catch (e) {
+                showToast('授權失敗：' + e.message, 'error');
+                submitBtn.innerHTML = originalHTML;
+                submitBtn.disabled = false;
+            }
+        });
+    }
+
+    /**
+     * 加入共用帳本 Modal
+     */
+    _showJoinModal() {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
+        
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-xl max-w-sm w-full p-6 shadow-xl relative">
+                <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+                <h3 class="text-lg font-bold text-wabi-primary mb-4">加入共用帳本</h3>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-wabi-text-secondary mb-3">
+                        為確保雲端讀寫權限，<strong class="text-wabi-primary">極度建議透過 Google 雲端選擇器載入</strong>。
+                    </p>
+                    
+                    <button id="picker-btn" class="w-full py-2.5 mb-4 bg-blue-50 text-blue-600 font-medium rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors flex justify-center items-center gap-2">
+                        <i class="fa-brands fa-google-drive"></i> 從「與我共用」選擇檔案
+                    </button>
+
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="h-px bg-gray-200 flex-1"></div>
+                        <span class="text-xs text-gray-400">或輸入代碼</span>
+                        <div class="h-px bg-gray-200 flex-1"></div>
+                    </div>
+
+                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">共用代碼 (File ID)</label>
+                    <input type="text" id="join-code-input" 
+                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                        placeholder="手動貼上代碼..." />
+                </div>
+
+                <div class="flex space-x-3 mt-6">
+                    <button id="join-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                        加入帳本
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+
+        modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+        const submitBtn = modal.querySelector('#join-submit-btn');
+        const codeInput = modal.querySelector('#join-code-input');
+        const pickerBtn = modal.querySelector('#picker-btn');
+
+        let authorizedCode = null;
+
+        // ==== Picker 邏輯 ====
+        pickerBtn.addEventListener('click', async () => {
+            const originalHTML = pickerBtn.innerHTML;
+            pickerBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>載入視窗...';
+            pickerBtn.disabled = true;
+
+            try {
+                const selectedFileId = await this.app.syncService.openSharedLedgerPicker();
+                codeInput.value = selectedFileId;
+                authorizedCode = selectedFileId;
+                showToast('成功選擇檔案，正在載入...', 'success');
+                // 自動觸發送出
+                submitBtn.click();
+            } catch (err) {
+                if (err.message !== '使用者取消選擇') {
+                    showToast(err.message, 'error');
+                }
+            } finally {
+                pickerBtn.innerHTML = originalHTML;
+                pickerBtn.disabled = false;
+            }
+        });
+
+        // ==== 提交邏輯 ====
+        submitBtn.addEventListener('click', async () => {
+            let code = codeInput.value.trim();
+            if (!code) {
+                showToast('請輸入或選擇共用代碼', 'error');
+                return;
+            }
+
+            const originalHTML = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>正在處理...';
+            submitBtn.disabled = true;
+
+            try {
+                // 如果是手動輸入，強制透過 Picker 確認一次授權
+                if (code !== authorizedCode) {
+                    showToast('請在接下來的視窗中確認授權檔案...', 'info');
+                    code = await this.app.syncService.openSharedLedgerPicker(code);
+                    authorizedCode = code;
+                    codeInput.value = code;
+                }
+
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>正在同步...';
+                
+                const newLedgerId = await this.app.ledgerManager.joinSharedLedger(code);
+                showToast('成功加入共用帳本！', 'success');
+                modal.remove();
+                await this.app.ledgerManager.switchLedger(newLedgerId); // 自動切換過去
+            } catch (e) {
+                if (e.message !== '使用者取消選擇') {
+                    showToast('加入失敗：' + e.message, 'error');
+                }
+                submitBtn.innerHTML = originalHTML;
+                submitBtn.disabled = false;
+            }
+        });
+        
+        codeInput.focus();
     }
 }
