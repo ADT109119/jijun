@@ -509,13 +509,13 @@ export class SyncService {
 
     if (existingFileId) {
       // 下載現有內容，合併後更新
-      const existingData = await this._downloadFile(existingFileId);
-      const existing = existingData || { changes: [] };
+      const res = await this._downloadFile(existingFileId);
+      const existing = res?.data || { changes: [] };
       existing.changes = [...(existing.changes || []), ...changes];
       existing.timestamp = Date.now();
       existing.deviceId = this.deviceId;
 
-      await this._updateFile(existingFileId, JSON.stringify(existing));
+      await this._updateFile(existingFileId, JSON.stringify(existing), res?.etag);
     } else {
       // 建立新檔案
       await this._createFile(fileName, JSON.stringify(syncData));
@@ -533,15 +533,15 @@ export class SyncService {
     await this.ensureValidToken();
 
     // 列出所有 sync log 檔案
-    const res = await fetch(
+    const resList = await fetch(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
     );
 
-    if (!res.ok) throw new Error(`Failed to list sync logs (${res.status})`);
-    const data = await res.json();
+    if (!resList.ok) throw new Error(`Failed to list sync logs (${resList.status})`);
+    const data = await resList.json();
     const files = data.files || [];
 
     const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
@@ -557,7 +557,8 @@ export class SyncService {
 
       // 如果檔案在上次拉取後有修改
       if (new Date(file.modifiedTime).getTime() > lastPullTime) {
-        const syncLog = await this._downloadFile(file.id);
+        const resFile = await this._downloadFile(file.id);
+        const syncLog = resFile?.data;
         if (syncLog?.changes) {
           // 只取比上次拉取時間更新的變更
           const newChanges = syncLog.changes.filter(
@@ -650,12 +651,12 @@ export class SyncService {
   async markAllRemoteChangesAsPulled() {
     await this.ensureValidToken();
     try {
-        const res = await fetch(
+        const resList = await fetch(
           `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
           { headers: { Authorization: `Bearer ${this.accessToken}` } }
         );
-        if (!res.ok) throw new Error('Failed to list sync logs');
-        const data = await res.json();
+        if (!resList.ok) throw new Error('Failed to list sync logs');
+        const data = await resList.json();
         const files = data.files || [];
 
         const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
@@ -685,29 +686,73 @@ export class SyncService {
     const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId && l.type === 'shared');
 
     for (const ledger of sharedLedgers) {
-      try {
-        const lastPushKey = `sync_last_push_timestamp_shared_${ledger.sharedFileId}`;
-        const lastPush = await this.dataService.getSetting(lastPushKey);
-        const since = lastPush?.value || 0;
-        
-        const changes = await this.dataService.getChangesSince(since, { sharedLedgerUuid: ledger.uuid });
-        if (changes.length === 0) continue;
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+      let success = false;
 
-        const existingData = await this._downloadFile(ledger.sharedFileId);
-        const existing = existingData || { changes: [] };
-        
-        // Append new changes
-        existing.changes = [...(existing.changes || []), ...changes];
-        existing.timestamp = Date.now();
-        existing.deviceId = this.deviceId;
-        
-        await this._updateFile(ledger.sharedFileId, JSON.stringify(existing));
+      while (retryCount < MAX_RETRIES && !success) {
+        try {
+          const lastPushKey = `sync_last_push_timestamp_shared_${ledger.sharedFileId}`;
+          const lastPush = await this.dataService.getSetting(lastPushKey);
+          const since = lastPush?.value || 0;
+          
+          const changes = await this.dataService.getChangesSince(since, { sharedLedgerUuid: ledger.uuid });
+          if (changes.length === 0) {
+              success = true;
+              continue;
+          }
 
-        // Update last push timestamp
-        const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
-        await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
-      } catch (e) {
-        console.warn(`[SyncService] pushSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
+          // 1. 下載雲端目前版本與 ETag
+          const resFile = await this._downloadFile(ledger.sharedFileId);
+          if (!resFile) throw new Error('無法讀取共用帳本檔案');
+          
+          const cloudData = resFile.data || { changes: [] };
+          const cloudChanges = cloudData.changes || [];
+          
+          // 2. 合併日誌：過濾掉重複的日誌（以 deviceId + timestamp + operation + storeName 作為唯一性判斷）
+          const existingLogsMap = new Set();
+          cloudChanges.forEach(log => {
+              const key = `${log.deviceId || 'unknown'}-${log.timestamp}-${log.operation}-${log.storeName}`;
+              existingLogsMap.add(key);
+          });
+
+          const newLogsToPush = changes.filter(log => {
+              const key = `${this.deviceId}-${log.timestamp}-${log.operation}-${log.storeName}`;
+              return !existingLogsMap.has(key);
+          });
+
+          if (newLogsToPush.length === 0) {
+              success = true;
+              // 雖然沒新東西要推，但仍需更新 timestamp 以免下次重複讀取
+              const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
+              await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
+              continue;
+          }
+
+          // 3. 更新內容
+          cloudData.changes = [...cloudChanges, ...newLogsToPush];
+          cloudData.timestamp = Date.now();
+          cloudData.deviceId = this.deviceId;
+          
+          // 4. 帶 ETag 寫入 (樂觀鎖)
+          await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData), resFile.etag);
+
+          // 5. 更新本地最後推送時間
+          const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
+          await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
+          
+          success = true;
+        } catch (e) {
+          if (e.message === 'VERSION_CONFLICT') {
+            retryCount++;
+            console.warn(`[SyncService] Conflict detected for "${ledger.name}", retrying... (${retryCount}/${MAX_RETRIES})`);
+            // 等待一小段時間再重試
+            await new Promise(r => setTimeout(r, 500 * retryCount));
+          } else {
+            console.error(`[SyncService] pushSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
+            break;
+          }
+        }
       }
     }
   }
@@ -728,21 +773,22 @@ export class SyncService {
     for (const ledger of sharedLedgers) {
       try {
         // Query modified time before downloading
-        const res = await fetch(
+        const resMeta = await fetch(
             `https://www.googleapis.com/drive/v3/files/${ledger.sharedFileId}?fields=modifiedTime`,
             { headers: { Authorization: `Bearer ${this.accessToken}` } }
         );
-        if (!res.ok) {
+        if (!resMeta.ok) {
             console.warn(`[SyncService] Failed to check shared ledger ${ledger.name} file status.`);
             continue;
         }
-        const meta = await res.json();
+        const meta = await resMeta.json();
         
         const lastPullTime = pullTimestamps[`shared_${ledger.sharedFileId}`] || 0;
         const modifiedTime = new Date(meta.modifiedTime).getTime();
 
         if (modifiedTime > lastPullTime) {
-            const fileData = await this._downloadFile(ledger.sharedFileId);
+            const resFile = await this._downloadFile(ledger.sharedFileId);
+            const fileData = resFile?.data;
             if (fileData?.changes) {
                 // Ignore changes we pushed ourselves recently
                 const newChanges = fileData.changes.filter(c => c.timestamp > lastPullTime && c.deviceId !== this.deviceId);
@@ -995,7 +1041,7 @@ export class SyncService {
   /**
    * 下載檔案內容
    * @param {string} fileId
-   * @returns {Promise<object|null>}
+   * @returns {Promise<{data: object, etag: string}|null>}
    */
   async _downloadFile(fileId) {
     const res = await fetch(
@@ -1005,7 +1051,9 @@ export class SyncService {
       }
     );
     if (!res.ok) return null;
-    return await res.json();
+    const etag = res.headers.get('ETag');
+    const data = await res.json();
+    return { data, etag };
   }
 
   /**
@@ -1166,21 +1214,32 @@ export class SyncService {
    * 更新既有檔案內容
    * @param {string} fileId
    * @param {string} content
+   * @param {string|null} matchTag - 用於樂觀鎖的 ETag
    */
-  async _updateFile(fileId, content) {
+  async _updateFile(fileId, content, matchTag = null) {
+    const headers = {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+    };
+    if (matchTag) {
+        headers['If-Match'] = matchTag;
+    }
+
     const res = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
       {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: content,
       }
     );
 
-    if (!res.ok) throw new Error(`Failed to update file (${res.status})`);
+    if (!res.ok) {
+        if (res.status === 412) {
+            throw new Error('VERSION_CONFLICT');
+        }
+        throw new Error(`Failed to update file (${res.status})`);
+    }
   }
 
   // ──────────────────────────────────────────────

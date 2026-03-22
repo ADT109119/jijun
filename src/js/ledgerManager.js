@@ -226,13 +226,15 @@ export class LedgerManager {
             throw new Error('請先在設定中登入 Google 同步功能');
         }
 
-        const fileData = await this.app.syncService._downloadFile(fileId);
+        const res = await this.app.syncService._downloadFile(fileId);
+        const fileData = res?.data;
         if (!fileData || !fileData.changes) {
             throw new Error('無效的共用帳本檔案或無讀取權限');
         }
 
         // Apply shared data changes
         await this.app.syncService.applyRemoteChanges(fileData.changes);
+
 
         // Find the ledger added from changes
         const ledgerChanges = fileData.changes.filter(c => c.storeName === 'ledgers' && (c.operation === 'add' || c.operation === 'update'));
