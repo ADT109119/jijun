@@ -425,6 +425,11 @@ export class LedgersPage {
      * 加入共用帳本 Modal
      */
     _showJoinModal() {
+        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+            showToast('請先登入 Google 帳號才能加入共用帳本', 'error');
+            return;
+        }
+
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
         
@@ -451,9 +456,22 @@ export class LedgersPage {
                     </div>
 
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">共用代碼 (File ID)</label>
-                    <input type="text" id="join-code-input" 
-                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
-                        placeholder="手動貼上代碼..." />
+                    <div class="flex gap-2">
+                        <input type="text" id="join-code-input" 
+                            class="flex-1 px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                            placeholder="手動貼上代碼..." />
+                        <button id="scan-qr-btn" class="bg-gray-100 w-11 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center transition-colors" title="掃描 QR Code">
+                            <i class="fa-solid fa-qrcode text-lg"></i>
+                        </button>
+                    </div>
+
+                    <!-- 隱藏的掃描區塊 -->
+                    <div id="qr-reader-container" class="hidden mt-3 rounded-lg overflow-hidden border border-gray-200 w-full">
+                        <div id="qr-reader" class="w-full bg-black"></div>
+                        <button id="close-scanner-btn" class="w-full py-2 bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200 transition-colors">
+                            關閉相機
+                        </button>
+                    </div>
                 </div>
 
                 <div class="flex space-x-3 mt-6">
@@ -466,14 +484,83 @@ export class LedgersPage {
         
         document.body.appendChild(modal);
 
-        modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        let html5QrCode = null;
+        const closeScanner = async () => {
+            if (html5QrCode) {
+                try {
+                    await html5QrCode.stop();
+                } catch(e) {}
+                html5QrCode = null;
+            }
+            modal.querySelector('#qr-reader-container').classList.add('hidden');
+        };
+
+        const closeModal = async () => {
+            await closeScanner();
+            modal.remove();
+        };
+
+        modal.querySelector('.close-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
         const submitBtn = modal.querySelector('#join-submit-btn');
         const codeInput = modal.querySelector('#join-code-input');
         const pickerBtn = modal.querySelector('#picker-btn');
+        const scanBtn = modal.querySelector('#scan-qr-btn');
+        const scannerContainer = modal.querySelector('#qr-reader-container');
+        const closeScannerBtn = modal.querySelector('#close-scanner-btn');
 
         let authorizedCode = null;
+
+        // ==== 掃描 QR Code 邏輯 ====
+        scanBtn.addEventListener('click', () => {
+            if (typeof Html5Qrcode === 'undefined') {
+                showToast('掃描套件載入失敗', 'error');
+                return;
+            }
+            
+            if (scannerContainer.classList.contains('hidden')) {
+                scannerContainer.classList.remove('hidden');
+                
+                Html5Qrcode.getCameras().then(devices => {
+                    if (devices && devices.length) {
+                        // 優先尋找後置鏡頭，沒有就預設最後一顆（通常是主鏡頭），如果只有一顆就用第一顆
+                        let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('rear'));
+                        let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
+
+                        html5QrCode = new Html5Qrcode("qr-reader");
+                        html5QrCode.start(
+                            cameraId,
+                            {
+                                fps: 10,
+                                qrbox: { width: 250, height: 250 }
+                            },
+                            (decodedText) => {
+                                codeInput.value = decodedText;
+                                showToast('掃描成功！', 'success');
+                                closeScanner();
+                            },
+                            (errorMessage) => {
+                                // ignore background scan errors
+                            }
+                        ).catch((err) => {
+                            showToast("無法存取相機，請確認瀏覽器權限設定", "error");
+                            closeScanner();
+                        });
+                    } else {
+                        showToast("找不到任何相機設備", "error");
+                        closeScanner();
+                    }
+                }).catch(err => {
+                    showToast("相機存取失敗或未授權", "error");
+                    closeScanner();
+                });
+            } else {
+                closeScanner();
+            }
+        });
+
+        closeScannerBtn.addEventListener('click', closeScanner);
 
         // ==== Picker 邏輯 ====
         pickerBtn.addEventListener('click', async () => {
