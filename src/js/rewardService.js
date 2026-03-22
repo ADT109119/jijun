@@ -331,7 +331,7 @@ export class RewardService {
 
         // 先註冊所有事件監聽，再 prepare + show
         // 避免 prepare 回傳後事件已經觸發但 listener 還沒註冊的 race condition
-        return new Promise(async (resolve) => {
+        return new Promise((resolve) => {
             let rewarded = false;
             let resolved = false;
 
@@ -401,21 +401,19 @@ export class RewardService {
                 }
             );
 
-            try {
-                // 準備獎勵廣告
-                await AdMob.prepareRewardVideoAd({
-                    adId: ADMOB_REWARDED_ID,
-                    isTesting: AD_IS_TESTING,
-                });
-
+            // 準備獎勵廣告
+            AdMob.prepareRewardVideoAd({
+                adId: ADMOB_REWARDED_ID,
+                isTesting: AD_IS_TESTING,
+            }).then(() => {
                 // 準備成功 → 顯示
-                await AdMob.showRewardVideoAd();
-            } catch (e) {
+                return AdMob.showRewardVideoAd();
+            }).catch((e) => {
                 clearTimeout(timeout);
                 console.error('獎勵廣告流程異常:', e);
                 showToast('獎勵廣告載入失敗，請稍後再試', 'error');
                 safeResolve(false);
-            }
+            });
         });
     }
 

@@ -269,7 +269,7 @@ export class BudgetManager {
     document.body.appendChild(modal)
 
     const categoryBudgetsList = modal.querySelector('#category-budgets-list');
-    let workingCategoryBudgets = { ...this.categoryBudgets };
+    const workingCategoryBudgets = { ...this.categoryBudgets };
     let workingCategoryBudgetOrder = [...(this.categoryBudgetOrder || Object.keys(this.categoryBudgets))];
     let sortableInstance = null;
 

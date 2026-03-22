@@ -464,7 +464,7 @@ class DataService {
 
     try {
       // 若更新包含 accountId / debtId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -604,7 +604,7 @@ class DataService {
   async updateRecurringTransaction(id, updates, skipLog = false) {
     try {
       // 若更新包含 accountId，同步更新 accountUuid
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -619,7 +619,7 @@ class DataService {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const transaction = await tx.store.get(id);
       if (transaction) {
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             if (transaction.uuid) finalUpdates.uuid = transaction.uuid;
@@ -790,7 +790,7 @@ class DataService {
       let recurring_transactions = [];
       try {
           recurring_transactions = await this.db.getAll('recurring_transactions');
-      } catch (e) {}
+      } catch (e) { console.warn("Failed to get recurring_transactions", e); }
 
       const exportData = {
         version: '2.3.0',
@@ -867,7 +867,7 @@ class DataService {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
               await txR.store.clear();
               await txR.done;
-            } catch (e) {}
+            } catch (e) { console.warn("Failed to clear recurring_transactions", e); }
           }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
@@ -900,7 +900,7 @@ class DataService {
                       const txL = this.db.transaction('ledgers', 'readwrite');
                       await txL.store.clear();
                       await txL.done;
-                  } catch(e){}
+                  } catch(e){ console.warn("Failed to clear ledgers", e); }
               }
               for (const ledger of data.ledgers) {
                   const oldId = ledger.id;
@@ -1183,7 +1183,7 @@ class DataService {
           if (ledger && ledger.uuid) {
             syncData = { ...syncData, ledgerUuid: ledger.uuid };
           }
-        } catch(e) {}
+        } catch(e) { console.warn("Failed to get ledger uuid", e); }
       }
 
       const tx = this.db.transaction('sync_log', 'readwrite');
@@ -1362,7 +1362,7 @@ class DataService {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
       if (account) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (account.uuid) finalUpdates.uuid = account.uuid;
@@ -1529,7 +1529,7 @@ class DataService {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
       if (contact) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (contact.uuid) finalUpdates.uuid = contact.uuid;
@@ -1673,7 +1673,7 @@ class DataService {
   async updateDebt(id, updates, skipLog = false) {
     try {
       // 若更新包含 contactId / recordId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.contactId !== undefined) {
         if (updates.contactId) {
           try {
@@ -1702,7 +1702,7 @@ class DataService {
         // 必須確保本地 UUID 不被意外覆蓋，除非遠端 UUID 確定是正確的關聯標識
         // 通常同步時我們會根據 UUID 找到本地 ID，所以傳入的 updates.uuid 理應與本地相同
         // 但為了保險起見，保護本地 uuid 與 id 不被 `...updates` 覆蓋
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             // 確保不覆蓋本地 UUID
@@ -1942,7 +1942,7 @@ class DataService {
       const tx = this.db.transaction('ledgers', 'readwrite');
       const ledger = await tx.store.get(id);
       if (!ledger) throw new Error('Ledger not found');
-      let finalUpdates = { ...updates };
+      const finalUpdates = { ...updates };
       if (skipLog) {
           delete finalUpdates.id;
           if (ledger.uuid) finalUpdates.uuid = ledger.uuid;
