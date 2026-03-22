@@ -265,10 +265,15 @@ class EasyAccountingApp {
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
                             ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-gray-50 border border-transparent'}"
                             data-id="${l.id}">
-                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm" style="background-color: ${l.color || '#334A52'}">
+                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
                                 <i class="${l.icon || 'fa-solid fa-book'}"></i>
                             </div>
-                            <span class="text-sm font-medium text-wabi-text-primary truncate flex-1 text-left">${l.name}</span>
+                            <div class="flex-1 min-w-0 text-left flex flex-col justify-center">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-sm font-medium text-wabi-text-primary truncate">${l.name}</span>
+                                    ${l.isShared || l.type === 'shared' ? '<span class="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded flex items-center shrink-0" title="共用帳本"><i class="fa-solid fa-users mr-1"></i>共用</span>' : ''}
+                                </div>
+                            </div>
                             ${l.id === activeLedgerId ? '<i class="fa-solid fa-check text-wabi-primary text-sm shrink-0"></i>' : ''}
                         </button>
                     `).join('')}
