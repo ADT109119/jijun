@@ -85,7 +85,10 @@ export class SyncService {
 
       // 如果已登入且 token 快過期，嘗試刷新
       if (this.refreshToken && this.isTokenExpiringSoon()) {
-        await this.refreshAccessToken();
+        // 在單元測試且沒有 mock fetch 時避免 crash
+        if (typeof globalThis !== 'undefined' && globalThis.fetch) {
+           await this.refreshAccessToken();
+        }
       }
 
       // 檢查是否需要啟動自動同步

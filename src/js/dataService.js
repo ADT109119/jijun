@@ -1,6 +1,6 @@
 // 資料服務模組 - 使用 IndexedDB 進行資料儲存
 // 如果 idb 不可用，使用全域的 idb
-const openDB = window.idb?.openDB || (() => {
+const openDB = (typeof window !== 'undefined' && window.idb?.openDB) || (() => {
   console.warn('IndexedDB 不可用，將使用 localStorage')
   return null
 })
@@ -31,8 +31,13 @@ class DataService {
 
   async init() {
     try {
-      if (openDB && typeof openDB === 'function') {
-        this.db = await openDB(this.dbName, this.dbVersion, {
+      // If we are in test environment, we might have injected idb into window
+      const openDbFn = openDB.name === '' && typeof window !== 'undefined' && window.idb?.openDB
+          ? window.idb.openDB
+          : openDB;
+
+      if (openDbFn && typeof openDbFn === 'function') {
+        this.db = await openDbFn(this.dbName, this.dbVersion, {
           async upgrade(db, oldVersion, newVersion, transaction) {
             // Schema version 1
             if (oldVersion < 1) {
@@ -134,7 +139,8 @@ class DataService {
                             const updateData = cursor.value;
                             if (!updateData.uuid) {
                                 // Simple UUID v4 generator
-                                updateData.uuid = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID() :
+                                const cryptoObj = typeof self !== 'undefined' ? self.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+                                updateData.uuid = (cryptoObj && cryptoObj.randomUUID) ? cryptoObj.randomUUID() :
                                     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                                         const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
                                         return v.toString(16);
@@ -170,7 +176,8 @@ class DataService {
 
                 // 3. 插入預設帳本
                 const ledgerStore = transaction.objectStore('ledgers');
-                const defaultUuid = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID() :
+                const cryptoObj = typeof self !== 'undefined' ? self.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+                const defaultUuid = (cryptoObj && cryptoObj.randomUUID) ? cryptoObj.randomUUID() :
                     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                         const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
                         return v.toString(16);
@@ -256,8 +263,9 @@ class DataService {
 
   // 生成 UUID
   generateUUID() {
-    if (self.crypto && self.crypto.randomUUID) {
-      return self.crypto.randomUUID();
+    const cryptoObj = typeof self !== 'undefined' ? self.crypto : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+    if (cryptoObj && cryptoObj.randomUUID) {
+      return cryptoObj.randomUUID();
     }
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
       const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
