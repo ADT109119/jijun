@@ -8,14 +8,17 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext js --report-unused-disable-directives",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@vitejs/plugin-legacy": "^5.0.0",
     "eslint": "^8.57.0",
     "prettier": "^3.0.0",
     "terser": "^5.46.0",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^4.1.1"
   },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {
