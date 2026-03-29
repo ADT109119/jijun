@@ -490,6 +490,33 @@ export class SyncService {
     const since = lastPush?.value || 0;
     const changes = await this.dataService.getChangesSince(since);
 
+    // ============================================
+    // 緊急補丁：修復因之前的過濾 bug 而遺失在 personal sync 中的 shared ledger 狀態
+    const patchedFlag = await this.dataService.getSetting('repair_shared_sync_done');
+    if (!patchedFlag || !patchedFlag.value) {
+        const ledgers = await this.dataService.getLedgers();
+        const sharedLedgers = ledgers.filter(l => l.isShared);
+        
+        if (sharedLedgers.length > 0) {
+            for (const l of sharedLedgers) {
+                // 確保目前批次內沒有重複
+                const hasUpdate = changes.some(c => c.storeName === 'ledgers' && c.recordId === l.id && c.operation === 'update');
+                if (!hasUpdate) {
+                    changes.push({
+                        deviceId: this.deviceId,
+                        operation: 'update',
+                        storeName: 'ledgers',
+                        recordId: l.id,
+                        timestamp: Date.now(),
+                        data: l
+                    });
+                }
+            }
+        }
+        await this.dataService.saveSetting({ key: 'repair_shared_sync_done', value: true });
+    }
+    // ============================================
+
     if (changes.length === 0) return;
 
     const syncData = {
@@ -1354,13 +1381,15 @@ export class SyncService {
    * @returns {object} 已修正 accountId 的 data
    */
   async _resolveRecurringAccountId(data) {
-    if (!data.accountUuid) return data;
+    if (!data.accountUuid) {
+      return { ...data, accountId: null };
+    }
     try {
       const accounts = await this.dataService.getAccounts({ allLedgers: true });
       const matched = accounts.find(a => a.uuid === data.accountUuid);
       return { ...data, accountId: matched ? matched.id : null };
     } catch (_) {
-      return data;
+      return { ...data, accountId: null };
     }
   }
 
@@ -1563,13 +1592,14 @@ export class SyncService {
   async _applyUpdateWithId(storeName, id, data) {
     switch (storeName) {
         case 'ledgers': {
-          // 保護本地的共用元資料，防止被遠端的舊資料覆蓋
+          // 保護本地的共用元資料，防止被遠端的舊資料（無此欄位）覆蓋
+          // 只有當 remote data 沒有指定這些欄位時，才用 local 的值填補
           const localLedger = await this.dataService.getLedger(id);
           const protectedData = { ...data };
           if (localLedger) {
-            protectedData.isShared = localLedger.isShared;
-            protectedData.sharedFileId = localLedger.sharedFileId;
-            protectedData.type = localLedger.type;
+            if (protectedData.isShared === undefined) protectedData.isShared = localLedger.isShared;
+            if (protectedData.sharedFileId === undefined) protectedData.sharedFileId = localLedger.sharedFileId;
+            if (protectedData.type === undefined) protectedData.type = localLedger.type;
           }
           await this.dataService.updateLedger(id, protectedData, true);
           break;

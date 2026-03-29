@@ -71,7 +71,9 @@ export class LedgerManager {
         // 重新載入帳戶清單（因為帳戶歸屬帳本）
         if (this.app.advancedModeEnabled) {
             this.app.accounts = await this.dataService.getAccounts();
-            if (this.app.accounts.length === 0) {
+            // 只有個人帳本在沒有帳戶時才自動建立預設現金帳戶
+            // 共用帳本的帳戶應透過同步機制從擁有者取得，避免 UUID 不一致
+            if (this.app.accounts.length === 0 && !ledger.isShared) {
                 await this.dataService.addAccount({
                     name: '現金',
                     balance: 0,
@@ -186,33 +188,39 @@ export class LedgerManager {
             return fileId;
         }
 
-        // 首次轉為共用帳本，產生初始備份
+        // 1. 先建立一個空的雲端共用檔案以取得 fileId
+        const fileName = `EasyAccounting_Shared_${ledger.uuid}.json`;
+        const res = await this.app.syncService._createSharedFile(fileName, "{}");
+        fileId = res.id;
+
+        // 2. 授權 Google Drive 檔案
+        await this.app.syncService.grantFilePermission(fileId, email);
+
+        // 3. 先更新本地帳本狀態為共用（這樣 export 出來的資料才會戴上正確的 isShared 和 sharedFileId）
+        await this.dataService.updateLedger(ledgerId, { isShared: true, sharedFileId: fileId, type: 'shared' });
+        await this.init();
+
+        // 4. 匯出完整帳本資料作為雲端共享檔案的初始內容
         const exported = await this.dataService.exportDataForSync({ sharedLedgerUuid: ledger.uuid });
         const changes = [];
         
-        exported.ledgers.forEach(l => changes.push({ operation: 'add', storeName: 'ledgers', data: l, timestamp: Date.now() }));
-        exported.accounts.forEach(a => changes.push({ operation: 'add', storeName: 'accounts', data: a, timestamp: Date.now() }));
-        exported.contacts.forEach(c => changes.push({ operation: 'add', storeName: 'contacts', data: c, timestamp: Date.now() }));
-        exported.debts.forEach(d => changes.push({ operation: 'add', storeName: 'debts', data: d, timestamp: Date.now() }));
-        exported.recurring_transactions.forEach(r => changes.push({ operation: 'add', storeName: 'recurring_transactions', data: r, timestamp: Date.now() }));
-        exported.records.forEach(r => changes.push({ operation: 'add', storeName: 'records', data: r, timestamp: Date.now() }));
+        const deviceId = this.app.syncService.deviceId;
+        const now = Date.now();
+        exported.ledgers.forEach(l => changes.push({ deviceId, operation: 'add', storeName: 'ledgers', data: l, timestamp: now }));
+        exported.accounts.forEach(a => changes.push({ deviceId, operation: 'add', storeName: 'accounts', data: a, timestamp: now }));
+        exported.contacts.forEach(c => changes.push({ deviceId, operation: 'add', storeName: 'contacts', data: c, timestamp: now }));
+        exported.debts.forEach(d => changes.push({ deviceId, operation: 'add', storeName: 'debts', data: d, timestamp: now }));
+        exported.recurring_transactions.forEach(r => changes.push({ deviceId, operation: 'add', storeName: 'recurring_transactions', data: r, timestamp: now }));
+        exported.records.forEach(r => changes.push({ deviceId, operation: 'add', storeName: 'records', data: r, timestamp: now }));
         
         const initSyncData = {
-            deviceId: this.app.syncService.deviceId,
-            timestamp: Date.now(),
-            changes: changes
+            deviceId,
+            timestamp: now,
+            changes
         };
 
-        const fileName = `EasyAccounting_Shared_${ledger.uuid}.json`;
-        const res = await this.app.syncService._createSharedFile(fileName, JSON.stringify(initSyncData));
-        fileId = res.id;
-
-        // 授權
-        await this.app.syncService.grantFilePermission(fileId, email);
-
-        // 更新本地帳本狀態
-        await this.dataService.updateLedger(ledgerId, { isShared: true, sharedFileId: fileId, type: 'shared' });
-        await this.init();
+        // 5. 將初始內容寫入已準備好的雲端檔案中
+        await this.app.syncService._updateFile(fileId, JSON.stringify(initSyncData));
 
         // 確保共用帳本同步已啟動
         await this.app.syncService.ensureSharedSync();

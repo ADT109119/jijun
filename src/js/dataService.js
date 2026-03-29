@@ -1281,10 +1281,11 @@ class DataService {
             return logLedgerUuid === targetUuid;
         } else {
             // For personal sync, filter OUT if it belongs to any shared ledger
-            if (logLedgerUuid) {
+            // 但是「帳本(ledgers)」本身的變更日誌必須放行，否則其他裝置永遠不會知道該帳本變成了共用帳本！
+            if (logLedgerUuid && log.storeName !== 'ledgers') {
                return !sharedUuids.has(logLedgerUuid);
             }
-            return true; // global stuff (settings) synced personally
+            return true; // global stuff (settings) and ledgers synced personally
         }
       });
     } catch (err) {
