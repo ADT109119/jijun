@@ -557,10 +557,10 @@ class DataService {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       
-      let uuid = null;
+      // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
+      let recordData = null;
       if (!skipLog) {
-        const record = await store.get(id);
-        uuid = record?.uuid;
+        recordData = await store.get(id);
 
         const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
         if (!shouldDelete) throw new Error('Delete cancelled by plugin');
@@ -569,9 +569,14 @@ class DataService {
       await store.delete(id)
       await tx.done
       
-      if (!skipLog) {
+      if (!skipLog && recordData) {
         await this.triggerHook('onRecordDeleteAfter', { id });
-        await this.logChange('delete', 'records', id, { uuid });
+        // 傳入完整的紀錄資料，讓 logChange 能正確補全 ledgerUuid、accountUuid 等外鍵
+        await this.logChange('delete', 'records', id, {
+          uuid: recordData.uuid,
+          ledgerId: recordData.ledgerId,
+          accountId: recordData.accountId,
+        });
       }
 
       return true
@@ -1204,27 +1209,27 @@ class DataService {
       // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
       if (syncData) {
           // 1. Ledger UUID
-          if (syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
+          if (syncData.ledgerId && !syncData.ledgerUuid) {
               const ledger = await this.db.get('ledgers', syncData.ledgerId);
               if (ledger?.uuid) syncData.ledgerUuid = ledger.uuid;
           }
           // 2. Account UUID
-          if (syncData.accountId !== undefined && !syncData.accountUuid) {
+          if (syncData.accountId && !syncData.accountUuid) {
               const account = await this.db.get('accounts', syncData.accountId);
               if (account?.uuid) syncData.accountUuid = account.uuid;
           }
           // 3. Contact UUID (for debts)
-          if (syncData.contactId !== undefined && !syncData.contactUuid) {
+          if (syncData.contactId && !syncData.contactUuid) {
               const contact = await this.db.get('contacts', syncData.contactId);
               if (contact?.uuid) syncData.contactUuid = contact.uuid;
           }
           // 4. Debt UUID (for records)
-          if (syncData.debtId !== undefined && !syncData.debtUuid) {
+          if (syncData.debtId && !syncData.debtUuid) {
               const debt = await this.db.get('debts', syncData.debtId);
               if (debt?.uuid) syncData.debtUuid = debt.uuid;
           }
           // 5. Record UUID (for debt payments)
-          if (syncData.recordId !== undefined && !syncData.recordUuid) {
+          if (syncData.recordId && !syncData.recordUuid) {
               const record = await this.db.get('records', syncData.recordId);
               if (record?.uuid) syncData.recordUuid = record.uuid;
           }
@@ -1497,14 +1502,13 @@ class DataService {
 
   async deleteAccount(id, skipLog = false) {
     const tx = this.db.transaction('accounts', 'readwrite');
-    let uuid = null;
+    let itemData = null;
     if (!skipLog) {
-        const record = await tx.store.get(id);
-        uuid = record?.uuid;
+        itemData = await tx.store.get(id);
     }
     await tx.store.delete(id);
     await tx.done;
-    if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
+    if (!skipLog && itemData) await this.logChange('delete', 'accounts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
     return true;
   }
 
@@ -1665,14 +1669,13 @@ class DataService {
   async deleteContact(id, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'contacts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'contacts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete contact ${id}:`, error);
@@ -1842,14 +1845,13 @@ class DataService {
   async deleteDebt(id, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'debts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'debts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete debt ${id}:`, error);

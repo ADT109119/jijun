@@ -276,8 +276,12 @@ export class RecordsListManager {
 
                 let accountName = '';
                 if (this.advancedModeEnabled) {
-                    const account = this.accounts.find(a => a.id === record.accountId);
-                    accountName = account ? account.name : '未指定帳戶';
+                    if (record.accountId) {
+                        const account = this.accounts.find(a => a.id === record.accountId);
+                        accountName = account ? account.name : '未指定帳戶';
+                    } else {
+                        accountName = '現金';
+                    }
                 }
                 
                 // Build amount display based on displayLogic
