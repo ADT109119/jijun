@@ -1336,7 +1336,13 @@ export class SyncService {
     if (!data.ledgerUuid) return data;
     try {
       const ledgers = await this.dataService.getLedgers();
-      const matched = ledgers.find(l => l.uuid === data.ledgerUuid);
+      let matched = ledgers.find(l => l.uuid === data.ledgerUuid);
+
+      // If no exact UUID match, but the data indicates it belongs to the default ledger
+      if (!matched && (data.ledgerId === 1 || data.ledgerName === '預設帳本')) {
+         matched = ledgers.find(l => l.id === 1);
+      }
+
       console.log(`[SyncService] _resolveLedgerId: uuid=${data.ledgerUuid}, matched=${matched?.id} (${matched?.name}), activeLedgerId=${this.dataService.activeLedgerId}`);
       return { ...data, ledgerId: matched ? matched.id : this.dataService.activeLedgerId };
     } catch (_) {
@@ -1465,6 +1471,16 @@ export class SyncService {
         }
     }
 
+    // 針對預設帳本 (id: 1) 的特殊處理：不同裝置初始化時預設帳本會有不同的 UUID，
+    // 若同步時發現來源為預設帳本，且本地也有預設帳本，則應合併（更新）而非新增，避免產生多個預設帳本
+    if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
+        const localDefaultLedger = await this.dataService.getLedger(1);
+        if (localDefaultLedger) {
+            await this._applyUpdateWithId(storeName, 1, data);
+            return;
+        }
+    }
+
     switch (storeName) {
       case 'ledgers': {
         await this.dataService.addLedger(data, true);
@@ -1472,37 +1488,37 @@ export class SyncService {
       }
       case 'records': {
         // 同步時解析全部外鍵 UUID
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveRecordAccountId(resolved);
-        resolved = await this._resolveRecordDebtId(resolved);
-        await this.dataService.addRecord(resolved, true);
+        let resolvedRecord = await this._resolveLedgerId(data);
+        resolvedRecord = await this._resolveRecordAccountId(resolvedRecord);
+        resolvedRecord = await this._resolveRecordDebtId(resolvedRecord);
+        await this.dataService.addRecord(resolvedRecord, true);
         break;
       }
       case 'accounts': {
-        let resolved = await this._resolveLedgerId(data);
-        await this.dataService.addAccount(resolved, true);
+        const resolvedAccount = await this._resolveLedgerId(data);
+        await this.dataService.addAccount(resolvedAccount, true);
         break;
       }
       case 'contacts': {
-        let resolved = await this._resolveLedgerId(data);
-        await this.dataService.addContact(resolved, true);
+        const resolvedContact = await this._resolveLedgerId(data);
+        await this.dataService.addContact(resolvedContact, true);
         break;
       }
       case 'debts': {
         // 同步時解析 contactUuid → contactId， recordUuid → recordId
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveDebtContactId(resolved);
-        resolved = await this._resolveDebtRecordId(resolved);
-        resolved = await this._resolveDebtPayments(resolved);
-        const debtId = await this.dataService.addDebt(resolved, true);
+        let resolvedDebt = await this._resolveLedgerId(data);
+        resolvedDebt = await this._resolveDebtContactId(resolvedDebt);
+        resolvedDebt = await this._resolveDebtRecordId(resolvedDebt);
+        resolvedDebt = await this._resolveDebtPayments(resolvedDebt);
+        const debtId = await this.dataService.addDebt(resolvedDebt, true);
 
         // 如果該欠款關聯了一個紀錄 (包含初次建立紀錄與還款紀錄)，且該紀錄在本地已存在
         // 則反向更新該紀錄的 debtId，解決 topoOrder 造成的單向綁定問題
-        if (resolved.recordId && debtId) {
-            await this.dataService.updateRecord(resolved.recordId, { debtId: debtId }, true);
+        if (resolvedDebt.recordId && debtId) {
+            await this.dataService.updateRecord(resolvedDebt.recordId, { debtId: debtId }, true);
         }
-        if (resolved.payments && Array.isArray(resolved.payments) && debtId) {
-          for (const p of resolved.payments) {
+        if (resolvedDebt.payments && Array.isArray(resolvedDebt.payments) && debtId) {
+          for (const p of resolvedDebt.payments) {
             if (p.recordId) {
               await this.dataService.updateRecord(p.recordId, { debtId: debtId }, true);
             }
@@ -1511,9 +1527,9 @@ export class SyncService {
         break;
       }
       case 'recurring_transactions': {
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveRecurringAccountId(resolved);
-        await this.dataService.addRecurringTransaction(resolved);
+        let resolvedRecurring = await this._resolveLedgerId(data);
+        resolvedRecurring = await this._resolveRecurringAccountId(resolvedRecurring);
+        await this.dataService.addRecurringTransaction(resolvedRecurring);
         break;
       }
       default:
@@ -1579,6 +1595,14 @@ export class SyncService {
             await this._applyUpdateWithId(storeName, existing.id, data);
             return;
         } else {
+            // 針對預設帳本 (id: 1) 的特殊處理
+            if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
+                const localDefaultLedger = await this.dataService.getLedger(1);
+                if (localDefaultLedger) {
+                    await this._applyUpdateWithId(storeName, 1, data);
+                    return;
+                }
+            }
             // Not found by UUID, treat as Add (upsert)
             await this._applyAdd(storeName, data);
             return;
@@ -1606,36 +1630,36 @@ export class SyncService {
         }
         case 'records': {
           // 同步時解析全部外鍵 UUID
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveRecordAccountId(resolved);
-          resolved = await this._resolveRecordDebtId(resolved);
-          await this.dataService.updateRecord(id, resolved, true);
+          let resolvedRecord = await this._resolveLedgerId(data);
+          resolvedRecord = await this._resolveRecordAccountId(resolvedRecord);
+          resolvedRecord = await this._resolveRecordDebtId(resolvedRecord);
+          await this.dataService.updateRecord(id, resolvedRecord, true);
           break;
         }
         case 'accounts': {
-          let resolved = await this._resolveLedgerId(data);
-          await this.dataService.updateAccount(id, resolved, true);
+          const resolvedAccount = await this._resolveLedgerId(data);
+          await this.dataService.updateAccount(id, resolvedAccount, true);
           break;
         }
         case 'contacts': {
-          let resolved = await this._resolveLedgerId(data);
-          await this.dataService.updateContact(id, resolved, true);
+          const resolvedContact = await this._resolveLedgerId(data);
+          await this.dataService.updateContact(id, resolvedContact, true);
           break;
         }
         case 'debts': {
           // 同步時解析 contactUuid → contactId， recordUuid → recordId
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveDebtContactId(resolved);
-          resolved = await this._resolveDebtRecordId(resolved);
-          resolved = await this._resolveDebtPayments(resolved);
-          await this.dataService.updateDebt(id, resolved, true);
+          let resolvedDebt = await this._resolveLedgerId(data);
+          resolvedDebt = await this._resolveDebtContactId(resolvedDebt);
+          resolvedDebt = await this._resolveDebtRecordId(resolvedDebt);
+          resolvedDebt = await this._resolveDebtPayments(resolvedDebt);
+          await this.dataService.updateDebt(id, resolvedDebt, true);
 
           // 同步更新關聯紀錄 (包含初次建立紀錄與還款紀錄)
-          if (resolved.recordId) {
-              await this.dataService.updateRecord(resolved.recordId, { debtId: id }, true);
+          if (resolvedDebt.recordId) {
+              await this.dataService.updateRecord(resolvedDebt.recordId, { debtId: id }, true);
           }
-          if (resolved.payments && Array.isArray(resolved.payments)) {
-            for (const p of resolved.payments) {
+          if (resolvedDebt.payments && Array.isArray(resolvedDebt.payments)) {
+            for (const p of resolvedDebt.payments) {
               if (p.recordId) {
                 await this.dataService.updateRecord(p.recordId, { debtId: id }, true);
               }
@@ -1644,9 +1668,9 @@ export class SyncService {
           break;
         }
         case 'recurring_transactions': {
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveRecurringAccountId(resolved);
-          await this.dataService.updateRecurringTransaction(id, resolved, true);
+          let resolvedRecurring = await this._resolveLedgerId(data);
+          resolvedRecurring = await this._resolveRecurringAccountId(resolvedRecurring);
+          await this.dataService.updateRecurringTransaction(id, resolvedRecurring, true);
           break;
         }
         default:
