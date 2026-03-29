@@ -302,8 +302,16 @@ export class LedgersPage {
                 <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
                     <i class="fa-solid fa-times"></i>
                 </button>
-                <h3 class="text-lg font-bold text-wabi-primary mb-4">共用帳本：${ledger.name}</h3>
+                <h3 class="text-lg font-bold text-wabi-primary mb-2">共用帳本：${ledger.name}</h3>
                 
+                <!-- 權限提示 -->
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <p class="text-[11px] text-amber-700 leading-relaxed">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                        <strong>權限提示：</strong>共用功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。
+                    </p>
+                </div>
+
                 ${isOwner ? `
                 <div class="mb-4">
                     <p class="text-sm text-wabi-text-secondary mb-3">請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。</p>
@@ -490,8 +498,16 @@ export class LedgersPage {
                 <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
                     <i class="fa-solid fa-times"></i>
                 </button>
-                <h3 class="text-lg font-bold text-wabi-primary mb-4">加入共用帳本</h3>
+                <h3 class="text-lg font-bold text-wabi-primary mb-2">加入共用帳本</h3>
                 
+                <!-- 權限提示 -->
+                <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <p class="text-[11px] text-amber-700 leading-relaxed">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                        <strong>權限提示：</strong>加入功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。
+                    </p>
+                </div>
+
                 <div class="mb-4">
                     <p class="text-sm text-wabi-text-secondary mb-3">
                         為確保雲端讀寫權限，<strong class="text-wabi-primary">極度建議透過 Google 雲端選擇器載入</strong>。
