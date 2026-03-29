@@ -214,6 +214,9 @@ export class LedgerManager {
         await this.dataService.updateLedger(ledgerId, { isShared: true, sharedFileId: fileId, type: 'shared' });
         await this.init();
 
+        // 確保共用帳本同步已啟動
+        await this.app.syncService.ensureSharedSync();
+
         return fileId;
     }
 
@@ -251,6 +254,9 @@ export class LedgerManager {
                 const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps') || { value: {} };
                 lastPull.value[`shared_${fileId}`] = Date.now();
                 await this.dataService.saveSetting({ key: 'sync_last_pull_timestamps', value: lastPull.value });
+
+                // 確保共用帳本同步已啟動
+                await this.app.syncService.ensureSharedSync();
                 
                 return ledger.id;
             }
@@ -278,6 +284,48 @@ export class LedgerManager {
         const ledger = await this.dataService.getLedger(ledgerId);
         if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用');
         await this.app.syncService.removeFilePermission(ledger.sharedFileId, permissionId);
+    }
+
+    /**
+     * 判斷當前使用者是否為該共用帳本的擁有者
+     * @param {number} ledgerId
+     * @returns {Promise<boolean>}
+     */
+    async isLedgerOwner(ledgerId) {
+        try {
+            const users = await this.getSharedUsers(ledgerId);
+            const myEmail = this.app.syncService.userInfo?.email;
+            if (!myEmail) return false;
+            const owner = users.find(u => u.role === 'owner');
+            return owner?.emailAddress === myEmail;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * 取消共用帳本（擁有者專用）
+     * 删除雲端共享檔案並將帳本还原為個人帳本
+     * @param {number} ledgerId
+     */
+    async unshareLedger(ledgerId) {
+        const ledger = await this.dataService.getLedger(ledgerId);
+        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用');
+
+        // 確認是擁有者
+        const isOwner = await this.isLedgerOwner(ledgerId);
+        if (!isOwner) throw new Error('只有擁有者才能取消共用');
+
+        // 刪除雲端檔案
+        await this.app.syncService.deleteFile(ledger.sharedFileId);
+
+        // 將本地帳本還原為個人帳本
+        await this.dataService.updateLedger(ledgerId, {
+            isShared: false,
+            sharedFileId: null,
+            type: 'personal'
+        });
+        await this.init();
     }
 
     /** 取得可用的顏色選項 */

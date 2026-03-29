@@ -99,11 +99,7 @@ export class SyncService {
       const hasShared = ledgers.some(l => l.isShared);
       
       if ((isAutoSyncEnabled || hasShared) && this.isSignedIn()) {
-        const intervalSetting = await this.dataService.getSetting('sync_auto_interval');
-        const intervalMs = (intervalSetting?.value || 'daily') === 'daily'
-          ? 24 * 60 * 60 * 1000
-          : (intervalSetting?.value === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000);
-        this.startAutoSync(intervalMs);
+        this.startAutoSync();
       }
 
       // 檢查是否需要啟動自動備份
@@ -515,7 +511,7 @@ export class SyncService {
       existing.timestamp = Date.now();
       existing.deviceId = this.deviceId;
 
-      await this._updateFile(existingFileId, JSON.stringify(existing), res?.etag);
+      await this._updateFile(existingFileId, JSON.stringify(existing));
     } else {
       // 建立新檔案
       await this._createFile(fileName, JSON.stringify(syncData));
@@ -562,7 +558,7 @@ export class SyncService {
         if (syncLog?.changes) {
           // 只取比上次拉取時間更新的變更
           const newChanges = syncLog.changes.filter(
-            (c) => c.timestamp > lastPullTime
+            (c) => c.timestamp >= lastPullTime
           );
           allRemoteChanges.push(...newChanges);
         }
@@ -589,43 +585,48 @@ export class SyncService {
   }
 
   /**
-   * 合併遠端變更到本地 IndexedDB（兩階段混合排序）
+   * 合併遠端變更到本地 IndexedDB
    * @param {Array} changes 變更列表
    */
   async applyRemoteChanges(changes) {
     if (!changes || changes.length === 0) return;
 
-    // 定義建立依賴的拓撲順序 (Add階段限定)
+    // 定義建立依賴的拓撲順序
     const topoOrder = ['custom_categories', 'ledgers', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
-    const adds = changes.filter(c => c.operation === 'add');
-    const updates = changes.filter(c => c.operation === 'update');
-    const deletes = changes.filter(c => c.operation === 'delete');
+    // 嚴格排序邏輯：
+    // 1. 主要依據 timestamp (由舊到新)
+    // 2. 若 timestamp 相同，則依據操作類型 (add > update > delete)
+    // 3. 若操作類型也相同，則依據 topoOrder
+    const sortedChanges = [...changes].sort((a, b) => {
+        if (a.timestamp !== b.timestamp) {
+            return a.timestamp - b.timestamp;
+        }
+        
+        const opWeight = { 'add': 0, 'update': 1, 'delete': 2 };
+        if (a.operation !== b.operation) {
+            return opWeight[a.operation] - opWeight[b.operation];
+        }
 
-    // 1. Add 階段：必須先依照依賴關係拓撲排序，確保基礎資料先建立
-    // 同一層級（或是未定義的 store）則依照時間先後發生順序（越舊的越先）
-    adds.sort((a, b) => {
         const orderA = topoOrder.indexOf(a.storeName);
         const orderB = topoOrder.indexOf(b.storeName);
-        
-        // 若兩個 store 皆在拓撲清單且權重不同，以拓撲為主
-        if (orderA !== -1 && orderB !== -1 && orderA !== orderB) {
-            return orderA - orderB;
-        }
-        // 否則退回到時間軸排序
-        return a.timestamp - b.timestamp;
+        return orderA - orderB;
     });
 
-    // 2. Update 與 Delete 階段：嚴格遵守時間先後順序，確保最新狀態蓋掉舊狀態 (Last-Write-Wins)
-    updates.sort((a, b) => a.timestamp - b.timestamp);
-    deletes.sort((a, b) => a.timestamp - b.timestamp);
-
-    // 依序執行：所有 Add -> 所有 Update -> 所有 Delete
-    const ordered = [...adds, ...updates, ...deletes];
-
-    for (const change of ordered) {
+    for (const change of sortedChanges) {
       try {
         const { operation, storeName, recordId, data } = change;
+        console.log(`[SyncService] applyRemoteChange: ${operation} ${storeName}`, data?.uuid || data?.name || recordId);
+        
+        // 預檢測：如果是 add 且 UUID 已存在，自動轉向 update，避免 Unique Constraint 失敗導致同步中斷
+        if (operation === 'add' && data.uuid) {
+            const existing = await this.dataService.getByUUID(storeName, data.uuid);
+            if (existing) {
+                await this._applyUpdateWithId(storeName, existing.id, data);
+                continue;
+            }
+        }
+
         switch (operation) {
           case 'add':
             await this._applyAdd(storeName, data);
@@ -683,7 +684,9 @@ export class SyncService {
     await this.ensureValidToken();
 
     const ledgers = await this.dataService.getLedgers();
-    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId && l.type === 'shared');
+    console.log('[SyncService] pushShared: all ledgers =', JSON.stringify(ledgers.map(l => ({ id: l.id, name: l.name, isShared: l.isShared, sharedFileId: l.sharedFileId, type: l.type }))));
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
+    console.log('[SyncService] pushShared: filtered =', sharedLedgers.length, sharedLedgers.map(l => l.name));
 
     for (const ledger of sharedLedgers) {
       let retryCount = 0;
@@ -702,28 +705,28 @@ export class SyncService {
               continue;
           }
 
-          // 1. 下載雲端目前版本與 ETag
+          // 1. 下載雲端目前版本
           const resFile = await this._downloadFile(ledger.sharedFileId);
           if (!resFile) throw new Error('無法讀取共用帳本檔案');
           
           const cloudData = resFile.data || { changes: [] };
           const cloudChanges = cloudData.changes || [];
           
-          // 2. 合併日誌：過濾掉重複的日誌（以 deviceId + timestamp + operation + storeName 作為唯一性判斷）
+          // 2. 合併日誌：過濾掉重複的日誌
           const existingLogsMap = new Set();
           cloudChanges.forEach(log => {
               const key = `${log.deviceId || 'unknown'}-${log.timestamp}-${log.operation}-${log.storeName}`;
               existingLogsMap.add(key);
           });
 
+          // 為每筆待推變更加上 deviceId 標記
           const newLogsToPush = changes.filter(log => {
               const key = `${this.deviceId}-${log.timestamp}-${log.operation}-${log.storeName}`;
               return !existingLogsMap.has(key);
-          });
+          }).map(log => ({ ...log, deviceId: this.deviceId }));
 
           if (newLogsToPush.length === 0) {
               success = true;
-              // 雖然沒新東西要推，但仍需更新 timestamp 以免下次重複讀取
               const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
               await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
               continue;
@@ -734,23 +737,47 @@ export class SyncService {
           cloudData.timestamp = Date.now();
           cloudData.deviceId = this.deviceId;
           
-          // 4. 帶 ETag 寫入 (樂觀鎖)
-          await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData), resFile.etag);
+          // 4. 寫入
+          await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData));
 
-          // 5. 更新本地最後推送時間
+          // 5. 寫入後驗證：重新下載確認我們的變更沒被覆蓋
+          const verifyFile = await this._downloadFile(ledger.sharedFileId);
+          const verifyChanges = verifyFile?.data?.changes || [];
+          
+          // 建立驗證用的鍵集合
+          const verifySet = new Set();
+          verifyChanges.forEach(log => {
+              const key = `${log.deviceId || 'unknown'}-${log.timestamp}-${log.operation}-${log.storeName}`;
+              verifySet.add(key);
+          });
+
+          // 檢查我們剛推的每筆日誌是否都在
+          const missingLogs = newLogsToPush.filter(log => {
+              const key = `${this.deviceId}-${log.timestamp}-${log.operation}-${log.storeName}`;
+              return !verifySet.has(key);
+          });
+
+          if (missingLogs.length > 0) {
+              // 有日誌被覆蓋了！不更新 lastPushTimestamp，下次會自動重推
+              console.warn(`[SyncService] Push verification failed for "${ledger.name}": ${missingLogs.length} changes were overwritten. Will retry.`);
+              retryCount++;
+              await new Promise(r => setTimeout(r, 1000 * retryCount));
+              continue;
+          }
+
+          // 6. 驗證通過，安全更新本地最後推送時間
           const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
           await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
+          console.log(`[SyncService] pushShared: "${ledger.name}" verified OK, ${newLogsToPush.length} changes pushed.`);
           
           success = true;
         } catch (e) {
-          if (e.message === 'VERSION_CONFLICT') {
-            retryCount++;
-            console.warn(`[SyncService] Conflict detected for "${ledger.name}", retrying... (${retryCount}/${MAX_RETRIES})`);
-            // 等待一小段時間再重試
+          retryCount++;
+          console.warn(`[SyncService] pushSharedLedgerChanges failed for "${ledger.name}" (attempt ${retryCount}/${MAX_RETRIES}):`, e.message);
+          if (retryCount < MAX_RETRIES) {
             await new Promise(r => setTimeout(r, 500 * retryCount));
           } else {
-            console.error(`[SyncService] pushSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
-            break;
+            console.error(`[SyncService] pushSharedLedgerChanges gave up for "${ledger.name}" after ${MAX_RETRIES} retries.`);
           }
         }
       }
@@ -764,7 +791,9 @@ export class SyncService {
     await this.ensureValidToken();
 
     const ledgers = await this.dataService.getLedgers();
-    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId && l.type === 'shared');
+    console.log('[SyncService] pullShared: all ledgers =', ledgers.map(l => ({ id: l.id, name: l.name, isShared: l.isShared, sharedFileId: l.sharedFileId, type: l.type })));
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
+    console.log('[SyncService] pullShared: filtered shared ledgers =', sharedLedgers.map(l => l.name));
 
     const lastPullSetting = await this.dataService.getSetting('sync_last_pull_timestamps');
     const pullTimestamps = lastPullSetting?.value || {};
@@ -791,7 +820,7 @@ export class SyncService {
             const fileData = resFile?.data;
             if (fileData?.changes) {
                 // Ignore changes we pushed ourselves recently
-                const newChanges = fileData.changes.filter(c => c.timestamp > lastPullTime && c.deviceId !== this.deviceId);
+                const newChanges = fileData.changes.filter(c => c.timestamp >= lastPullTime && c.deviceId !== this.deviceId);
                 allRemoteChanges.push(...newChanges);
             }
             pullTimestamps[`shared_${ledger.sharedFileId}`] = Date.now();
@@ -820,14 +849,26 @@ export class SyncService {
       const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
       const isPersonalEnabled = isManual || !!(autoSyncSetting?.value);
 
+      console.log('[SyncService] performSync start', { isManual, isPersonalEnabled });
+
       if (isPersonalEnabled) await this.pushChanges();
       await this.pushSharedLedgerChanges();
       
       if (isPersonalEnabled) await this.pullChanges();
       await this.pullSharedLedgerChanges();
+
+      console.log('[SyncService] performSync complete');
     } finally {
       this._syncing = false;
     }
+  }
+
+  /**
+   * 確保共用帳本的自動同步已啟動（在加入/建立共用帳本後呼叫）
+   */
+  async ensureSharedSync() {
+    if (!this.isSignedIn()) return;
+    this.startAutoSync();
   }
 
   // ────────────────────────────────────────────────
@@ -900,10 +941,9 @@ export class SyncService {
   }
 
   /**
-   * 啟動自動同步
-   * @param {number} intervalMs 同步間隔（毫秒）
+   * 啟動自動同步（僅在開啟時和回到前景時觸發，避免持續消耗流量）
    */
-  startAutoSync(intervalMs) {
+  startAutoSync() {
     this.stopAutoSync();
 
     // 啟動後立即同步一次
@@ -911,13 +951,7 @@ export class SyncService {
       console.error('[SyncService] Auto sync error:', err)
     );
 
-    this._autoSyncIntervalId = setInterval(() => {
-      this.performSync(false).catch((err) =>
-        console.error('[SyncService] Auto sync error:', err)
-      );
-    }, intervalMs);
-
-    // 頁面 visibility 變化時也觸發同步
+    // 頁面回到前景時觸發同步（例如切換 APP、鎖螢幕後回來）
     this._visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isSignedIn()) {
         this.performSync(false).catch((err) =>
@@ -1039,6 +1073,24 @@ export class SyncService {
   }
 
   /**
+   * 刪除 Google Drive 上的檔案
+   * @param {string} fileId
+   */
+  async deleteFile(fileId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+      }
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`刪除檔案失敗 (${res.status})`);
+    }
+  }
+
+  /**
    * 下載檔案內容
    * @param {string} fileId
    * @returns {Promise<{data: object, etag: string}|null>}
@@ -1051,9 +1103,8 @@ export class SyncService {
       }
     );
     if (!res.ok) return null;
-    const etag = res.headers.get('ETag');
     const data = await res.json();
-    return { data, etag };
+    return { data };
   }
 
   /**
@@ -1216,29 +1267,23 @@ export class SyncService {
    * @param {string} content
    * @param {string|null} matchTag - 用於樂觀鎖的 ETag
    */
-  async _updateFile(fileId, content, matchTag = null) {
-    const headers = {
-        Authorization: `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
-    };
-    if (matchTag) {
-        headers['If-Match'] = matchTag;
-    }
-
+  async _updateFile(fileId, content) {
     const res = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
       {
         method: 'PATCH',
-        headers: headers,
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
         body: content,
       }
     );
-
     if (!res.ok) {
-        if (res.status === 412) {
-            throw new Error('VERSION_CONFLICT');
-        }
-        throw new Error(`Failed to update file (${res.status})`);
+      let errMsg = `Failed to update file (${res.status})`;
+      try { const j = await res.json(); errMsg += ': ' + (j.error?.message || ''); } catch(_) {}
+      console.error('[SyncService] _updateFile error:', errMsg);
+      throw new Error(errMsg);
     }
   }
 
@@ -1310,8 +1355,7 @@ export class SyncService {
     try {
       const ledgers = await this.dataService.getLedgers();
       const matched = ledgers.find(l => l.uuid === data.ledgerUuid);
-      // fallback to active ledger if not found (or should we throw?)
-      // generally we should have received the ledger object right before it because of topoOrder
+      console.log(`[SyncService] _resolveLedgerId: uuid=${data.ledgerUuid}, matched=${matched?.id} (${matched?.name}), activeLedgerId=${this.dataService.activeLedgerId}`);
       return { ...data, ledgerId: matched ? matched.id : this.dataService.activeLedgerId };
     } catch (_) {
       return data;
@@ -1564,7 +1608,15 @@ export class SyncService {
   async _applyUpdateWithId(storeName, id, data) {
     switch (storeName) {
         case 'ledgers': {
-          await this.dataService.updateLedger(id, data, true);
+          // 保護本地的共用元資料，防止被遠端的舊資料覆蓋
+          const localLedger = await this.dataService.getLedger(id);
+          const protectedData = { ...data };
+          if (localLedger) {
+            protectedData.isShared = localLedger.isShared;
+            protectedData.sharedFileId = localLedger.sharedFileId;
+            protectedData.type = localLedger.type;
+          }
+          await this.dataService.updateLedger(id, protectedData, true);
           break;
         }
         case 'records': {

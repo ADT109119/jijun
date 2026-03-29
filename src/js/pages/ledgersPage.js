@@ -51,7 +51,7 @@ export class LedgersPage {
                             ${isDefault ? '<span class="text-xs px-2 py-0.5 bg-gray-100 text-wabi-text-secondary rounded-full shrink-0">預設</span>' : ''}
                         </div>
                         <p class="text-xs text-wabi-text-secondary mt-0.5">
-                            ${ledger.type === 'shared' ? '<i class="fa-solid fa-users mr-1"></i>共用帳本' : '<i class="fa-solid fa-user mr-1"></i>個人帳本'}
+                            ${ledger.isShared ? '<i class="fa-solid fa-users mr-1"></i>共用帳本' : '<i class="fa-solid fa-user mr-1"></i>個人帳本'}
                         </p>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
@@ -112,7 +112,11 @@ export class LedgersPage {
                 if (!ledger) return;
                 if (!confirm(`確定要刪除「${ledger.name}」帳本嗎？\n\n⚠️ 此操作不可復原，帳本內的所有記帳資料、帳戶、欠款等都會一併刪除。`)) return;
                 try {
+                    const wasActive = this.app.dataService.activeLedgerId === id;
                     await this.app.ledgerManager.deleteLedger(id);
+                    if (wasActive) {
+                        await this.app.ledgerManager.switchLedger(1);
+                    }
                     showToast(`已刪除「${ledger.name}」`, 'success');
                     await this.render();
                 } catch (e) {
@@ -276,22 +280,31 @@ export class LedgersPage {
      * 分享帳本 Modal
      * @param {object} ledger 
      */
-    _showShareModal(ledger) {
+    async _showShareModal(ledger) {
         if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
             showToast('請登入 Google 帳號', 'error');
             return;
+        }
+
+        // 先判斷是否為擁有者（已共用帳本才需要）
+        let isOwner = true;
+        if (ledger.sharedFileId) {
+            try {
+                isOwner = await this.app.ledgerManager.isLedgerOwner(ledger.id);
+            } catch { isOwner = false; }
         }
 
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
         
         let contentHtml = `
-            <div class="bg-wabi-bg rounded-xl max-w-sm w-full p-6 shadow-xl relative">
+            <div class="bg-wabi-bg rounded-xl max-w-sm w-full p-6 shadow-xl relative max-h-[85vh] overflow-y-auto">
                 <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
                     <i class="fa-solid fa-times"></i>
                 </button>
                 <h3 class="text-lg font-bold text-wabi-primary mb-4">共用帳本：${ledger.name}</h3>
                 
+                ${isOwner ? `
                 <div class="mb-4">
                     <p class="text-sm text-wabi-text-secondary mb-3">請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。</p>
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">受邀人 Email</label>
@@ -299,12 +312,16 @@ export class LedgersPage {
                         class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
                         placeholder="例如：friend@gmail.com" />
                 </div>
-
                 <div class="flex space-x-3 mt-6">
                     <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
                         產生並授權
                     </button>
                 </div>
+                ` : `
+                <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <p class="text-sm text-blue-700"><i class="fa-solid fa-circle-info mr-1"></i>您是此共用帳本的參與者，只有擁有者可以管理分享權限。</p>
+                </div>
+                `}
                 
                 ${ledger.sharedFileId ? `
                 <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -318,10 +335,19 @@ export class LedgersPage {
                         <div id="qrcode-container" class="bg-white p-2 border border-gray-200 rounded-lg shadow-sm"></div>
                     </div>
 
-                    <p class="text-xs font-bold text-wabi-text-primary mb-2">授權名單 (<span class="text-xs text-gray-500 font-normal">給予此代碼，或輸入對方的 Email 授權</span>)：</p>
+                    <p class="text-xs font-bold text-wabi-text-primary mb-2">授權名單：</p>
                     <div id="shared-users-list" class="space-y-2 max-h-40 overflow-y-auto pr-1">
                         <div class="text-center text-gray-400 py-3 text-xs"><i class="fa-solid fa-spinner fa-spin"></i> 載入中...</div>
                     </div>
+
+                    ${isOwner ? `
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <button id="unshare-btn" class="w-full py-2.5 bg-red-50 text-red-600 font-medium rounded-lg border border-red-200 hover:bg-red-100 transition-colors text-sm flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-link-slash"></i> 取消共用
+                        </button>
+                        <p class="text-[10px] text-gray-400 mt-1 text-center">取消後雲端共享檔案將被刪除，此帳本將轉回個人帳本。</p>
+                    </div>
+                    ` : ''}
                 </div>
                 ` : ''}
             </div>
@@ -370,11 +396,12 @@ export class LedgersPage {
                             <p class="text-xs text-gray-500 truncate">${u.emailAddress || '---'}</p>
                         </div>
                         ${u.role === 'owner' ? '<span class="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded shrink-0">擁有者</span>' : 
-                          '<button class="remove-user-btn text-red-500 hover:bg-red-50 size-7 flex items-center justify-center rounded transition-colors shrink-0" title="移除授權"><i class="fa-solid fa-user-minus"></i></button>'}
+                          (isOwner ? '<button class="remove-user-btn text-red-500 hover:bg-red-50 size-7 flex items-center justify-center rounded transition-colors shrink-0" title="移除授權"><i class="fa-solid fa-user-minus"></i></button>' :
+                          '<span class="text-[10px] bg-green-50 text-green-600 px-2 py-0.5 rounded shrink-0">參與者</span>')}
                     `;
                     
-                    if (u.role !== 'owner') {
-                        el.querySelector('.remove-user-btn').addEventListener('click', async () => {
+                    if (isOwner && u.role !== 'owner') {
+                        el.querySelector('.remove-user-btn')?.addEventListener('click', async () => {
                             if (!confirm(`確定要移除「${u.emailAddress || u.displayName}」的共用權限嗎？`)) return;
                             try {
                                 el.style.opacity = '0.5';
@@ -392,33 +419,58 @@ export class LedgersPage {
             }).catch(e => {
                 usersListEl.innerHTML = `<div class="text-red-500 text-center py-2 text-xs">無法載入名單：${e.message}</div>`;
             });
+
+            // == 取消共用 (擁有者專用) ==
+            if (isOwner) {
+                modal.querySelector('#unshare-btn')?.addEventListener('click', async () => {
+                    if (!confirm(`⚠️ 確定要取消共用「${ledger.name}」嗎？\n\n所有參與者將失去存取權限，雲端共享檔案將被永久刪除。帳本資料仍會保留在您本地。`)) return;
+                    
+                    const btn = modal.querySelector('#unshare-btn');
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>處理中...';
+                    btn.disabled = true;
+
+                    try {
+                        await this.app.ledgerManager.unshareLedger(ledger.id);
+                        showToast('已取消共用，帳本已還原為個人帳本', 'success');
+                        modal.remove();
+                        await this.render();
+                    } catch (e) {
+                        showToast('取消共用失敗：' + e.message, 'error');
+                        btn.innerHTML = '<i class="fa-solid fa-link-slash"></i> 取消共用';
+                        btn.disabled = false;
+                    }
+                });
+            }
         }
 
-        const submitBtn = modal.querySelector('#share-submit-btn');
-        const emailInput = modal.querySelector('#share-email-input');
+        // == 擁有者才可邀請新成員 ==
+        if (isOwner) {
+            const submitBtn = modal.querySelector('#share-submit-btn');
+            const emailInput = modal.querySelector('#share-email-input');
 
-        submitBtn.addEventListener('click', async () => {
-            const email = emailInput.value.trim();
-            if (!email || !email.includes('@')) {
-                showToast('請輸入有效的 Email', 'error');
-                return;
-            }
+            submitBtn?.addEventListener('click', async () => {
+                const email = emailInput.value.trim();
+                if (!email || !email.includes('@')) {
+                    showToast('請輸入有效的 Email', 'error');
+                    return;
+                }
 
-            const originalHTML = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>處理中...';
-            submitBtn.disabled = true;
+                const originalHTML = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>處理中...';
+                submitBtn.disabled = true;
 
-            try {
-                const fileId = await this.app.ledgerManager.shareLedger(ledger.id, email);
-                showToast('共用授權成功！請將代碼傳給對方', 'success');
-                modal.remove();
-                this._showShareModal(await this.app.dataService.getLedger(ledger.id)); // Reload with file ID
-            } catch (e) {
-                showToast('授權失敗：' + e.message, 'error');
-                submitBtn.innerHTML = originalHTML;
-                submitBtn.disabled = false;
-            }
-        });
+                try {
+                    const fileId = await this.app.ledgerManager.shareLedger(ledger.id, email);
+                    showToast('共用授權成功！請將代碼傳給對方', 'success');
+                    modal.remove();
+                    this._showShareModal(await this.app.dataService.getLedger(ledger.id));
+                } catch (e) {
+                    showToast('授權失敗：' + e.message, 'error');
+                    submitBtn.innerHTML = originalHTML;
+                    submitBtn.disabled = false;
+                }
+            });
+        }
     }
 
     /**

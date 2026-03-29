@@ -265,6 +265,31 @@ class DataService {
     });
   }
 
+  // 透過 UUID 尋找指定 Store 的單一紀錄
+  async getByUUID(storeName, uuid) {
+    if (this.useLocalStorage || !this.db) return null;
+    try {
+      const tx = this.db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      if (store.indexNames.contains('uuid')) {
+        const index = store.index('uuid');
+        // IndexedDB 的 index 不直接回傳資料，但 get() 在 idb 封裝裡可以
+        return await index.get(uuid);
+      } else {
+        // Fallback for stores without uuid index
+        let cursor = await store.openCursor();
+        while (cursor) {
+          if (cursor.value.uuid === uuid) return cursor.value;
+          cursor = await cursor.continue();
+        }
+        return null;
+      }
+    } catch (e) {
+      console.warn(`[DataService] getByUUID failed for ${storeName} with uuid ${uuid}:`, e);
+      return null;
+    }
+  }
+
   // 轉換舊資料格式
   convertOldDataFormat(oldData) {
     const records = []
@@ -1174,16 +1199,35 @@ class DataService {
   async logChange(operation, storeName, recordId, data) {
     if (this.useLocalStorage || !this.db) return;
     try {
-      let syncData = data;
-      // Add ledgerUuid if record has ledgerId but no ledgerUuid
-      if (syncData && syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
-        try {
-          const ltx = this.db.transaction('ledgers', 'readonly');
-          const ledger = await ltx.store.get(syncData.ledgerId);
-          if (ledger && ledger.uuid) {
-            syncData = { ...syncData, ledgerUuid: ledger.uuid };
+      let syncData = data ? { ...data } : null;
+      
+      // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+      if (syncData) {
+          // 1. Ledger UUID
+          if (syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
+              const ledger = await this.db.get('ledgers', syncData.ledgerId);
+              if (ledger?.uuid) syncData.ledgerUuid = ledger.uuid;
           }
-        } catch(e) {}
+          // 2. Account UUID
+          if (syncData.accountId !== undefined && !syncData.accountUuid) {
+              const account = await this.db.get('accounts', syncData.accountId);
+              if (account?.uuid) syncData.accountUuid = account.uuid;
+          }
+          // 3. Contact UUID (for debts)
+          if (syncData.contactId !== undefined && !syncData.contactUuid) {
+              const contact = await this.db.get('contacts', syncData.contactId);
+              if (contact?.uuid) syncData.contactUuid = contact.uuid;
+          }
+          // 4. Debt UUID (for records)
+          if (syncData.debtId !== undefined && !syncData.debtUuid) {
+              const debt = await this.db.get('debts', syncData.debtId);
+              if (debt?.uuid) syncData.debtUuid = debt.uuid;
+          }
+          // 5. Record UUID (for debt payments)
+          if (syncData.recordId !== undefined && !syncData.recordUuid) {
+              const record = await this.db.get('records', syncData.recordId);
+              if (record?.uuid) syncData.recordUuid = record.uuid;
+          }
       }
 
       const tx = this.db.transaction('sync_log', 'readwrite');
@@ -1217,7 +1261,9 @@ class DataService {
 
       const tx = this.db.transaction('sync_log', 'readonly');
       const index = tx.store.index('timestamp');
-      const range = IDBKeyRange.lowerBound(sinceTimestamp, true);
+      // 使用 false (即 >=) 避免漏掉同毫秒的變更
+      // 去重邏輯由 SyncService 的 pushSharedLedgerChanges 負責
+      const range = IDBKeyRange.lowerBound(sinceTimestamp, false);
       const allChanges = await index.getAll(range);
 
       return allChanges.filter(log => {
@@ -1280,12 +1326,41 @@ class DataService {
     
     const validLedgerIds = new Set(ledgers.map(l => l.id));
 
+    // 建立 UUID 查找表，用於補全所有外鍵 UUID
+    const ledgerUuidMap = new Map(ledgers.map(l => [l.id, l.uuid]));
+
     // Filter all relevant object stores based on validLedgerIds
-    const records = (await this.getRecords({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
-    const accounts = (await this.getAccounts({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
-    const contacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
-    const debts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
+    const rawRecords = (await this.getRecords({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+    const rawAccounts = (await this.getAccounts({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
+    const rawContacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
+    const rawDebts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
     const recurring_transactions = (await this.getRecurringTransactions({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+
+    // 建立帳戶/聯絡人/欠款 UUID 查找表
+    const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]));
+    const contactUuidMap = new Map(rawContacts.map(c => [c.id, c.uuid]));
+    const debtUuidMap = new Map(rawDebts.map(d => [d.id, d.uuid]));
+
+    // 補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+    const records = rawRecords.map(r => ({
+        ...r,
+        ledgerUuid: r.ledgerUuid || ledgerUuidMap.get(r.ledgerId) || null,
+        accountUuid: r.accountUuid || accountUuidMap.get(r.accountId) || null,
+        debtUuid: r.debtUuid || debtUuidMap.get(r.debtId) || null,
+    }));
+    const accounts = rawAccounts.map(a => ({
+        ...a,
+        ledgerUuid: a.ledgerUuid || ledgerUuidMap.get(a.ledgerId) || null,
+    }));
+    const contacts = rawContacts.map(c => ({
+        ...c,
+        ledgerUuid: c.ledgerUuid || ledgerUuidMap.get(c.ledgerId) || null,
+    }));
+    const debts = rawDebts.map(d => ({
+        ...d,
+        ledgerUuid: d.ledgerUuid || ledgerUuidMap.get(d.ledgerId) || null,
+        contactUuid: d.contactUuid || contactUuidMap.get(d.contactId) || null,
+    }));
 
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
