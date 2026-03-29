@@ -689,141 +689,87 @@ export class SyncService {
     console.log('[SyncService] pushShared: filtered =', sharedLedgers.length, sharedLedgers.map(l => l.name));
 
     for (const ledger of sharedLedgers) {
-      let retryCount = 0;
-      const MAX_RETRIES = 3;
-      let success = false;
+      try {
+        // ==================== 完整比對式推送 ====================
+        // 核心理念：不依賴 lastPushTimestamp，每次都比對「本地所有日誌」vs「雲端日誌」
+        // 如果本地有但雲端沒有 → 推送上去
+        // 好處：即使被其他裝置覆蓋，下次同步一定會發現缺漏並自動補回
 
-      while (retryCount < MAX_RETRIES && !success) {
-        try {
-          const lastPushKey = `sync_last_push_timestamp_shared_${ledger.sharedFileId}`;
-          const lastPush = await this.dataService.getSetting(lastPushKey);
-          const since = lastPush?.value || 0;
-          
-          const changes = await this.dataService.getChangesSince(since, { sharedLedgerUuid: ledger.uuid });
-          if (changes.length === 0) {
-              success = true;
-              continue;
-          }
+        // 1. 取得本機對此共用帳本的「全部」變更日誌
+        const allLocalChanges = await this.dataService.getChangesSince(0, { sharedLedgerUuid: ledger.uuid });
+        if (allLocalChanges.length === 0) continue;
 
-          // 1. 下載雲端目前版本
-          const resFile = await this._downloadFile(ledger.sharedFileId);
-          if (!resFile) throw new Error('無法讀取共用帳本檔案');
-          
-          const cloudData = resFile.data || { changes: [] };
-          const cloudChanges = cloudData.changes || [];
-          
-          // 2. 合併日誌：過濾掉重複的日誌
-          const existingLogsMap = new Set();
-          cloudChanges.forEach(log => {
-              const key = `${log.deviceId || 'unknown'}-${log.timestamp}-${log.operation}-${log.storeName}`;
-              existingLogsMap.add(key);
-          });
-
-          // 為每筆待推變更加上 deviceId 標記
-          const newLogsToPush = changes.filter(log => {
-              const key = `${this.deviceId}-${log.timestamp}-${log.operation}-${log.storeName}`;
-              return !existingLogsMap.has(key);
-          }).map(log => ({ ...log, deviceId: this.deviceId }));
-
-          if (newLogsToPush.length === 0) {
-              success = true;
-              const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
-              await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
-              continue;
-          }
-
-          // 3. 更新內容
-          cloudData.changes = [...cloudChanges, ...newLogsToPush];
-          cloudData.timestamp = Date.now();
-          cloudData.deviceId = this.deviceId;
-          
-          // 4. 寫入
-          await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData));
-
-          // 5. 寫入後驗證：重新下載確認我們的變更沒被覆蓋
-          const verifyFile = await this._downloadFile(ledger.sharedFileId);
-          const verifyChanges = verifyFile?.data?.changes || [];
-          
-          // 建立驗證用的鍵集合
-          const verifySet = new Set();
-          verifyChanges.forEach(log => {
-              const key = `${log.deviceId || 'unknown'}-${log.timestamp}-${log.operation}-${log.storeName}`;
-              verifySet.add(key);
-          });
-
-          // 檢查我們剛推的每筆日誌是否都在
-          const missingLogs = newLogsToPush.filter(log => {
-              const key = `${this.deviceId}-${log.timestamp}-${log.operation}-${log.storeName}`;
-              return !verifySet.has(key);
-          });
-
-          if (missingLogs.length > 0) {
-              // 有日誌被覆蓋了！不更新 lastPushTimestamp，下次會自動重推
-              console.warn(`[SyncService] Push verification failed for "${ledger.name}": ${missingLogs.length} changes were overwritten. Will retry.`);
-              retryCount++;
-              await new Promise(r => setTimeout(r, 1000 * retryCount));
-              continue;
-          }
-
-          // 6. 驗證通過，安全更新本地最後推送時間
-          const maxTimestamp = Math.max(...changes.map(c => c.timestamp));
-          await this.dataService.saveSetting({ key: lastPushKey, value: maxTimestamp });
-          console.log(`[SyncService] pushShared: "${ledger.name}" verified OK, ${newLogsToPush.length} changes pushed.`);
-          
-          success = true;
-        } catch (e) {
-          retryCount++;
-          console.warn(`[SyncService] pushSharedLedgerChanges failed for "${ledger.name}" (attempt ${retryCount}/${MAX_RETRIES}):`, e.message);
-          if (retryCount < MAX_RETRIES) {
-            await new Promise(r => setTimeout(r, 500 * retryCount));
-          } else {
-            console.error(`[SyncService] pushSharedLedgerChanges gave up for "${ledger.name}" after ${MAX_RETRIES} retries.`);
-          }
+        // 2. 下載雲端目前版本
+        const resFile = await this._downloadFile(ledger.sharedFileId);
+        if (!resFile) {
+          console.warn(`[SyncService] pushShared: 無法下載 "${ledger.name}" 的雲端檔案，略過`);
+          continue;
         }
+        
+        const cloudData = resFile.data || { changes: [] };
+        const cloudChanges = cloudData.changes || [];
+        
+        // 3. 建立雲端日誌鍵集合
+        const cloudKeySet = new Set();
+        cloudChanges.forEach(log => {
+            const key = `${log.deviceId || 'unknown'}|${log.timestamp}|${log.operation}|${log.storeName}`;
+            cloudKeySet.add(key);
+        });
+
+        // 4. 找出「本地有但雲端沒有」的日誌
+        const myMissingChanges = allLocalChanges
+          .map(log => ({ ...log, deviceId: this.deviceId }))
+          .filter(log => {
+              const key = `${this.deviceId}|${log.timestamp}|${log.operation}|${log.storeName}`;
+              return !cloudKeySet.has(key);
+          });
+
+        if (myMissingChanges.length === 0) {
+          console.log(`[SyncService] pushShared: "${ledger.name}" 已完全同步，無需推送`);
+          continue;
+        }
+
+        // 5. 合併並上傳
+        cloudData.changes = [...cloudChanges, ...myMissingChanges];
+        cloudData.timestamp = Date.now();
+        cloudData.deviceId = this.deviceId;
+        
+        await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData));
+        console.log(`[SyncService] pushShared: "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`);
+
+      } catch (e) {
+        console.error(`[SyncService] pushSharedLedgerChanges failed for "${ledger.name}":`, e.message);
       }
     }
   }
 
   /**
-   * 從各個共用帳本檔案拉取遠端變更
+   * 從各個共用帳本檔案拉取遠端變更（完整比對式）
    */
   async pullSharedLedgerChanges() {
     await this.ensureValidToken();
 
     const ledgers = await this.dataService.getLedgers();
-    console.log('[SyncService] pullShared: all ledgers =', ledgers.map(l => ({ id: l.id, name: l.name, isShared: l.isShared, sharedFileId: l.sharedFileId, type: l.type })));
     const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
-    console.log('[SyncService] pullShared: filtered shared ledgers =', sharedLedgers.map(l => l.name));
 
-    const lastPullSetting = await this.dataService.getSetting('sync_last_pull_timestamps');
-    const pullTimestamps = lastPullSetting?.value || {};
+    // 讀取「已套用過的遠端日誌鍵」集合，避免重複 apply
+    const appliedKeysSetting = await this.dataService.getSetting('sync_shared_applied_keys');
+    const appliedKeys = new Set(appliedKeysSetting?.value || []);
     const allRemoteChanges = [];
 
     for (const ledger of sharedLedgers) {
       try {
-        // Query modified time before downloading
-        const resMeta = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${ledger.sharedFileId}?fields=modifiedTime`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
-        );
-        if (!resMeta.ok) {
-            console.warn(`[SyncService] Failed to check shared ledger ${ledger.name} file status.`);
-            continue;
-        }
-        const meta = await resMeta.json();
-        
-        const lastPullTime = pullTimestamps[`shared_${ledger.sharedFileId}`] || 0;
-        const modifiedTime = new Date(meta.modifiedTime).getTime();
+        const resFile = await this._downloadFile(ledger.sharedFileId);
+        const fileData = resFile?.data;
+        if (!fileData?.changes) continue;
 
-        if (modifiedTime > lastPullTime) {
-            const resFile = await this._downloadFile(ledger.sharedFileId);
-            const fileData = resFile?.data;
-            if (fileData?.changes) {
-                // Ignore changes we pushed ourselves recently
-                const newChanges = fileData.changes.filter(c => c.timestamp >= lastPullTime && c.deviceId !== this.deviceId);
-                allRemoteChanges.push(...newChanges);
-            }
-            pullTimestamps[`shared_${ledger.sharedFileId}`] = Date.now();
+        // 從雲端日誌中找出「不是自己推的」且「尚未套用過」的變更
+        for (const change of fileData.changes) {
+          if (change.deviceId === this.deviceId) continue; // 自己推的，略過
+          const key = `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`;
+          if (appliedKeys.has(key)) continue; // 已套用過，略過
+          allRemoteChanges.push(change);
+          appliedKeys.add(key); // 標記為已套用
         }
       } catch (e) {
         console.warn(`[SyncService] pullSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
@@ -831,10 +777,19 @@ export class SyncService {
     }
 
     if (allRemoteChanges.length > 0) {
+      console.log(`[SyncService] pullShared: 收到 ${allRemoteChanges.length} 筆遠端變更，準備套用...`);
       allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp);
       await this.applyRemoteChanges(allRemoteChanges);
     }
-    await this.dataService.saveSetting({ key: 'sync_last_pull_timestamps', value: pullTimestamps });
+
+    // 持久化已套用鍵集合（轉為 Array 存入 settings）
+    // 為避免無限增長，只保留最近 30 天的鍵
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const trimmedKeys = [...appliedKeys].filter(key => {
+        const ts = parseInt(key.split('|')[1], 10);
+        return !isNaN(ts) && ts > thirtyDaysAgo;
+    });
+    await this.dataService.saveSetting({ key: 'sync_shared_applied_keys', value: trimmedKeys });
   }
 
   /**
