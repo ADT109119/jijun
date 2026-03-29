@@ -1178,12 +1178,12 @@ export class SyncService {
         break;
       }
       case 'accounts': {
-        let resolved = await this._resolveLedgerId(data);
+        const resolved = await this._resolveLedgerId(data);
         await this.dataService.addAccount(resolved, true);
         break;
       }
       case 'contacts': {
-        let resolved = await this._resolveLedgerId(data);
+        const resolved = await this._resolveLedgerId(data);
         await this.dataService.addContact(resolved, true);
         break;
       }
@@ -1303,12 +1303,12 @@ export class SyncService {
           break;
         }
         case 'accounts': {
-          let resolved = await this._resolveLedgerId(data);
+          const resolved = await this._resolveLedgerId(data);
           await this.dataService.updateAccount(id, resolved, true);
           break;
         }
         case 'contacts': {
-          let resolved = await this._resolveLedgerId(data);
+          const resolved = await this._resolveLedgerId(data);
           await this.dataService.updateContact(id, resolved, true);
           break;
         }

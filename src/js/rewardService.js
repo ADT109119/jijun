@@ -331,7 +331,12 @@ export class RewardService {
 
         // 先註冊所有事件監聽，再 prepare + show
         // 避免 prepare 回傳後事件已經觸發但 listener 還沒註冊的 race condition
-        return new Promise(async (resolve) => {
+        let resolveFunc;
+        const promise = new Promise((resolve) => {
+            resolveFunc = resolve;
+        });
+
+        const doNativeAd = async () => {
             let rewarded = false;
             let resolved = false;
 
@@ -345,7 +350,7 @@ export class RewardService {
                 if (resolved) return;
                 resolved = true;
                 cleanup();
-                resolve(value);
+                resolveFunc(value);
             };
 
             // 30 秒逾時安全網
@@ -416,7 +421,10 @@ export class RewardService {
                 showToast('獎勵廣告載入失敗，請稍後再試', 'error');
                 safeResolve(false);
             }
-        });
+        };
+
+        doNativeAd();
+        return promise;
     }
 
     /** 安全移除原生事件監聽 */

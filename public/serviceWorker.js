@@ -233,12 +233,12 @@ self.addEventListener('message', event => {
       const { title, body, timestamp } = event.data.payload;
       
       // Try to use experimental TimestampTrigger for offline scheduling
-      if ('showTrigger' in Notification.prototype) {
+      if ('showTrigger' in Notification.prototype && typeof self.TimestampTrigger !== 'undefined') {
           self.registration.showNotification(title, {
               tag: 'daily-reminder',
               body: body,
               icon: '/icon/icon-192x192.png',
-              showTrigger: new TimestampTrigger(timestamp)
+              showTrigger: new self.TimestampTrigger(timestamp)
           }).catch(err => console.error('Failed to schedule via TimestampTrigger:', err));
       } else {
           // Fallback: If browser doesn't support offline triggers, we just 
