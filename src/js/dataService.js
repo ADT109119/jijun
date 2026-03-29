@@ -265,6 +265,31 @@ class DataService {
     });
   }
 
+  // 透過 UUID 尋找指定 Store 的單一紀錄
+  async getByUUID(storeName, uuid) {
+    if (this.useLocalStorage || !this.db) return null;
+    try {
+      const tx = this.db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      if (store.indexNames.contains('uuid')) {
+        const index = store.index('uuid');
+        // IndexedDB 的 index 不直接回傳資料，但 get() 在 idb 封裝裡可以
+        return await index.get(uuid);
+      } else {
+        // Fallback for stores without uuid index
+        let cursor = await store.openCursor();
+        while (cursor) {
+          if (cursor.value.uuid === uuid) return cursor.value;
+          cursor = await cursor.continue();
+        }
+        return null;
+      }
+    } catch (e) {
+      console.warn(`[DataService] getByUUID failed for ${storeName} with uuid ${uuid}:`, e);
+      return null;
+    }
+  }
+
   // 轉換舊資料格式
   convertOldDataFormat(oldData) {
     const records = []
@@ -532,10 +557,10 @@ class DataService {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       
-      let uuid = null;
+      // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
+      let recordData = null;
       if (!skipLog) {
-        const record = await store.get(id);
-        uuid = record?.uuid;
+        recordData = await store.get(id);
 
         const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
         if (!shouldDelete) throw new Error('Delete cancelled by plugin');
@@ -544,9 +569,14 @@ class DataService {
       await store.delete(id)
       await tx.done
       
-      if (!skipLog) {
+      if (!skipLog && recordData) {
         await this.triggerHook('onRecordDeleteAfter', { id });
-        await this.logChange('delete', 'records', id, { uuid });
+        // 傳入完整的紀錄資料，讓 logChange 能正確補全 ledgerUuid、accountUuid 等外鍵
+        await this.logChange('delete', 'records', id, {
+          uuid: recordData.uuid,
+          ledgerId: recordData.ledgerId,
+          accountId: recordData.accountId,
+        });
       }
 
       return true
@@ -1174,16 +1204,35 @@ class DataService {
   async logChange(operation, storeName, recordId, data) {
     if (this.useLocalStorage || !this.db) return;
     try {
-      let syncData = data;
-      // Add ledgerUuid if record has ledgerId but no ledgerUuid
-      if (syncData && syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
-        try {
-          const ltx = this.db.transaction('ledgers', 'readonly');
-          const ledger = await ltx.store.get(syncData.ledgerId);
-          if (ledger && ledger.uuid) {
-            syncData = { ...syncData, ledgerUuid: ledger.uuid };
+      let syncData = data ? { ...data } : null;
+      
+      // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+      if (syncData) {
+          // 1. Ledger UUID
+          if (syncData.ledgerId && !syncData.ledgerUuid) {
+              const ledger = await this.db.get('ledgers', syncData.ledgerId);
+              if (ledger?.uuid) syncData.ledgerUuid = ledger.uuid;
           }
-        } catch(e) {}
+          // 2. Account UUID
+          if (syncData.accountId && !syncData.accountUuid) {
+              const account = await this.db.get('accounts', syncData.accountId);
+              if (account?.uuid) syncData.accountUuid = account.uuid;
+          }
+          // 3. Contact UUID (for debts)
+          if (syncData.contactId && !syncData.contactUuid) {
+              const contact = await this.db.get('contacts', syncData.contactId);
+              if (contact?.uuid) syncData.contactUuid = contact.uuid;
+          }
+          // 4. Debt UUID (for records)
+          if (syncData.debtId && !syncData.debtUuid) {
+              const debt = await this.db.get('debts', syncData.debtId);
+              if (debt?.uuid) syncData.debtUuid = debt.uuid;
+          }
+          // 5. Record UUID (for debt payments)
+          if (syncData.recordId && !syncData.recordUuid) {
+              const record = await this.db.get('records', syncData.recordId);
+              if (record?.uuid) syncData.recordUuid = record.uuid;
+          }
       }
 
       const tx = this.db.transaction('sync_log', 'readwrite');
@@ -1206,13 +1255,39 @@ class DataService {
    * @param {number} sinceTimestamp - 起始時間戳
    * @returns {Promise<Array>}
    */
-  async getChangesSince(sinceTimestamp) {
+  async getChangesSince(sinceTimestamp, options = {}) {
     if (this.useLocalStorage || !this.db) return [];
     try {
+      const isSharedSync = !!options.sharedLedgerUuid;
+      const targetUuid = options.sharedLedgerUuid;
+
+      const allLedgers = await this.db.getAll('ledgers');
+      const sharedUuids = new Set(allLedgers.filter(l => l.isShared).map(l => l.uuid));
+
       const tx = this.db.transaction('sync_log', 'readonly');
       const index = tx.store.index('timestamp');
-      const range = IDBKeyRange.lowerBound(sinceTimestamp, true);
-      return await index.getAll(range);
+      // 使用 false (即 >=) 避免漏掉同毫秒的變更
+      // 去重邏輯由 SyncService 的 pushSharedLedgerChanges 負責
+      const range = IDBKeyRange.lowerBound(sinceTimestamp, false);
+      const allChanges = await index.getAll(range);
+
+      return allChanges.filter(log => {
+        let logLedgerUuid = log.data?.ledgerUuid;
+        if (!logLedgerUuid && log.storeName === 'ledgers') {
+             logLedgerUuid = log.data?.uuid || null;
+        }
+
+        if (isSharedSync) {
+            return logLedgerUuid === targetUuid;
+        } else {
+            // For personal sync, filter OUT if it belongs to any shared ledger
+            // 但是「帳本(ledgers)」本身的變更日誌必須放行，否則其他裝置永遠不會知道該帳本變成了共用帳本！
+            if (logLedgerUuid && log.storeName !== 'ledgers') {
+               return !sharedUuids.has(logLedgerUuid);
+            }
+            return true; // global stuff (settings) and ledgers synced personally
+        }
+      });
     } catch (err) {
       console.error('[DataService] getChangesSince error:', err);
       return [];
@@ -1244,9 +1319,55 @@ class DataService {
    * 匯出資料用於同步（回傳物件而非下載檔案）
    * @returns {Promise<object>}
    */
-  async exportDataForSync() {
-    // 匯出時包含所有帳本的資料
-    const records = await this.getRecords({ allLedgers: true });
+  async exportDataForSync(options = {}) {
+    const isSharedSync = !!options.sharedLedgerUuid;
+    const targetUuid = options.sharedLedgerUuid;
+
+    let ledgers = await this.getLedgers();
+    if (isSharedSync) {
+        ledgers = ledgers.filter(l => l.uuid === targetUuid);
+    } else {
+        ledgers = ledgers.filter(l => !l.isShared);
+    }
+    
+    const validLedgerIds = new Set(ledgers.map(l => l.id));
+
+    // 建立 UUID 查找表，用於補全所有外鍵 UUID
+    const ledgerUuidMap = new Map(ledgers.map(l => [l.id, l.uuid]));
+
+    // Filter all relevant object stores based on validLedgerIds
+    const rawRecords = (await this.getRecords({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+    const rawAccounts = (await this.getAccounts({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
+    const rawContacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
+    const rawDebts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
+    const recurring_transactions = (await this.getRecurringTransactions({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+
+    // 建立帳戶/聯絡人/欠款 UUID 查找表
+    const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]));
+    const contactUuidMap = new Map(rawContacts.map(c => [c.id, c.uuid]));
+    const debtUuidMap = new Map(rawDebts.map(d => [d.id, d.uuid]));
+
+    // 補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+    const records = rawRecords.map(r => ({
+        ...r,
+        ledgerUuid: r.ledgerUuid || ledgerUuidMap.get(r.ledgerId) || null,
+        accountUuid: r.accountUuid || accountUuidMap.get(r.accountId) || null,
+        debtUuid: r.debtUuid || debtUuidMap.get(r.debtId) || null,
+    }));
+    const accounts = rawAccounts.map(a => ({
+        ...a,
+        ledgerUuid: a.ledgerUuid || ledgerUuidMap.get(a.ledgerId) || null,
+    }));
+    const contacts = rawContacts.map(c => ({
+        ...c,
+        ledgerUuid: c.ledgerUuid || ledgerUuidMap.get(c.ledgerId) || null,
+    }));
+    const debts = rawDebts.map(d => ({
+        ...d,
+        ledgerUuid: d.ledgerUuid || ledgerUuidMap.get(d.ledgerId) || null,
+        contactUuid: d.contactUuid || contactUuidMap.get(d.contactId) || null,
+    }));
+
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
     const categoryOrderSetting = await this.getSetting('category_order');
@@ -1255,12 +1376,9 @@ class DataService {
     const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
-    const accounts = await this.getAccounts({ allLedgers: true });
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-    const contacts = await this.getContacts({ allLedgers: true });
-    const debts = await this.getDebts({ allLedgers: true });
-    const ledgers = await this.getLedgers();
+
 
     return {
       version: '2.3.0',
@@ -1274,10 +1392,13 @@ class DataService {
       records,
       contacts,
       debts,
-      customCategories,
-      categoryOrder,
-      hiddenCategories,
-      budgetSettings,
+      recurring_transactions,
+      ...(isSharedSync ? {} : {
+        customCategories,
+        categoryOrder,
+        hiddenCategories,
+        budgetSettings
+      }),
       metadata: {
         totalRecords: records.length,
         totalContacts: contacts.length,
@@ -1382,14 +1503,13 @@ class DataService {
 
   async deleteAccount(id, skipLog = false) {
     const tx = this.db.transaction('accounts', 'readwrite');
-    let uuid = null;
+    let itemData = null;
     if (!skipLog) {
-        const record = await tx.store.get(id);
-        uuid = record?.uuid;
+        itemData = await tx.store.get(id);
     }
     await tx.store.delete(id);
     await tx.done;
-    if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
+    if (!skipLog && itemData) await this.logChange('delete', 'accounts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
     return true;
   }
 
@@ -1550,14 +1670,13 @@ class DataService {
   async deleteContact(id, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'contacts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'contacts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete contact ${id}:`, error);
@@ -1727,14 +1846,13 @@ class DataService {
   async deleteDebt(id, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'debts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'debts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete debt ${id}:`, error);
