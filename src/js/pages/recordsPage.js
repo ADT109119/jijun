@@ -10,7 +10,13 @@ export class RecordsPage {
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
-                    <h1 class="text-wabi-primary text-xl font-bold text-center flex-1">記帳紀錄</h1>
+                    <button id="prev-period-btn" class="w-10 h-10 flex items-center justify-center text-wabi-text-secondary hover:text-wabi-primary hover:bg-gray-100 rounded-full transition-colors">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <h1 id="records-header-title" class="text-wabi-primary text-lg font-bold text-center flex-1 cursor-pointer hover:bg-gray-100 py-1 rounded transition-colors mx-2"></h1>
+                    <button id="next-period-btn" class="w-10 h-10 flex items-center justify-center text-wabi-text-secondary hover:text-wabi-primary hover:bg-gray-100 rounded-full transition-colors">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
                 </div>
 
                 <!-- Period Filter (Date Filter) - New Row -->

@@ -297,7 +297,7 @@ export class LedgersPage {
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
         
-        let contentHtml = `
+        const contentHtml = `
             <div class="bg-wabi-bg rounded-xl max-w-sm w-full p-6 shadow-xl relative max-h-[85vh] overflow-y-auto">
                 <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
                     <i class="fa-solid fa-times"></i>
@@ -593,8 +593,8 @@ export class LedgersPage {
                 Html5Qrcode.getCameras().then(devices => {
                     if (devices && devices.length) {
                         // 優先尋找後置鏡頭，沒有就預設最後一顆（通常是主鏡頭），如果只有一顆就用第一顆
-                        let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('rear'));
-                        let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
+                        const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('rear'));
+                        const cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
 
                         html5QrCode = new Html5Qrcode("qr-reader");
                         html5QrCode.start(

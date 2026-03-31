@@ -113,7 +113,7 @@ export class NotificationService {
 
     // Calculate next trigger time
     const now = new Date();
-    let triggerDate = new Date();
+    const triggerDate = new Date();
     triggerDate.setHours(hours, minutes, 0, 0);
 
     // If time has passed today, or skipToday is true, schedule for tomorrow

@@ -489,7 +489,7 @@ class DataService {
 
     try {
       // 若更新包含 accountId / debtId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -634,7 +634,7 @@ class DataService {
   async updateRecurringTransaction(id, updates, skipLog = false) {
     try {
       // 若更新包含 accountId，同步更新 accountUuid
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -649,7 +649,7 @@ class DataService {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const transaction = await tx.store.get(id);
       if (transaction) {
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             if (transaction.uuid) finalUpdates.uuid = transaction.uuid;
@@ -1204,7 +1204,7 @@ class DataService {
   async logChange(operation, storeName, recordId, data) {
     if (this.useLocalStorage || !this.db) return;
     try {
-      let syncData = data ? { ...data } : null;
+      const syncData = data ? { ...data } : null;
       
       // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
       if (syncData) {
@@ -1483,7 +1483,7 @@ class DataService {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
       if (account) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (account.uuid) finalUpdates.uuid = account.uuid;
@@ -1649,7 +1649,7 @@ class DataService {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
       if (contact) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (contact.uuid) finalUpdates.uuid = contact.uuid;
@@ -1792,7 +1792,7 @@ class DataService {
   async updateDebt(id, updates, skipLog = false) {
     try {
       // 若更新包含 contactId / recordId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.contactId !== undefined) {
         if (updates.contactId) {
           try {
@@ -1821,7 +1821,7 @@ class DataService {
         // 必須確保本地 UUID 不被意外覆蓋，除非遠端 UUID 確定是正確的關聯標識
         // 通常同步時我們會根據 UUID 找到本地 ID，所以傳入的 updates.uuid 理應與本地相同
         // 但為了保險起見，保護本地 uuid 與 id 不被 `...updates` 覆蓋
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             // 確保不覆蓋本地 UUID
@@ -2060,7 +2060,7 @@ class DataService {
       const tx = this.db.transaction('ledgers', 'readwrite');
       const ledger = await tx.store.get(id);
       if (!ledger) throw new Error('Ledger not found');
-      let finalUpdates = { ...updates };
+      const finalUpdates = { ...updates };
       if (skipLog) {
           delete finalUpdates.id;
           if (ledger.uuid) finalUpdates.uuid = ledger.uuid;
