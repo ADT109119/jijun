@@ -33,10 +33,10 @@ export class CategoryManager {
          this.customCategories = saved.value;
       }
       
-      let order = await this.dataService.getSetting('category_order');
+      const order = await this.dataService.getSetting('category_order');
       if (order && order.value) this.categoryOrder = order.value;
       
-      let hidden = await this.dataService.getSetting('hidden_categories');
+      const hidden = await this.dataService.getSetting('hidden_categories');
       if (hidden && hidden.value) this.hiddenCategories = hidden.value;
 
     } catch (error) {

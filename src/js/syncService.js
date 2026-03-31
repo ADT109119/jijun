@@ -1204,7 +1204,9 @@ export class SyncService {
         try {
             const errJson = await res.json();
             errStr = errJson.error?.message || '';
-        } catch(e) {}
+        } catch(e) {
+            console.warn('Failed to parse error response', e);
+        }
         throw new Error(`Failed to grant permission (${res.status}): ${errStr}`);
     }
     return await res.json();
@@ -1263,7 +1265,7 @@ export class SyncService {
     );
     if (!res.ok) {
       let errMsg = `Failed to update file (${res.status})`;
-      try { const j = await res.json(); errMsg += ': ' + (j.error?.message || ''); } catch(_) {}
+      try { const j = await res.json(); errMsg += ': ' + (j.error?.message || ''); } catch(_) { console.warn('Failed to parse error', _); }
       console.error('[SyncService] _updateFile error:', errMsg);
       throw new Error(errMsg);
     }
