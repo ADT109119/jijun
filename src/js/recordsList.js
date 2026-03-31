@@ -131,8 +131,13 @@ export class RecordsListManager {
             newEnd = new Date(currentStart.getFullYear(), currentStart.getMonth() + direction + 1, 0);
         }
 
-        this.filters.customStartDate = newStart.toISOString().split('T')[0];
-        this.filters.customEndDate = newEnd.toISOString().split('T')[0];
+        const formatLocal = (d) => {
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        };
+
+        this.filters.customStartDate = formatLocal(newStart);
+        this.filters.customEndDate = formatLocal(newEnd);
 
         // When using arrows, if we are in custom mode, we stay in custom mode.
         // If we were in month/year/week, we stay in that mode but the dates are shifted.
