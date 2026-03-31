@@ -1471,16 +1471,6 @@ export class SyncService {
         }
     }
 
-    // 針對預設帳本 (id: 1) 的特殊處理：不同裝置初始化時預設帳本會有不同的 UUID，
-    // 若同步時發現來源為預設帳本，且本地也有預設帳本，則應合併（更新）而非新增，避免產生多個預設帳本
-    if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
-        const localDefaultLedger = await this.dataService.getLedger(1);
-        if (localDefaultLedger) {
-            await this._applyUpdateWithId(storeName, 1, data);
-            return;
-        }
-    }
-
     switch (storeName) {
       case 'ledgers': {
         await this.dataService.addLedger(data, true);
@@ -1595,14 +1585,6 @@ export class SyncService {
             await this._applyUpdateWithId(storeName, existing.id, data);
             return;
         } else {
-            // 針對預設帳本 (id: 1) 的特殊處理
-            if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
-                const localDefaultLedger = await this.dataService.getLedger(1);
-                if (localDefaultLedger) {
-                    await this._applyUpdateWithId(storeName, 1, data);
-                    return;
-                }
-            }
             // Not found by UUID, treat as Add (upsert)
             await this._applyAdd(storeName, data);
             return;
