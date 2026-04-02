@@ -1,0 +1,28 @@
+{
+  "id": "com.walkingfish.theme.sakura",
+  "name": "櫻花粉 (Sakura)",
+  "description": "輕盈浪漫的粉紅色系主題，搭配自訂的可愛圖標。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#FFF0F5",
+    "wabi-primary": "#FF69B4",
+    "wabi-expense": "#FF4500",
+    "wabi-income": "#32CD32",
+    "wabi-accent": "#FFB6C1",
+    "wabi-text-primary": "#333333",
+    "wabi-text-secondary": "#777777",
+    "wabi-surface": "#FFFFFF",
+    "wabi-border": "#FFC0CB"
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='home'] i.fa-house": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-heart"
+    },
+    "nav#bottom-nav a[data-page='records'] i.fa-list-ul": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-star"
+    }
+  }
+}

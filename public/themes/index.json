@@ -1,0 +1,77 @@
+[
+  {
+    "id": "com.walkingfish.theme.dark",
+    "name": "深色模式 (Dark Mode)",
+    "description": "保護眼睛的深色主題，減少螢幕刺眼光線。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/dark.json",
+    "iconPreview": "fa-solid fa-moon",
+    "colorsPreview": {
+      "bg": "#0f172a",
+      "primary": "#38bdf8",
+      "surface": "#1e293b",
+      "accent": "#818cf8"
+    }
+  },
+  {
+    "id": "com.walkingfish.theme.sakura",
+    "name": "櫻花粉 (Sakura)",
+    "description": "輕盈浪漫的粉紅色系主題，搭配自訂的可愛圖標。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/sakura.json",
+    "iconPreview": "fa-solid fa-fan",
+    "colorsPreview": {
+      "bg": "#FFF0F5",
+      "primary": "#FF69B4",
+      "surface": "#FFFFFF",
+      "accent": "#FFB6C1"
+    }
+  },
+  {
+    "id": "com.walkingfish.theme.ocean",
+    "name": "深海湛藍 (Ocean Blue)",
+    "description": "沉穩、專業的海洋深藍色系，適合專注於理財數據。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/blue.json",
+    "iconPreview": "fa-solid fa-water",
+    "colorsPreview": {
+      "bg": "#EBF8FF",
+      "primary": "#2B6CB0",
+      "surface": "#FFFFFF",
+      "accent": "#4299E1"
+    }
+  },
+  {
+    "id": "com.walkingfish.theme.cyberpunk",
+    "name": "賽博龐克 (Cyberpunk 2077)",
+    "description": "霓虹粉、黃、青交織的未來科技感，充滿強烈對比。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/cyberpunk.json",
+    "iconPreview": "fa-solid fa-bolt",
+    "colorsPreview": {
+      "bg": "#0D0D19",
+      "primary": "#FCE205",
+      "surface": "#1A1A2E",
+      "accent": "#FF003C"
+    }
+  },
+  {
+    "id": "com.walkingfish.theme.hightech",
+    "name": "高科技駭客 (Matrix)",
+    "description": "經典的黑綠代碼風格，讓記帳像在寫 Code。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/hightech.json",
+    "iconPreview": "fa-solid fa-terminal",
+    "colorsPreview": {
+      "bg": "#000000",
+      "primary": "#00FF00",
+      "surface": "#0A0A0A",
+      "accent": "#00CC00"
+    }
+  }
+]

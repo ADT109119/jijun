@@ -22,6 +22,7 @@ export class SettingsPage {
                             ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
                         </div>
                         ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
+                        ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
                     </div>
 
                     <!-- Data Management -->
@@ -160,6 +161,13 @@ export class SettingsPage {
         if (managePluginsBtn) {
             managePluginsBtn.addEventListener('click', () => {
                 window.location.hash = '#plugins';
+            });
+        }
+        // Themes manager button
+        const manageThemesBtn = document.getElementById('manage-themes-btn');
+        if (manageThemesBtn) {
+            manageThemesBtn.addEventListener('click', () => {
+                window.location.hash = '#themes';
             });
         }
         // Ledger management button

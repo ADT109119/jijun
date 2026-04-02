@@ -10,6 +10,7 @@ import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
 import { RewardService } from './rewardService.js';
 import { NotificationService } from './notificationService.js';
+import { ThemeManager } from './themeManager.js';
 import { Router } from './router.js';
 
 import { HomePage } from './pages/homePage.js';
@@ -25,6 +26,8 @@ import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
 import { LedgersPage } from './pages/ledgersPage.js';
 import { StorePage } from './pages/storePage.js';
+import { ThemesPage } from './pages/themesPage.js';
+import { ThemeStorePage } from './pages/themeStorePage.js';
 import { PrivacyPage } from './pages/privacyPage.js';
 import { LicensePage } from './pages/licensePage.js';
 
@@ -41,6 +44,7 @@ class EasyAccountingApp {
         this.syncService = new SyncService(this.dataService);
         this.rewardService = new RewardService();
         this.notificationService = new NotificationService(this.dataService);
+        this.themeManager = new ThemeManager(this.dataService);
 
         this.appContainer = document.getElementById('app-container');
 
@@ -67,6 +71,7 @@ class EasyAccountingApp {
 
     async init() {
         await this.dataService.init();
+        await this.themeManager.init(); // Initialize themes early
         await this.categoryManager.init();
         await this.budgetManager.loadBudget();
         await this.ledgerManager.init();
@@ -135,6 +140,8 @@ class EasyAccountingApp {
         this.router.register('ledgers', new LedgersPage(this));
         this.router.register('plugins', new PluginsPage(this));
         this.router.register('store', new StorePage(this));
+        this.router.register('themes', new ThemesPage(this));
+        this.router.register('theme-store', new ThemeStorePage(this));
         this.router.register('sync-settings', new SyncSettingsPage(this));
         this.router.register('privacy', new PrivacyPage(this));
         this.router.register('license', new LicensePage(this));
