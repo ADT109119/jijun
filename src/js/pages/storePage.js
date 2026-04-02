@@ -61,12 +61,12 @@ export class StorePage {
 
              if (installed) {
                  if (this.app.pluginManager.compareVersions(p.version, installed.version) > 0) {
-                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`;
+                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-wabi-surface hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`;
                  } else {
                       btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`;
                  }
              } else {
-                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-white hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
+                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
              }
 
              return `

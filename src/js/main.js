@@ -277,7 +277,7 @@ class EasyAccountingApp {
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
                             ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
-                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
+                            <div class="flex items-center justify-center rounded-lg text-wabi-surface shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
                                 <i class="${l.icon || 'fa-solid fa-book'}"></i>
                             </div>
                             <div class="flex-1 min-w-0 text-left flex flex-col justify-center">

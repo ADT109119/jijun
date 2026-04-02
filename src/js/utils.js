@@ -32,6 +32,60 @@ export function formatDateToString(date) {
  * @param {number} amount - 金額
  * @returns {string} 格式化後的貨幣字串
  */
+export function customConfirm(message, title = '提示') {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all">
+                <div class="p-6">
+                    <h3 class="text-lg font-bold text-wabi-text-primary mb-2">${escapeHTML(title)}</h3>
+                    <p class="text-wabi-text-secondary text-sm">${escapeHTML(message)}</p>
+                </div>
+                <div class="flex border-t border-wabi-border">
+                    <button class="custom-confirm-cancel flex-1 py-3 text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors border-r border-wabi-border">取消</button>
+                    <button class="custom-confirm-ok flex-1 py-3 text-wabi-primary font-bold hover:bg-wabi-bg transition-colors">確定</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('.custom-confirm-cancel').addEventListener('click', () => {
+            modal.remove();
+            resolve(false);
+        });
+
+        modal.querySelector('.custom-confirm-ok').addEventListener('click', () => {
+            modal.remove();
+            resolve(true);
+        });
+    });
+}
+
+export function customAlert(message, title = '提示') {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all">
+                <div class="p-6">
+                    <h3 class="text-lg font-bold text-wabi-text-primary mb-2">${escapeHTML(title)}</h3>
+                    <p class="text-wabi-text-secondary text-sm">${escapeHTML(message)}</p>
+                </div>
+                <div class="flex border-t border-wabi-border">
+                    <button class="custom-alert-ok flex-1 py-3 text-wabi-primary font-bold hover:bg-wabi-bg transition-colors">確定</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelector('.custom-alert-ok').addEventListener('click', () => {
+            modal.remove();
+            resolve();
+        });
+    });
+}
+
 export function formatCurrency(amount) {
   if (isNaN(amount)) return '0'
   return new Intl.NumberFormat('zh-TW', {
@@ -92,19 +146,22 @@ export function showToast(message, type = 'info', duration = 3000) {
     toastMessage.textContent = message;
 
     // Reset classes
-    toast.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'bg-wabi-primary', 'toast-hide');
+    toast.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'bg-wabi-primary', 'toast-hide', 'text-wabi-surface', 'text-wabi-surface');
 
     // Apply new classes based on type
     switch (type) {
         case 'success':
-            toast.classList.add('bg-wabi-income');
+            toast.classList.add('bg-wabi-income', 'text-wabi-surface');
             break;
         case 'error':
-            toast.classList.add('bg-wabi-expense');
+            toast.classList.add('bg-wabi-expense', 'text-wabi-surface');
+            break;
+        case 'warning':
+            toast.classList.add('bg-yellow-500', 'text-wabi-surface');
             break;
         case 'info':
         default:
-            toast.classList.add('bg-wabi-primary');
+            toast.classList.add('bg-wabi-primary', 'text-wabi-surface');
             break;
     }
 

@@ -34,10 +34,10 @@ export class AccountsPage {
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-wabi-primary">帳戶列表</h3>
                     <div class="flex gap-2">
-                        <button id="transfer-btn" class="bg-wabi-income text-white rounded-full w-8 h-8 flex items-center justify-center">
+                        <button id="transfer-btn" class="bg-wabi-income text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                             <i class="fa-solid fa-money-bill-transfer"></i>
                         </button>
-                        <button id="add-account-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                        <button id="add-account-btn" class="bg-wabi-primary text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                             <i class="fa-solid fa-plus"></i>
                         </button>
                     </div>
@@ -73,7 +73,7 @@ export class AccountsPage {
             accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-12">
+                    <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-12">
                         <i class="${account.icon} text-2xl"></i>
                     </div>
                     <div>

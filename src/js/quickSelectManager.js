@@ -146,7 +146,7 @@ export class QuickSelectManager {
                                 data-description="${record.description}"
                                 data-account-id="${record.accountId}"
                             >
-                                <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-6" ${colorStyle}>
+                                <div class="flex items-center justify-center rounded-full ${colorClass} text-wabi-surface shrink-0 size-6" ${colorStyle}>
                                     <i class="${category.icon} text-xs"></i>
                                 </div>
                                 <span class="text-wabi-text-primary font-medium truncate max-w-[100px]">${descriptionText}</span>

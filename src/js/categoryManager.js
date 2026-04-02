@@ -482,7 +482,7 @@ export class CategoryManager {
             <p class="text-wabi-text-primary font-medium mb-1">分類刪除後，相關記帳無法直接復原。</p>
             <p class="text-wabi-text-secondary text-sm mb-6">系統將會把它們自動轉移至「其他」分類中保留。</p>
             <div class="flex space-x-3">
-               <button id="confirm-delete-btn" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+               <button id="confirm-delete-btn" class="flex-1 bg-wabi-expense hover:bg-red-600 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                   確認刪除
                </button>
                <button id="cancel-delete-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
@@ -573,7 +573,7 @@ export class CategoryManager {
                 <div class="drag-handle cursor-grab text-wabi-text-secondary pr-2 touch-none">
                     <i class="fa-solid fa-grip-vertical"></i>
                 </div>
-                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
+                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-wabi-surface" ${colorStyle}>
                     <i class="${category.icon} text-lg"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary truncate">${category.name}</span>

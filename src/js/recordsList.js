@@ -430,7 +430,7 @@ export class RecordsListManager {
                 return `
                     <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
                     <div class="flex items-center gap-4 flex-1 min-w-0">
-                        <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
+                        <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-wabi-surface shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
                             <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
                         </div>
                         <div class="flex flex-col justify-center min-w-0">

@@ -49,7 +49,7 @@
 
       <!-- 收支切換按鈕 -->
       <div class="flex mb-6 bg-wabi-surface rounded-lg p-1 shadow-md">
-        <button id="expense-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 bg-wabi-accent text-white">
+        <button id="expense-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 bg-wabi-accent text-wabi-surface">
           支出
         </button>
         <button id="income-btn" class="flex-1 py-3 px-4 rounded-md font-medium transition-all duration-200 text-wabi-text-primary hover:bg-wabi-bg">
@@ -100,7 +100,7 @@
       </div>
 
       <!-- 記帳按鈕 -->
-      <button id="save-btn" class="w-full bg-gradient-to-r from-wabi-primary to-wabi-primary/80 hover:from-wabi-primary/80 hover:to-wabi-primary/60 text-white font-bold py-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
+      <button id="save-btn" class="w-full bg-gradient-to-r from-wabi-primary to-wabi-primary/80 hover:from-wabi-primary/80 hover:to-wabi-primary/60 text-wabi-surface font-bold py-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105">
         記帳！
       </button>
 
@@ -123,10 +123,12 @@
       </nav>
     </div>
 
-    <!-- 成功提示 -->
-    <div id="success-toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-wabi-primary text-white px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-50">
-      記帳成功！
-    </div>
+    <!-- 成功提示 (Deprecated, wait, we'll keep the app container but add the global toast) -->
+  </div>
+
+  <!-- Global Toast -->
+  <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-[100] text-wabi-surface bg-wabi-primary pointer-events-none">
+    <span id="toast-message"></span>
   </div>
 
   <script type="module" src="./js/main.js"></script>

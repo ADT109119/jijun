@@ -84,7 +84,7 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="advanced-account-mode-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
                                 <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
@@ -104,7 +104,7 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="debt-management-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
                                 <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
@@ -126,7 +126,7 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="reminder-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
                                 <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
@@ -471,7 +471,7 @@ export class SettingsPage {
                     </label>
                 </div>
                 <div class="flex space-x-3">
-                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         <i class="fa-solid fa-download mr-2"></i>匯出
                     </button>
                     <button id="cancel-export-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
@@ -555,7 +555,7 @@ export class SettingsPage {
                 <h3 class="text-xl font-bold text-wabi-expense mb-2">確認操作</h3>
                 <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
                 <div class="flex space-x-3">
-                    <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         確定
                     </button>
                     <button id="settings-confirm-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
@@ -583,7 +583,7 @@ export class SettingsPage {
                 </div>
                 <h3 class="text-xl font-bold text-wabi-primary mb-2">${title}</h3>
                 <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
-                <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                     我知道了
                 </button>
             </div>
@@ -595,17 +595,22 @@ export class SettingsPage {
 
     showUpdateAvailable(registration) {
         const toast = document.getElementById('toast');
+        if (!toast) return;
         toast.innerHTML = `
             <span>發現新版本！</span>
             <button id="update-now-btn" class="ml-4 font-bold underline">立即更新</button>
         `;
-        toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg toast-show z-50';
+        toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-[100] text-wabi-surface bg-wabi-primary toast-show';
 
         document.getElementById('update-now-btn').addEventListener('click', () => {
             if (registration.waiting) {
                 registration.waiting.postMessage({ type: 'SKIP_WAITING' });
             }
             toast.classList.replace('toast-show', 'toast-hide');
+            // reset toast inner HTML for subsequent uses
+            setTimeout(() => {
+                toast.innerHTML = '<span id="toast-message"></span>';
+            }, 300);
         });
     }
 

@@ -50,12 +50,12 @@ export class ThemeStorePage {
 
              if (installed) {
                  if (this.app.pluginManager.compareVersions(t.version, installed.version) > 0) {
-                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap bg-yellow-500 text-white hover:bg-yellow-600 shadow w-full mt-3" data-url="${t.file}">更新 (v${t.version})</button>`;
+                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap bg-yellow-500 text-wabi-surface hover:bg-yellow-600 shadow w-full mt-3" data-url="${t.file}">更新 (v${t.version})</button>`;
                  } else {
                       btnHtml = `<button class="px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap bg-green-100 text-green-700 cursor-default w-full mt-3" disabled>已安裝</button>`;
                  }
              } else {
-                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap bg-wabi-primary text-white hover:bg-opacity-90 shadow w-full mt-3" data-url="${t.file}">下載</button>`;
+                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow w-full mt-3" data-url="${t.file}">下載</button>`;
              }
 
              // Color Preview Blocks

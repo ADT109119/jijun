@@ -42,7 +42,7 @@ export default {
         const btn = document.createElement('button');
         btn.id = 'einvoice-scan-btn';
         btn.className = 'text-sm text-wabi-primary bg-wabi-primary/10 px-3 py-1.5 rounded-lg hover:bg-wabi-primary/20 transition-colors flex items-center gap-2 mr-2';
-        btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> 掃描發票 <span class="text-[10px] bg-wabi-primary text-white px-1 rounded">Beta</span>';
+        btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> 掃描發票 <span class="text-[10px] bg-wabi-primary text-wabi-surface px-1 rounded">Beta</span>';
 
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -82,7 +82,7 @@ export default {
                 <div class="p-5 flex flex-col items-center w-full">
                     <div class="relative w-full max-w-[280px] aspect-square bg-black rounded-lg overflow-hidden shadow-inner">
                         <div id="reader" class="w-full h-full border-none"></div>
-                        <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-white text-sm bg-black z-10 transition-opacity duration-300">
+                        <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-wabi-surface text-sm bg-black z-10 transition-opacity duration-300">
                             <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
                             <p class="mt-2 tracking-wider">正在啟動高畫質相機...</p>
                         </div>

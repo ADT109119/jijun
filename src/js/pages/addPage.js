@@ -39,7 +39,7 @@ export class AddPage {
                         </button>
                     </div>
                     <div class="flex h-9 w-full items-center justify-center rounded-lg bg-wabi-surface/80 p-1 mb-3">
-                        <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-white">別人欠我</button>
+                        <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">別人欠我</button>
                         <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
                     </div>
                     <select id="debt-contact-select" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm">
@@ -190,13 +190,13 @@ export class AddPage {
                 btn.addEventListener('click', () => {
                     debtType = btn.id === 'debt-type-receivable-add' ? 'receivable' : 'payable';
                     document.querySelectorAll('.debt-add-type-btn').forEach(b => {
-                        b.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'text-white');
+                        b.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'text-wabi-surface');
                         b.classList.add('text-wabi-text-secondary');
                     });
                     if (debtType === 'receivable') {
-                        btn.classList.add('bg-wabi-income', 'text-white');
+                        btn.classList.add('bg-wabi-income', 'text-wabi-surface');
                     } else {
-                        btn.classList.add('bg-wabi-expense', 'text-white');
+                        btn.classList.add('bg-wabi-expense', 'text-wabi-surface');
                     }
                     btn.classList.remove('text-wabi-text-secondary');
                 });
@@ -263,13 +263,13 @@ export class AddPage {
 
         const updateTypeUI = () => {
             if (currentType === 'expense') {
-                expenseBtn.classList.add('bg-wabi-expense', 'text-white', 'shadow-sm');
-                incomeBtn.classList.remove('bg-wabi-income', 'text-white', 'shadow-sm');
+                expenseBtn.classList.add('bg-wabi-expense', 'text-wabi-surface', 'shadow-sm');
+                incomeBtn.classList.remove('bg-wabi-income', 'text-wabi-surface', 'shadow-sm');
                 amountDisplay.classList.remove('text-wabi-income');
                 amountDisplay.classList.add('text-wabi-expense');
             } else {
-                incomeBtn.classList.add('bg-wabi-income', 'text-white', 'shadow-sm');
-                expenseBtn.classList.remove('bg-wabi-expense', 'text-white', 'shadow-sm');
+                incomeBtn.classList.add('bg-wabi-income', 'text-wabi-surface', 'shadow-sm');
+                expenseBtn.classList.remove('bg-wabi-expense', 'text-wabi-surface', 'shadow-sm');
                 amountDisplay.classList.remove('text-wabi-expense');
                 amountDisplay.classList.add('text-wabi-income');
             }
@@ -293,7 +293,7 @@ export class AddPage {
                 const colorClass = !cat.color.startsWith('#') ? cat.color : '';
 
                 btn.innerHTML = `
-                    <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
+                    <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-wabi-surface" ${colorStyle}>
                         <i class="${cat.icon} text-2xl"></i>
                     </div>
                     <p class="text-xs text-center text-wabi-text-secondary">${cat.name}</p>
@@ -318,7 +318,7 @@ export class AddPage {
                 const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
                 const colorClass = !category.color.startsWith('#') ? category.color : '';
                 selectedCategoryUI.innerHTML = `
-                    <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
+                    <div class="flex items-center justify-center rounded-full ${colorClass} text-wabi-surface shrink-0 size-12" ${colorStyle}>
                         <i class="${category.icon} text-3xl"></i>
                     </div>
                     <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
@@ -490,10 +490,10 @@ export class AddPage {
                                 <!-- Editable debt info -->
                                 <div class="space-y-2 mb-3">
                                     <div class="flex gap-2">
-                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-wabi-surface border-wabi-income' : 'border-orange-300 text-orange-600'}">
                                             別人欠我
                                         </button>
-                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-wabi-surface border-wabi-expense' : 'border-orange-300 text-orange-600'}">
                                             我欠別人
                                         </button>
                                     </div>
@@ -513,7 +513,7 @@ export class AddPage {
                                 </div>
                                 <!-- Action buttons -->
                                 <div class="flex gap-2">
-                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-white bg-wabi-primary rounded-lg">
+                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-wabi-surface bg-wabi-primary rounded-lg">
                                         <i class="fa-solid fa-coins mr-1"></i>還款
                                     </button>
                                     <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-red-600 border border-red-300 rounded-lg bg-wabi-surface">
@@ -688,15 +688,16 @@ export class AddPage {
         if (key === 'save') content = isEditMode ? '<span class="font-bold">更新</span>' : '<span class="font-bold">儲存</span>';
 
         const specialClasses = {
-            'save': 'row-span-2 bg-wabi-accent text-wabi-primary',
-            'ac': 'bg-wabi-border',
+            'save': 'row-span-2 bg-wabi-accent text-wabi-surface',
+            'ac': 'bg-wabi-border text-wabi-text-primary',
+            'backspace': 'text-wabi-text-primary',
             '': 'bg-transparent'
-        }[key] || '';
+        }[key] || 'text-wabi-text-primary';
 
         if (key === '') return `<div class="${specialClasses}"></div>`;
 
         return `
-            <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-wabi-border">
+            <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-black/5">
                 ${content}
             </button>
         `;
@@ -709,7 +710,7 @@ export class AddPage {
 
         const accountListHtml = accounts.map(account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-10">
+                <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-10">
                     <i class="${account.icon} text-xl"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary">${account.name}</span>
@@ -773,7 +774,7 @@ export class AddPage {
                 </div>
 
                 <div class="flex gap-3">
-                    <button id="confirm-payment-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
+                    <button id="confirm-payment-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
                         確認
                     </button>
                     <button id="cancel-payment-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">

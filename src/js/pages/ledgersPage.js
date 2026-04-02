@@ -41,7 +41,7 @@ export class LedgersPage {
         return `
             <div class="bg-wabi-surface rounded-xl p-4 border-2 transition-colors ${isActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'}" data-ledger-id="${ledger.id}">
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
+                    <div class="flex items-center justify-center rounded-xl text-wabi-surface shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
                         <i class="${ledger.icon || 'fa-solid fa-book'} text-xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
@@ -168,7 +168,7 @@ export class LedgersPage {
                     <div id="icon-picker" class="grid grid-cols-8 gap-2">
                         ${icons.map(ic => `
                             <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                                ${ic === selectedIcon ? 'bg-wabi-primary text-white shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                                ${ic === selectedIcon ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
                                 data-icon="${ic}">
                                 <i class="${ic}"></i>
                             </button>
@@ -181,7 +181,7 @@ export class LedgersPage {
                 <div class="mb-6 p-3 bg-wabi-bg rounded-lg">
                     <p class="text-xs text-wabi-text-secondary mb-2">預覽</p>
                     <div class="flex items-center gap-3">
-                        <div id="preview-icon" class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${selectedColor}">
+                        <div id="preview-icon" class="flex items-center justify-center rounded-xl text-wabi-surface shrink-0 size-12" style="background-color: ${selectedColor}">
                             <i class="${selectedIcon} text-xl"></i>
                         </div>
                         <p id="preview-name" class="font-bold text-wabi-text-primary">${isEdit ? ledger.name : '新帳本'}</p>
@@ -190,7 +190,7 @@ export class LedgersPage {
 
                 <!-- 按鈕 -->
                 <div class="flex space-x-3">
-                    <button id="ledger-save-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="ledger-save-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         ${isEdit ? '儲存' : '建立'}
                     </button>
                     <button id="ledger-cancel-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
@@ -230,11 +230,11 @@ export class LedgersPage {
         modal.querySelectorAll('.icon-option').forEach(btn => {
             btn.addEventListener('click', () => {
                 modal.querySelectorAll('.icon-option').forEach(b => {
-                    b.classList.remove('bg-wabi-primary', 'text-white', 'shadow-sm');
+                    b.classList.remove('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
                     b.classList.add('bg-wabi-bg', 'text-wabi-text-secondary');
                 });
                 btn.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary');
-                btn.classList.add('bg-wabi-primary', 'text-white', 'shadow-sm');
+                btn.classList.add('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
                 iconInput.value = btn.dataset.icon;
                 updatePreview();
             });
@@ -321,7 +321,7 @@ export class LedgersPage {
                         placeholder="例如：friend@gmail.com" />
                 </div>
                 <div class="flex space-x-3 mt-6">
-                    <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                    <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
                         產生並授權
                     </button>
                 </div>
@@ -543,7 +543,7 @@ export class LedgersPage {
                 </div>
 
                 <div class="flex space-x-3 mt-6">
-                    <button id="join-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                    <button id="join-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
                         加入帳本
                     </button>
                 </div>

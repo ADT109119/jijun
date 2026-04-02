@@ -26,7 +26,7 @@ export class RecurringPage {
                 <!-- Recurring Transaction List -->
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-wabi-primary">已設定項目</h3>
-                    <button id="add-recurring-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                    <button id="add-recurring-btn" class="bg-wabi-primary text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                         <i class="fa-solid fa-plus"></i>
                     </button>
                 </div>
@@ -217,12 +217,12 @@ export class RecurringPage {
         const updateCategoryOptions = () => {
             if (currentType === 'expense') {
                 categorySelect.innerHTML = expenseCategories;
-                typeExpenseBtn.classList.add('bg-wabi-expense', 'text-white');
-                typeIncomeBtn.classList.remove('bg-wabi-income', 'text-white');
+                typeExpenseBtn.classList.add('bg-wabi-expense', 'text-wabi-surface');
+                typeIncomeBtn.classList.remove('bg-wabi-income', 'text-wabi-surface');
             } else {
                 categorySelect.innerHTML = incomeCategories;
-                typeIncomeBtn.classList.add('bg-wabi-income', 'text-white');
-                typeExpenseBtn.classList.remove('bg-wabi-expense', 'text-white');
+                typeIncomeBtn.classList.add('bg-wabi-income', 'text-wabi-surface');
+                typeExpenseBtn.classList.remove('bg-wabi-expense', 'text-wabi-surface');
             }
         };
 

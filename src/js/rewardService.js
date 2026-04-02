@@ -580,7 +580,7 @@ export class RewardService {
                             關閉
                         </button>
                         <button data-action="claim" disabled
-                                class="flex-1 py-2.5 rounded-lg text-white font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="flex-1 py-2.5 rounded-lg text-wabi-surface font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style="background: ${ad.color}">
                             <span data-countdown>等待 ${COUNTDOWN_SECONDS} 秒</span>
                         </button>
@@ -647,7 +647,7 @@ export class RewardService {
                     <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">
                         取消
                     </button>
-                    <button id="reward-confirm-btn" class="flex-1 py-2.5 bg-wabi-primary text-white rounded-lg font-medium hover:bg-wabi-primary/90 transition-colors">
+                    <button id="reward-confirm-btn" class="flex-1 py-2.5 bg-wabi-primary text-wabi-surface rounded-lg font-medium hover:bg-wabi-primary/90 transition-colors">
                         觀看廣告
                     </button>
                 </div>

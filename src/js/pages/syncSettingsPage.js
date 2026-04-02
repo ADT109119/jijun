@@ -37,7 +37,7 @@ export class SyncSettingsPage {
                                     class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary"
                                     value="${serverUrl}"
                                     placeholder="https://jijun-server.the-walking-fish.com" />
-                                <button id="sync-server-save-btn" class="px-3 py-2 bg-wabi-primary text-white rounded-lg text-sm font-medium hover:bg-wabi-primary/90 shrink-0">
+                                <button id="sync-server-save-btn" class="px-3 py-2 bg-wabi-primary text-wabi-surface rounded-lg text-sm font-medium hover:bg-wabi-primary/90 shrink-0">
                                     儲存
                                 </button>
                                 <button id="sync-server-reset-btn" class="px-3 py-2 bg-wabi-bg text-wabi-text-secondary rounded-lg text-sm font-medium hover:bg-wabi-bg shrink-0" title="還原預設值">
@@ -82,7 +82,7 @@ export class SyncSettingsPage {
                             上次備份：${lastBackup?.value?.timestamp ? new Date(lastBackup.value.timestamp).toLocaleString('zh-TW') : '尚未備份'}
                         </p>
                         <div class="grid grid-cols-2 gap-3">
-                            <button id="sync-backup-btn" class="py-2.5 bg-wabi-primary text-white rounded-lg text-sm font-medium hover:bg-wabi-primary/90 flex items-center justify-center gap-1">
+                            <button id="sync-backup-btn" class="py-2.5 bg-wabi-primary text-wabi-surface rounded-lg text-sm font-medium hover:bg-wabi-primary/90 flex items-center justify-center gap-1">
                                 <i class="fa-solid fa-cloud-arrow-up"></i> 立即備份
                             </button>
                             <button id="sync-restore-btn" class="py-2.5 border border-wabi-primary text-wabi-primary rounded-lg text-sm font-medium hover:bg-wabi-primary/10 flex items-center justify-center gap-1">
@@ -99,16 +99,16 @@ export class SyncSettingsPage {
                                 </div>
                                 <label class="relative inline-flex items-center cursor-pointer">
                                     <input type="checkbox" id="sync-auto-backup-toggle" class="sr-only peer" ${autoBackupEnabled?.value ? 'checked' : ''}>
-                                    <div class="w-11 h-6 bg-wabi-bg rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
                                     <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                                 </label>
                             </div>
                             <div id="auto-backup-interval-container" class="${autoBackupEnabled?.value ? '' : 'hidden'}">
                                 <label class="text-xs text-wabi-text-secondary mb-1 block">備份頻率</label>
                                 <div class="flex gap-2">
-                                    <button data-interval="daily" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === 'daily' ? 'bg-wabi-primary text-white border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每天</button>
-                                    <button data-interval="3days" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === '3days' ? 'bg-wabi-primary text-white border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每 3 天</button>
-                                    <button data-interval="weekly" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === 'weekly' ? 'bg-wabi-primary text-white border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每週</button>
+                                    <button data-interval="daily" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === 'daily' ? 'bg-wabi-primary text-wabi-surface border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每天</button>
+                                    <button data-interval="3days" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === '3days' ? 'bg-wabi-primary text-wabi-surface border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每 3 天</button>
+                                    <button data-interval="weekly" class="auto-backup-interval-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${backupIntervalValue === 'weekly' ? 'bg-wabi-primary text-wabi-surface border-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary'}">每週</button>
                                 </div>
                             </div>
                             <p class="text-xs text-wabi-text-secondary">
@@ -130,7 +130,7 @@ export class SyncSettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="sync-auto-toggle" class="sr-only peer" ${autoSyncEnabled?.value ? 'checked' : ''}>
-                                <div class="w-11 h-6 bg-wabi-bg rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
                                 <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
@@ -318,9 +318,9 @@ export class SyncSettingsPage {
                 await this.app.dataService.saveSetting({ key: 'sync_auto_backup_interval', value: interval });
                 // Update button styles
                 document.querySelectorAll('.auto-backup-interval-btn').forEach(b => {
-                    b.className = b.className.replace(/bg-wabi-primary text-white border-wabi-primary/g, 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary');
+                    b.className = b.className.replace(/bg-wabi-primary text-wabi-surface border-wabi-primary/g, 'bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary');
                 });
-                btn.className = btn.className.replace(/bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary/g, 'bg-wabi-primary text-white border-wabi-primary');
+                btn.className = btn.className.replace(/bg-wabi-surface text-wabi-text-primary border-wabi-border hover:border-wabi-primary/g, 'bg-wabi-primary text-wabi-surface border-wabi-primary');
                 // Restart auto backup with new interval
                 const autoBackupSetting = await this.app.dataService.getSetting('sync_auto_backup_enabled');
                 if (autoBackupSetting?.value) {

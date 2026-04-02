@@ -68,7 +68,7 @@ export default {
                 
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="shop-add-input" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-wabi-primary transition-colors" placeholder="新增項目 (例如: 衛生紙)">
-                    <button id="shop-add-btn" class="bg-wabi-primary text-white rounded-lg w-10 shrink-0 flex items-center justify-center hover:bg-opacity-90">
+                    <button id="shop-add-btn" class="bg-wabi-primary text-wabi-surface rounded-lg w-10 shrink-0 flex items-center justify-center hover:bg-opacity-90">
                         <i class="fa-solid fa-plus"></i>
                     </button>
                 </div>
