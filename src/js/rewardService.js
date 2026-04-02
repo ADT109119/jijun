@@ -565,7 +565,7 @@ export class RewardService {
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
             modal.innerHTML = `
-                <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+                <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
                     ${heroHtml}
                     <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
                     <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
@@ -580,7 +580,7 @@ export class RewardService {
                             關閉
                         </button>
                         <button data-action="claim" disabled
-                                class="flex-1 py-2.5 rounded-lg text-wabi-surface font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="flex-1 py-2.5 rounded-lg text-white font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style="background: ${ad.color}">
                             <span data-countdown>等待 ${COUNTDOWN_SECONDS} 秒</span>
                         </button>
@@ -635,7 +635,7 @@ export class RewardService {
         this._modal = document.createElement('div');
         this._modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
         this._modal.innerHTML = `
-            <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+            <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
                 <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-wabi-primary/10 flex items-center justify-center">
                     <i class="fa-solid fa-gift text-3xl text-wabi-primary"></i>
                 </div>

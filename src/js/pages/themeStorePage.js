@@ -9,10 +9,10 @@ export class ThemeStorePage {
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 h-full flex flex-col bg-wabi-bg max-w-3xl mx-auto">
                 <header class="flex items-center gap-4 mb-4 shrink-0 bg-wabi-surface p-4 -m-4 mb-4 shadow-sm border-b border-wabi-border sticky top-0 z-10">
-                    <a href="#themes" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
+                    <a href="#themes" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-wabi-bg text-wabi-text-secondary transition-colors">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
                     </a>
-                    <h1 class="text-xl font-bold text-gray-800 flex-1">主題商店</h1>
+                    <h1 class="text-xl font-bold text-wabi-text-primary flex-1">主題商店</h1>
                 </header>
 
                 <div id="theme-store-list" class="flex-1 overflow-y-auto space-y-4 pb-8">
@@ -40,7 +40,7 @@ export class ThemeStorePage {
     renderStoreList(list, installedThemes) {
         const container = document.getElementById('theme-store-list');
         if (list.length === 0) {
-            container.innerHTML = `<div class="text-center py-12 text-gray-400">目前沒有可用的主題</div>`;
+            container.innerHTML = `<div class="text-center py-12 text-wabi-text-secondary">目前沒有可用的主題</div>`;
             return;
         }
 
@@ -71,12 +71,12 @@ export class ThemeStorePage {
                     <div class="bg-wabi-surface p-5 rounded-2xl border border-wabi-border shadow-sm flex flex-col hover:shadow-md transition-shadow">
                         <div class="flex justify-between items-start mb-2">
                             <div>
-                                <h4 class="font-bold text-gray-800 text-lg">${t.name}</h4>
-                                <p class="text-xs text-gray-400">v${t.version} • ${t.author || 'Unknown'}</p>
+                                <h4 class="font-bold text-wabi-text-primary text-lg">${t.name}</h4>
+                                <p class="text-xs text-wabi-text-secondary">v${t.version} • ${t.author || 'Unknown'}</p>
                             </div>
                             ${t.iconPreview ? `<i class="${t.iconPreview} text-3xl text-gray-300"></i>` : ''}
                         </div>
-                        <p class="text-sm text-gray-500 flex-1">${t.description}</p>
+                        <p class="text-sm text-wabi-text-secondary flex-1">${t.description}</p>
                         ${colorBlocks}
                         ${btnHtml}
                     </div>

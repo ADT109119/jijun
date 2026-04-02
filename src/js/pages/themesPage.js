@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js';
+import { showToast, customConfirm } from '../utils.js';
 
 export class ThemesPage {
     constructor(app) {
@@ -89,7 +89,7 @@ export class ThemesPage {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const id = btn.dataset.id;
-                if (confirm('確定要移除此主題嗎？')) {
+                if (await customConfirm('確定要移除此主題嗎？')) {
                     const activeSetting = await this.app.dataService.getSetting('activeThemeId');
                     if (activeSetting && activeSetting.value === id) {
                         await this.app.themeManager.clearTheme();

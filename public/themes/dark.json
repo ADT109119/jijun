@@ -13,7 +13,8 @@
     "wabi-text-primary": "#f8fafc",
     "wabi-text-secondary": "#cbd5e1",
     "wabi-surface": "#1e293b",
-    "wabi-border": "#334155"
+    "wabi-border": "#334155",
+    "wabi-keypad": "#334155"
   },
   "icons": {
     "nav#bottom-nav a[data-page='home'] i.fa-house": {

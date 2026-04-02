@@ -69,7 +69,7 @@ export class AddPage {
                 <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
             </div>
             <!-- Note, Date, and Keypad -->
-            <div id="keypad-container" class="fixed bottom-20 md:bottom-0 left-0 md:left-64 right-0 md:max-w-3xl md:mx-auto md:border-x md:border-t md:border-wabi-border md:rounded-t-xl md:shadow-[0_0_15px_rgba(0,0,0,0.05)] bg-wabi-bg text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
+            <div id="keypad-container" class="fixed bottom-20 md:bottom-0 left-0 md:left-64 right-0 md:max-w-3xl md:mx-auto md:border-x md:border-t md:border-wabi-border md:rounded-t-xl md:shadow-[0_0_15px_rgba(0,0,0,0.05)] bg-wabi-keypad/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
                 <!-- Account Selector & Quick Select Container -->
                 <div class="flex items-start px-4 pt-2 gap-2">
                     <div id="account-selector-container" class="w-1/4 shrink-0"></div>
@@ -87,7 +87,7 @@ export class AddPage {
                         <i class="fa-solid fa-keyboard"></i>
                     </button>
                 </div>
-                <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-wabi-bg">
+                <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-wabi-keypad/80">
                     ${['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
                 </div>
             </div>
@@ -688,7 +688,7 @@ export class AddPage {
         if (key === 'save') content = isEditMode ? '<span class="font-bold">更新</span>' : '<span class="font-bold">儲存</span>';
 
         const specialClasses = {
-            'save': 'row-span-2 bg-wabi-accent text-wabi-surface',
+            'save': 'row-span-2 bg-wabi-accent text-wabi-primary',
             'ac': 'bg-wabi-border text-wabi-text-primary',
             'backspace': 'text-wabi-text-primary',
             '': 'bg-transparent'

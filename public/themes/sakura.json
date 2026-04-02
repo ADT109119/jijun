@@ -6,13 +6,14 @@
   "author": "The walking fish 步行魚",
   "colors": {
     "wabi-bg": "#FFF0F5",
-    "wabi-primary": "#FF69B4",
+    "wabi-primary": "#D53F8C",
     "wabi-expense": "#FF4500",
     "wabi-income": "#32CD32",
-    "wabi-accent": "#FF69B4",
+    "wabi-accent": "#FBB6CE",
     "wabi-text-primary": "#4A4A4A",
     "wabi-text-secondary": "#888888",
     "wabi-surface": "#FFFFFF",
-    "wabi-border": "#FFC0CB"
+    "wabi-border": "#FFC0CB",
+    "wabi-keypad": "#FFC0CB"
   }
 }
