@@ -1,0 +1,35 @@
+
+> easy-accounting-pwa@2.1.4.7 dev
+> vite
+
+
+  VITE v5.4.19  ready in 297 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+5:49:11 AM [vite] warning:
+/app/src/js/pluginManager.js
+230|          const url = URL.createObjectURL(blob);
+231|
+232|          const module = await import(url);
+   |                                      ^^^
+233|          if (module.default && typeof module.default.init === 'function') {
+234|              let storage = null;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js
+5:49:11 AM [vite] warning:
+/app/src/js/pluginManager.js
+343|                   // @ts-ignore
+344|          /* @vite-ignore */
+345|          const module = await import(url);
+   |                                      ^^^
+346|                   meta = module.default?.meta || {};
+347|               } catch(err) {
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js

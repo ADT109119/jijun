@@ -44,6 +44,20 @@ export class ThemeManager {
         }
     }
 
+    // Utility to convert hex to RGB triplet (e.g., "#334A52" -> "51 74 82")
+    hexToRgbTriplet(hex) {
+        // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
+        let shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+        hex = hex.replace(shorthandRegex, function(m, r, g, b) {
+            return r + r + g + g + b + b;
+        });
+
+        let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ?
+            `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}` :
+            null;
+    }
+
     async applyTheme(theme) {
         this.activeTheme = theme;
 
@@ -53,7 +67,14 @@ export class ThemeManager {
             for (const [key, value] of Object.entries(theme.colors)) {
                 // key is like "wabi-bg", we want "--theme-bg"
                 const cssVarName = key.replace(/^wabi-/, '');
-                cssText += `  --theme-${cssVarName}: ${value};\n`;
+                // Try converting hex to RGB triplet
+                const rgbValue = this.hexToRgbTriplet(value);
+                if (rgbValue) {
+                    cssText += `  --theme-${cssVarName}: ${rgbValue};\n`;
+                } else {
+                    // Fallback if not a hex code
+                    cssText += `  --theme-${cssVarName}: ${value};\n`;
+                }
             }
         }
         cssText += '}\n';

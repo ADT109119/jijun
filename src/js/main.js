@@ -242,6 +242,11 @@ class EasyAccountingApp {
         const iconEl = document.getElementById('sidebar-ledger-icon');
         const nameEl = document.getElementById('sidebar-ledger-name');
         if (iconEl) {
+            // Check if there is an active theme applied. If there is, let CSS variables or theme icons handle it
+            // if we are using specific CSS classes. Alternatively, since Ledger color is an entity property,
+            // we should just apply the entity color. Wait, if we are in dark mode, hardcoded colors might clash,
+            // but the user's issue was "Sidebar background color didn't revert/adjust properly".
+            // Let's ensure we use the entity's ledger color, but we don't mess with the rest of the sidebar's CSS.
             iconEl.style.backgroundColor = ledger.color || '#334A52';
             iconEl.innerHTML = `<i class="${ledger.icon || 'fa-solid fa-book'}"></i>`;
         }
