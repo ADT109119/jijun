@@ -1,0 +1,31 @@
+[
+  {
+    "id": "com.walkingfish.theme.dark",
+    "name": "深色模式 (Dark Mode)",
+    "description": "保護眼睛的深色主題，減少螢幕刺眼光線。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/dark.json",
+    "iconPreview": "fa-solid fa-moon",
+    "colorsPreview": {
+      "bg": "#121212",
+      "primary": "#BB86FC",
+      "surface": "#1E1E1E"
+    }
+  },
+  {
+    "id": "com.walkingfish.theme.sakura",
+    "name": "櫻花粉 (Sakura)",
+    "description": "輕盈浪漫的粉紅色系主題，搭配自訂的可愛圖標。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/sakura.json",
+    "iconPreview": "fa-solid fa-fan",
+    "colorsPreview": {
+      "bg": "#FFF0F5",
+      "primary": "#FF69B4",
+      "surface": "#FFFFFF",
+      "accent": "#FFB6C1"
+    }
+  }
+]

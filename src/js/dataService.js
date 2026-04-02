@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 9 // Schema version 9: Remove unique constraint for account name (multi-ledger support)
+    this.dbVersion = 10 // Schema version 10: Add themes store
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
@@ -209,6 +209,12 @@ class DataService {
                         accountStore.deleteIndex('name');
                     }
                     accountStore.createIndex('name', 'name', { unique: false });
+                }
+            }
+            // Schema version 10: Themes Store
+            if (oldVersion < 10) {
+                if (!db.objectStoreNames.contains('themes')) {
+                    db.createObjectStore('themes', { keyPath: 'id' });
                 }
             }
           }
@@ -1190,6 +1196,52 @@ class DataService {
   // 獲取所有記錄（用於匯出，包含所有帳本）
   async getAllRecords() {
     return await this.getRecords({ allLedgers: true })
+  }
+
+  // --- Theme Methods ---
+
+  async getInstalledThemes() {
+    if (this.useLocalStorage || !this.db) return [];
+    try {
+      return await this.db.getAll('themes');
+    } catch (error) {
+      console.error('Failed to get installed themes:', error);
+      return [];
+    }
+  }
+
+  async installTheme(themeData) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('themes', 'readwrite');
+      await tx.store.put(themeData);
+      await tx.done;
+    } catch (error) {
+      console.error('Failed to install theme:', error);
+      throw error;
+    }
+  }
+
+  async uninstallTheme(id) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('themes', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+    } catch (error) {
+      console.error('Failed to uninstall theme:', error);
+      throw error;
+    }
+  }
+
+  async getTheme(id) {
+    if (this.useLocalStorage || !this.db) return null;
+    try {
+      return await this.db.get('themes', id);
+    } catch (error) {
+      console.error(`Failed to get theme ${id}:`, error);
+      return null;
+    }
   }
 
   // --- Sync Methods ---
