@@ -17,6 +17,22 @@ export class ThemeManager {
     }
 
     async init() {
+        // Check if any themes exist, if not, auto-install Dark Mode
+        let installedThemes = await this.dataService.getInstalledThemes();
+        if (!installedThemes || installedThemes.length === 0) {
+            try {
+                const response = await fetch('themes/dark.json');
+                if (response.ok) {
+                    const defaultDarkTheme = await response.json();
+                    await this.dataService.installTheme(defaultDarkTheme);
+                    installedThemes = [defaultDarkTheme];
+                    console.log('Auto-installed Dark Mode theme.');
+                }
+            } catch (e) {
+                console.warn('Failed to auto-install dark theme', e);
+            }
+        }
+
         const setting = await this.dataService.getSetting('activeThemeId');
         const activeThemeId = setting ? setting.value : null;
 
