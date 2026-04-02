@@ -5,15 +5,15 @@
   "version": "1.0",
   "author": "The walking fish 步行魚",
   "colors": {
-    "wabi-bg": "#121212",
-    "wabi-primary": "#BB86FC",
-    "wabi-expense": "#CF6679",
-    "wabi-income": "#03DAC6",
-    "wabi-accent": "#03DAC6",
-    "wabi-text-primary": "#E1E1E1",
-    "wabi-text-secondary": "#A0A0A0",
-    "wabi-surface": "#1E1E1E",
-    "wabi-border": "#2C2C2C"
+    "wabi-bg": "#0f172a",
+    "wabi-primary": "#f8fafc",
+    "wabi-expense": "#f87171",
+    "wabi-income": "#34d399",
+    "wabi-accent": "#3b82f6",
+    "wabi-text-primary": "#f8fafc",
+    "wabi-text-secondary": "#cbd5e1",
+    "wabi-surface": "#1e293b",
+    "wabi-border": "#334155"
   },
   "icons": {
     "nav#bottom-nav a[data-page='home'] i.fa-house": {

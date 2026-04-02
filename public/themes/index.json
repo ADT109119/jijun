@@ -8,9 +8,10 @@
     "file": "themes/dark.json",
     "iconPreview": "fa-solid fa-moon",
     "colorsPreview": {
-      "bg": "#121212",
-      "primary": "#BB86FC",
-      "surface": "#1E1E1E"
+      "bg": "#0f172a",
+      "primary": "#f8fafc",
+      "surface": "#1e293b",
+      "accent": "#3b82f6"
     }
   },
   {
