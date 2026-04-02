@@ -8,7 +8,7 @@ export class ThemeStorePage {
     async render() {
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 h-full flex flex-col bg-wabi-bg max-w-3xl mx-auto">
-                <header class="flex items-center gap-4 mb-4 shrink-0 bg-white p-4 -m-4 mb-4 shadow-sm border-b border-gray-100 sticky top-0 z-10">
+                <header class="flex items-center gap-4 mb-4 shrink-0 bg-wabi-surface p-4 -m-4 mb-4 shadow-sm border-b border-wabi-border sticky top-0 z-10">
                     <a href="#themes" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
                     </a>
@@ -68,7 +68,7 @@ export class ThemeStorePage {
              }
 
              return `
-                    <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col hover:shadow-md transition-shadow">
+                    <div class="bg-wabi-surface p-5 rounded-2xl border border-wabi-border shadow-sm flex flex-col hover:shadow-md transition-shadow">
                         <div class="flex justify-between items-start mb-2">
                             <div>
                                 <h4 class="font-bold text-gray-800 text-lg">${t.name}</h4>

@@ -34,7 +34,7 @@ body {
 
 /* Bottom Navigation active state */
 .nav-item.active {
-    color: #334A52; /* wabi-primary */
+    color: rgb(var(--theme-primary));
 }
 
 /* Add Record Page - Keyboard button active state */

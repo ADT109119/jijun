@@ -151,7 +151,7 @@ export class AccountsPage {
                                        placeholder="設定預設 (如: fas fa-wallet)"
                                        value="${accountToEdit?.icon || 'fa-solid fa-wallet'}"
                                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
-                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-200/80 border border-wabi-border rounded-lg hover:bg-gray-300/80 transition-colors">
+                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
                                     <i class="${accountToEdit?.icon || 'fa-solid fa-wallet'}"></i>
                                   </span>
@@ -183,7 +183,7 @@ export class AccountsPage {
 
                 <div class="flex gap-2 pt-4 border-t border-wabi-border mt-2">
                     <button id="save-account-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">儲存</button>
-                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-gray-100/50 transition-colors">取消</button>
+                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
         `;

@@ -10,10 +10,10 @@
     "wabi-expense": "#008800",
     "wabi-income": "#00FF00",
     "wabi-accent": "#00CC00",
-    "wabi-text-primary": "#00FF00",
-    "wabi-text-secondary": "#005500",
+    "wabi-text-primary": "#E0FFE0",
+    "wabi-text-secondary": "#66AA66",
     "wabi-surface": "#0A0A0A",
-    "wabi-border": "#003300"
+    "wabi-border": "#004400"
   },
   "icons": {
     "nav#bottom-nav a[data-page='records'] i.fa-list-ul": {

@@ -275,7 +275,7 @@ class EasyAccountingApp {
                 <div class="max-h-64 overflow-y-auto p-2 space-y-1">
                     ${ledgers.map(l => `
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
-                            ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-gray-50 border border-transparent'}"
+                            ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
                             <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
                                 <i class="${l.icon || 'fa-solid fa-book'}"></i>

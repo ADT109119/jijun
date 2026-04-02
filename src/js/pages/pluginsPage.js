@@ -32,7 +32,7 @@ export class PluginsPage {
                     <h3 class="font-bold text-wabi-primary mb-3">已安裝應用程式</h3>
                     <div class="space-y-3 mb-6">
                         ${Array.from(this.app.pluginManager.customPages.entries()).map(([route, page]) => `
-                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-gray-50">
+                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-wabi-bg">
                                 <div>
                                     <h4 class="font-bold text-wabi-text-primary">${page.title}</h4>
                                     <p class="text-xs text-wabi-text-secondary mt-1">#${route}</p>

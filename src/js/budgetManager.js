@@ -259,7 +259,7 @@ export class BudgetManager {
           <button id="save-budget-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
             儲存
           </button>
-          <button id="cancel-budget-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="cancel-budget-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             取消
           </button>
         </div>

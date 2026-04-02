@@ -9,11 +9,11 @@
     "wabi-primary": "#FCE205",
     "wabi-expense": "#FF003C",
     "wabi-income": "#00FF9F",
-    "wabi-accent": "#D100D1",
-    "wabi-text-primary": "#FCE205",
-    "wabi-text-secondary": "#00FF9F",
+    "wabi-accent": "#00FF9F",
+    "wabi-text-primary": "#E0E0E0",
+    "wabi-text-secondary": "#8D8D8D",
     "wabi-surface": "#1A1A2E",
-    "wabi-border": "#FF003C"
+    "wabi-border": "#3A3A5E"
   },
   "icons": {
     "nav#bottom-nav a[data-page='add'] i.fa-plus": {

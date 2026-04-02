@@ -26,7 +26,7 @@ export class ThemesPage {
                     <!-- Default Theme -->
                     <div class="bg-wabi-surface p-4 rounded-xl border ${!activeThemeId ? 'border-wabi-primary shadow-md' : 'border-wabi-border'} flex justify-between items-center transition-all cursor-pointer theme-item" data-id="default">
                         <div class="flex items-center gap-4">
-                            <div class="size-12 rounded-lg bg-gray-100 flex items-center justify-center border border-gray-200">
+                            <div class="size-12 rounded-lg bg-wabi-bg flex items-center justify-center border border-wabi-border">
                                 <i class="fa-solid fa-palette text-gray-400 text-xl"></i>
                             </div>
                             <div>
@@ -46,7 +46,7 @@ export class ThemesPage {
                     ` : themes.map(t => `
                         <div class="bg-wabi-surface p-4 rounded-xl border ${activeThemeId === t.id ? 'border-wabi-primary shadow-md' : 'border-wabi-border'} flex justify-between items-center transition-all cursor-pointer theme-item relative overflow-hidden group" data-id="${t.id}">
                             <div class="flex items-center gap-4 z-10">
-                                <div class="size-12 rounded-lg flex items-center justify-center border border-gray-200 shadow-sm" style="background-color: ${t.colors?.['wabi-bg'] || '#fff'}">
+                                <div class="size-12 rounded-lg flex items-center justify-center border border-wabi-border shadow-sm" style="background-color: ${t.colors?.['wabi-bg'] || '#fff'}">
                                     <div class="size-6 rounded-full" style="background-color: ${t.colors?.['wabi-primary'] || '#334A52'}"></div>
                                 </div>
                                 <div>

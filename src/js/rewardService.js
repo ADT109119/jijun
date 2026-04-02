@@ -576,7 +576,7 @@ export class RewardService {
                         <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                     </a>
                     <div class="flex gap-3">
-                        <button data-action="cancel" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-gray-50 transition-colors">
+                        <button data-action="cancel" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">
                             關閉
                         </button>
                         <button data-action="claim" disabled
@@ -644,7 +644,7 @@ export class RewardService {
                     觀看一則短影片廣告，即可享受 <strong>24 小時無廣告</strong>體驗！
                 </p>
                 <div class="flex gap-3">
-                    <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-gray-50 transition-colors">
+                    <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">
                         取消
                     </button>
                     <button id="reward-confirm-btn" class="flex-1 py-2.5 bg-wabi-primary text-white rounded-lg font-medium hover:bg-wabi-primary/90 transition-colors">

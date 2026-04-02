@@ -40,7 +40,7 @@ export class DebtManager {
 
         <!-- Contact Summary Table Button -->
         <div class="mb-4">
-          <button id="show-summary-table-btn" class="w-full flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:bg-gray-50">
+          <button id="show-summary-table-btn" class="w-full flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:bg-wabi-bg">
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-table-list text-wabi-primary"></i>
               <span class="text-wabi-text-primary font-medium">聯絡人欠款總表</span>
@@ -50,7 +50,7 @@ export class DebtManager {
         </div>
 
         <!-- Filter Tabs -->
-        <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-4">
+        <div class="flex h-10 w-full items-center justify-center rounded-lg bg-wabi-bg/50 p-1 mb-4">
           <button data-filter="unsettled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'unsettled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">未結清</button>
           <button data-filter="settled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'settled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">已結清</button>
           <button data-filter="all" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'all' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">全部</button>
@@ -66,7 +66,7 @@ export class DebtManager {
 
         <!-- Contacts Link -->
         <div class="mb-4">
-          <a href="#contacts" class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:bg-gray-50">
+          <a href="#contacts" class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:bg-wabi-bg">
             <div class="flex items-center gap-3">
               <i class="fa-solid fa-address-book text-wabi-primary"></i>
               <span class="text-wabi-text-primary">聯絡人管理</span>
@@ -150,7 +150,7 @@ export class DebtManager {
       if (summary.receivable === 0 && summary.payable === 0) return '';
       
       return `
-        <tr class="border-b border-wabi-border last:border-b-0 hover:bg-gray-50 cursor-pointer" data-contact-id="${contact.id}">
+        <tr class="border-b border-wabi-border last:border-b-0 hover:bg-wabi-bg cursor-pointer" data-contact-id="${contact.id}">
           <td class="px-4 py-3 text-sm text-wabi-text-primary font-medium">${contact.name}</td>
           <td class="px-4 py-3 text-sm text-wabi-income text-right">${summary.receivable > 0 ? formatCurrency(summary.receivable) : '-'}</td>
           <td class="px-4 py-3 text-sm text-wabi-expense text-right">${summary.payable > 0 ? formatCurrency(summary.payable) : '-'}</td>
@@ -329,7 +329,7 @@ export class DebtManager {
                 <span>已${isReceivable ? '收款' : '還款'} ${formatCurrency(paidAmount)}</span>
                 <span>${progressPercent}%</span>
               </div>
-              <div class="w-full bg-gray-200 rounded-full h-1.5">
+              <div class="w-full bg-wabi-bg rounded-full h-1.5">
                 <div class="${isReceivable ? 'bg-wabi-income' : 'bg-wabi-expense'} h-1.5 rounded-full" style="width: ${progressPercent}%"></div>
               </div>
             </div>
@@ -381,11 +381,11 @@ export class DebtManager {
     if (totalPages > 1) {
       html += `
         <div class="flex items-center justify-center gap-4 mt-4 py-3">
-          <button id="prev-page-btn" class="px-4 py-2 text-sm font-medium rounded-lg ${this.currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-wabi-primary text-white'}" ${this.currentPage === 1 ? 'disabled' : ''}>
+          <button id="prev-page-btn" class="px-4 py-2 text-sm font-medium rounded-lg ${this.currentPage === 1 ? 'bg-wabi-bg text-wabi-text-secondary cursor-not-allowed' : 'bg-wabi-primary text-white'}" ${this.currentPage === 1 ? 'disabled' : ''}>
             <i class="fa-solid fa-chevron-left mr-1"></i>上一頁
           </button>
           <span class="text-sm text-wabi-text-secondary">${this.currentPage} / ${totalPages}</span>
-          <button id="next-page-btn" class="px-4 py-2 text-sm font-medium rounded-lg ${this.currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-wabi-primary text-white'}" ${this.currentPage === totalPages ? 'disabled' : ''}>
+          <button id="next-page-btn" class="px-4 py-2 text-sm font-medium rounded-lg ${this.currentPage === totalPages ? 'bg-wabi-bg text-wabi-text-secondary cursor-not-allowed' : 'bg-wabi-primary text-white'}" ${this.currentPage === totalPages ? 'disabled' : ''}>
             下一頁<i class="fa-solid fa-chevron-right ml-1"></i>
           </button>
         </div>
@@ -522,7 +522,7 @@ export class DebtManager {
           <button id="confirm-partial-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
             確認
           </button>
-          <button id="cancel-partial-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="cancel-partial-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             取消
           </button>
         </div>
@@ -617,7 +617,7 @@ export class DebtManager {
           </div>
         </div>
 
-        <button id="close-history-btn" class="w-full mt-4 py-3 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary rounded-lg transition-colors">
+        <button id="close-history-btn" class="w-full mt-4 py-3 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary rounded-lg transition-colors">
           關閉
         </button>
       </div>
@@ -658,7 +658,7 @@ export class DebtManager {
         <!-- Type Selector -->
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">類型</label>
-          <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1">
+          <div class="flex h-10 w-full items-center justify-center rounded-lg bg-wabi-bg/50 p-1">
             <button id="debt-type-receivable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(!isEdit || debtToEdit?.type === 'receivable') ? 'bg-wabi-income text-white' : 'text-wabi-text-secondary'}">別人欠我</button>
             <button id="debt-type-payable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(isEdit && debtToEdit?.type === 'payable') ? 'bg-wabi-expense text-white' : 'text-wabi-text-secondary'}">我欠別人</button>
           </div>
@@ -698,7 +698,7 @@ export class DebtManager {
           <button id="save-debt-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
             ${isEdit ? '儲存' : '新增'}
           </button>
-          <button id="cancel-debt-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="cancel-debt-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             取消
           </button>
         </div>
@@ -813,7 +813,7 @@ export class DebtManager {
           <button id="share-reminder-btn" class="flex-1 bg-wabi-income hover:bg-wabi-income/90 text-white font-bold py-3 rounded-lg transition-colors">
             <i class="fa-solid fa-share-nodes mr-2"></i>分享
           </button>
-          <button id="close-reminder-btn" class="px-4 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="close-reminder-btn" class="px-4 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             關閉
           </button>
         </div>
@@ -1001,7 +1001,7 @@ export class DebtManager {
           <button id="save-contact-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
             ${isEdit ? '儲存' : '新增'}
           </button>
-          <button id="cancel-contact-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="cancel-contact-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             取消
           </button>
         </div>

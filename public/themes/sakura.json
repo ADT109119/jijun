@@ -9,20 +9,10 @@
     "wabi-primary": "#FF69B4",
     "wabi-expense": "#FF4500",
     "wabi-income": "#32CD32",
-    "wabi-accent": "#FFB6C1",
-    "wabi-text-primary": "#333333",
-    "wabi-text-secondary": "#777777",
+    "wabi-accent": "#FF69B4",
+    "wabi-text-primary": "#4A4A4A",
+    "wabi-text-secondary": "#888888",
     "wabi-surface": "#FFFFFF",
     "wabi-border": "#FFC0CB"
-  },
-  "icons": {
-    "nav#bottom-nav a[data-page='home'] i.fa-house": {
-      "type": "fontawesome",
-      "className": "fa-solid fa-heart"
-    },
-    "nav#bottom-nav a[data-page='records'] i.fa-list-ul": {
-      "type": "fontawesome",
-      "className": "fa-solid fa-star"
-    }
   }
 }
