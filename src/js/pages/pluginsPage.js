@@ -80,7 +80,7 @@ export class PluginsPage {
                     if (installed) {
                         if (this.app.pluginManager.compareVersions(p.version, installed.version) > 0) {
                              // Update available
-                             btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-wabi-surface hover:bg-yellow-600 shadow"
+                             btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow"
                                 data-url="${p.file}" data-id="${p.id}">
                                 更新 (v${p.version})
                             </button>`;
@@ -99,7 +99,7 @@ export class PluginsPage {
                     }
 
                     return `
-                    <div class="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl aspect-square">
                                 <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>

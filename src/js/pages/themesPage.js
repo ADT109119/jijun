@@ -56,7 +56,7 @@ export class ThemesPage {
                             </div>
                             <div class="flex items-center gap-3 z-10">
                                 ${activeThemeId === t.id ? '<i class="fa-solid fa-circle-check text-wabi-primary text-xl"></i>' : ''}
-                                <button class="delete-theme-btn text-wabi-expense p-2 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100" data-id="${t.id}" title="刪除主題">
+                                <button class="delete-theme-btn text-wabi-expense p-2 transition-opacity" data-id="${t.id}" title="刪除主題">
                                     <i class="fa-solid fa-trash-can"></i>
                                 </button>
                             </div>
