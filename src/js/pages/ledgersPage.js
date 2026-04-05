@@ -557,7 +557,9 @@ export class LedgersPage {
             if (html5QrCode) {
                 try {
                     await html5QrCode.stop();
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('Failed to stop QR scanner:', e);
+                }
                 html5QrCode = null;
             }
             modal.querySelector('#qr-reader-container').classList.add('hidden');

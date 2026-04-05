@@ -409,19 +409,6 @@ class DataService {
     }
   }
 
-  // Get by UUID (Generic)
-  async getByUUID(storeName, uuid) {
-    try {
-      if (this.useLocalStorage) return null;
-      const tx = this.db.transaction(storeName, 'readonly');
-      const index = tx.store.index('uuid');
-      return await index.get(uuid);
-    } catch (err) {
-      console.error(`Failed to get by UUID from ${storeName}:`, err);
-      return null;
-    }
-  }
-
   // 獲取記錄
   async getRecords(filters = {}) {
     if (this.useLocalStorage) {
@@ -820,7 +807,9 @@ class DataService {
       let recurring_transactions = [];
       try {
           recurring_transactions = await this.db.getAll('recurring_transactions');
-      } catch (e) {}
+      } catch (e) {
+          console.warn('Failed to get recurring transactions:', e);
+      }
 
       const exportData = {
         version: '2.3.0',
@@ -897,7 +886,9 @@ class DataService {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
               await txR.store.clear();
               await txR.done;
-            } catch (e) {}
+            } catch (e) {
+                console.warn('Failed to clear recurring transactions:', e);
+            }
           }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
@@ -930,7 +921,9 @@ class DataService {
                       const txL = this.db.transaction('ledgers', 'readwrite');
                       await txL.store.clear();
                       await txL.done;
-                  } catch(e){}
+                  } catch(e){
+                      console.warn('Failed to clear ledgers:', e);
+                  }
               }
               for (const ledger of data.ledgers) {
                   const oldId = ledger.id;

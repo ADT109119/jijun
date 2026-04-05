@@ -204,7 +204,9 @@ export default {
             try {
                 const stored = await this.context.storage.getItem('invoices');
                 if (stored) invoices = JSON.parse(stored);
-            } catch (e) { }
+            } catch (e) {
+                console.warn('Failed to parse stored invoices:', e);
+            }
 
             const isDuplicate = invoices.some(inv => inv.number === invNum);
 
@@ -314,7 +316,9 @@ export default {
                 try {
                     const storedWin = await this.context.storage.getItem('winning_numbers');
                     if (storedWin) existingWin = JSON.parse(storedWin);
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('Failed to parse stored winning numbers:', e);
+                }
                 
                 winningData = { ...existingWin, ...winningData };
                 await this.context.storage.setItem('winning_numbers', JSON.stringify(winningData));
@@ -452,7 +456,9 @@ export default {
                     if (storedInv) invoices = JSON.parse(storedInv);
                     const storedWin = await this.context.storage.getItem('winning_numbers');
                     if (storedWin) winningData = JSON.parse(storedWin);
-                } catch(e) {}
+                } catch(e) {
+                    console.warn('Failed to parse stored invoices or winning numbers:', e);
+                }
 
                 const periodsSet = new Set();
                 invoices.forEach(i => periodsSet.add(i.period));
