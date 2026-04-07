@@ -56,7 +56,7 @@ export class AddPage {
                     </div>
                     <div class="flex items-center justify-between py-4">
                         <div id="add-selected-category" class="flex items-center gap-4">
-                            <div class="flex items-center justify-center rounded-full bg-wabi-bg shrink-0 size-12">
+                            <div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12">
                                 <i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i>
                             </div>
                             <p class="text-lg font-medium">選擇分類</p>
@@ -308,7 +308,7 @@ export class AddPage {
             });
             const manageBtn = document.createElement('button');
             manageBtn.className = 'flex flex-col items-center gap-1 p-2 rounded-lg border-2 border-dashed border-wabi-border hover:border-wabi-primary';
-            manageBtn.innerHTML = `<div class="flex size-12 items-center justify-center rounded-full bg-wabi-bg"><i class="fa-solid fa-gear text-2xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
+            manageBtn.innerHTML = `<div class="flex size-12 items-center justify-center rounded-full bg-wabi-text-secondary/10"><i class="fa-solid fa-gear text-2xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
             manageBtn.addEventListener('click', () => this.app.categoryManager.showManageCategoriesModal(currentType, renderCategories));
             categoryGrid.appendChild(manageBtn);
         };
@@ -324,7 +324,7 @@ export class AddPage {
                     <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
                 `;
             } else {
-                selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-wabi-bg shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`;
+                selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`;
             }
         };
 

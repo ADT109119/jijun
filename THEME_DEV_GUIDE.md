@@ -22,7 +22,8 @@
     "wabi-text-primary": "#E1E1E1",
     "wabi-text-secondary": "#A0A0A0",
     "wabi-surface": "#1E1E1E",
-    "wabi-border": "#2C2C2C"
+    "wabi-border": "#2C2C2C",
+    "wabi-keypad": "#334155"
   },
   "icons": {
     "nav#bottom-nav a[data-page='home'] i.fa-house": {
@@ -35,7 +36,7 @@
 
 ## 2. Colors 參數對照表
 
-您可以覆寫以下 9 種系統預設的 CSS 變數，它們影響了全站的 TailwindCSS 樣式：
+您可以覆寫以下 10 種系統預設的 CSS 變數，它們影響了全站的 TailwindCSS 樣式：
 
 * `wabi-bg`：最底層背景色 (預設：`#F5F5F3`)
 * `wabi-primary`：主色調，通常用於頂部導覽、按鈕背景或標題字 (預設：`#334A52`)
@@ -46,6 +47,7 @@
 * `wabi-text-secondary`：次要文字顏色，如描述或未選取的標籤 (預設：`#718096`)
 * `wabi-surface`：卡片背景色，如明細列表的卡片 (預設：`#FFFFFF`)
 * `wabi-border`：邊框顏色，分隔線或卡片邊框 (預設：`#E2E8F0`)
+* `wabi-keypad`：記帳小鍵盤背景底色 (預設：`#E5E7EB`)
 
 ## 3. Icons 替換方式
 

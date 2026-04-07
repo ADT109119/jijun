@@ -17,9 +17,6 @@
     "wabi-keypad": "#334155"
   },
   "icons": {
-    "nav#bottom-nav a[data-page='home'] i.fa-house": {
-      "type": "fontawesome",
-      "className": "fa-solid fa-moon"
-    }
+    
   }
 }
