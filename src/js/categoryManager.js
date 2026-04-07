@@ -573,7 +573,7 @@ export class CategoryManager {
                 <div class="drag-handle cursor-grab text-wabi-text-secondary pr-2 touch-none">
                     <i class="fa-solid fa-grip-vertical"></i>
                 </div>
-                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-wabi-surface" ${colorStyle}>
+                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
                     <i class="${category.icon} text-lg"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary truncate">${category.name}</span>

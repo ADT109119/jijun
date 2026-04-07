@@ -20,7 +20,7 @@ export class HomePage {
                     <div class="flex items-center gap-2">
                         ${ledgerCount > 1 ? `
                         <button id="home-ledger-btn" class="flex items-center gap-2 px-2.5 py-1.5 bg-wabi-primary/5 rounded-lg border border-wabi-border hover:bg-wabi-primary/10 transition-colors md:hidden" title="切換帳本">
-                            <div class="flex items-center justify-center rounded text-wabi-surface shrink-0 size-6 text-xs" style="background-color: ${activeLedger?.color || '#334A52'}">
+                            <div class="flex items-center justify-center rounded text-white shrink-0 size-6 text-xs" style="background-color: ${activeLedger?.color || '#334A52'}">
                                 <i class="${activeLedger?.icon || 'fa-solid fa-book'} text-[10px]"></i>
                             </div>
                             <span class="text-xs font-medium text-wabi-text-primary max-w-[60px] truncate">${activeLedger?.name || '預設帳本'}</span>
@@ -161,7 +161,7 @@ export class HomePage {
 
                 return `
                     <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
-                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-12" ${colorStyle}>
+                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                             <i class="${icon} text-2xl"></i>
                         </div>
                         <div class="flex-1 min-w-0">

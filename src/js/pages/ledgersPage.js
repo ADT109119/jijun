@@ -41,8 +41,8 @@ export class LedgersPage {
         return `
             <div class="bg-wabi-surface rounded-xl p-4 border-2 transition-colors ${isActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'}" data-ledger-id="${ledger.id}">
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-xl text-wabi-surface shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
-                        <i class="${ledger.icon || 'fa-solid fa-book'} text-xl"></i>
+                    <div class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
+                        <i class="${ledger.icon || 'fa-solid fa-book'} text-2xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
@@ -181,8 +181,8 @@ export class LedgersPage {
                 <div class="mb-6 p-3 bg-wabi-bg rounded-lg">
                     <p class="text-xs text-wabi-text-secondary mb-2">預覽</p>
                     <div class="flex items-center gap-3">
-                        <div id="preview-icon" class="flex items-center justify-center rounded-xl text-wabi-surface shrink-0 size-12" style="background-color: ${selectedColor}">
-                            <i class="${selectedIcon} text-xl"></i>
+                        <div id="preview-icon" class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${selectedColor}">
+                            <i class="${selectedIcon} text-2xl"></i>
                         </div>
                         <p id="preview-name" class="font-bold text-wabi-text-primary">${isEdit ? ledger.name : '新帳本'}</p>
                     </div>

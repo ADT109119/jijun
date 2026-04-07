@@ -293,7 +293,7 @@ export class AddPage {
                 const colorClass = !cat.color.startsWith('#') ? cat.color : '';
 
                 btn.innerHTML = `
-                    <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-wabi-surface" ${colorStyle}>
+                    <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
                         <i class="${cat.icon} text-2xl"></i>
                     </div>
                     <p class="text-xs text-center text-wabi-text-secondary">${cat.name}</p>
@@ -318,7 +318,7 @@ export class AddPage {
                 const colorStyle = category.color.startsWith('#') ? `style="background-color: ${category.color}"` : '';
                 const colorClass = !category.color.startsWith('#') ? category.color : '';
                 selectedCategoryUI.innerHTML = `
-                    <div class="flex items-center justify-center rounded-full ${colorClass} text-wabi-surface shrink-0 size-12" ${colorStyle}>
+                    <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                         <i class="${category.icon} text-3xl"></i>
                     </div>
                     <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
@@ -710,7 +710,7 @@ export class AddPage {
 
         const accountListHtml = accounts.map(account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-10">
+                <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-10">
                     <i class="${account.icon} text-xl"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary">${account.name}</span>
