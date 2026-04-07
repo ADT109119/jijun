@@ -1,0 +1,4 @@
+## 2024-05-24 - Fix Unescaped innerHTML Variables causing XSS
+**Vulnerability:** User-provided inputs (ledger names, record descriptions, category names) were directly injected into DOM template strings (using `.innerHTML`) without sanitization across several core UI components (`main.js`, `homePage.js`, `recordsList.js`, `statistics.js`).
+**Learning:** In vanilla JavaScript applications relying on template literals for rendering, any variable representing user data must be explicitly escaped before insertion. The existing `escapeHTML` utility in `src/js/utils.js` is perfectly suited for this but was inconsistently applied.
+**Prevention:** Always wrap variables containing user-generated content in `escapeHTML()` (or equivalent sanitization functions) before placing them inside template strings used with `.innerHTML`, or prefer `.textContent`/`document.createElement` when possible.
