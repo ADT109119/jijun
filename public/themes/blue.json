@@ -1,0 +1,25 @@
+{
+  "id": "com.walkingfish.theme.ocean",
+  "name": "深海湛藍 (Ocean Blue)",
+  "description": "沉穩、專業的海洋深藍色系，適合專注於理財數據。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#EBF8FF",
+    "wabi-primary": "#2B6CB0",
+    "wabi-expense": "#E53E3E",
+    "wabi-income": "#319795",
+    "wabi-accent": "#90CDF4",
+    "wabi-text-primary": "#2A4365",
+    "wabi-text-secondary": "#4A5568",
+    "wabi-surface": "#FFFFFF",
+    "wabi-border": "#BEE3F8",
+    "wabi-keypad": "#BEE3F8"
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='stats'] i.fa-chart-pie": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-water"
+    }
+  }
+}

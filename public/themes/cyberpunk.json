@@ -1,0 +1,29 @@
+{
+  "id": "com.walkingfish.theme.cyberpunk",
+  "name": "賽博龐克 (Cyberpunk 2077)",
+  "description": "霓虹粉、黃、青交織的未來科技感，充滿強烈對比。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#0D0D19",
+    "wabi-primary": "#FCE205",
+    "wabi-expense": "#FF003C",
+    "wabi-income": "#00FF9F",
+    "wabi-accent": "#2E0059",
+    "wabi-text-primary": "#E0E0E0",
+    "wabi-text-secondary": "#8D8D8D",
+    "wabi-surface": "#1A1A2E",
+    "wabi-border": "#3A3A5E",
+    "wabi-keypad": "#252545"
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='add'] i.fa-plus": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-bolt"
+    },
+    "#sidebar-ledger-icon i.fa-book": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-microchip"
+    }
+  }
+}

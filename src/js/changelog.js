@@ -1,5 +1,15 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.4.7": {
+    date: "2026-04-06",
+    title: "新增深色模式與主題商店",
+    features: [
+      "新增深色模式與主題商店",
+      "提供 Ocean Blue (深海湛藍)、Cyberpunk (賽博龐克)、Matrix (高科技駭客) 等多款主題",
+    ],
+    bugfixes: [],
+    improvements: []
+  },
   "2.1.4.6": {
     date: "2026-04-05",
     title: "明細頁面時間選擇優化與同步修復",

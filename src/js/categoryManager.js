@@ -198,7 +198,7 @@ export class CategoryManager {
                        placeholder="輸入 Font Awesome class (如: fas fa-heart)"
                        value="${categoryToEdit ? categoryToEdit.icon : ''}"
                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
-                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-200/80 border border-wabi-border rounded-lg hover:bg-gray-300/80 transition-colors">
+                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                   <span id="icon-preview" class="text-lg text-wabi-primary">
                     <i class="${categoryToEdit ? categoryToEdit.icon : 'fas fa-eye'}"></i>
                   </span>
@@ -233,7 +233,7 @@ export class CategoryManager {
             <button id="save-category-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
               ${categoryToEdit ? '儲存變更' : '新增分類'}
             </button>
-            <button id="cancel-category-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+            <button id="cancel-category-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
               取消
             </button>
           </div>
@@ -482,10 +482,10 @@ export class CategoryManager {
             <p class="text-wabi-text-primary font-medium mb-1">分類刪除後，相關記帳無法直接復原。</p>
             <p class="text-wabi-text-secondary text-sm mb-6">系統將會把它們自動轉移至「其他」分類中保留。</p>
             <div class="flex space-x-3">
-               <button id="confirm-delete-btn" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+               <button id="confirm-delete-btn" class="flex-1 bg-wabi-expense hover:bg-red-600 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                   確認刪除
                </button>
-               <button id="cancel-delete-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+               <button id="cancel-delete-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
                   取消
                </button>
             </div>
@@ -555,7 +555,7 @@ export class CategoryManager {
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[80vh] flex flex-col">
         <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-wabi-primary">管理${typeText}分類</h3>
-            <span class="text-xs text-wabi-text-secondary bg-gray-100 border border-gray-200 px-2 py-1 rounded shadow-sm">
+            <span class="text-xs text-wabi-text-secondary bg-wabi-bg border border-wabi-border px-2 py-1 rounded shadow-sm">
               <i class="fa-solid fa-grip-vertical mr-1"></i>按住左側拖曳排序
             </span>
         </div>
@@ -579,11 +579,11 @@ export class CategoryManager {
                 <span class="font-medium text-wabi-text-primary truncate">${category.name}</span>
               </div>
               <div class="flex space-x-1 shrink-0 ml-2">
-                <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
+                <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
                   <i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>
                 </button>
                 ${isCustom ? `
-                  <button class="edit-category-btn size-9 flex items-center justify-center rounded-full text-wabi-accent hover:bg-gray-200/80 transition-colors" data-category-id="${category.id}">
+                  <button class="edit-category-btn size-9 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-bg transition-colors" data-category-id="${category.id}">
                     <i class="fa-solid fa-pen"></i>
                   </button>
                   <button class="delete-category-btn size-9 flex items-center justify-center rounded-full text-wabi-expense hover:bg-red-50 transition-colors" data-category-id="${category.id}">
@@ -600,7 +600,7 @@ export class CategoryManager {
           <button id="add-new-category-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
             新增分類
           </button>
-          <button id="close-manage-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-200/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="close-manage-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
             關閉
           </button>
         </div>

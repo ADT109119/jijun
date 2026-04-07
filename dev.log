@@ -1,0 +1,118 @@
+
+> easy-accounting-pwa@2.1.4.7 dev
+> vite
+
+
+  VITE v5.4.19  ready in 297 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+5:49:11 AM [vite] warning:
+/app/src/js/pluginManager.js
+230|          const url = URL.createObjectURL(blob);
+231|
+232|          const module = await import(url);
+   |                                      ^^^
+233|          if (module.default && typeof module.default.init === 'function') {
+234|              let storage = null;
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js
+5:49:11 AM [vite] warning:
+/app/src/js/pluginManager.js
+343|                   // @ts-ignore
+344|          /* @vite-ignore */
+345|          const module = await import(url);
+   |                                      ^^^
+346|                   meta = module.default?.meta || {};
+347|               } catch(err) {
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js
+6:35:22 AM [vite] page reload src/js/pages/themeStorePage.js
+6:35:22 AM [vite] page reload src/js/pages/settingsPage.js
+6:35:22 AM [vite] page reload src/js/pages/homePage.js
+6:35:22 AM [vite] page reload src/js/pages/addPage.js
+6:35:22 AM [vite] page reload src/js/pages/storePage.js
+6:35:22 AM [vite] page reload src/js/pages/syncSettingsPage.js
+6:35:22 AM [vite] page reload src/js/pages/recordsPage.js
+6:35:22 AM [vite] page reload src/js/pages/ledgersPage.js
+6:35:22 AM [vite] page reload src/index.html
+6:35:22 AM [vite] page reload src/js/quickSelectManager.js
+6:44:13 AM [vite] page reload src/js/debtManager.js
+6:44:13 AM [vite] page reload src/js/pages/homePage.js
+6:44:13 AM [vite] page reload src/js/pages/ledgersPage.js
+6:44:13 AM [vite] page reload src/index.html
+6:44:13 AM [vite] page reload src/index.html
+6:45:35 AM [vite] page reload src/index.html
+6:47:05 AM [vite] page reload src/js/pages/homePage.js
+6:48:42 AM [vite] page reload src/index.html
+6:54:45 AM [vite] hmr update /src/css/main.css?direct, /src/css/main.css
+7:06:01 AM [vite] page reload src/index.html
+7:06:01 AM [vite] page reload src/js/debtManager.js
+7:06:01 AM [vite] page reload src/js/rewardService.js
+7:06:01 AM [vite] page reload src/js/pages/homePage.js
+7:06:01 AM [vite] page reload src/js/pages/addPage.js
+7:06:01 AM [vite] page reload src/js/pages/storePage.js
+7:06:01 AM [vite] page reload src/js/pages/syncSettingsPage.js
+7:06:01 AM [vite] page reload src/js/pages/recordsPage.js
+7:06:01 AM [vite] page reload src/js/pages/settingsPage.js
+7:06:02 AM [vite] page reload src/js/pages/ledgersPage.js
+7:06:02 AM [vite] page reload src/js/pages/accountsPage.js
+7:06:02 AM [vite] page reload src/js/pages/licensePage.js
+7:06:02 AM [vite] page reload src/js/pages/pluginsPage.js
+7:06:02 AM [vite] page reload src/js/budgetManager.js
+7:06:02 AM [vite] page reload src/js/categoryManager.js
+7:06:02 AM [vite] page reload src/js/main.js
+7:07:48 AM [vite] page reload src/js/pages/storePage.js
+7:07:48 AM [vite] page reload src/js/pages/syncSettingsPage.js
+7:07:48 AM [vite] page reload src/js/pages/ledgersPage.js
+7:09:44 AM [vite] page reload src/js/pages/storePage.js
+7:09:44 AM [vite] page reload src/js/pages/addPage.js
+7:09:44 AM [vite] page reload src/js/pages/syncSettingsPage.js
+7:09:44 AM [vite] page reload src/js/pages/recordsPage.js
+7:09:44 AM [vite] page reload src/js/pages/settingsPage.js
+7:09:44 AM [vite] page reload src/js/pages/themesPage.js
+7:09:44 AM [vite] page reload src/js/pages/themeStorePage.js
+7:09:44 AM [vite] page reload src/js/pages/ledgersPage.js
+7:09:44 AM [vite] page reload src/js/pages/licensePage.js
+7:09:44 AM [vite] page reload src/js/categoryManager.js
+7:12:14 AM [vite] page reload src/js/debtManager.js
+7:12:14 AM [vite] page reload src/js/pages/syncSettingsPage.js
+7:12:14 AM [vite] page reload src/js/pages/themesPage.js
+7:12:14 AM [vite] page reload src/js/pages/ledgersPage.js
+9:19:50 AM [vite] page reload src/index.html
+9:20:06 AM [vite] page reload src/js/utils.js
+9:22:44 AM [vite] page reload src/js/pages/settingsPage.js
+9:34:56 AM [vite] page reload src/js/utils.js
+9:51:01 AM [vite] page reload src/js/pluginManager.js
+9:53:47 AM [vite] page reload src/js/pluginManager.js
+10:10:11 AM [vite] page reload src/js/pages/settingsPage.js
+10:10:46 AM [vite] page reload src/js/pages/syncSettingsPage.js
+10:13:19 AM [vite] page reload src/js/pages/accountsPage.js
+10:15:25 AM [vite] page reload src/js/debtManager.js
+10:17:43 AM [vite] page reload src/js/pages/recurringPage.js
+10:24:07 AM [vite] page reload src/index.html
+12:01:23 PM [vite] page reload src/js/pages/addPage.js
+12:08:31 PM [vite] page reload src/js/pages/addPage.js
+12:08:31 PM [vite] page reload src/js/pages/homePage.js
+12:08:31 PM [vite] page reload src/js/pages/storePage.js
+12:08:31 PM [vite] page reload src/js/pages/syncSettingsPage.js
+12:08:31 PM [vite] page reload src/js/pages/settingsPage.js
+12:08:31 PM [vite] page reload src/js/pages/recurringPage.js
+12:08:31 PM [vite] page reload src/js/pages/themeStorePage.js
+12:08:31 PM [vite] page reload src/js/pages/ledgersPage.js
+12:08:31 PM [vite] page reload src/js/pages/accountsPage.js
+12:08:31 PM [vite] page reload src/js/pages/pluginsPage.js
+12:08:31 PM [vite] page reload src/js/quickSelectManager.js
+12:08:31 PM [vite] page reload src/js/categoryManager.js
+12:08:31 PM [vite] page reload src/js/main.js
+12:08:31 PM [vite] page reload src/index.html
+12:12:42 PM [vite] page reload src/js/debtManager.js
+12:12:42 PM [vite] page reload src/js/rewardService.js
+12:12:42 PM [vite] page reload src/js/recordsList.js
+12:12:42 PM [vite] page reload src/js/utils.js

@@ -10,6 +10,7 @@ import { PluginManager } from './pluginManager.js';
 import { SyncService } from './syncService.js';
 import { RewardService } from './rewardService.js';
 import { NotificationService } from './notificationService.js';
+import { ThemeManager } from './themeManager.js';
 import { Router } from './router.js';
 
 import { HomePage } from './pages/homePage.js';
@@ -25,6 +26,8 @@ import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
 import { LedgersPage } from './pages/ledgersPage.js';
 import { StorePage } from './pages/storePage.js';
+import { ThemesPage } from './pages/themesPage.js';
+import { ThemeStorePage } from './pages/themeStorePage.js';
 import { PrivacyPage } from './pages/privacyPage.js';
 import { LicensePage } from './pages/licensePage.js';
 
@@ -41,6 +44,7 @@ class EasyAccountingApp {
         this.syncService = new SyncService(this.dataService);
         this.rewardService = new RewardService();
         this.notificationService = new NotificationService(this.dataService);
+        this.themeManager = new ThemeManager(this.dataService);
 
         this.appContainer = document.getElementById('app-container');
 
@@ -67,6 +71,7 @@ class EasyAccountingApp {
 
     async init() {
         await this.dataService.init();
+        await this.themeManager.init(); // Initialize themes early
         await this.categoryManager.init();
         await this.budgetManager.loadBudget();
         await this.ledgerManager.init();
@@ -135,6 +140,8 @@ class EasyAccountingApp {
         this.router.register('ledgers', new LedgersPage(this));
         this.router.register('plugins', new PluginsPage(this));
         this.router.register('store', new StorePage(this));
+        this.router.register('themes', new ThemesPage(this));
+        this.router.register('theme-store', new ThemeStorePage(this));
         this.router.register('sync-settings', new SyncSettingsPage(this));
         this.router.register('privacy', new PrivacyPage(this));
         this.router.register('license', new LicensePage(this));
@@ -235,6 +242,11 @@ class EasyAccountingApp {
         const iconEl = document.getElementById('sidebar-ledger-icon');
         const nameEl = document.getElementById('sidebar-ledger-name');
         if (iconEl) {
+            // Check if there is an active theme applied. If there is, let CSS variables or theme icons handle it
+            // if we are using specific CSS classes. Alternatively, since Ledger color is an entity property,
+            // we should just apply the entity color. Wait, if we are in dark mode, hardcoded colors might clash,
+            // but the user's issue was "Sidebar background color didn't revert/adjust properly".
+            // Let's ensure we use the entity's ledger color, but we don't mess with the rest of the sidebar's CSS.
             iconEl.style.backgroundColor = ledger.color || '#334A52';
             iconEl.innerHTML = `<i class="${ledger.icon || 'fa-solid fa-book'}"></i>`;
         }
@@ -263,7 +275,7 @@ class EasyAccountingApp {
                 <div class="max-h-64 overflow-y-auto p-2 space-y-1">
                     ${ledgers.map(l => `
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
-                            ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-gray-50 border border-transparent'}"
+                            ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
                             <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
                                 <i class="${l.icon || 'fa-solid fa-book'}"></i>

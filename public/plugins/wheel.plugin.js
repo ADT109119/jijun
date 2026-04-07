@@ -166,7 +166,7 @@ export default {
                 </div>
 
                 <div class="flex gap-4">
-                    <button id="wheel-save-btn" class="flex-1 bg-wabi-primary text-white py-2 rounded-lg font-bold hover:bg-opacity-90">儲存</button>
+                    <button id="wheel-save-btn" class="flex-1 bg-wabi-primary text-wabi-surface py-2 rounded-lg font-bold hover:bg-opacity-90">儲存</button>
                     <button id="wheel-cancel-btn" class="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-bold hover:bg-gray-200">取消</button>
                 </div>
             </div>
@@ -228,7 +228,7 @@ export default {
                     </div>
                 </div>
 
-                <button id="spin-btn" class="bg-wabi-primary text-white px-12 py-3 rounded-full text-xl font-bold shadow-lg hover:bg-opacity-90 active:scale-95 transition-transform flex items-center gap-2">
+                <button id="spin-btn" class="bg-wabi-primary text-wabi-surface px-12 py-3 rounded-full text-xl font-bold shadow-lg hover:bg-opacity-90 active:scale-95 transition-transform flex items-center gap-2">
                     <i class="fa-solid fa-rotate"></i> 開始轉動！
                 </button>
                 

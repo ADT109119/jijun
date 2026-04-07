@@ -191,7 +191,7 @@ export class QuickSelectManager {
         const rect = button.getBoundingClientRect();
         const menu = document.createElement('div');
         menu.id = 'quick-select-context-menu';
-        menu.className = 'absolute bg-white rounded-md shadow-lg py-1 z-50';
+        menu.className = 'absolute bg-wabi-surface rounded-md shadow-lg py-1 z-50';
         menu.style.top = `${rect.bottom + 5}px`;
         menu.style.left = `${rect.left}px`;
         menu.innerHTML = `<button id="delete-quick-select-btn" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100">刪除</button>`;

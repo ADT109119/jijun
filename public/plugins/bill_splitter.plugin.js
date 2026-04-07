@@ -17,7 +17,7 @@ export default {
             container.innerHTML = `
                 <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors" id="open-splitter-widget">
                     <div class="flex items-center gap-3">
-                        <div class="bg-indigo-500 text-white rounded-lg size-10 flex items-center justify-center">
+                        <div class="bg-indigo-500 text-wabi-surface rounded-lg size-10 flex items-center justify-center">
                              <i class="fa-solid fa-calculator"></i>
                         </div>
                         <div>
@@ -116,7 +116,7 @@ export default {
                 </div>
 
                 <!-- Result Preview -->
-                <div id="result-card" class="bg-indigo-600 rounded-xl shadow-lg p-5 text-white transition-all opacity-50 grayscale">
+                <div id="result-card" class="bg-indigo-600 rounded-xl shadow-lg p-5 text-wabi-surface transition-all opacity-50 grayscale">
                     <div class="flex justify-between items-end mb-4">
                         <div>
                             <p class="text-indigo-200 text-sm mb-1" id="result-title">每人應付</p>

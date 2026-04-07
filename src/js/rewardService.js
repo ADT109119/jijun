@@ -565,7 +565,7 @@ export class RewardService {
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
             modal.innerHTML = `
-                <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+                <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
                     ${heroHtml}
                     <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
                     <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
@@ -576,7 +576,7 @@ export class RewardService {
                         <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                     </a>
                     <div class="flex gap-3">
-                        <button data-action="cancel" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-gray-50 transition-colors">
+                        <button data-action="cancel" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">
                             關閉
                         </button>
                         <button data-action="claim" disabled
@@ -635,7 +635,7 @@ export class RewardService {
         this._modal = document.createElement('div');
         this._modal.className = 'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in';
         this._modal.innerHTML = `
-            <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+            <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
                 <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-wabi-primary/10 flex items-center justify-center">
                     <i class="fa-solid fa-gift text-3xl text-wabi-primary"></i>
                 </div>
@@ -644,10 +644,10 @@ export class RewardService {
                     觀看一則短影片廣告，即可享受 <strong>24 小時無廣告</strong>體驗！
                 </p>
                 <div class="flex gap-3">
-                    <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-gray-50 transition-colors">
+                    <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">
                         取消
                     </button>
-                    <button id="reward-confirm-btn" class="flex-1 py-2.5 bg-wabi-primary text-white rounded-lg font-medium hover:bg-wabi-primary/90 transition-colors">
+                    <button id="reward-confirm-btn" class="flex-1 py-2.5 bg-wabi-primary text-wabi-surface rounded-lg font-medium hover:bg-wabi-primary/90 transition-colors">
                         觀看廣告
                     </button>
                 </div>

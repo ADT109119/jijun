@@ -20,12 +20,12 @@ export class LicensePage {
                     <hr class="border-wabi-border my-4">
                     
                     <h3 class="text-md font-bold text-wabi-primary">原始碼授權 (MIT License)</h3>
-                    <div class="bg-gray-50 p-4 rounded-lg text-sm text-wabi-text-secondary font-mono overflow-auto border border-gray-200">
+                    <div class="bg-wabi-bg p-4 rounded-lg text-sm text-wabi-text-secondary font-mono overflow-auto border border-wabi-border">
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:<br><br>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.<br><br>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
                     </div>
 
                     <h3 class="text-md font-bold text-wabi-primary mt-6">圖示與圖像版權保留 (Exceptions to the MIT License)</h3>
-                    <div class="bg-gray-50 p-4 rounded-lg text-sm text-wabi-text-secondary border border-gray-200">
+                    <div class="bg-wabi-bg p-4 rounded-lg text-sm text-wabi-text-secondary border border-wabi-border">
                         上述 MIT License 僅適用於本軟體的原始碼。所有視覺資產（包含但不限於 icon 與 assets 目錄下的設計與圖形）皆<strong>不適用</strong> MIT License。<br><br>
                         作者嚴格保留上述視覺資產與圖示設計之版權。未經版權所有者明確的書面許可，不得複製、修改、散布或使用這些資產。
                     </div>

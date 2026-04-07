@@ -34,10 +34,10 @@ export class AccountsPage {
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-wabi-primary">帳戶列表</h3>
                     <div class="flex gap-2">
-                        <button id="transfer-btn" class="bg-wabi-income text-white rounded-full w-8 h-8 flex items-center justify-center">
+                        <button id="transfer-btn" class="bg-wabi-income text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                             <i class="fa-solid fa-money-bill-transfer"></i>
                         </button>
-                        <button id="add-account-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                        <button id="add-account-btn" class="bg-wabi-primary text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                             <i class="fa-solid fa-plus"></i>
                         </button>
                     </div>
@@ -73,7 +73,7 @@ export class AccountsPage {
             accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-12">
+                    <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-12">
                         <i class="${account.icon} text-2xl"></i>
                     </div>
                     <div>
@@ -151,7 +151,7 @@ export class AccountsPage {
                                        placeholder="設定預設 (如: fas fa-wallet)"
                                        value="${accountToEdit?.icon || 'fa-solid fa-wallet'}"
                                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
-                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-200/80 border border-wabi-border rounded-lg hover:bg-gray-300/80 transition-colors">
+                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
                                     <i class="${accountToEdit?.icon || 'fa-solid fa-wallet'}"></i>
                                   </span>
@@ -183,7 +183,7 @@ export class AccountsPage {
 
                 <div class="flex gap-2 pt-4 border-t border-wabi-border mt-2">
                     <button id="save-account-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">儲存</button>
-                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-gray-100/50 transition-colors">取消</button>
+                    <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
         `;

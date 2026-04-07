@@ -1,4 +1,5 @@
 import { showToast } from '../utils.js';
+import { DARK_THEME_ID } from '../themeManager.js';
 
 export class SettingsPage {
     constructor(app) {
@@ -15,13 +16,33 @@ export class SettingsPage {
                     <!-- Settings -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">應用程式</h3>
-                        
+
                         ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn')}
                         ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
                         <div id="install-pwa-btn-container" class="hidden">
                             ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
                         </div>
                         ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
+                        ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
+                    
+                        <!-- 深色模式快速切換 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/30">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-moon"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">深色模式</p>
+                                    <p class="text-xs text-wabi-text-secondary">開啟即自動套用內建深色主題</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="dark-mode-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        
                     </div>
 
                     <!-- Data Management -->
@@ -40,7 +61,7 @@ export class SettingsPage {
                         ${this.createSettingItem('fa-solid fa-file-lines', '更新日誌', 'changelog-btn')}
                         ${this.createSettingItem('fa-solid fa-shield-halved', '隱私權政策', 'privacy-btn')}
                         ${this.createSettingItem('fa-solid fa-scale-balanced', '授權條款', 'license-btn')}
-                        <a href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-gray-100/50">
+                        <a href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                                     <i class="fa-brands fa-github"></i>
@@ -58,7 +79,7 @@ export class SettingsPage {
                     <!-- Sponsor the Author -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">贊助作者</h3>
-                        <a href="https://buymeacoffee.com/thewalkingfish" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-gray-100/50">
+                        <a href="https://buymeacoffee.com/thewalkingfish" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                                     <i class="fa-solid fa-mug-hot"></i>
@@ -83,8 +104,8 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="advanced-account-mode-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
                         <div id="manage-accounts-link-container" class="hidden">
@@ -103,8 +124,8 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="debt-management-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
                         <div id="manage-debts-link-container" class="hidden">
@@ -125,8 +146,8 @@ export class SettingsPage {
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="reminder-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-full"></span>
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
                             </label>
                         </div>
                         <div id="reminder-settings-container" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
@@ -154,12 +175,19 @@ export class SettingsPage {
                 </div>
             </div>
         `;
-        this.setupSettingsPageListeners();
+        await this.setupSettingsPageListeners();
         // Add listener for plugin manager button
         const managePluginsBtn = document.getElementById('manage-plugins-btn');
         if (managePluginsBtn) {
             managePluginsBtn.addEventListener('click', () => {
                 window.location.hash = '#plugins';
+            });
+        }
+        // Themes manager button
+        const manageThemesBtn = document.getElementById('manage-themes-btn');
+        if (manageThemesBtn) {
+            manageThemesBtn.addEventListener('click', () => {
+                window.location.hash = '#themes';
             });
         }
         // Ledger management button
@@ -204,7 +232,7 @@ export class SettingsPage {
 
     createSettingItem(icon, text, id) {
         return `
-            <button id="${id}" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-gray-100/50">
+            <button id="${id}" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
                 <div class="flex items-center gap-4">
                     <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                         <i class="${icon}"></i>
@@ -219,7 +247,7 @@ export class SettingsPage {
         `.trim();
     }
 
-    setupSettingsPageListeners() {
+    async setupSettingsPageListeners() {
         document.getElementById('export-data-btn').addEventListener('click', async () => {
             // Show export options dialog
             await this.showExportOptionsModal();
@@ -289,6 +317,32 @@ export class SettingsPage {
         if (versionInfo) {
             const latestVersion = this.app.changelogManager.getAllVersions()[0];
             versionInfo.textContent = `版本 v${latestVersion.version}`;
+        }
+
+        // 深色模式快速切換
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        if (darkModeToggle) {
+            // 標記目前是否已是深色主題
+            const activeSetting = await this.app.dataService.getSetting('activeThemeId');
+            darkModeToggle.checked = activeSetting?.value === DARK_THEME_ID;
+
+            darkModeToggle.addEventListener('change', async (e) => {
+                if (e.target.checked) {
+                    // 套用深色主題
+                    const darkTheme = await this.app.dataService.getTheme(DARK_THEME_ID);
+                    if (darkTheme) {
+                        await this.app.themeManager.applyTheme(darkTheme);
+                        showToast('已切換為深色模式', 'success');
+                    } else {
+                        showToast('深色主題沒有安裝，請先從主題商店下載', 'error');
+                        e.target.checked = false;
+                    }
+                } else {
+                    // 切回預設亮色主題
+                    await this.app.themeManager.clearTheme();
+                    showToast('已切換為亮色模式', 'success');
+                }
+            });
         }
 
         const advancedModeToggle = document.getElementById('advanced-account-mode-toggle');
@@ -430,7 +484,7 @@ export class SettingsPage {
                 <h3 class="text-lg font-bold text-wabi-primary mb-4">匯出資料選項</h3>
                 <div class="space-y-3 mb-6">
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
-                        <input type="checkbox" id="export-records" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <input type="checkbox" id="export-records" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
                             <p class="font-medium text-wabi-text-primary">記帳紀錄</p>
                             <p class="text-xs text-wabi-text-secondary">所有收支紀錄</p>
@@ -438,7 +492,7 @@ export class SettingsPage {
                     </label>
                     ${showAccountOption ? `
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
-                        <input type="checkbox" id="export-accounts" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <input type="checkbox" id="export-accounts" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
                             <p class="font-medium text-wabi-text-primary">帳戶</p>
                             <p class="text-xs text-wabi-text-secondary">多帳戶設定及餘額</p>
@@ -447,7 +501,7 @@ export class SettingsPage {
                     ` : ''}
                     ${showDebtOption ? `
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
-                        <input type="checkbox" id="export-debts" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <input type="checkbox" id="export-debts" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
                             <p class="font-medium text-wabi-text-primary">欠款資料</p>
                             <p class="text-xs text-wabi-text-secondary">聯絡人及欠款紀錄</p>
@@ -455,7 +509,7 @@ export class SettingsPage {
                     </label>
                     ` : ''}
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
-                        <input type="checkbox" id="export-categories" checked class="w-5 h-5 rounded border-gray-300 text-wabi-primary focus:ring-wabi-primary">
+                        <input type="checkbox" id="export-categories" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
                             <p class="font-medium text-wabi-text-primary">自訂分類</p>
                             <p class="text-xs text-wabi-text-secondary">自訂的收支分類</p>
@@ -463,10 +517,10 @@ export class SettingsPage {
                     </label>
                 </div>
                 <div class="flex space-x-3">
-                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="confirm-export-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         <i class="fa-solid fa-download mr-2"></i>匯出
                     </button>
-                    <button id="cancel-export-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    <button id="cancel-export-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
                         取消
                     </button>
                 </div>
@@ -547,10 +601,10 @@ export class SettingsPage {
                 <h3 class="text-xl font-bold text-wabi-expense mb-2">確認操作</h3>
                 <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
                 <div class="flex space-x-3">
-                    <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         確定
                     </button>
-                    <button id="settings-confirm-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    <button id="settings-confirm-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
                         取消
                     </button>
                 </div>
@@ -570,12 +624,12 @@ export class SettingsPage {
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]';
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
-                <div class="size-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div class="size-12 bg-wabi-bg rounded-full flex items-center justify-center mx-auto mb-4">
                     <i class="${icon} text-2xl ${iconColor}"></i>
                 </div>
                 <h3 class="text-xl font-bold text-wabi-primary mb-2">${title}</h3>
                 <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
-                <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                     我知道了
                 </button>
             </div>
@@ -587,17 +641,22 @@ export class SettingsPage {
 
     showUpdateAvailable(registration) {
         const toast = document.getElementById('toast');
+        if (!toast) return;
         toast.innerHTML = `
             <span>發現新版本！</span>
             <button id="update-now-btn" class="ml-4 font-bold underline">立即更新</button>
         `;
-        toast.className = 'fixed top-5 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg toast-show z-50';
+        toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-[100] text-wabi-surface bg-wabi-primary toast-show';
 
         document.getElementById('update-now-btn').addEventListener('click', () => {
             if (registration.waiting) {
                 registration.waiting.postMessage({ type: 'SKIP_WAITING' });
             }
             toast.classList.replace('toast-show', 'toast-hide');
+            // reset toast inner HTML for subsequent uses
+            setTimeout(() => {
+                toast.innerHTML = '<span id="toast-message"></span>';
+            }, 300);
         });
     }
 

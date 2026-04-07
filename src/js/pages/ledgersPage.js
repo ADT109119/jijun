@@ -42,13 +42,13 @@ export class LedgersPage {
             <div class="bg-wabi-surface rounded-xl p-4 border-2 transition-colors ${isActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'}" data-ledger-id="${ledger.id}">
                 <div class="flex items-center gap-4">
                     <div class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
-                        <i class="${ledger.icon || 'fa-solid fa-book'} text-xl"></i>
+                        <i class="${ledger.icon || 'fa-solid fa-book'} text-2xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                             <p class="font-bold text-wabi-text-primary truncate">${ledger.name}</p>
                             ${isActive ? '<span class="text-xs px-2 py-0.5 bg-wabi-primary/10 text-wabi-primary rounded-full font-medium shrink-0">使用中</span>' : ''}
-                            ${isDefault ? '<span class="text-xs px-2 py-0.5 bg-gray-100 text-wabi-text-secondary rounded-full shrink-0">預設</span>' : ''}
+                            ${isDefault ? '<span class="text-xs px-2 py-0.5 bg-wabi-bg text-wabi-text-secondary rounded-full shrink-0">預設</span>' : ''}
                         </div>
                         <p class="text-xs text-wabi-text-secondary mt-0.5">
                             ${ledger.isShared ? '<i class="fa-solid fa-users mr-1"></i>共用帳本' : '<i class="fa-solid fa-user mr-1"></i>個人帳本'}
@@ -147,7 +147,7 @@ export class LedgersPage {
                 <div class="mb-4">
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">帳本名稱</label>
                     <input type="text" id="ledger-name-input" maxlength="20"
-                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
                         value="${isEdit ? ledger.name : ''}" placeholder="例如：公司帳本" />
                 </div>
 
@@ -168,7 +168,7 @@ export class LedgersPage {
                     <div id="icon-picker" class="grid grid-cols-8 gap-2">
                         ${icons.map(ic => `
                             <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                                ${ic === selectedIcon ? 'bg-wabi-primary text-white shadow-sm' : 'bg-gray-100 text-wabi-text-secondary hover:bg-gray-200'}"
+                                ${ic === selectedIcon ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
                                 data-icon="${ic}">
                                 <i class="${ic}"></i>
                             </button>
@@ -178,11 +178,11 @@ export class LedgersPage {
                 </div>
 
                 <!-- Preview -->
-                <div class="mb-6 p-3 bg-gray-50 rounded-lg">
+                <div class="mb-6 p-3 bg-wabi-bg rounded-lg">
                     <p class="text-xs text-wabi-text-secondary mb-2">預覽</p>
                     <div class="flex items-center gap-3">
                         <div id="preview-icon" class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${selectedColor}">
-                            <i class="${selectedIcon} text-xl"></i>
+                            <i class="${selectedIcon} text-2xl"></i>
                         </div>
                         <p id="preview-name" class="font-bold text-wabi-text-primary">${isEdit ? ledger.name : '新帳本'}</p>
                     </div>
@@ -190,10 +190,10 @@ export class LedgersPage {
 
                 <!-- 按鈕 -->
                 <div class="flex space-x-3">
-                    <button id="ledger-save-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    <button id="ledger-save-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         ${isEdit ? '儲存' : '建立'}
                     </button>
-                    <button id="ledger-cancel-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-gray-100 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    <button id="ledger-cancel-btn" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
                         取消
                     </button>
                 </div>
@@ -230,11 +230,11 @@ export class LedgersPage {
         modal.querySelectorAll('.icon-option').forEach(btn => {
             btn.addEventListener('click', () => {
                 modal.querySelectorAll('.icon-option').forEach(b => {
-                    b.classList.remove('bg-wabi-primary', 'text-white', 'shadow-sm');
-                    b.classList.add('bg-gray-100', 'text-wabi-text-secondary');
+                    b.classList.remove('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
+                    b.classList.add('bg-wabi-bg', 'text-wabi-text-secondary');
                 });
-                btn.classList.remove('bg-gray-100', 'text-wabi-text-secondary');
-                btn.classList.add('bg-wabi-primary', 'text-white', 'shadow-sm');
+                btn.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary');
+                btn.classList.add('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
                 iconInput.value = btn.dataset.icon;
                 updatePreview();
             });
@@ -317,11 +317,11 @@ export class LedgersPage {
                     <p class="text-sm text-wabi-text-secondary mb-3">請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。</p>
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">受邀人 Email</label>
                     <input type="email" id="share-email-input" 
-                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                        class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
                         placeholder="例如：friend@gmail.com" />
                 </div>
                 <div class="flex space-x-3 mt-6">
-                    <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                    <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
                         產生並授權
                     </button>
                 </div>
@@ -332,15 +332,15 @@ export class LedgersPage {
                 `}
                 
                 ${ledger.sharedFileId ? `
-                <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div class="mt-6 p-4 bg-wabi-bg rounded-lg border border-wabi-border">
                     <p class="text-xs text-wabi-text-secondary mb-1">現有共用代碼（已啟用）：</p>
                     <div class="flex items-center gap-2 mb-3">
-                        <input type="text" readonly value="${ledger.sharedFileId}" class="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 outline-none" />
-                        <button class="copy-code-btn px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-xs transition-colors shrink-0">複製</button>
+                        <input type="text" readonly value="${ledger.sharedFileId}" class="flex-1 bg-wabi-surface border border-wabi-border rounded px-2 py-1 text-xs text-wabi-text-primary outline-none" />
+                        <button class="copy-code-btn px-3 py-1 bg-wabi-bg hover:bg-wabi-border rounded text-xs transition-colors shrink-0">複製</button>
                     </div>
                     
                     <div class="flex justify-center mb-4">
-                        <div id="qrcode-container" class="bg-white p-2 border border-gray-200 rounded-lg shadow-sm"></div>
+                        <div id="qrcode-container" class="bg-wabi-surface p-2 border border-wabi-border rounded-lg shadow-sm"></div>
                     </div>
 
                     <p class="text-xs font-bold text-wabi-text-primary mb-2">授權名單：</p>
@@ -349,7 +349,7 @@ export class LedgersPage {
                     </div>
 
                     ${isOwner ? `
-                    <div class="mt-4 pt-4 border-t border-gray-200">
+                    <div class="mt-4 pt-4 border-t border-wabi-border">
                         <button id="unshare-btn" class="w-full py-2.5 bg-red-50 text-red-600 font-medium rounded-lg border border-red-200 hover:bg-red-100 transition-colors text-sm flex items-center justify-center gap-2">
                             <i class="fa-solid fa-link-slash"></i> 取消共用
                         </button>
@@ -397,10 +397,10 @@ export class LedgersPage {
                 usersListEl.innerHTML = '';
                 users.forEach(u => {
                     const el = document.createElement('div');
-                    el.className = 'flex justify-between items-center bg-white p-2 rounded-lg border border-gray-100 shadow-sm';
+                    el.className = 'flex justify-between items-center bg-wabi-surface p-2 rounded-lg border border-wabi-border shadow-sm';
                     el.innerHTML = `
                         <div class="truncate flex-1 min-w-0 mr-2">
-                            <p class="text-sm font-medium text-gray-700 truncate">${u.displayName || '未知使用者'}</p>
+                            <p class="text-sm font-medium text-wabi-text-primary truncate">${u.displayName || '未知使用者'}</p>
                             <p class="text-xs text-gray-500 truncate">${u.emailAddress || '---'}</p>
                         </div>
                         ${u.role === 'owner' ? '<span class="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded shrink-0">擁有者</span>' : 
@@ -518,32 +518,32 @@ export class LedgersPage {
                     </button>
 
                     <div class="flex items-center gap-2 mb-4">
-                        <div class="h-px bg-gray-200 flex-1"></div>
+                        <div class="h-px bg-wabi-bg flex-1"></div>
                         <span class="text-xs text-gray-400">或輸入代碼</span>
-                        <div class="h-px bg-gray-200 flex-1"></div>
+                        <div class="h-px bg-wabi-bg flex-1"></div>
                     </div>
 
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">共用代碼 (File ID)</label>
                     <div class="flex gap-2">
                         <input type="text" id="join-code-input" 
-                            class="flex-1 px-3 py-2.5 rounded-lg border border-wabi-border bg-white text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                            class="flex-1 px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
                             placeholder="手動貼上代碼..." />
-                        <button id="scan-qr-btn" class="bg-gray-100 w-11 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center transition-colors" title="掃描 QR Code">
+                        <button id="scan-qr-btn" class="bg-wabi-bg w-11 hover:bg-wabi-bg text-wabi-text-primary rounded-lg flex items-center justify-center transition-colors" title="掃描 QR Code">
                             <i class="fa-solid fa-qrcode text-lg"></i>
                         </button>
                     </div>
 
                     <!-- 隱藏的掃描區塊 -->
-                    <div id="qr-reader-container" class="hidden mt-3 rounded-lg overflow-hidden border border-gray-200 w-full">
+                    <div id="qr-reader-container" class="hidden mt-3 rounded-lg overflow-hidden border border-wabi-border w-full">
                         <div id="qr-reader" class="w-full bg-black"></div>
-                        <button id="close-scanner-btn" class="w-full py-2 bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200 transition-colors">
+                        <button id="close-scanner-btn" class="w-full py-2 bg-wabi-bg text-wabi-text-primary text-sm font-medium hover:bg-wabi-bg transition-colors">
                             關閉相機
                         </button>
                     </div>
                 </div>
 
                 <div class="flex space-x-3 mt-6">
-                    <button id="join-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
+                    <button id="join-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
                         加入帳本
                     </button>
                 </div>
