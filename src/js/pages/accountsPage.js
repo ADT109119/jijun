@@ -71,13 +71,24 @@ export class AccountsPage {
 
             const accountEl = document.createElement('div');
             accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
+
+            // Generate sanitized style and class for background color
+            let colorAttr = '';
+            let colorClass = 'flex items-center justify-center rounded-lg text-white shrink-0 size-12';
+
+            if (account.color?.startsWith('#')) {
+                colorAttr = `style="background-color: ${escapeHTML(account.color)}"`;
+            } else {
+                colorClass += ` ${escapeHTML(account.color)}`;
+            }
+
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-12">
-                        <i class="${account.icon} text-2xl"></i>
+                    <div ${colorAttr} class="${colorClass}">
+                        <i class="${escapeHTML(account.icon)} text-2xl"></i>
                     </div>
                     <div>
-                        <p class="font-medium text-wabi-text-primary">${account.name}</p>
+                        <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
                         <p class="text-sm text-wabi-text-secondary">餘額: ${formatCurrency(currentBalance)}</p>
                     </div>
                 </div>
@@ -153,7 +164,7 @@ export class AccountsPage {
                                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                                 <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-gray-200/80 border border-wabi-border rounded-lg hover:bg-gray-300/80 transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
-                                    <i class="${accountToEdit?.icon || 'fa-solid fa-wallet'}"></i>
+                                    <i class="${escapeHTML(accountToEdit?.icon || 'fa-solid fa-wallet')}"></i>
                                   </span>
                                 </button>
                             </div>
@@ -207,7 +218,7 @@ export class AccountsPage {
         // 圖標預覽功能
         const updateIconPreview = () => {
           const iconClass = customIconInput.value.trim() || 'fa-solid fa-wallet';
-          iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
+          iconPreview.innerHTML = `<i class="${escapeHTML(iconClass)}"></i>`;
           selectedIcon = iconClass;
           document.querySelectorAll('.icon-option').forEach(b => {
              b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10');
@@ -240,8 +251,8 @@ export class AccountsPage {
 
         const renderIcons = (icons) => {
           iconSelector.innerHTML = icons.map(icon => `
-            <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${icon}" title="${icon}">
-              <i class="${icon}"></i>
+            <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${escapeHTML(icon)}" title="${escapeHTML(icon)}">
+              <i class="${escapeHTML(icon)}"></i>
             </button>
           `).join('');
           
