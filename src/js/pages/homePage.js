@@ -281,8 +281,8 @@ export class HomePage {
             return activeWidgets.map((id, index) => {
                 const name = this.app.pluginManager.getPluginName(id) || '未知小工具';
                 return `
-                   <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2 transition-all">
-                       <span class="font-medium text-gray-700">${name}</span>
+                   <div class="flex items-center justify-between p-3 bg-wabi-bg rounded-lg border border-wabi-border mb-2 transition-all">
+                       <span class="font-medium text-wabi-text-primary">${name}</span>
                        <div class="flex gap-1">
                            <button class="p-2 text-wabi-text-secondary hover:text-wabi-primary move-widget-btn hover:bg-wabi-surface rounded-md transition-colors" data-id="${id}" data-dir="-1" ${index === 0 ? 'disabled class="p-2 text-wabi-text-secondary opacity-50 cursor-not-allowed"' : ''}>
                                 <i class="fa-solid fa-arrow-up"></i>
@@ -307,7 +307,7 @@ export class HomePage {
         modal.innerHTML = `
             <div class="bg-wabi-surface rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xl font-bold text-gray-800">調整顯示順序</h3>
+                    <h3 class="text-xl font-bold text-wabi-text-primary">調整顯示順序</h3>
                     <button id="close-widget-modal" class="text-wabi-text-secondary hover:text-wabi-text-primary">
                         <i class="fa-solid fa-times text-xl"></i>
                     </button>
@@ -315,7 +315,7 @@ export class HomePage {
                 <div id="widget-order-list" class="overflow-y-auto flex-1 mb-4">
                     ${renderList()}
                 </div>
-                <div class="mt-auto pt-2 border-t border-gray-100">
+                <div class="mt-auto pt-2 border-t border-wabi-border">
                      <p class="text-xs text-center text-wabi-text-secondary">點擊箭頭調整順序</p>
                 </div>
             </div>

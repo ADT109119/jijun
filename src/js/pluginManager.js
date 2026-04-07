@@ -283,13 +283,13 @@ export class PluginManager {
               <div class="flex items-start gap-3 py-2">
                 <div class="text-wabi-primary shrink-0 mt-0.5"><i class="fa-solid ${info.icon}"></i></div>
                 <div>
-                  <p class="text-sm font-medium text-gray-800">${this._escapeHTML(info.label)}</p>
-                  <p class="text-xs text-gray-500">${this._escapeHTML(info.desc)}</p>
+                  <p class="text-sm font-medium text-wabi-text-primary">${this._escapeHTML(info.label)}</p>
+                  <p class="text-xs text-wabi-text-secondary">${this._escapeHTML(info.desc)}</p>
                 </div>
               </div>
             `;
           }).join('')
-        : '<p class="text-sm text-gray-500 py-2">此插件未聲明任何特殊權限。</p>';
+        : '<p class="text-sm text-wabi-text-secondary py-2">此插件未聲明任何特殊權限。</p>';
 
       const modal = document.createElement('div');
       modal.className = 'fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animation-fade-in';

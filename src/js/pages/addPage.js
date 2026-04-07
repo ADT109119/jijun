@@ -478,10 +478,10 @@ export class AddPage {
                         // Show debt info panel
                         const debtInfoPanel = document.createElement('div');
                         debtInfoPanel.id = 'debt-info-panel';
-                        debtInfoPanel.className = 'bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200';
+                        debtInfoPanel.className = 'bg-wabi-primary/5 rounded-lg p-4 mb-4 border border-wabi-primary/25';
                         debtInfoPanel.innerHTML = `
                             <div class="flex items-center justify-between mb-3">
-                                <span class="font-medium text-orange-700">
+                                <span class="font-medium text-wabi-primary">
                                     <i class="fa-solid fa-handshake mr-2"></i>關聯欠款
                                 </span>
                                 ${debt.settled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-2 py-1 rounded">已還清</span>' : ''}
@@ -490,41 +490,41 @@ export class AddPage {
                                 <!-- Editable debt info -->
                                 <div class="space-y-2 mb-3">
                                     <div class="flex gap-2">
-                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-wabi-surface border-wabi-income' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-wabi-border text-wabi-text-secondary'}">
                                             別人欠我
                                         </button>
-                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-wabi-surface border-wabi-expense' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-wabi-border text-wabi-text-secondary'}">
                                             我欠別人
                                         </button>
                                     </div>
-                                    <select id="debt-contact-edit" class="w-full p-2 border border-orange-300 rounded-lg text-sm bg-wabi-surface">
+                                    <select id="debt-contact-edit" class="w-full p-2 border border-wabi-border rounded-lg text-sm bg-wabi-surface text-wabi-text-primary">
                                         ${contactOptions}
                                     </select>
                                 </div>
                                 <!-- Progress bar -->
                                 <div class="mb-3">
-                                    <div class="flex justify-between text-xs text-orange-600 mb-1">
+                                    <div class="flex justify-between text-xs text-wabi-text-secondary mb-1">
                                         <span>剩餘：${formatCurrency(remainingAmount)}</span>
                                         <span>${paidPercent}% 已還</span>
                                     </div>
-                                    <div class="w-full bg-orange-200 rounded-full h-2">
+                                    <div class="w-full bg-wabi-border rounded-full h-2">
                                         <div class="bg-wabi-income h-2 rounded-full" style="width: ${paidPercent}%"></div>
                                     </div>
                                 </div>
                                 <!-- Action buttons -->
                                 <div class="flex gap-2">
-                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-wabi-surface bg-wabi-primary rounded-lg">
+                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-white bg-wabi-primary rounded-lg">
                                         <i class="fa-solid fa-coins mr-1"></i>還款
                                     </button>
-                                    <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-red-600 border border-red-300 rounded-lg bg-wabi-surface">
+                                    <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-wabi-expense border border-wabi-expense/40 rounded-lg bg-wabi-surface">
                                         <i class="fa-solid fa-unlink"></i>
                                     </button>
                                 </div>
                             ` : `
-                                <div class="text-sm text-orange-600">
-                                    <p><strong>聯絡人：</strong>${contactName}</p>
-                                    <p><strong>類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
-                                    <p><strong>原始金額：</strong>${formatCurrency(originalAmount)}</p>
+                                <div class="text-sm text-wabi-text-secondary">
+                                    <p><strong class="text-wabi-text-primary">聯絡人：</strong>${contactName}</p>
+                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
+                                    <p><strong class="text-wabi-text-primary">原始金額：</strong>${formatCurrency(originalAmount)}</p>
                                 </div>
                             `}
                         `;
