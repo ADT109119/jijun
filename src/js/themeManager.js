@@ -1,5 +1,8 @@
 import { debounce } from './utils.js';
 
+// 內建深色主題 ID（不可刪除、自動更新）
+export const DARK_THEME_ID = 'com.walkingfish.theme.dark';
+
 export class ThemeManager {
     constructor(dataService) {
         this.dataService = dataService;
@@ -16,21 +19,22 @@ export class ThemeManager {
         }
     }
 
+    // 判斷是否為內建深色主題（不可刪除）
+    isBuiltinTheme(themeId) {
+        return themeId === DARK_THEME_ID;
+    }
+
     async init() {
-        // Check if any themes exist, if not, auto-install Dark Mode
-        let installedThemes = await this.dataService.getInstalledThemes();
-        if (!installedThemes || installedThemes.length === 0) {
-            try {
-                const response = await fetch('themes/dark.json');
-                if (response.ok) {
-                    const defaultDarkTheme = await response.json();
-                    await this.dataService.installTheme(defaultDarkTheme);
-                    installedThemes = [defaultDarkTheme];
-                    console.log('Auto-installed Dark Mode theme.');
-                }
-            } catch (e) {
-                console.warn('Failed to auto-install dark theme', e);
+        // 總是重新抓取 dark.json，確保內建深色主題保持最新版本
+        try {
+            const response = await fetch('themes/dark.json');
+            if (response.ok) {
+                const latestDark = await response.json();
+                await this.dataService.installTheme(latestDark); // installTheme 有 upsert 語意
+                console.log('Built-in Dark Mode theme updated.');
             }
+        } catch (e) {
+            console.warn('Failed to auto-update dark theme', e);
         }
 
         const setting = await this.dataService.getSetting('activeThemeId');

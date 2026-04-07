@@ -1,4 +1,5 @@
 import { showToast } from '../utils.js';
+import { DARK_THEME_ID } from '../themeManager.js';
 
 export class SettingsPage {
     constructor(app) {
@@ -15,7 +16,7 @@ export class SettingsPage {
                     <!-- Settings -->
                     <div class="bg-wabi-surface rounded-xl">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">應用程式</h3>
-                        
+
                         ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn')}
                         ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
                         <div id="install-pwa-btn-container" class="hidden">
@@ -23,6 +24,25 @@ export class SettingsPage {
                         </div>
                         ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
                         ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
+                    
+                        <!-- 深色模式快速切換 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/30">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-moon"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">深色模式</p>
+                                    <p class="text-xs text-wabi-text-secondary">開啟即自動套用內建深色主題</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="dark-mode-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        
                     </div>
 
                     <!-- Data Management -->
@@ -155,7 +175,7 @@ export class SettingsPage {
                 </div>
             </div>
         `;
-        this.setupSettingsPageListeners();
+        await this.setupSettingsPageListeners();
         // Add listener for plugin manager button
         const managePluginsBtn = document.getElementById('manage-plugins-btn');
         if (managePluginsBtn) {
@@ -227,7 +247,7 @@ export class SettingsPage {
         `.trim();
     }
 
-    setupSettingsPageListeners() {
+    async setupSettingsPageListeners() {
         document.getElementById('export-data-btn').addEventListener('click', async () => {
             // Show export options dialog
             await this.showExportOptionsModal();
@@ -297,6 +317,32 @@ export class SettingsPage {
         if (versionInfo) {
             const latestVersion = this.app.changelogManager.getAllVersions()[0];
             versionInfo.textContent = `版本 v${latestVersion.version}`;
+        }
+
+        // 深色模式快速切換
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        if (darkModeToggle) {
+            // 標記目前是否已是深色主題
+            const activeSetting = await this.app.dataService.getSetting('activeThemeId');
+            darkModeToggle.checked = activeSetting?.value === DARK_THEME_ID;
+
+            darkModeToggle.addEventListener('change', async (e) => {
+                if (e.target.checked) {
+                    // 套用深色主題
+                    const darkTheme = await this.app.dataService.getTheme(DARK_THEME_ID);
+                    if (darkTheme) {
+                        await this.app.themeManager.applyTheme(darkTheme);
+                        showToast('已切換為深色模式', 'success');
+                    } else {
+                        showToast('深色主題沒有安裝，請先從主題商店下載', 'error');
+                        e.target.checked = false;
+                    }
+                } else {
+                    // 切回預設亮色主題
+                    await this.app.themeManager.clearTheme();
+                    showToast('已切換為亮色模式', 'success');
+                }
+            });
         }
 
         const advancedModeToggle = document.getElementById('advanced-account-mode-toggle');

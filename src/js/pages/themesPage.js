@@ -1,4 +1,5 @@
 import { showToast, customConfirm } from '../utils.js';
+import { DARK_THEME_ID } from '../themeManager.js';
 
 export class ThemesPage {
     constructor(app) {
@@ -56,9 +57,10 @@ export class ThemesPage {
                             </div>
                             <div class="flex items-center gap-3 z-10">
                                 ${activeThemeId === t.id ? '<i class="fa-solid fa-circle-check text-wabi-primary text-xl"></i>' : ''}
-                                <button class="delete-theme-btn text-wabi-expense p-2 transition-opacity" data-id="${t.id}" title="刪除主題">
-                                    <i class="fa-solid fa-trash-can"></i>
-                                </button>
+                                ${t.id === DARK_THEME_ID
+                                    ? '<span class="text-wabi-text-secondary p-2 text-sm" title="內建主題不可刪除"><i class="fa-solid fa-lock"></i></span>'
+                                    : `<button class="delete-theme-btn text-wabi-expense p-2 transition-opacity" data-id="${t.id}" title="刪除主題"><i class="fa-solid fa-trash-can"></i></button>`
+                                }
                             </div>
                         </div>
                     `).join('')}
