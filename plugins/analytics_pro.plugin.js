@@ -17,7 +17,7 @@ export default {
             container.innerHTML = `
                 <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center justify-between cursor-pointer hover:bg-emerald-100 transition-colors" id="open-analytics-widget">
                     <div class="flex items-center gap-3">
-                        <div class="bg-emerald-500 text-white rounded-lg size-10 flex items-center justify-center">
+                        <div class="bg-emerald-500 text-wabi-surface rounded-lg size-10 flex items-center justify-center">
                              <i class="fa-solid fa-chart-pie"></i>
                         </div>
                         <div>
@@ -38,7 +38,7 @@ export default {
         container.innerHTML = `
             <div class="px-4 pb-24 pt-4 space-y-6">
                 <!-- Year Summary Card -->
-                <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-6 text-white shadow-lg">
+                <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-6 text-wabi-surface shadow-lg">
                     <h3 class="text-emerald-100 text-sm font-medium mb-1">年度總支出</h3>
                     <div class="flex items-end gap-2">
                          <span class="text-3xl font-bold" id="year-total-expense">$0</span>

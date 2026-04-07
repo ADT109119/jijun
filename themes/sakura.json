@@ -1,0 +1,26 @@
+{
+  "id": "com.walkingfish.theme.sakura",
+  "name": "櫻花粉 (Sakura)",
+  "description": "輕盈浪漫的粉紅色系主題，搭配自訂的可愛圖標。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#FFF0F5",
+    "wabi-primary": "#D53F8C",
+    "wabi-expense": "#FF4500",
+    "wabi-income": "#32CD32",
+    "wabi-accent": "#FBB6CE",
+    "wabi-text-primary": "#4A4A4A",
+    "wabi-text-secondary": "#888888",
+    "wabi-surface": "#FFFFFF",
+    "wabi-border": "#FFC0CB",
+    "wabi-keypad": "#FFC0CB"
+  },
+  "icons": {
+    "#bottom-nav a[data-page='add'] i.fa-plus": {
+      "type": "svg",
+      "svg": "<svg viewBox=\"0 0 24 24\" fill=\"currentColor\"><g transform=\"translate(12 12)\"><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(0)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(72)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(144)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(216)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(288)\" /><circle r=\"1.5\" fill=\"rgba(255,255,255,0.8)\" /></g></svg>",
+      "className": "w-8 h-8"
+    }
+  }
+}

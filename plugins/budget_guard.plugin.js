@@ -85,7 +85,7 @@ export default {
                          </div>
                     </div>
 
-                    <button id="bg-save-btn" class="w-full bg-wabi-primary text-white py-3 rounded-xl font-bold text-lg hover:bg-opacity-90 transition-colors">
+                    <button id="bg-save-btn" class="w-full bg-wabi-primary text-wabi-surface py-3 rounded-xl font-bold text-lg hover:bg-opacity-90 transition-colors">
                         儲存設定
                     </button>
                 </div>

@@ -1,0 +1,29 @@
+{
+  "id": "com.walkingfish.theme.hightech",
+  "name": "高科技駭客 (Matrix)",
+  "description": "經典的黑綠代碼風格，讓記帳像在寫 Code。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#000000",
+    "wabi-primary": "#00FF00",
+    "wabi-expense": "#008800",
+    "wabi-income": "#00FF00",
+    "wabi-accent": "#003300",
+    "wabi-text-primary": "#E0FFE0",
+    "wabi-text-secondary": "#66AA66",
+    "wabi-surface": "#0A0A0A",
+    "wabi-border": "#004400",
+    "wabi-keypad": "#002200"
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='records'] i.fa-list-ul": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-terminal"
+    },
+    "nav#bottom-nav a[data-page='settings'] i.fa-gear": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-code"
+    }
+  }
+}

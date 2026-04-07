@@ -214,10 +214,10 @@ export default {
                     <h1 class="text-xl font-bold text-gray-800">成就館</h1>
                 </header>
 
-                <div class="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl p-4 text-white mb-6 shadow-lg">
+                <div class="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl p-4 text-wabi-surface mb-6 shadow-lg">
                      <div class="flex justify-between items-end">
                          <div>
-                             <p class="text-white/80 text-sm">已解鎖成就</p>
+                             <p class="text-wabi-surface/80 text-sm">已解鎖成就</p>
                              <p class="text-3xl font-bold mt-1">${this.unlocked.length} <span class="text-lg font-normal opacity-80">/ ${this.achievements.length}</span></p>
                          </div>
                          <i class="fa-solid fa-trophy text-5xl opacity-30"></i>
@@ -232,7 +232,7 @@ export default {
                         const isUnlocked = this.unlocked.includes(ach.id);
                         return `
                             <div class="bg-white p-3 rounded-xl border ${isUnlocked ? 'border-yellow-400 bg-yellow-50/50' : 'border-gray-100 grayscale'} flex flex-col items-center text-center shadow-sm relative overflow-hidden h-32 justify-center group transition-all duration-300">
-                                ${isUnlocked ? '<div class="absolute top-0 right-0 bg-yellow-400 text-white text-[10px] px-2 py-0.5 rounded-bl-lg">已解鎖</div>' : ''}
+                                ${isUnlocked ? '<div class="absolute top-0 right-0 bg-yellow-400 text-wabi-surface text-[10px] px-2 py-0.5 rounded-bl-lg">已解鎖</div>' : ''}
                                 <div class="text-3xl mb-2 ${isUnlocked ? 'text-yellow-500 scale-110' : 'text-gray-300'} transition-transform group-hover:scale-125">
                                     <i class="fa-solid ${ach.icon}"></i>
                                 </div>
