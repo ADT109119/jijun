@@ -2,15 +2,13 @@
 export const CHANGELOG = {
   "2.1.4.7": {
     date: "2026-04-06",
-    title: "深色模式優化與多樣化主題新增",
+    title: "新增深色模式與主題商店",
     features: [
-      "新增 Ocean Blue (深海湛藍)、Cyberpunk (賽博龐克)、Matrix (高科技駭客) 等多款主題",
-      "預設安裝：若無安裝任何主題，系統將自動為您下載並套用「深色模式」"
+      "新增深色模式與主題商店",
+      "提供 Ocean Blue (深海湛藍)、Cyberpunk (賽博龐克)、Matrix (高科技駭客) 等多款主題",
     ],
     bugfixes: [],
-    improvements: [
-      "深色模式視覺優化：調整深色模式的配色對比度（採用更柔和的 Slate 灰藍色調），並提高底部導覽列的不透明度，確保文字與圖示清晰可見"
-    ]
+    improvements: []
   },
   "2.1.4.6": {
     date: "2026-04-05",
