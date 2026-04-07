@@ -216,6 +216,74 @@ npx cap open android
 - `webDir: "dist"` — Capacitor 會從此目錄讀取 Web 資源，因此 **build 是同步前提**。
 - `androidScheme: "https"` — 讓 WebView 以 HTTPS 方式載入本地資源，避免混合內容錯誤。
 
+
+## 🎨 外觀主題系統
+
+輕鬆記帳提供完整的主題系統，讓開發者可以透過 JSON 定義視覺風格，無需修改任何程式碼。
+
+### 主題運作原理
+
+- **主題是一個 `.json` 檔案**，放在 `public/themes/` 目錄下
+- 系統讀取主題後，將顏色注入全域 CSS 變數（`--wabi-*`），並透過 `MutationObserver` 監聽 DOM 持續替換指定圖示
+- 主題可從「設定 → 外觀主題 → 主題商店」安裝，或直接匯入 `.json` 檔
+
+### 主題 JSON 結構摘要
+
+```json
+{
+  "id": "com.yourname.themename",
+  "name": "主題名稱",
+  "version": "1.0",
+  "author": "作者",
+  "colors": {
+    "wabi-primary": "#...",
+    "wabi-bg": "#...",
+    "wabi-surface": "#...",
+    "wabi-keypad": "#..."
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='add'] i.fa-plus": {
+      "type": "svg",
+      "svg": "<svg ...>...</svg>",
+      "className": "w-8 h-8"
+    }
+  }
+}
+```
+
+> **完整開發文件** → 詳見 **[THEME_DEV_GUIDE.md](THEME_DEV_GUIDE.md)**
+
+### 內建主題
+
+| 主題 ID | 名稱 | 特色 |
+|---------|------|------|
+| `com.walkingfish.theme.dark` | 深色模式 | 護眼深色，自動更新，不可刪除 |
+| `com.walkingfish.theme.sakura` | 櫻花粉 | 粉紅色系＋自訂五瓣花 SVG 圖示 |
+| `com.walkingfish.theme.ocean` | 深海湛藍 | 沉穩藍色系 |
+| `com.walkingfish.theme.cyberpunk` | 賽博龐克 | 霓虹黃／粉／青交錯 |
+| `com.walkingfish.theme.hightech` | 高科技駭客 | Matrix 黑綠代碼風 |
+
+### 主題商店商店條目（`public/themes/index.json`）
+
+每個主題在商店中需要額外提供以下資訊：
+
+```json
+{
+  "id": "...",
+  "file": "themes/yourtheme.json",
+  "svgPreview": "<svg>...</svg>",
+  "iconPreview": "fa-solid fa-moon",
+  "colorsPreview": {
+    "bg": "#...", "primary": "#..."
+  }
+}
+```
+
+- `svgPreview`（優先）：以 SVG 字串作為商店卡片縮圖，系統以主色為背景、白色呈現圖示
+- `iconPreview`：使用 FontAwesome class，以背景色＋主色文字呈現
+- 兩者若都缺省，則以色點顯示
+- `colorsPreview` 提供預覽色塊，最多顯示 5 色
+
 ## 🔄 資料遷移
 
 新版本會自動檢測並遷移舊版本的資料：

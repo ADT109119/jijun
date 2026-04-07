@@ -67,16 +67,28 @@ export class ThemeStorePage {
                  ).join('') + `</div>`;
              }
 
+             // 縮圖：svgPreview 優先，其次 iconPreview FA icon，否則色點
+             let thumbnailHtml = '';
+             const bgColor = t.colorsPreview?.bg || '#fff';
+             const primaryColor = t.colorsPreview?.primary || '#334A52';
+             if (t.svgPreview) {
+                 thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0 overflow-hidden" style="background-color:${primaryColor}"><div class="size-9 flex items-center justify-center" style="color:white">${t.svgPreview}</div></div>`;
+             } else if (t.iconPreview) {
+                 thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color:${bgColor}"><i class="${t.iconPreview} text-2xl" style="color:${primaryColor}"></i></div>`;
+             } else {
+                 thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color:${bgColor}"><div class="size-7 rounded-full shrink-0" style="background-color:${primaryColor}"></div></div>`;
+             }
+
              return `
                     <div class="bg-wabi-surface p-5 rounded-2xl border border-wabi-border shadow-sm flex flex-col hover:shadow-md transition-shadow">
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
+                        <div class="flex items-start gap-4 mb-3">
+                            ${thumbnailHtml}
+                            <div class="min-w-0">
                                 <h4 class="font-bold text-wabi-text-primary text-lg">${t.name}</h4>
                                 <p class="text-xs text-wabi-text-secondary">v${t.version} • ${t.author || 'Unknown'}</p>
+                                <p class="text-sm text-wabi-text-secondary mt-1">${t.description}</p>
                             </div>
-                            ${t.iconPreview ? `<i class="${t.iconPreview} text-3xl text-gray-300"></i>` : ''}
                         </div>
-                        <p class="text-sm text-wabi-text-secondary flex-1">${t.description}</p>
                         ${colorBlocks}
                         ${btnHtml}
                     </div>

@@ -21,10 +21,10 @@
     "version": "1.0",
     "author": "The walking fish 步行魚",
     "file": "themes/sakura.json",
-    "iconPreview": "fa-solid fa-fan",
+    "svgPreview": "<svg viewBox=\"0 0 24 24\" fill=\"currentColor\"><g transform=\"translate(12 12)\"><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(0)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(72)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(144)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(216)\" /><path d=\"M0 0 C -2 -2, -4 -6, -2 -9 L 0 -7 L 2 -9 C 4 -6, 2 -2, 0 0\" transform=\"rotate(288)\" /><circle r=\"1.5\" fill=\"rgba(255,255,255,0.8)\" /></g></svg>",
     "colorsPreview": {
       "bg": "#FFF0F5",
-      "primary": "#FF69B4",
+      "primary": "#D53F8C",
       "surface": "#FFFFFF",
       "accent": "#FFB6C1"
     }
