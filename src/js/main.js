@@ -12,6 +12,7 @@ import { RewardService } from './rewardService.js';
 import { NotificationService } from './notificationService.js';
 import { ThemeManager } from './themeManager.js';
 import { Router } from './router.js';
+import { escapeHTML } from './utils.js';
 
 import { HomePage } from './pages/homePage.js';
 import { AddPage } from './pages/addPage.js';
@@ -282,7 +283,7 @@ class EasyAccountingApp {
                             </div>
                             <div class="flex-1 min-w-0 text-left flex flex-col justify-center">
                                 <div class="flex items-center gap-1.5">
-                                    <span class="text-sm font-medium text-wabi-text-primary truncate">${l.name}</span>
+                                    <span class="text-sm font-medium text-wabi-text-primary truncate">${escapeHTML(l.name)}</span>
                                     ${l.isShared || l.type === 'shared' ? '<span class="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded flex items-center shrink-0" title="共用帳本"><i class="fa-solid fa-users mr-1"></i>共用</span>' : ''}
                                 </div>
                             </div>

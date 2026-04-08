@@ -2,6 +2,7 @@
 import { CATEGORIES } from './categories.js'
 import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 import Sortable from 'sortablejs'
+import { escapeHTML } from './utils.js'
 
 export class CategoryManager {
   constructor(dataService = null) {
@@ -186,7 +187,7 @@ export class CategoryManager {
             <label class="block text-sm font-medium text-wabi-text-primary mb-2">分類名稱</label>
             <input type="text" id="category-name" maxlength="10" 
                    placeholder="輸入分類名稱..."
-                   value="${categoryToEdit ? categoryToEdit.name : ''}"
+                   value="${categoryToEdit ? escapeHTML(categoryToEdit.name) : ''}"
                    class="w-full p-3 bg-transparent border border-wabi-border rounded-lg focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
           </div>
           
@@ -576,7 +577,7 @@ export class CategoryManager {
                 <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
                     <i class="${category.icon} text-lg"></i>
                 </div>
-                <span class="font-medium text-wabi-text-primary truncate">${category.name}</span>
+                <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(category.name)}</span>
               </div>
               <div class="flex space-x-1 shrink-0 ml-2">
                 <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
