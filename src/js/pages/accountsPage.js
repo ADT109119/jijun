@@ -77,7 +77,7 @@ export class AccountsPage {
                         <i class="${account.icon} text-2xl"></i>
                     </div>
                     <div>
-                        <p class="font-medium text-wabi-text-primary">${account.name}</p>
+                        <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
                         <p class="text-sm text-wabi-text-secondary">餘額: ${formatCurrency(currentBalance)}</p>
                     </div>
                 </div>

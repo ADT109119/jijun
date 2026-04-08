@@ -1,5 +1,5 @@
 // 預算管理模組
-import { formatCurrency, getDateRange, showToast } from './utils.js'
+import { formatCurrency, getDateRange, showToast, escapeHTML } from './utils.js'
 import Sortable from 'sortablejs'
 
 export class BudgetManager {
@@ -184,7 +184,7 @@ export class BudgetManager {
                       <div class="flex justify-between items-end mb-1">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i class="${catStat.icon} text-wabi-text-secondary"></i>
-                          <span class="text-sm text-wabi-text-primary truncate">${catStat.name}</span>
+                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}</span>
                         </div>
                         <div class="text-right flex-shrink-0">
                           <div class="text-sm font-medium ${catStat.isOverBudget ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
@@ -308,7 +308,7 @@ export class BudgetManager {
             <i class="fas fa-grip-vertical"></i>
           </div>
           <div class="flex-shrink-0 w-6 text-center"><i class="${catIcon} text-wabi-text-secondary"></i></div>
-          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${catName}</div>
+          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${escapeHTML(catName)}</div>
           <div class="flex-col w-28">
             <input type="number" data-id="${catId}" value="${amount}" min="0" step="100" class="cat-budget-amt w-full bg-transparent border-b border-wabi-border focus:border-wabi-accent outline-none text-right px-1 py-1 text-sm text-wabi-text-primary">
           </div>

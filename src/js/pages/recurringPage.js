@@ -1,4 +1,4 @@
-import { formatCurrency, showToast, formatDateToString } from '../utils.js';
+import { formatCurrency, showToast, formatDateToString, escapeHTML } from '../utils.js';
 
 export class RecurringPage {
     constructor(app) {
@@ -53,7 +53,7 @@ export class RecurringPage {
                 txEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
                 txEl.innerHTML = `
                     <div>
-                        <p class="font-medium text-wabi-text-primary">${tx.description}</p>
+                        <p class="font-medium text-wabi-text-primary">${escapeHTML(tx.description)}</p>
                         <p class="text-sm text-wabi-text-secondary">金額: ${formatCurrency(tx.amount)} | 下次日期: ${tx.nextDueDate}</p>
                     </div>
                     <div class="flex gap-2">
@@ -114,7 +114,7 @@ export class RecurringPage {
 
                 <div>
                     <label class="text-sm">描述</label>
-                    <input type="text" id="recurring-desc" value="${txToEdit?.description || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="text" id="recurring-desc" value="${txToEdit ? escapeHTML(txToEdit.description) : ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
 
                 <div>

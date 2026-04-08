@@ -1,5 +1,5 @@
 // ==================== 帳本管理頁面 ====================
-import { showToast } from '../utils.js';
+import { showToast, escapeHTML } from '../utils.js';
 
 export class LedgersPage {
     constructor(app) {
@@ -46,7 +46,7 @@ export class LedgersPage {
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
-                            <p class="font-bold text-wabi-text-primary truncate">${ledger.name}</p>
+                            <p class="font-bold text-wabi-text-primary truncate">${escapeHTML(ledger.name)}</p>
                             ${isActive ? '<span class="text-xs px-2 py-0.5 bg-wabi-primary/10 text-wabi-primary rounded-full font-medium shrink-0">使用中</span>' : ''}
                             ${isDefault ? '<span class="text-xs px-2 py-0.5 bg-wabi-bg text-wabi-text-secondary rounded-full shrink-0">預設</span>' : ''}
                         </div>
@@ -148,7 +148,7 @@ export class LedgersPage {
                     <label class="text-sm font-medium text-wabi-text-primary block mb-1">帳本名稱</label>
                     <input type="text" id="ledger-name-input" maxlength="20"
                         class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
-                        value="${isEdit ? ledger.name : ''}" placeholder="例如：公司帳本" />
+                        value="${isEdit ? escapeHTML(ledger.name) : ''}" placeholder="例如：公司帳本" />
                 </div>
 
                 <!-- 顏色 -->
@@ -184,7 +184,7 @@ export class LedgersPage {
                         <div id="preview-icon" class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${selectedColor}">
                             <i class="${selectedIcon} text-2xl"></i>
                         </div>
-                        <p id="preview-name" class="font-bold text-wabi-text-primary">${isEdit ? ledger.name : '新帳本'}</p>
+                        <p id="preview-name" class="font-bold text-wabi-text-primary">${isEdit ? escapeHTML(ledger.name) : '新帳本'}</p>
                     </div>
                 </div>
 
@@ -302,7 +302,7 @@ export class LedgersPage {
                 <button class="close-btn absolute top-4 right-4 text-wabi-text-secondary hover:text-wabi-primary p-2">
                     <i class="fa-solid fa-times"></i>
                 </button>
-                <h3 class="text-lg font-bold text-wabi-primary mb-2">共用帳本：${ledger.name}</h3>
+                <h3 class="text-lg font-bold text-wabi-primary mb-2">共用帳本：${escapeHTML(ledger.name)}</h3>
                 
                 <!-- 權限提示 -->
                 <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
@@ -400,8 +400,8 @@ export class LedgersPage {
                     el.className = 'flex justify-between items-center bg-wabi-surface p-2 rounded-lg border border-wabi-border shadow-sm';
                     el.innerHTML = `
                         <div class="truncate flex-1 min-w-0 mr-2">
-                            <p class="text-sm font-medium text-wabi-text-primary truncate">${u.displayName || '未知使用者'}</p>
-                            <p class="text-xs text-gray-500 truncate">${u.emailAddress || '---'}</p>
+                            <p class="text-sm font-medium text-wabi-text-primary truncate">${escapeHTML(u.displayName || '未知使用者')}</p>
+                            <p class="text-xs text-gray-500 truncate">${escapeHTML(u.emailAddress || '---')}</p>
                         </div>
                         ${u.role === 'owner' ? '<span class="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded shrink-0">擁有者</span>' : 
                           (isOwner ? '<button class="remove-user-btn text-red-500 hover:bg-red-50 size-7 flex items-center justify-center rounded transition-colors shrink-0" title="移除授權"><i class="fa-solid fa-user-minus"></i></button>' :
