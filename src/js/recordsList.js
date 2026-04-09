@@ -264,6 +264,11 @@ export class RecordsListManager {
         // 3. Calculate summary from the offset list and update UI
         // Need to consider debt status for correct calculation
         const summary = recordsForSummary.reduce((acc, r) => {
+            // Exclude debt collection and repayment categories from summary calculation
+            if (r.category === 'debt_collection' || r.category === 'debt_repayment') {
+                return acc;
+            }
+
             let effectiveAmount = r.amount;
             
             // Check if record has associated debt and adjust amount
@@ -273,14 +278,17 @@ export class RecordsListManager {
                 const isReceivable = debt.type === 'receivable'; // 別人欠我
                 
                 // Logic:
-                // - 支出 + 別人欠我 (代墊): 還清後 $0 (錢回來了)
+                // - 支出 + 別人欠我 (代墊): 還清後扣除別人欠我的金額 (剩下自己的開銷)
                 // - 收入 + 別人欠我: 初始 $0，還清後原額 (收到錢了)
                 // - 支出 + 我欠別人: 還清後原額 (真的花了)
                 // - 收入 + 我欠別人 (先收): 還清後 $0 (還回去了)
                 
                 if (r.type === 'expense' && isReceivable) {
-                    // 代墊：還清後不計入支出
-                    effectiveAmount = isSettled ? 0 : r.amount;
+                    // 代墊：還清後扣除代墊金額，不計入自己支出
+                    // 因為 r.amount 是總金額 (包含自己的份 + 別人的份)
+                    // debt.originalAmount 則是別人的份
+                    const myExpense = Math.max(0, r.amount - (debt.originalAmount || 0));
+                    effectiveAmount = isSettled ? myExpense : r.amount;
                 } else if (r.type === 'income' && isReceivable) {
                     // 別人還我：還清後才計入收入
                     effectiveAmount = isSettled ? r.amount : 0;

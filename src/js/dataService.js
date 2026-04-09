@@ -415,19 +415,6 @@ class DataService {
     }
   }
 
-  // Get by UUID (Generic)
-  async getByUUID(storeName, uuid) {
-    try {
-      if (this.useLocalStorage) return null;
-      const tx = this.db.transaction(storeName, 'readonly');
-      const index = tx.store.index('uuid');
-      return await index.get(uuid);
-    } catch (err) {
-      console.error(`Failed to get by UUID from ${storeName}:`, err);
-      return null;
-    }
-  }
-
   // 獲取記錄
   async getRecords(filters = {}) {
     if (this.useLocalStorage) {
@@ -769,23 +756,62 @@ class DataService {
       records: records // Include filtered records in result
     }
 
+    // Pre-fetch debts for effective amount calculation
+    const debtIds = [...new Set(records.filter(r => r.debtId).map(r => r.debtId))];
+    const debtsMap = {};
+    for (const debtId of debtIds) {
+      const debt = await this.getDebt(debtId);
+      if (debt) debtsMap[debtId] = debt;
+    }
+
+    // We shouldn't use forEach to modify variables inside and mutate them, but it works
+    // Let's filter out records with effective amount 0 so they don't show up in lists
+    const adjustedRecords = [];
+
     records.forEach(record => {
-      if (record.type === 'income') {
-        stats.totalIncome += record.amount
-        stats.incomeByCategory[record.category] = 
-          (stats.incomeByCategory[record.category] || 0) + record.amount
-      } else {
-        stats.totalExpense += record.amount
-        stats.expenseByCategory[record.category] = 
-          (stats.expenseByCategory[record.category] || 0) + record.amount
+      let effectiveAmount = record.amount;
+
+      if (record.debtId && debtsMap[record.debtId]) {
+        const debt = debtsMap[record.debtId];
+        const isSettled = debt.settled === true;
+        const isReceivable = debt.type === 'receivable';
+
+        if (record.type === 'expense' && isReceivable) {
+          const myExpense = Math.max(0, record.amount - (debt.originalAmount || 0));
+          effectiveAmount = isSettled ? myExpense : record.amount;
+        } else if (record.type === 'income' && isReceivable) {
+          effectiveAmount = isSettled ? record.amount : 0;
+        } else if (record.type === 'expense' && !isReceivable) {
+          effectiveAmount = isSettled ? record.amount : 0;
+        } else if (record.type === 'income' && !isReceivable) {
+          effectiveAmount = isSettled ? 0 : record.amount;
+        }
       }
 
-      const date = record.date
+      if (effectiveAmount === 0) return; // Skip 0 amounts to prevent them from showing up
+
+      // create a copy of record to override amount
+      const adjustedRecord = { ...record, amount: effectiveAmount };
+      adjustedRecords.push(adjustedRecord);
+
+      if (adjustedRecord.type === 'income') {
+        stats.totalIncome += effectiveAmount
+        stats.incomeByCategory[adjustedRecord.category] =
+          (stats.incomeByCategory[adjustedRecord.category] || 0) + effectiveAmount
+      } else {
+        stats.totalExpense += effectiveAmount
+        stats.expenseByCategory[adjustedRecord.category] =
+          (stats.expenseByCategory[adjustedRecord.category] || 0) + effectiveAmount
+      }
+
+      const date = adjustedRecord.date
       if (!stats.dailyTotals[date]) {
         stats.dailyTotals[date] = { income: 0, expense: 0 }
       }
-      stats.dailyTotals[date][record.type === 'income' ? 'income' : 'expense'] += record.amount
+      stats.dailyTotals[date][adjustedRecord.type === 'income' ? 'income' : 'expense'] += effectiveAmount
     })
+
+    stats.records = adjustedRecords;
 
     return stats
   }
