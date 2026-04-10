@@ -80,7 +80,7 @@ export default {
                 </div>
 
                 <div class="p-5 flex flex-col items-center w-full">
-                    <div class="relative w-full max-w-[280px] aspect-square bg-black rounded-lg overflow-hidden shadow-inner">
+                    <div class="relative w-full max-w-[320px] aspect-[4/5] bg-black rounded-lg overflow-hidden shadow-inner">
                         <div id="reader" class="w-full h-full border-none"></div>
                         <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-wabi-surface text-sm bg-black z-10 transition-opacity duration-300">
                             <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
@@ -128,11 +128,10 @@ export default {
             const cameraConfig = { facingMode: "environment" };
             const scannerConfig = { 
                 fps: 15, 
-                qrbox: { width: 220, height: 220 },
+                qrbox: { width: 250, height: 250 },
+                useBarCodeDetectorIfSupported: true,
                 videoConstraints: {
                     facingMode: "environment",
-                    width: { min: 720, ideal: 1280, max: 1920 },
-                    height: { min: 720, ideal: 1280, max: 1920 },
                     advanced: [{ focusMode: "continuous" }]
                 }
             };
@@ -181,6 +180,12 @@ export default {
     async handleScanResult(qrData, scanner, closeModal) {
         if (!qrData || qrData.length < 37) return;
 
+        // 檢查是否為左側發票 QR Code (前兩碼大寫英文 + 8碼數字發票號碼 + 7碼數字日期)
+        if (!/^[A-Z]{2}\d{15}/.test(qrData.substring(0, 17))) {
+            // 如果掃到右側明細或其他不符格式的條碼，靜默忽略並繼續掃描
+            return;
+        }
+
         // 1. 成功掃描到內容，立刻關閉掃描視窗，讓後續的 Modal 可以正常顯示在最上層
         await closeModal();
 
@@ -204,7 +209,7 @@ export default {
             try {
                 const stored = await this.context.storage.getItem('invoices');
                 if (stored) invoices = JSON.parse(stored);
-            } catch (e) { }
+            } catch (e) { console.warn('Failed to parse invoices', e); }
 
             const isDuplicate = invoices.some(inv => inv.number === invNum);
 
@@ -299,7 +304,10 @@ export default {
         try {
             const stored = await this.context.storage.getItem('invoices');
             if (stored) invoices = JSON.parse(stored);
-        } catch (e) { return; }
+        } catch (e) {
+            console.warn('Failed to parse invoices for background check', e);
+            return;
+        }
 
         if (invoices.length === 0 && !force) return;
 
@@ -314,7 +322,7 @@ export default {
                 try {
                     const storedWin = await this.context.storage.getItem('winning_numbers');
                     if (storedWin) existingWin = JSON.parse(storedWin);
-                } catch(e) {}
+                } catch(e) { console.warn('Failed to parse existing winning numbers', e); }
                 
                 winningData = { ...existingWin, ...winningData };
                 await this.context.storage.setItem('winning_numbers', JSON.stringify(winningData));
@@ -452,7 +460,7 @@ export default {
                     if (storedInv) invoices = JSON.parse(storedInv);
                     const storedWin = await this.context.storage.getItem('winning_numbers');
                     if (storedWin) winningData = JSON.parse(storedWin);
-                } catch(e) {}
+                } catch(e) { console.warn('Failed to parse storage data', e); }
 
                 const periodsSet = new Set();
                 invoices.forEach(i => periodsSet.add(i.period));
