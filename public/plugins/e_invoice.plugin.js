@@ -81,86 +81,202 @@ export default {
 
                 <div class="p-5 flex flex-col items-center w-full">
                     <div class="relative w-full max-w-[320px] aspect-[4/5] bg-black rounded-lg overflow-hidden shadow-inner">
-                        <div id="reader" class="w-full h-full border-none"></div>
-                        <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-wabi-surface text-sm bg-black z-10 transition-opacity duration-300">
+                        <video id="reader-video" class="absolute inset-0 w-full h-full object-cover" playsinline></video>
+                        <canvas id="reader-canvas" class="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"></canvas>
+
+                        <div id="reader-loading" class="absolute inset-0 flex flex-col items-center justify-center text-wabi-surface text-sm bg-black z-20 transition-opacity duration-300">
                             <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
                             <p class="mt-2 tracking-wider">正在啟動高畫質相機...</p>
                         </div>
                     </div>
                     
-                    <div class="mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px]">
+                    <div id="scan-hint" class="mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px]">
                         <i class="fa-solid fa-circle-info text-gray-400"></i>
-                        <span>請保持 10~15 公分距離以利對焦</span>
+                        <span>請將左側發票 QR Code 置於畫面中</span>
                     </div>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
 
+        this.scannerActive = true;
+        this.videoStream = null;
+
         const closeBtn = modal.querySelector('#einvoice-close-btn');
-        let html5QrCode = null; 
 
         const closeModal = async () => {
-            if (html5QrCode) {
-                try {
-                    if (html5QrCode.isScanning) await html5QrCode.stop();
-                    html5QrCode.clear();
-                } catch(e) { console.error("Failed to clear scanner", e); }
+            this.scannerActive = false;
+            if (this.videoStream) {
+                this.videoStream.getTracks().forEach(track => track.stop());
+                this.videoStream = null;
             }
             modal.remove();
         };
 
         closeBtn.addEventListener('click', closeModal);
 
-        if (!window.Html5Qrcode) {
-            try {
-                await this.loadScript('https://unpkg.com/html5-qrcode');
-            } catch (error) {
-                this.context.ui.showToast('無法載入掃描模組，請檢查網路連線', 'error');
-                closeModal();
-                return;
-            }
-        }
+        await this.startCustomScanner(modal, closeModal);
+    },
+
+    async startCustomScanner(modal, closeModal) {
+        const video = modal.querySelector('#reader-video');
+        const canvas = modal.querySelector('#reader-canvas');
+        const loadingEl = modal.querySelector('#reader-loading');
+        const hintEl = modal.querySelector('#scan-hint');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
         try {
-            html5QrCode = new window.Html5Qrcode("reader");
-            
-            const cameraConfig = { facingMode: "environment" };
-            const scannerConfig = { 
-                fps: 15, 
-                qrbox: { width: 250, height: 250 },
-                useBarCodeDetectorIfSupported: true,
-                videoConstraints: {
-                    facingMode: "environment",
-                    advanced: [{ focusMode: "continuous" }]
+            const constraints = {
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    advanced: [{ focusMode: 'continuous' }]
                 }
             };
 
-            if (window.Html5QrcodeSupportedFormats && window.Html5QrcodeSupportedFormats.QR_CODE !== undefined) {
-                scannerConfig.formatsToSupport = [ window.Html5QrcodeSupportedFormats.QR_CODE ];
-            }
+            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = this.videoStream;
+            video.setAttribute('playsinline', true);
+            await video.play();
 
-            await html5QrCode.start(
-                cameraConfig, 
-                scannerConfig,
-                (decodedText) => { this.handleScanResult(decodedText, html5QrCode, closeModal); },
-                () => { /* 忽略幀錯誤 */ }
-            );
-
-            const loadingEl = document.getElementById('reader-loading');
             if (loadingEl) {
                 loadingEl.style.opacity = '0';
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
             }
+
+            let barcodeDetector = null;
+            if ('BarcodeDetector' in window) {
+                try {
+                    barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+                } catch (e) {
+                    console.warn('BarcodeDetector init failed, fallback to jsQR', e);
+                }
+            }
+
+            if (!barcodeDetector) {
+                if (!window.jsQR) {
+                    try {
+                        await this.loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js');
+                    } catch (e) {
+                        this.context.ui.showToast('無法載入掃描模組，請檢查網路連線', 'error');
+                        closeModal();
+                        return;
+                    }
+                }
+            }
+
+            let lastScanTime = 0;
+
+            const scanLoop = async (timestamp) => {
+                if (!this.scannerActive) return;
+
+                // 控制掃描頻率，避免過度消耗效能 (約每秒 15 幀)
+                if (timestamp - lastScanTime >= 66 && video.readyState === video.HAVE_ENOUGH_DATA) {
+                    lastScanTime = timestamp;
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+
+                    // 將影片繪製到 canvas，以便分析和繪製框線
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    let qrResults = [];
+
+                    try {
+                        if (barcodeDetector) {
+                            const barcodes = await barcodeDetector.detect(canvas);
+                            qrResults = barcodes.map(b => ({
+                                rawValue: b.rawValue,
+                                cornerPoints: b.cornerPoints
+                            }));
+                        } else if (window.jsQR) {
+                            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                            // jsQR 每次只能找一個，且比較耗效能，我們讓他掃描整張圖片
+                            const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
+                                inversionAttempts: "dontInvert",
+                            });
+                            if (code) {
+                                qrResults = [{
+                                    rawValue: code.data,
+                                    cornerPoints: [
+                                        code.location.topLeftCorner,
+                                        code.location.topRightCorner,
+                                        code.location.bottomRightCorner,
+                                        code.location.bottomLeftCorner
+                                    ]
+                                }];
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Scan error:', e);
+                    }
+
+                    let foundValidInvoice = false;
+
+                    for (const result of qrResults) {
+                        const { rawValue, cornerPoints } = result;
+
+                        // 判斷是否為合法的左側發票 (前兩碼大寫英文 + 8碼數字 + 7碼日期...)
+                        const isLeftInvoice = rawValue && rawValue.length >= 37 && /^[A-Z]{2}\d{15}/.test(rawValue.substring(0, 17));
+
+                        // 繪製偵測框
+                        if (cornerPoints && cornerPoints.length === 4) {
+                            ctx.beginPath();
+                            ctx.moveTo(cornerPoints[0].x, cornerPoints[0].y);
+                            for (let i = 1; i < cornerPoints.length; i++) {
+                                ctx.lineTo(cornerPoints[i].x, cornerPoints[i].y);
+                            }
+                            ctx.closePath();
+
+                            if (isLeftInvoice) {
+                                ctx.lineWidth = 6;
+                                ctx.strokeStyle = '#22c55e'; // 綠色
+                                ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+                                ctx.fill();
+                                ctx.stroke();
+                                foundValidInvoice = true;
+
+                                // 停止掃描並處理結果
+                                this.scannerActive = false;
+                                this.handleScanResult(rawValue, closeModal);
+                                break;
+                            } else {
+                                ctx.lineWidth = 6;
+                                ctx.strokeStyle = '#eab308'; // 黃色
+                                ctx.stroke();
+
+                                if (hintEl) {
+                                    hintEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-yellow-500"></i><span class="text-yellow-700">這似乎是明細，請掃左側 QR Code</span>`;
+                                    hintEl.className = "mt-5 flex items-center justify-center gap-2 text-xs bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-200 w-full max-w-[280px] transition-all";
+                                }
+                            }
+                        }
+                    }
+
+                    if (!foundValidInvoice && qrResults.length === 0) {
+                        if (hintEl && hintEl.className.includes('bg-yellow-50')) {
+                            hintEl.innerHTML = `<i class="fa-solid fa-circle-info text-gray-400"></i><span>請將左側發票 QR Code 置於畫面中</span>`;
+                            hintEl.className = "mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px] transition-all";
+                        }
+                    }
+                }
+
+                if (this.scannerActive) {
+                    requestAnimationFrame(scanLoop);
+                }
+            };
+
+            requestAnimationFrame(scanLoop);
+
         } catch (e) {
-            console.error('啟動失敗詳細錯誤:', e);
-            const loadingEl = document.getElementById('reader-loading');
+            console.error('啟動相機失敗詳細錯誤:', e);
             if (loadingEl) {
+                loadingEl.style.opacity = '1';
                 loadingEl.innerHTML = `
                     <div class="text-red-400 text-center px-4">
                         <i class="fa-solid fa-triangle-exclamation text-3xl mb-3"></i><br>
                         無法啟動相機<br>
-                        <span class="text-xs text-gray-300 mt-2 block">請確認權限或使用 HTTPS 連線</span>
+                        <span class="text-xs text-gray-300 mt-2 block">請確認相機權限，或檢查是否處於 HTTPS 環境</span>
                     </div>`;
             }
         }
@@ -177,7 +293,7 @@ export default {
         });
     },
 
-    async handleScanResult(qrData, scanner, closeModal) {
+    async handleScanResult(qrData, closeModal) {
         if (!qrData || qrData.length < 37) return;
 
         // 檢查是否為左側發票 QR Code (前兩碼大寫英文 + 8碼數字發票號碼 + 7碼數字日期)
