@@ -569,28 +569,28 @@ export class CategoryManager {
             const colorClass = !category.color.startsWith('#') ? category.color : '';
             
             return `
-            <div class="sortable-item flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border shadow-sm transition-opacity duration-200 ${isHidden ? 'opacity-40' : ''}" data-id="${category.id}">
-              <div class="flex items-center space-x-3 flex-1 min-w-0">
-                <div class="drag-handle cursor-grab text-wabi-text-secondary pr-2 touch-none">
-                    <i class="fa-solid fa-grip-vertical"></i>
+            <div class="sortable-item flex items-center justify-between p-2 bg-wabi-surface rounded-lg border border-wabi-border shadow-sm transition-opacity duration-200 ${isHidden ? 'opacity-40' : ''}" data-id="${category.id}">
+              <div class="flex items-center space-x-2 flex-1 min-w-0">
+                <div class="drag-handle cursor-grab text-wabi-text-secondary px-1 touch-none shrink-0">
+                    <i class="fa-solid fa-grip-vertical text-sm"></i>
                 </div>
-                <div class="size-10 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
-                    <i class="${category.icon} text-lg"></i>
+                <div class="size-9 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
+                    <i class="${category.icon} text-base"></i>
                 </div>
-                <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(category.name)}</span>
+                <span class="font-medium text-wabi-text-primary truncate text-sm">${escapeHTML(category.name)}</span>
               </div>
-              <div class="flex space-x-1 shrink-0 ml-2">
-                <button class="toggle-hide-btn size-9 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
-                  <i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>
+              <div class="flex items-center shrink-0 ml-1">
+                <button class="toggle-hide-btn size-7 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg transition-colors" data-category-id="${category.id}" title="${isHidden ? '取消隱藏' : '隱藏'}">
+                  <i class="fa-solid ${isHidden ? 'fa-eye-slash' : 'fa-eye'} text-xs"></i>
                 </button>
                 ${isCustom ? `
-                  <button class="edit-category-btn size-9 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-bg transition-colors" data-category-id="${category.id}">
-                    <i class="fa-solid fa-pen"></i>
+                  <button class="edit-category-btn size-7 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-bg transition-colors" data-category-id="${category.id}">
+                    <i class="fa-solid fa-pen text-xs"></i>
                   </button>
-                  <button class="delete-category-btn size-9 flex items-center justify-center rounded-full text-wabi-expense hover:bg-red-50 transition-colors" data-category-id="${category.id}">
-                    <i class="fa-solid fa-trash-can"></i>
+                  <button class="delete-category-btn size-7 flex items-center justify-center rounded-full text-wabi-expense hover:bg-red-50 transition-colors" data-category-id="${category.id}">
+                    <i class="fa-solid fa-trash-can text-xs"></i>
                   </button>
-                ` : `<div class="size-9"></div><div class="size-9"></div>`}
+                ` : ''}
               </div>
             </div>
             `
