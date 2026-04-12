@@ -852,7 +852,7 @@ class DataService {
       let recurring_transactions = [];
       try {
           recurring_transactions = await this.db.getAll('recurring_transactions');
-      } catch (e) {}
+      } catch (e) {console.warn('Silenced error:', e);}
 
       const exportData = {
         version: '2.3.0',
@@ -929,7 +929,7 @@ class DataService {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
               await txR.store.clear();
               await txR.done;
-            } catch (e) {}
+            } catch (e) {console.warn('Silenced error:', e);}
           }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
@@ -962,7 +962,7 @@ class DataService {
                       const txL = this.db.transaction('ledgers', 'readwrite');
                       await txL.store.clear();
                       await txL.done;
-                  } catch(e){}
+                  } catch(e){console.warn('Silenced error:', e);}
               }
               for (const ledger of data.ledgers) {
                   const oldId = ledger.id;

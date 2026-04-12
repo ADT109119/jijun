@@ -331,7 +331,8 @@ export class RewardService {
 
         // 先註冊所有事件監聽，再 prepare + show
         // 避免 prepare 回傳後事件已經觸發但 listener 還沒註冊的 race condition
-        return new Promise(async (resolve) => {
+        return new Promise((resolve) => {
+            const doWork = async () => {
             let rewarded = false;
             let resolved = false;
 
@@ -416,6 +417,8 @@ export class RewardService {
                 showToast('獎勵廣告載入失敗，請稍後再試', 'error');
                 safeResolve(false);
             }
+            };
+            doWork();
         });
     }
 
