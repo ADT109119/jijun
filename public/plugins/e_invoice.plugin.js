@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.e_invoice',
         name: '電子發票掃描 (Beta 版)',
-        version: '1.1',
+        version: '1.2',
         description: '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
         author: 'The walking fish 步行魚',
         icon: 'fa-qrcode',
