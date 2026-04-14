@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.e_invoice',
         name: '電子發票掃描 (Beta 版)',
-        version: '1.2',
+        version: '1.3',
         description: '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
         author: 'The walking fish 步行魚',
         icon: 'fa-qrcode',
@@ -502,7 +502,13 @@ export default {
 
     checkInvoiceWinning(invoiceNumber, period, winningData) {
         const periodData = winningData[period];
-        if (!periodData) return null;
+        if (!periodData) {
+            const periods = Object.keys(winningData);
+            if (periods.length === 0) return null;
+            const maxPeriod = periods.sort((a, b) => b.localeCompare(a))[0];
+            if (period <= maxPeriod) return false;
+            return null;
+        }
 
         const { super: superNum, special, first } = periodData;
 
@@ -660,11 +666,29 @@ export default {
                             </div>
                             <div class="text-right flex flex-col items-end gap-2">
                                 <div class="font-bold text-gray-700 text-lg">$${inv.amount.toLocaleString()}</div>
-                                ${statusHtml}
+                                <div class="flex items-center gap-2">
+                                    ${statusHtml}
+                                    <button class="delete-invoice-btn text-gray-400 hover:text-red-500 transition-colors p-1" data-scanned-at="${inv.scannedAt}" title="移除發票">
+                                        <i class="fa-regular fa-trash-can"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `;
                 }).join('');
+
+                container.querySelectorAll('.delete-invoice-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const scannedAt = parseInt(e.currentTarget.dataset.scannedAt, 10);
+                        const confirm = await this.context.ui.showConfirm('移除發票', '確定要移除這張發票嗎？移除後將無法自動對獎，但不會影響已記帳的紀錄。');
+                        if (confirm) {
+                            invoices = invoices.filter(inv => inv.scannedAt !== scannedAt);
+                            await this.context.storage.setItem('invoices', JSON.stringify(invoices));
+                            this.context.ui.showToast('發票已移除', 'success');
+                            renderUI();
+                        }
+                    });
+                });
             };
 
             container.querySelector('#prev-period-btn').addEventListener('click', () => {
