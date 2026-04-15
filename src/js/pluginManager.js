@@ -397,8 +397,9 @@ export class PluginManager {
                 description: meta.description || '',
                 permissions: permissions,
                 script: scriptContent,
-                enabled: true,
-                installedAt: Date.now()
+                enabled: existingPlugin ? existingPlugin.enabled : true,
+                installedAt: existingPlugin ? existingPlugin.installedAt : Date.now(),
+                ...(existingPlugin && existingPlugin.storage ? { storage: existingPlugin.storage } : {})
             };
 
             const tx = this.dataService.db.transaction('plugins', 'readwrite');
