@@ -1,4 +1,4 @@
-import { formatCurrency, showToast, formatDateToString } from '../utils.js';
+import { formatCurrency, showToast, formatDateToString, escapeHTML } from '../utils.js';
 
 export class RecurringPage {
     constructor(app) {
@@ -26,7 +26,7 @@ export class RecurringPage {
                 <!-- Recurring Transaction List -->
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-wabi-primary">已設定項目</h3>
-                    <button id="add-recurring-btn" class="bg-wabi-primary text-white rounded-full w-8 h-8 flex items-center justify-center">
+                    <button id="add-recurring-btn" class="bg-wabi-primary text-wabi-surface rounded-full w-8 h-8 flex items-center justify-center">
                         <i class="fa-solid fa-plus"></i>
                     </button>
                 </div>
@@ -53,7 +53,7 @@ export class RecurringPage {
                 txEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
                 txEl.innerHTML = `
                     <div>
-                        <p class="font-medium text-wabi-text-primary">${tx.description}</p>
+                        <p class="font-medium text-wabi-text-primary">${escapeHTML(tx.description)}</p>
                         <p class="text-sm text-wabi-text-secondary">金額: ${formatCurrency(tx.amount)} | 下次日期: ${tx.nextDueDate}</p>
                     </div>
                     <div class="flex gap-2">
@@ -114,7 +114,7 @@ export class RecurringPage {
 
                 <div>
                     <label class="text-sm">描述</label>
-                    <input type="text" id="recurring-desc" value="${txToEdit?.description || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="text" id="recurring-desc" value="${txToEdit ? escapeHTML(txToEdit.description) : ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
 
                 <div>
@@ -217,12 +217,12 @@ export class RecurringPage {
         const updateCategoryOptions = () => {
             if (currentType === 'expense') {
                 categorySelect.innerHTML = expenseCategories;
-                typeExpenseBtn.classList.add('bg-wabi-expense', 'text-white');
-                typeIncomeBtn.classList.remove('bg-wabi-income', 'text-white');
+                typeExpenseBtn.classList.add('bg-wabi-expense', 'text-wabi-surface');
+                typeIncomeBtn.classList.remove('bg-wabi-income', 'text-wabi-surface');
             } else {
                 categorySelect.innerHTML = incomeCategories;
-                typeIncomeBtn.classList.add('bg-wabi-income', 'text-white');
-                typeExpenseBtn.classList.remove('bg-wabi-expense', 'text-white');
+                typeIncomeBtn.classList.add('bg-wabi-income', 'text-wabi-surface');
+                typeExpenseBtn.classList.remove('bg-wabi-expense', 'text-wabi-surface');
             }
         };
 

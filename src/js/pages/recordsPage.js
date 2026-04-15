@@ -10,7 +10,13 @@ export class RecordsPage {
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
-                    <h1 class="text-wabi-primary text-xl font-bold text-center flex-1">記帳紀錄</h1>
+                    <button id="prev-period-btn" class="w-10 h-10 flex items-center justify-center text-wabi-text-secondary hover:text-wabi-primary hover:bg-wabi-bg rounded-full transition-colors">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <h1 id="records-header-title" class="text-wabi-primary text-lg font-bold text-center flex-1 cursor-pointer hover:bg-wabi-bg py-1 rounded transition-colors mx-2"></h1>
+                    <button id="next-period-btn" class="w-10 h-10 flex items-center justify-center text-wabi-text-secondary hover:text-wabi-primary hover:bg-wabi-bg rounded-full transition-colors">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
                 </div>
 
                 <!-- Period Filter (Date Filter) - New Row -->
@@ -28,11 +34,11 @@ export class RecordsPage {
                         <button data-type="expense" class="type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">支出</button>
                         <button data-type="income" class="type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">收入</button>
                     </div>
-                    <button id="records-category-filter-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-white px-4 border border-gray-200">
+                    <button id="records-category-filter-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-wabi-surface px-4 border border-wabi-border">
                         <p class="text-wabi-text-primary text-sm font-medium leading-normal">類別</p>
                         <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
                     </button>
-                    <button id="records-account-filter-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-white px-4 border border-gray-200 hidden">
+                    <button id="records-account-filter-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-wabi-surface px-4 border border-wabi-border hidden">
                         <p class="text-wabi-text-primary text-sm font-medium leading-normal">帳戶</p>
                         <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
                     </button>

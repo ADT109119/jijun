@@ -12,83 +12,91 @@ export class AddPage {
         const debtEnabled = await this.app.dataService.getSetting('debtManagementEnabled');
         const showDebtBtn = !!debtEnabled?.value;
 
+        // Use a fixed container to ensure perfect pinning to the viewport (considering bottom nav on mobile)
         this.app.appContainer.innerHTML = `
-            <div class="page active p-4 pb-48 md:pb-8 max-w-3xl mx-auto"> <!-- Add padding-bottom to avoid overlap with fixed keypad -->
-                <!-- Header -->
-                <div class="flex items-center pb-2 justify-between">
-                    <button id="add-page-close-btn" class="flex size-12 shrink-0 items-center justify-center">
-                        <i class="fa-solid fa-xmark text-2xl text-wabi-text-primary"></i>
-                    </button>
-                    <h2 class="text-lg font-bold flex-1 text-center">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
-                    <div class="flex items-center gap-2">
-                        ${showDebtBtn ? `
-                            <button id="toggle-debt-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-gray-100" title="標記為欠款">
-                                <i class="fa-solid fa-handshake text-lg"></i>
+            <div id="add-page-wrapper" class="fixed top-0 left-0 right-0 bottom-20 md:bottom-0 md:left-64 flex flex-col overflow-hidden bg-wabi-bg z-20">
+                <!-- Scrollable Content Area -->
+                <div class="flex-1 overflow-y-auto">
+                    <div class="page active p-4 max-w-3xl mx-auto">
+                        <!-- Header -->
+                        <div class="flex items-center pb-2 justify-between">
+                            <button id="add-page-close-btn" class="flex size-12 shrink-0 items-center justify-center">
+                                <i class="fa-solid fa-xmark text-2xl text-wabi-text-primary"></i>
                             </button>
-                        ` : ''}
-                        ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
+                            <h2 class="text-lg font-bold flex-1 text-center">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
+                            <div class="flex items-center gap-2">
+                                ${showDebtBtn ? `
+                                    <button id="toggle-debt-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="標記為欠款">
+                                        <i class="fa-solid fa-handshake text-lg"></i>
+                                    </button>
+                                ` : ''}
+                                ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
+                            </div>
+                        </div>
+
+                        <!-- Debt Panel (hidden by default) -->
+                        <div id="debt-panel" class="hidden bg-wabi-primary/10 rounded-lg p-4 mb-4 border border-wabi-primary/30">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-wabi-primary"><i class="fa-solid fa-handshake mr-2"></i>欠款標記</span>
+                                <button id="close-debt-panel" class="text-wabi-text-secondary hover:text-wabi-primary">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="flex h-9 w-full items-center justify-center rounded-lg bg-wabi-primary/5 p-1 mb-3">
+                                <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">別人欠我</button>
+                                <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
+                            </div>
+                            <select id="debt-contact-select" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm">
+                                <option value="">選擇聯絡人...</option>
+                            </select>
+                            <p class="text-xs text-wabi-text-secondary mt-2">儲存時將同時建立欠款記錄</p>
+                        </div>
+
+                        <!-- Type Switcher & Amount -->
+                        <div class="px-4">
+                            <div class="flex h-11 w-full items-center justify-center rounded-lg bg-wabi-primary/5 p-1 mb-4">
+                                <button id="add-type-expense" class="flex-1 h-full rounded-md text-sm font-medium">支出</button>
+                                <button id="add-type-income" class="flex-1 h-full rounded-md text-sm font-medium">收入</button>
+                            </div>
+                            <div class="flex items-center justify-between py-4">
+                                <div id="add-selected-category" class="flex items-center gap-4">
+                                    <div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12">
+                                        <i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i>
+                                    </div>
+                                    <p class="text-lg font-medium">選擇分類</p>
+                                </div>
+                                <div id="add-amount-display" class="text-wabi-expense tracking-light text-5xl font-bold">$0</div>
+                            </div>
+                        </div>
+
+                        <!-- Categories -->
+                        <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
+                        <div class="h-8"></div> <!-- Spacer for better scrolling end experience -->
                     </div>
                 </div>
 
-                <!-- Debt Panel (hidden by default) -->
-                <div id="debt-panel" class="hidden bg-wabi-primary/10 rounded-lg p-4 mb-4 border border-wabi-primary/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="font-medium text-wabi-primary"><i class="fa-solid fa-handshake mr-2"></i>欠款標記</span>
-                        <button id="close-debt-panel" class="text-wabi-text-secondary hover:text-wabi-primary">
-                            <i class="fa-solid fa-times"></i>
+                <!-- Note, Date, and Keypad -->
+                <div id="keypad-container" class="shrink-0 w-full max-w-3xl mx-auto md:border-x md:border-t md:border-wabi-border md:rounded-t-xl md:shadow-[0_0_15px_rgba(0,0,0,0.05)] bg-wabi-keypad/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
+                    <!-- Account Selector & Quick Select Container -->
+                    <div class="flex items-start px-4 pt-2 gap-2">
+                        <div id="account-selector-container" class="w-1/4 shrink-0"></div>
+                        <div id="quick-select-container" class="w-3/4 grow hidden"></div>
+                    </div>
+
+                    <div class="flex items-center px-4 py-2 gap-2">
+                        <label class="relative flex items-center gap-2 p-2 rounded-lg bg-wabi-surface/50">
+                            <i class="fa-solid fa-calendar-days text-wabi-text-secondary"></i>
+                            <span id="add-date-display" class="text-sm font-medium">${formatDate(formatDateToString(new Date()), 'short')}</span>
+                            <input type="date" id="add-date-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                        </label>
+                        <input id="add-note-input" class="w-full rounded-lg border-wabi-border bg-wabi-surface/80 placeholder:text-wabi-text-secondary focus:border-wabi-primary focus:ring-wabi-primary" placeholder="新增備註" type="text"/>
+                        <button id="keypad-toggle-btn" class="p-2 rounded-lg bg-wabi-surface/50">
+                            <i class="fa-solid fa-keyboard"></i>
                         </button>
                     </div>
-                    <div class="flex h-9 w-full items-center justify-center rounded-lg bg-white/80 p-1 mb-3">
-                        <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-white">別人欠我</button>
-                        <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
+                    <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-wabi-keypad/80">
+                        ${['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
                     </div>
-                    <select id="debt-contact-select" class="w-full p-2 bg-white border border-wabi-border rounded-lg text-sm">
-                        <option value="">選擇聯絡人...</option>
-                    </select>
-                    <p class="text-xs text-wabi-text-secondary mt-2">儲存時將同時建立欠款記錄</p>
-                </div>
-
-                <!-- Type Switcher & Amount -->
-                <div class="px-4">
-                    <div class="flex h-11 w-full items-center justify-center rounded-lg bg-gray-200/80 p-1 mb-4">
-                        <button id="add-type-expense" class="flex-1 h-full rounded-md text-sm font-medium">支出</button>
-                        <button id="add-type-income" class="flex-1 h-full rounded-md text-sm font-medium">收入</button>
-                    </div>
-                    <div class="flex items-center justify-between py-4">
-                        <div id="add-selected-category" class="flex items-center gap-4">
-                            <div class="flex items-center justify-center rounded-full bg-gray-200 shrink-0 size-12">
-                                <i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i>
-                            </div>
-                            <p class="text-lg font-medium">選擇分類</p>
-                        </div>
-                        <div id="add-amount-display" class="text-wabi-expense tracking-light text-5xl font-bold">$0</div>
-                    </div>
-                </div>
-
-                <!-- Categories -->
-                <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
-            </div>
-            <!-- Note, Date, and Keypad -->
-            <div id="keypad-container" class="fixed bottom-20 md:bottom-0 left-0 md:left-64 right-0 md:max-w-3xl md:mx-auto md:border-x md:border-t md:border-wabi-border md:rounded-t-xl md:shadow-[0_0_15px_rgba(0,0,0,0.05)] bg-gray-200/80 text-wabi-primary z-20 transform translate-y-full transition-transform duration-300 ease-in-out">
-                <!-- Account Selector & Quick Select Container -->
-                <div class="flex items-start px-4 pt-2 gap-2">
-                    <div id="account-selector-container" class="w-1/4 shrink-0"></div>
-                    <div id="quick-select-container" class="w-3/4 grow hidden"></div>
-                </div>
-
-                <div class="flex items-center px-4 py-2 gap-2">
-                    <label class="relative flex items-center gap-2 p-2 rounded-lg bg-white/50">
-                        <i class="fa-solid fa-calendar-days text-wabi-text-secondary"></i>
-                        <span id="add-date-display" class="text-sm font-medium">${formatDate(formatDateToString(new Date()), 'short')}</span>
-                        <input type="date" id="add-date-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                    </label>
-                    <input id="add-note-input" class="w-full rounded-lg border-gray-300 bg-white/80 placeholder:text-wabi-text-secondary focus:border-wabi-primary focus:ring-wabi-primary" placeholder="新增備註" type="text"/>
-                    <button id="keypad-toggle-btn" class="p-2 rounded-lg bg-white/50">
-                        <i class="fa-solid fa-keyboard"></i>
-                    </button>
-                </div>
-                <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-gray-200/80">
-                    ${['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
                 </div>
             </div>
         `;
@@ -190,13 +198,13 @@ export class AddPage {
                 btn.addEventListener('click', () => {
                     debtType = btn.id === 'debt-type-receivable-add' ? 'receivable' : 'payable';
                     document.querySelectorAll('.debt-add-type-btn').forEach(b => {
-                        b.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'text-white');
+                        b.classList.remove('bg-wabi-income', 'bg-wabi-expense', 'text-wabi-surface');
                         b.classList.add('text-wabi-text-secondary');
                     });
                     if (debtType === 'receivable') {
-                        btn.classList.add('bg-wabi-income', 'text-white');
+                        btn.classList.add('bg-wabi-income', 'text-wabi-surface');
                     } else {
-                        btn.classList.add('bg-wabi-expense', 'text-white');
+                        btn.classList.add('bg-wabi-expense', 'text-wabi-surface');
                     }
                     btn.classList.remove('text-wabi-text-secondary');
                 });
@@ -263,13 +271,13 @@ export class AddPage {
 
         const updateTypeUI = () => {
             if (currentType === 'expense') {
-                expenseBtn.classList.add('bg-wabi-expense', 'text-white', 'shadow-sm');
-                incomeBtn.classList.remove('bg-wabi-income', 'text-white', 'shadow-sm');
+                expenseBtn.classList.add('bg-wabi-expense', 'text-wabi-surface', 'shadow-sm');
+                incomeBtn.classList.remove('bg-wabi-income', 'text-wabi-surface', 'shadow-sm');
                 amountDisplay.classList.remove('text-wabi-income');
                 amountDisplay.classList.add('text-wabi-expense');
             } else {
-                incomeBtn.classList.add('bg-wabi-income', 'text-white', 'shadow-sm');
-                expenseBtn.classList.remove('bg-wabi-expense', 'text-white', 'shadow-sm');
+                incomeBtn.classList.add('bg-wabi-income', 'text-wabi-surface', 'shadow-sm');
+                expenseBtn.classList.remove('bg-wabi-expense', 'text-wabi-surface', 'shadow-sm');
                 amountDisplay.classList.remove('text-wabi-expense');
                 amountDisplay.classList.add('text-wabi-income');
             }
@@ -308,7 +316,7 @@ export class AddPage {
             });
             const manageBtn = document.createElement('button');
             manageBtn.className = 'flex flex-col items-center gap-1 p-2 rounded-lg border-2 border-dashed border-wabi-border hover:border-wabi-primary';
-            manageBtn.innerHTML = `<div class="flex size-12 items-center justify-center rounded-full bg-wabi-bg"><i class="fa-solid fa-gear text-2xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
+            manageBtn.innerHTML = `<div class="flex size-12 items-center justify-center rounded-full bg-wabi-text-secondary/10"><i class="fa-solid fa-gear text-2xl text-wabi-text-secondary"></i></div><p class="text-xs text-center text-wabi-text-secondary">管理</p>`;
             manageBtn.addEventListener('click', () => this.app.categoryManager.showManageCategoriesModal(currentType, renderCategories));
             categoryGrid.appendChild(manageBtn);
         };
@@ -324,7 +332,7 @@ export class AddPage {
                     <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
                 `;
             } else {
-                selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-gray-200 shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`;
+                selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`;
             }
         };
 
@@ -478,10 +486,10 @@ export class AddPage {
                         // Show debt info panel
                         const debtInfoPanel = document.createElement('div');
                         debtInfoPanel.id = 'debt-info-panel';
-                        debtInfoPanel.className = 'bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200';
+                        debtInfoPanel.className = 'bg-wabi-primary/5 rounded-lg p-4 mb-4 border border-wabi-primary/25';
                         debtInfoPanel.innerHTML = `
                             <div class="flex items-center justify-between mb-3">
-                                <span class="font-medium text-orange-700">
+                                <span class="font-medium text-wabi-primary">
                                     <i class="fa-solid fa-handshake mr-2"></i>關聯欠款
                                 </span>
                                 ${debt.settled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-2 py-1 rounded">已還清</span>' : ''}
@@ -490,41 +498,41 @@ export class AddPage {
                                 <!-- Editable debt info -->
                                 <div class="space-y-2 mb-3">
                                     <div class="flex gap-2">
-                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-wabi-border text-wabi-text-secondary'}">
                                             別人欠我
                                         </button>
-                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-orange-300 text-orange-600'}">
+                                        <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-wabi-border text-wabi-text-secondary'}">
                                             我欠別人
                                         </button>
                                     </div>
-                                    <select id="debt-contact-edit" class="w-full p-2 border border-orange-300 rounded-lg text-sm bg-white">
+                                    <select id="debt-contact-edit" class="w-full p-2 border border-wabi-border rounded-lg text-sm bg-wabi-surface text-wabi-text-primary">
                                         ${contactOptions}
                                     </select>
                                 </div>
                                 <!-- Progress bar -->
                                 <div class="mb-3">
-                                    <div class="flex justify-between text-xs text-orange-600 mb-1">
+                                    <div class="flex justify-between text-xs text-wabi-text-secondary mb-1">
                                         <span>剩餘：${formatCurrency(remainingAmount)}</span>
                                         <span>${paidPercent}% 已還</span>
                                     </div>
-                                    <div class="w-full bg-orange-200 rounded-full h-2">
+                                    <div class="w-full bg-wabi-border rounded-full h-2">
                                         <div class="bg-wabi-income h-2 rounded-full" style="width: ${paidPercent}%"></div>
                                     </div>
                                 </div>
                                 <!-- Action buttons -->
                                 <div class="flex gap-2">
-                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-white bg-wabi-primary rounded-lg">
+                                    <button id="partial-pay-btn" class="flex-1 py-2 text-sm font-medium text-wabi-surface bg-wabi-primary rounded-lg">
                                         <i class="fa-solid fa-coins mr-1"></i>還款
                                     </button>
-                                    <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-red-600 border border-red-300 rounded-lg bg-white">
+                                    <button id="remove-debt-link-btn" class="py-2 px-3 text-sm font-medium text-wabi-expense border border-wabi-expense/40 rounded-lg bg-wabi-surface">
                                         <i class="fa-solid fa-unlink"></i>
                                     </button>
                                 </div>
                             ` : `
-                                <div class="text-sm text-orange-600">
-                                    <p><strong>聯絡人：</strong>${contactName}</p>
-                                    <p><strong>類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
-                                    <p><strong>原始金額：</strong>${formatCurrency(originalAmount)}</p>
+                                <div class="text-sm text-wabi-text-secondary">
+                                    <p><strong class="text-wabi-text-primary">聯絡人：</strong>${contactName}</p>
+                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
+                                    <p><strong class="text-wabi-text-primary">原始金額：</strong>${formatCurrency(originalAmount)}</p>
                                 </div>
                             `}
                         `;
@@ -689,14 +697,15 @@ export class AddPage {
 
         const specialClasses = {
             'save': 'row-span-2 bg-wabi-accent text-wabi-primary',
-            'ac': 'bg-gray-300/80',
+            'ac': 'bg-wabi-border text-wabi-text-primary',
+            'backspace': 'text-wabi-text-primary',
             '': 'bg-transparent'
-        }[key] || '';
+        }[key] || 'text-wabi-text-primary';
 
         if (key === '') return `<div class="${specialClasses}"></div>`;
 
         return `
-            <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-gray-300/80">
+            <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-black/5">
                 ${content}
             </button>
         `;
@@ -773,10 +782,10 @@ export class AddPage {
                 </div>
 
                 <div class="flex gap-3">
-                    <button id="confirm-payment-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-white font-bold py-3 rounded-lg transition-colors">
+                    <button id="confirm-payment-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
                         確認
                     </button>
-                    <button id="cancel-payment-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    <button id="cancel-payment-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
                         取消
                     </button>
                 </div>

@@ -283,37 +283,37 @@ export class PluginManager {
               <div class="flex items-start gap-3 py-2">
                 <div class="text-wabi-primary shrink-0 mt-0.5"><i class="fa-solid ${info.icon}"></i></div>
                 <div>
-                  <p class="text-sm font-medium text-gray-800">${this._escapeHTML(info.label)}</p>
-                  <p class="text-xs text-gray-500">${this._escapeHTML(info.desc)}</p>
+                  <p class="text-sm font-medium text-wabi-text-primary">${this._escapeHTML(info.label)}</p>
+                  <p class="text-xs text-wabi-text-secondary">${this._escapeHTML(info.desc)}</p>
                 </div>
               </div>
             `;
           }).join('')
-        : '<p class="text-sm text-gray-500 py-2">此插件未聲明任何特殊權限。</p>';
+        : '<p class="text-sm text-wabi-text-secondary py-2">此插件未聲明任何特殊權限。</p>';
 
       const modal = document.createElement('div');
-      modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+      modal.className = 'fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animation-fade-in';
       modal.innerHTML = `
-        <div class="bg-white rounded-xl max-w-sm w-full shadow-xl transform transition-all scale-100 overflow-hidden">
+        <div class="bg-wabi-surface rounded-xl max-w-sm w-full shadow-xl transform transition-all scale-100 overflow-hidden border border-wabi-border">
           <div class="p-5">
             <div class="flex items-center gap-3 mb-4">
               <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl">
                 <i class="fa-solid ${meta.icon || 'fa-puzzle-piece'}"></i>
               </div>
               <div>
-                <h3 class="text-lg font-bold text-gray-800">${safeName}</h3>
-                <p class="text-xs text-gray-500">${safeAuthor}</p>
+                <h3 class="text-lg font-bold text-wabi-text-primary">${safeName}</h3>
+                <p class="text-xs text-wabi-text-secondary">${safeAuthor}</p>
               </div>
             </div>
-            ${safeDesc ? `<p class="text-sm text-gray-600 mb-4">${safeDesc}</p>` : ''}
-            <div class="bg-gray-50 rounded-lg p-3 mb-4">
-              <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">${isUpdate ? '此更新新增了以下權限' : '此插件將要求以下權限'}</h4>
-              <div class="divide-y divide-gray-100">${permListHtml}</div>
+            ${safeDesc ? `<p class="text-sm text-wabi-text-secondary mb-4">${safeDesc}</p>` : ''}
+            <div class="bg-wabi-bg rounded-lg p-3 mb-4 border border-wabi-border">
+              <h4 class="text-xs font-bold text-wabi-text-secondary uppercase tracking-wider mb-2">${isUpdate ? '此更新新增了以下權限' : '此插件將要求以下權限'}</h4>
+              <div class="divide-y divide-wabi-border">${permListHtml}</div>
             </div>
           </div>
-          <div class="flex border-t border-gray-200">
-            <button id="pm-perm-cancel" class="flex-1 py-3 text-gray-500 font-medium hover:bg-gray-50 transition-colors">取消</button>
-            <button id="pm-perm-accept" class="flex-1 py-3 text-white font-medium bg-wabi-primary hover:bg-wabi-primary/90 transition-colors">${isUpdate ? '同意並更新' : '安裝'}</button>
+          <div class="flex border-t border-wabi-border">
+            <button id="pm-perm-cancel" class="flex-1 py-3 text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors border-r border-wabi-border">取消</button>
+            <button id="pm-perm-accept" class="flex-1 py-3 text-wabi-surface font-medium bg-wabi-primary hover:bg-wabi-primary/90 transition-colors">${isUpdate ? '同意並更新' : '安裝'}</button>
           </div>
         </div>
       `;
@@ -569,11 +569,11 @@ export class PluginManager {
       const safeMessage = this._escapeHTML(message);
 
       const modal = document.createElement('div');
-      modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+      modal.className = 'fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animation-fade-in';
       modal.innerHTML = `
-          <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100">
-              <h3 class="text-xl font-bold text-gray-800 mb-2">${safeTitle}</h3>
-              <p class="text-gray-600 mb-6">${safeMessage}</p>
+          <div class="bg-wabi-surface rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 border border-wabi-border">
+              <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${safeTitle}</h3>
+              <p class="text-wabi-text-secondary mb-6">${safeMessage}</p>
               <div class="flex gap-3 justify-end">
                   ${buttons}
               </div>
@@ -586,8 +586,8 @@ export class PluginManager {
   showConfirmModal(title, message) {
       return new Promise((resolve) => {
           const btns = `
-              <button class="px-4 py-2 rounded-lg text-gray-500 hover:bg-gray-100 font-medium transition-colors" id="pm-modal-cancel">取消</button>
-              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-white hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-confirm">確定</button>
+              <button class="px-4 py-2 rounded-lg text-wabi-text-secondary hover:bg-wabi-bg font-medium transition-colors border border-wabi-border" id="pm-modal-cancel">取消</button>
+              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-wabi-surface hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-confirm">確定</button>
           `;
           const modal = this.createModalBase(title, message, btns);
           
@@ -604,7 +604,7 @@ export class PluginManager {
   showAlertModal(title, message) {
       return new Promise((resolve) => {
           const btns = `
-              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-white hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-ok">確定</button>
+              <button class="px-4 py-2 rounded-lg bg-wabi-primary text-wabi-surface hover:bg-opacity-90 font-medium transition-colors" id="pm-modal-ok">確定</button>
           `;
           const modal = this.createModalBase(title, message, btns);
           

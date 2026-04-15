@@ -15,6 +15,16 @@ body {
     }
 }
 
+select {
+    background-color: transparent;
+    color: inherit;
+}
+
+select option {
+    background-color: rgb(var(--theme-surface, 255 255 255));
+    color: rgb(var(--theme-text-primary, 45 55 72));
+}
+
 /* Page container styles */
 .page {
     display: none; /* Hidden by default */
@@ -34,7 +44,7 @@ body {
 
 /* Bottom Navigation active state */
 .nav-item.active {
-    color: #334A52; /* wabi-primary */
+    color: rgb(var(--theme-primary));
 }
 
 /* Add Record Page - Keyboard button active state */
@@ -89,7 +99,7 @@ body {
 .budget-wave-container {
     position: relative;
     height: 150px;
-    background-color: #f0f4f8;
+    background-color: rgb(var(--theme-bg, 245 245 243));
     border-radius: 0.75rem;
     overflow: hidden;
     display: flex;
@@ -109,7 +119,7 @@ body {
     right: 0;
     bottom: 0;
     height: 100%;
-    background-color: #6A9C89; /* Fallback color */
+    background-color: rgb(var(--theme-income, 106 156 137));
     transition: top 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -134,17 +144,27 @@ body {
 }
 
 .budget-wave::before {
-    /* A smooth sine wave SVG */
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 250 10, 250 30, 500 20 S 750 10, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
-    background-size: 1000px 40px;
+    /* A smooth sine wave mask */
+    background-color: rgb(var(--theme-income, 106 156 137));
+    -webkit-mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 250 10, 250 30, 500 20 S 750 10, 1000 20 L 1000 40 L 0 40 Z' fill='black'/%3e%3c/svg%3e");
+    mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 250 10, 250 30, 500 20 S 750 10, 1000 20 L 1000 40 L 0 40 Z' fill='black'/%3e%3c/svg%3e");
+    -webkit-mask-size: 1000px 40px;
+    mask-size: 1000px 40px;
+    -webkit-mask-repeat: repeat-x;
+    mask-repeat: repeat-x;
     animation: wave-scroll 7s linear infinite;
     z-index: 2;
 }
 
 .budget-wave::after {
-    /* A slightly different wave */
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 200 30, 300 10, 500 20 S 800 30, 1000 20 L 1000 40 L 0 40 Z' fill='%236A9C89'/%3e%3c/svg%3e");
-    background-size: 1000px 40px;
+    /* A slightly different wave mask */
+    background-color: rgb(var(--theme-income, 106 156 137));
+    -webkit-mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 200 30, 300 10, 500 20 S 800 30, 1000 20 L 1000 40 L 0 40 Z' fill='black'/%3e%3c/svg%3e");
+    mask-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 40'%3e%3cpath d='M0 20 C 200 30, 300 10, 500 20 S 800 30, 1000 20 L 1000 40 L 0 40 Z' fill='black'/%3e%3c/svg%3e");
+    -webkit-mask-size: 1000px 40px;
+    mask-size: 1000px 40px;
+    -webkit-mask-repeat: repeat-x;
+    mask-repeat: repeat-x;
     animation: wave-scroll 5s linear infinite reverse;
     z-index: 1;
     opacity: 0.5;

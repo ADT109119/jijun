@@ -35,6 +35,11 @@
 
     <!-- Google Identity Services SDK (for OAuth) -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <!-- QRCode.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <!-- HTML5 QRCode Scanner -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
     <link rel="stylesheet" href="src/css/main.css">
     <script>
@@ -43,15 +48,16 @@
             theme: {
                 extend: {
                     colors: {
-                        "wabi-bg": "#F5F5F3",
-                        "wabi-primary": "#334A52",
-                        "wabi-expense": "#B95A5A",
-                        "wabi-income": "#6A9C89",
-                        "wabi-accent": "#E2B67A",
-                        "wabi-text-primary": "#2D3748",
-                        "wabi-text-secondary": "#718096",
-                        "wabi-surface": "#FFFFFF",
-                        "wabi-border": "#E2E8F0",
+                        "wabi-bg": "rgb(var(--theme-bg, 245 245 243) / <alpha-value>)",
+                        "wabi-primary": "rgb(var(--theme-primary, 51 74 82) / <alpha-value>)",
+                        "wabi-expense": "rgb(var(--theme-expense, 185 90 90) / <alpha-value>)",
+                        "wabi-income": "rgb(var(--theme-income, 106 156 137) / <alpha-value>)",
+                        "wabi-accent": "rgb(var(--theme-accent, 226 182 122) / <alpha-value>)",
+                        "wabi-text-primary": "rgb(var(--theme-text-primary, 45 55 72) / <alpha-value>)",
+                        "wabi-text-secondary": "rgb(var(--theme-text-secondary, 113 128 150) / <alpha-value>)",
+                        "wabi-surface": "rgb(var(--theme-surface, 255 255 255) / <alpha-value>)",
+                        "wabi-border": "rgb(var(--theme-border, 226 232 240) / <alpha-value>)",
+                        "wabi-keypad": "rgb(var(--theme-keypad, 229 231 235) / <alpha-value>)",
                     },
                     fontFamily: {
                         "display": ["Inter", "Noto Sans TC", "sans-serif"]
@@ -68,7 +74,7 @@
     </div>
 
     <!-- Bottom Navigation Bar -->
-    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/80 backdrop-blur-sm border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto">
+    <nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 bg-wabi-surface/95 backdrop-blur-md border-t border-wabi-border h-20 z-40 flex justify-around items-center md:top-0 md:w-64 md:h-screen md:flex-col md:justify-start md:border-t-0 md:border-r md:pt-8 md:items-stretch md:overflow-y-auto">
         <div class="hidden md:flex items-center justify-center mb-4 px-4">
             <img src="icon/icon.png" alt="輕鬆記帳" class="w-8 h-8 mr-2 rounded-lg shadow-sm">
             <h1 class="text-xl font-bold text-wabi-primary">輕鬆記帳 2.0</h1>

@@ -29,6 +29,11 @@ export class RecordsListManager {
             this.container.querySelector('#records-account-filter-btn').classList.remove('hidden');
         }
 
+        // Initialize custom dates with current month so arrows work immediately
+        const initialRange = getDateRange('month');
+        this.filters.customStartDate = initialRange.startDate;
+        this.filters.customEndDate = initialRange.endDate;
+
         this.modalsContainer = this.container.querySelector('#records-modals-container');
         this.setupEventListeners();
         await this.loadAndRenderRecords();
@@ -42,11 +47,22 @@ export class RecordsListManager {
                     this.showDateRangeModal();
                 } else {
                     this.filters.period = period;
+                    const newRange = getDateRange(period);
+                    this.filters.customStartDate = newRange.startDate;
+                    this.filters.customEndDate = newRange.endDate;
                     this.updatePeriodButtons();
                     this.loadAndRenderRecords();
                 }
             }
         });
+
+        const prevBtn = this.container.querySelector('#prev-period-btn');
+        const nextBtn = this.container.querySelector('#next-period-btn');
+        const headerTitle = this.container.querySelector('#records-header-title');
+
+        if (prevBtn) prevBtn.addEventListener('click', () => this.shiftDateRange(-1));
+        if (nextBtn) nextBtn.addEventListener('click', () => this.shiftDateRange(1));
+        if (headerTitle) headerTitle.addEventListener('click', () => this.showDateRangeModal());
 
         this.container.querySelector('#records-type-filter').addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
@@ -90,6 +106,91 @@ export class RecordsListManager {
         });
     }
 
+    shiftDateRange(direction) {
+        // Shift month by direction (-1 or 1)
+        if (!this.filters.customStartDate) {
+            const range = getDateRange('month');
+            this.filters.customStartDate = range.startDate;
+            this.filters.customEndDate = range.endDate;
+        }
+
+        const currentStart = new Date(this.filters.customStartDate);
+
+        let newStart, newEnd;
+        if (this.filters.period === 'year') {
+            newStart = new Date(currentStart.getFullYear() + direction, 0, 1);
+            newEnd = new Date(currentStart.getFullYear() + direction, 11, 31);
+        } else if (this.filters.period === 'week') {
+            newStart = new Date(currentStart);
+            newStart.setDate(newStart.getDate() + (direction * 7));
+            newEnd = new Date(newStart);
+            newEnd.setDate(newStart.getDate() + 6);
+        } else {
+            // Default to month shifting for 'month' or 'custom'
+            newStart = new Date(currentStart.getFullYear(), currentStart.getMonth() + direction, 1);
+            newEnd = new Date(currentStart.getFullYear(), currentStart.getMonth() + direction + 1, 0);
+        }
+
+        const formatLocal = (d) => {
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        };
+
+        this.filters.customStartDate = formatLocal(newStart);
+        this.filters.customEndDate = formatLocal(newEnd);
+
+        // When using arrows, if we are in custom mode, we stay in custom mode.
+        // If we were in month/year/week, we stay in that mode but the dates are shifted.
+        // However, standard getDateRange() is absolute (current month/week).
+        // So shifting implies we switch to "custom" conceptually, but visually we can keep the current period highlighted
+        // or switch to custom. Let's switch to custom to be accurate.
+        this.filters.period = 'custom';
+        this.updatePeriodButtons();
+
+        this.loadAndRenderRecords();
+    }
+
+    updateHeaderTitle() {
+        const titleEl = this.container.querySelector('#records-header-title');
+        if (!titleEl) return;
+
+        const startStr = this.filters.customStartDate;
+        const endStr = this.filters.customEndDate;
+        if (!startStr || !endStr) {
+            titleEl.textContent = '記帳紀錄';
+            return;
+        }
+
+        const start = new Date(startStr);
+        const end = new Date(endStr);
+        const today = new Date();
+        const startY = start.getFullYear();
+        const startM = start.getMonth() + 1;
+        const startD = start.getDate();
+        const endY = end.getFullYear();
+        const endM = end.getMonth() + 1;
+        const endD = end.getDate();
+
+        // 判斷是否為「某個月的月初到月底」或是「某個月的月初到該月今日(如果是當月的話)」
+        const isFirstDay = startD === 1;
+        const isLastDay = endD === new Date(endY, endM, 0).getDate();
+        const isToday = endY === today.getFullYear() && endM === (today.getMonth() + 1) && endD === today.getDate();
+
+        if (startY === endY && startM === endM && isFirstDay && (isLastDay || isToday)) {
+            // 顯示該月份
+            titleEl.textContent = `${startY}年${startM}月`;
+        } else {
+            // 顯示完整範圍
+            if (startY === endY && startM === endM) {
+                titleEl.textContent = `${startY}年${startM}月${startD}號 ~ ${endD}號`;
+            } else if (startY === endY) {
+                titleEl.textContent = `${startY}年${startM}月${startD}號 ~ ${endM}月${endD}號`;
+            } else {
+                titleEl.textContent = `${startY}年${startM}月${startD}號 ~ ${endY}年${endM}月${endD}號`;
+            }
+        }
+    }
+
     async loadAndRenderRecords() {
         const listContainer = this.container.querySelector('#records-list-container');
         listContainer.innerHTML = '<p class="text-center text-wabi-text-secondary py-8">載入中...</p>';
@@ -98,9 +199,17 @@ export class RecordsListManager {
             ? { startDate: this.filters.customStartDate, endDate: this.filters.customEndDate }
             : getDateRange(this.filters.period);
 
+        // Ensure custom dates are synced back if period isn't custom
+        if (this.filters.period !== 'custom') {
+            this.filters.customStartDate = dateRange.startDate;
+            this.filters.customEndDate = dateRange.endDate;
+        }
+
+        this.updateHeaderTitle();
+
         const records = await this.dataService.getRecords({
-            startDate: dateRange.startDate, 
-            endDate: dateRange.endDate 
+            startDate: this.filters.customStartDate,
+            endDate: this.filters.customEndDate
         });
         this.records = records; // Store all records for the period
 
@@ -155,6 +264,11 @@ export class RecordsListManager {
         // 3. Calculate summary from the offset list and update UI
         // Need to consider debt status for correct calculation
         const summary = recordsForSummary.reduce((acc, r) => {
+            // Exclude debt collection and repayment categories from summary calculation
+            if (r.category === 'debt_collection' || r.category === 'debt_repayment') {
+                return acc;
+            }
+
             let effectiveAmount = r.amount;
             
             // Check if record has associated debt and adjust amount
@@ -164,14 +278,17 @@ export class RecordsListManager {
                 const isReceivable = debt.type === 'receivable'; // 別人欠我
                 
                 // Logic:
-                // - 支出 + 別人欠我 (代墊): 還清後 $0 (錢回來了)
+                // - 支出 + 別人欠我 (代墊): 還清後扣除別人欠我的金額 (剩下自己的開銷)
                 // - 收入 + 別人欠我: 初始 $0，還清後原額 (收到錢了)
                 // - 支出 + 我欠別人: 還清後原額 (真的花了)
                 // - 收入 + 我欠別人 (先收): 還清後 $0 (還回去了)
                 
                 if (r.type === 'expense' && isReceivable) {
-                    // 代墊：還清後不計入支出
-                    effectiveAmount = isSettled ? 0 : r.amount;
+                    // 代墊：還清後扣除代墊金額，不計入自己支出
+                    // 因為 r.amount 是總金額 (包含自己的份 + 別人的份)
+                    // debt.originalAmount 則是別人的份
+                    const myExpense = Math.max(0, r.amount - (debt.originalAmount || 0));
+                    effectiveAmount = isSettled ? myExpense : r.amount;
                 } else if (r.type === 'income' && isReceivable) {
                     // 別人還我：還清後才計入收入
                     effectiveAmount = isSettled ? r.amount : 0;
@@ -276,8 +393,12 @@ export class RecordsListManager {
 
                 let accountName = '';
                 if (this.advancedModeEnabled) {
-                    const account = this.accounts.find(a => a.id === record.accountId);
-                    accountName = account ? account.name : '未指定帳戶';
+                    if (record.accountId) {
+                        const account = this.accounts.find(a => a.id === record.accountId);
+                        accountName = account ? account.name : '未指定帳戶';
+                    } else {
+                        accountName = '現金';
+                    }
                 }
                 
                 // Build amount display based on displayLogic

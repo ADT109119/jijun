@@ -8,7 +8,7 @@ const openDB = (typeof window !== 'undefined' && window.idb?.openDB) || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 9 // Schema version 9: Remove unique constraint for account name (multi-ledger support)
+    this.dbVersion = 10 // Schema version 10: Add themes store
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
@@ -218,6 +218,12 @@ class DataService {
                     accountStore.createIndex('name', 'name', { unique: false });
                 }
             }
+            // Schema version 10: Themes Store
+            if (oldVersion < 10) {
+                if (!db.objectStoreNames.contains('themes')) {
+                    db.createObjectStore('themes', { keyPath: 'id' });
+                }
+            }
           }
         })
         
@@ -271,6 +277,31 @@ class DataService {
       const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
+  }
+
+  // 透過 UUID 尋找指定 Store 的單一紀錄
+  async getByUUID(storeName, uuid) {
+    if (this.useLocalStorage || !this.db) return null;
+    try {
+      const tx = this.db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      if (store.indexNames.contains('uuid')) {
+        const index = store.index('uuid');
+        // IndexedDB 的 index 不直接回傳資料，但 get() 在 idb 封裝裡可以
+        return await index.get(uuid);
+      } else {
+        // Fallback for stores without uuid index
+        let cursor = await store.openCursor();
+        while (cursor) {
+          if (cursor.value.uuid === uuid) return cursor.value;
+          cursor = await cursor.continue();
+        }
+        return null;
+      }
+    } catch (e) {
+      console.warn(`[DataService] getByUUID failed for ${storeName} with uuid ${uuid}:`, e);
+      return null;
+    }
   }
 
   // 轉換舊資料格式
@@ -392,19 +423,6 @@ class DataService {
     }
   }
 
-  // Get by UUID (Generic)
-  async getByUUID(storeName, uuid) {
-    try {
-      if (this.useLocalStorage) return null;
-      const tx = this.db.transaction(storeName, 'readonly');
-      const index = tx.store.index('uuid');
-      return await index.get(uuid);
-    } catch (err) {
-      console.error(`Failed to get by UUID from ${storeName}:`, err);
-      return null;
-    }
-  }
-
   // 獲取記錄
   async getRecords(filters = {}) {
     if (this.useLocalStorage) {
@@ -472,7 +490,7 @@ class DataService {
 
     try {
       // 若更新包含 accountId / debtId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -540,10 +558,10 @@ class DataService {
       const tx = this.db.transaction('records', 'readwrite')
       const store = tx.objectStore('records')
       
-      let uuid = null;
+      // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
+      let recordData = null;
       if (!skipLog) {
-        const record = await store.get(id);
-        uuid = record?.uuid;
+        recordData = await store.get(id);
 
         const shouldDelete = await this.triggerHook('onRecordDeleteBefore', { id });
         if (!shouldDelete) throw new Error('Delete cancelled by plugin');
@@ -552,9 +570,14 @@ class DataService {
       await store.delete(id)
       await tx.done
       
-      if (!skipLog) {
+      if (!skipLog && recordData) {
         await this.triggerHook('onRecordDeleteAfter', { id });
-        await this.logChange('delete', 'records', id, { uuid });
+        // 傳入完整的紀錄資料，讓 logChange 能正確補全 ledgerUuid、accountUuid 等外鍵
+        await this.logChange('delete', 'records', id, {
+          uuid: recordData.uuid,
+          ledgerId: recordData.ledgerId,
+          accountId: recordData.accountId,
+        });
       }
 
       return true
@@ -612,7 +635,7 @@ class DataService {
   async updateRecurringTransaction(id, updates, skipLog = false) {
     try {
       // 若更新包含 accountId，同步更新 accountUuid
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.accountId !== undefined) {
         if (updates.accountId) {
           try {
@@ -627,7 +650,7 @@ class DataService {
       const tx = this.db.transaction('recurring_transactions', 'readwrite');
       const transaction = await tx.store.get(id);
       if (transaction) {
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             if (transaction.uuid) finalUpdates.uuid = transaction.uuid;
@@ -741,23 +764,62 @@ class DataService {
       records: records // Include filtered records in result
     }
 
+    // Pre-fetch debts for effective amount calculation
+    const debtIds = [...new Set(records.filter(r => r.debtId).map(r => r.debtId))];
+    const debtsMap = {};
+    for (const debtId of debtIds) {
+      const debt = await this.getDebt(debtId);
+      if (debt) debtsMap[debtId] = debt;
+    }
+
+    // We shouldn't use forEach to modify variables inside and mutate them, but it works
+    // Let's filter out records with effective amount 0 so they don't show up in lists
+    const adjustedRecords = [];
+
     records.forEach(record => {
-      if (record.type === 'income') {
-        stats.totalIncome += record.amount
-        stats.incomeByCategory[record.category] = 
-          (stats.incomeByCategory[record.category] || 0) + record.amount
-      } else {
-        stats.totalExpense += record.amount
-        stats.expenseByCategory[record.category] = 
-          (stats.expenseByCategory[record.category] || 0) + record.amount
+      let effectiveAmount = record.amount;
+
+      if (record.debtId && debtsMap[record.debtId]) {
+        const debt = debtsMap[record.debtId];
+        const isSettled = debt.settled === true;
+        const isReceivable = debt.type === 'receivable';
+
+        if (record.type === 'expense' && isReceivable) {
+          const myExpense = Math.max(0, record.amount - (debt.originalAmount || 0));
+          effectiveAmount = isSettled ? myExpense : record.amount;
+        } else if (record.type === 'income' && isReceivable) {
+          effectiveAmount = isSettled ? record.amount : 0;
+        } else if (record.type === 'expense' && !isReceivable) {
+          effectiveAmount = isSettled ? record.amount : 0;
+        } else if (record.type === 'income' && !isReceivable) {
+          effectiveAmount = isSettled ? 0 : record.amount;
+        }
       }
 
-      const date = record.date
+      if (effectiveAmount === 0) return; // Skip 0 amounts to prevent them from showing up
+
+      // create a copy of record to override amount
+      const adjustedRecord = { ...record, amount: effectiveAmount };
+      adjustedRecords.push(adjustedRecord);
+
+      if (adjustedRecord.type === 'income') {
+        stats.totalIncome += effectiveAmount
+        stats.incomeByCategory[adjustedRecord.category] =
+          (stats.incomeByCategory[adjustedRecord.category] || 0) + effectiveAmount
+      } else {
+        stats.totalExpense += effectiveAmount
+        stats.expenseByCategory[adjustedRecord.category] =
+          (stats.expenseByCategory[adjustedRecord.category] || 0) + effectiveAmount
+      }
+
+      const date = adjustedRecord.date
       if (!stats.dailyTotals[date]) {
         stats.dailyTotals[date] = { income: 0, expense: 0 }
       }
-      stats.dailyTotals[date][record.type === 'income' ? 'income' : 'expense'] += record.amount
+      stats.dailyTotals[date][adjustedRecord.type === 'income' ? 'income' : 'expense'] += effectiveAmount
     })
+
+    stats.records = adjustedRecords;
 
     return stats
   }
@@ -798,7 +860,7 @@ class DataService {
       let recurring_transactions = [];
       try {
           recurring_transactions = await this.db.getAll('recurring_transactions');
-      } catch (e) {}
+      } catch (e) {console.warn('Silenced error:', e);}
 
       const exportData = {
         version: '2.3.0',
@@ -875,7 +937,7 @@ class DataService {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
               await txR.store.clear();
               await txR.done;
-            } catch (e) {}
+            } catch (e) {console.warn('Silenced error:', e);}
           }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
@@ -908,7 +970,7 @@ class DataService {
                       const txL = this.db.transaction('ledgers', 'readwrite');
                       await txL.store.clear();
                       await txL.done;
-                  } catch(e){}
+                  } catch(e){console.warn('Silenced error:', e);}
               }
               for (const ledger of data.ledgers) {
                   const oldId = ledger.id;
@@ -1170,6 +1232,52 @@ class DataService {
     return await this.getRecords({ allLedgers: true })
   }
 
+  // --- Theme Methods ---
+
+  async getInstalledThemes() {
+    if (this.useLocalStorage || !this.db) return [];
+    try {
+      return await this.db.getAll('themes');
+    } catch (error) {
+      console.error('Failed to get installed themes:', error);
+      return [];
+    }
+  }
+
+  async installTheme(themeData) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('themes', 'readwrite');
+      await tx.store.put(themeData);
+      await tx.done;
+    } catch (error) {
+      console.error('Failed to install theme:', error);
+      throw error;
+    }
+  }
+
+  async uninstallTheme(id) {
+    if (this.useLocalStorage || !this.db) return;
+    try {
+      const tx = this.db.transaction('themes', 'readwrite');
+      await tx.store.delete(id);
+      await tx.done;
+    } catch (error) {
+      console.error('Failed to uninstall theme:', error);
+      throw error;
+    }
+  }
+
+  async getTheme(id) {
+    if (this.useLocalStorage || !this.db) return null;
+    try {
+      return await this.db.get('themes', id);
+    } catch (error) {
+      console.error(`Failed to get theme ${id}:`, error);
+      return null;
+    }
+  }
+
   // --- Sync Methods ---
 
   /**
@@ -1182,16 +1290,35 @@ class DataService {
   async logChange(operation, storeName, recordId, data) {
     if (this.useLocalStorage || !this.db) return;
     try {
-      let syncData = data;
-      // Add ledgerUuid if record has ledgerId but no ledgerUuid
-      if (syncData && syncData.ledgerId !== undefined && !syncData.ledgerUuid) {
-        try {
-          const ltx = this.db.transaction('ledgers', 'readonly');
-          const ledger = await ltx.store.get(syncData.ledgerId);
-          if (ledger && ledger.uuid) {
-            syncData = { ...syncData, ledgerUuid: ledger.uuid };
+      const syncData = data ? { ...data } : null;
+
+      // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+      if (syncData) {
+          // 1. Ledger UUID
+          if (syncData.ledgerId && !syncData.ledgerUuid) {
+              const ledger = await this.db.get('ledgers', syncData.ledgerId);
+              if (ledger?.uuid) syncData.ledgerUuid = ledger.uuid;
           }
-        } catch(e) {}
+          // 2. Account UUID
+          if (syncData.accountId && !syncData.accountUuid) {
+              const account = await this.db.get('accounts', syncData.accountId);
+              if (account?.uuid) syncData.accountUuid = account.uuid;
+          }
+          // 3. Contact UUID (for debts)
+          if (syncData.contactId && !syncData.contactUuid) {
+              const contact = await this.db.get('contacts', syncData.contactId);
+              if (contact?.uuid) syncData.contactUuid = contact.uuid;
+          }
+          // 4. Debt UUID (for records)
+          if (syncData.debtId && !syncData.debtUuid) {
+              const debt = await this.db.get('debts', syncData.debtId);
+              if (debt?.uuid) syncData.debtUuid = debt.uuid;
+          }
+          // 5. Record UUID (for debt payments)
+          if (syncData.recordId && !syncData.recordUuid) {
+              const record = await this.db.get('records', syncData.recordId);
+              if (record?.uuid) syncData.recordUuid = record.uuid;
+          }
       }
 
       const tx = this.db.transaction('sync_log', 'readwrite');
@@ -1214,13 +1341,39 @@ class DataService {
    * @param {number} sinceTimestamp - 起始時間戳
    * @returns {Promise<Array>}
    */
-  async getChangesSince(sinceTimestamp) {
+  async getChangesSince(sinceTimestamp, options = {}) {
     if (this.useLocalStorage || !this.db) return [];
     try {
+      const isSharedSync = !!options.sharedLedgerUuid;
+      const targetUuid = options.sharedLedgerUuid;
+
+      const allLedgers = await this.db.getAll('ledgers');
+      const sharedUuids = new Set(allLedgers.filter(l => l.isShared).map(l => l.uuid));
+
       const tx = this.db.transaction('sync_log', 'readonly');
       const index = tx.store.index('timestamp');
-      const range = IDBKeyRange.lowerBound(sinceTimestamp, true);
-      return await index.getAll(range);
+      // 使用 false (即 >=) 避免漏掉同毫秒的變更
+      // 去重邏輯由 SyncService 的 pushSharedLedgerChanges 負責
+      const range = IDBKeyRange.lowerBound(sinceTimestamp, false);
+      const allChanges = await index.getAll(range);
+
+      return allChanges.filter(log => {
+        let logLedgerUuid = log.data?.ledgerUuid;
+        if (!logLedgerUuid && log.storeName === 'ledgers') {
+             logLedgerUuid = log.data?.uuid || null;
+        }
+
+        if (isSharedSync) {
+            return logLedgerUuid === targetUuid;
+        } else {
+            // For personal sync, filter OUT if it belongs to any shared ledger
+            // 但是「帳本(ledgers)」本身的變更日誌必須放行，否則其他裝置永遠不會知道該帳本變成了共用帳本！
+            if (logLedgerUuid && log.storeName !== 'ledgers') {
+               return !sharedUuids.has(logLedgerUuid);
+            }
+            return true; // global stuff (settings) and ledgers synced personally
+        }
+      });
     } catch (err) {
       console.error('[DataService] getChangesSince error:', err);
       return [];
@@ -1252,9 +1405,55 @@ class DataService {
    * 匯出資料用於同步（回傳物件而非下載檔案）
    * @returns {Promise<object>}
    */
-  async exportDataForSync() {
-    // 匯出時包含所有帳本的資料
-    const records = await this.getRecords({ allLedgers: true });
+  async exportDataForSync(options = {}) {
+    const isSharedSync = !!options.sharedLedgerUuid;
+    const targetUuid = options.sharedLedgerUuid;
+
+    let ledgers = await this.getLedgers();
+    if (isSharedSync) {
+        ledgers = ledgers.filter(l => l.uuid === targetUuid);
+    } else {
+        ledgers = ledgers.filter(l => !l.isShared);
+    }
+
+    const validLedgerIds = new Set(ledgers.map(l => l.id));
+
+    // 建立 UUID 查找表，用於補全所有外鍵 UUID
+    const ledgerUuidMap = new Map(ledgers.map(l => [l.id, l.uuid]));
+
+    // Filter all relevant object stores based on validLedgerIds
+    const rawRecords = (await this.getRecords({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+    const rawAccounts = (await this.getAccounts({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
+    const rawContacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
+    const rawDebts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
+    const recurring_transactions = (await this.getRecurringTransactions({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+
+    // 建立帳戶/聯絡人/欠款 UUID 查找表
+    const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]));
+    const contactUuidMap = new Map(rawContacts.map(c => [c.id, c.uuid]));
+    const debtUuidMap = new Map(rawDebts.map(d => [d.id, d.uuid]));
+
+    // 補全所有外鍵 UUID，確保跨裝置同步時能正確對應
+    const records = rawRecords.map(r => ({
+        ...r,
+        ledgerUuid: r.ledgerUuid || ledgerUuidMap.get(r.ledgerId) || null,
+        accountUuid: r.accountUuid || accountUuidMap.get(r.accountId) || null,
+        debtUuid: r.debtUuid || debtUuidMap.get(r.debtId) || null,
+    }));
+    const accounts = rawAccounts.map(a => ({
+        ...a,
+        ledgerUuid: a.ledgerUuid || ledgerUuidMap.get(a.ledgerId) || null,
+    }));
+    const contacts = rawContacts.map(c => ({
+        ...c,
+        ledgerUuid: c.ledgerUuid || ledgerUuidMap.get(c.ledgerId) || null,
+    }));
+    const debts = rawDebts.map(d => ({
+        ...d,
+        ledgerUuid: d.ledgerUuid || ledgerUuidMap.get(d.ledgerId) || null,
+        contactUuid: d.contactUuid || contactUuidMap.get(d.contactId) || null,
+    }));
+
     const customCategoriesSetting = await this.getSetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
     const categoryOrderSetting = await this.getSetting('category_order');
@@ -1263,12 +1462,9 @@ class DataService {
     const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
-    const accounts = await this.getAccounts({ allLedgers: true });
     const advancedAccountModeEnabled = await this.getSetting('advancedAccountModeEnabled');
     const debtManagementEnabled = await this.getSetting('debtManagementEnabled');
-    const contacts = await this.getContacts({ allLedgers: true });
-    const debts = await this.getDebts({ allLedgers: true });
-    const ledgers = await this.getLedgers();
+
 
     return {
       version: '2.3.0',
@@ -1282,10 +1478,13 @@ class DataService {
       records,
       contacts,
       debts,
-      customCategories,
-      categoryOrder,
-      hiddenCategories,
-      budgetSettings,
+      recurring_transactions,
+      ...(isSharedSync ? {} : {
+        customCategories,
+        categoryOrder,
+        hiddenCategories,
+        budgetSettings
+      }),
       metadata: {
         totalRecords: records.length,
         totalContacts: contacts.length,
@@ -1370,7 +1569,7 @@ class DataService {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
       if (account) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (account.uuid) finalUpdates.uuid = account.uuid;
@@ -1390,14 +1589,13 @@ class DataService {
 
   async deleteAccount(id, skipLog = false) {
     const tx = this.db.transaction('accounts', 'readwrite');
-    let uuid = null;
+    let itemData = null;
     if (!skipLog) {
-        const record = await tx.store.get(id);
-        uuid = record?.uuid;
+        itemData = await tx.store.get(id);
     }
     await tx.store.delete(id);
     await tx.done;
-    if (!skipLog) await this.logChange('delete', 'accounts', id, { uuid });
+    if (!skipLog && itemData) await this.logChange('delete', 'accounts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
     return true;
   }
 
@@ -1537,7 +1735,7 @@ class DataService {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
       if (contact) {
-        let finalUpdates = { ...updates };
+        const finalUpdates = { ...updates };
         if (skipLog) {
             delete finalUpdates.id;
             if (contact.uuid) finalUpdates.uuid = contact.uuid;
@@ -1558,14 +1756,13 @@ class DataService {
   async deleteContact(id, skipLog = false) {
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'contacts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'contacts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete contact ${id}:`, error);
@@ -1681,7 +1878,7 @@ class DataService {
   async updateDebt(id, updates, skipLog = false) {
     try {
       // 若更新包含 contactId / recordId，同步更新對應 UUID
-      let extraUpdates = {};
+      const extraUpdates = {};
       if (updates.contactId !== undefined) {
         if (updates.contactId) {
           try {
@@ -1710,7 +1907,7 @@ class DataService {
         // 必須確保本地 UUID 不被意外覆蓋，除非遠端 UUID 確定是正確的關聯標識
         // 通常同步時我們會根據 UUID 找到本地 ID，所以傳入的 updates.uuid 理應與本地相同
         // 但為了保險起見，保護本地 uuid 與 id 不被 `...updates` 覆蓋
-        let finalUpdates = { ...updates, ...extraUpdates };
+        const finalUpdates = { ...updates, ...extraUpdates };
         if (skipLog) {
             delete finalUpdates.id;
             // 確保不覆蓋本地 UUID
@@ -1735,14 +1932,13 @@ class DataService {
   async deleteDebt(id, skipLog = false) {
     try {
       const tx = this.db.transaction('debts', 'readwrite');
-      let uuid = null;
+      let itemData = null;
       if (!skipLog) {
-          const record = await tx.store.get(id);
-          uuid = record?.uuid;
+          itemData = await tx.store.get(id);
       }
       await tx.store.delete(id);
       await tx.done;
-      if (!skipLog) await this.logChange('delete', 'debts', id, { uuid });
+      if (!skipLog && itemData) await this.logChange('delete', 'debts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
       return true;
     } catch (error) {
       console.error(`Failed to delete debt ${id}:`, error);
@@ -1950,7 +2146,7 @@ class DataService {
       const tx = this.db.transaction('ledgers', 'readwrite');
       const ledger = await tx.store.get(id);
       if (!ledger) throw new Error('Ledger not found');
-      let finalUpdates = { ...updates };
+      const finalUpdates = { ...updates };
       if (skipLog) {
           delete finalUpdates.id;
           if (ledger.uuid) finalUpdates.uuid = ledger.uuid;

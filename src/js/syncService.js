@@ -10,9 +10,13 @@ import { showToast } from './utils.js';
 /** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
 const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
 
+/** @type {string} Google API Key（供 Google Picker 使用，請在 Google Cloud Console 產生 API 金鑰） */
+const GOOGLE_API_KEY = 'AIzaSyDcTWTpa2OGfX0IcOpcOTP2GTpPa8Za0fw'; // 填入您的 API Key
+
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
+  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
@@ -93,12 +97,12 @@ export class SyncService {
 
       // 檢查是否需要啟動自動同步
       const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
-      if (autoSyncSetting?.value && this.isSignedIn()) {
-        const intervalSetting = await this.dataService.getSetting('sync_auto_interval');
-        const intervalMs = (intervalSetting?.value || 'daily') === 'daily'
-          ? 24 * 60 * 60 * 1000
-          : (intervalSetting?.value === 'weekly' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000);
-        this.startAutoSync(intervalMs);
+      const isAutoSyncEnabled = autoSyncSetting?.value || false;
+      const ledgers = await this.dataService.getLedgers();
+      const hasShared = ledgers.some(l => l.isShared);
+
+      if ((isAutoSyncEnabled || hasShared) && this.isSignedIn()) {
+        this.startAutoSync();
       }
 
       // 檢查是否需要啟動自動備份
@@ -489,6 +493,33 @@ export class SyncService {
     const since = lastPush?.value || 0;
     const changes = await this.dataService.getChangesSince(since);
 
+    // ============================================
+    // 緊急補丁：修復因之前的過濾 bug 而遺失在 personal sync 中的 shared ledger 狀態
+    const patchedFlag = await this.dataService.getSetting('repair_shared_sync_done');
+    if (!patchedFlag || !patchedFlag.value) {
+        const ledgers = await this.dataService.getLedgers();
+        const sharedLedgers = ledgers.filter(l => l.isShared);
+
+        if (sharedLedgers.length > 0) {
+            for (const l of sharedLedgers) {
+                // 確保目前批次內沒有重複
+                const hasUpdate = changes.some(c => c.storeName === 'ledgers' && c.recordId === l.id && c.operation === 'update');
+                if (!hasUpdate) {
+                    changes.push({
+                        deviceId: this.deviceId,
+                        operation: 'update',
+                        storeName: 'ledgers',
+                        recordId: l.id,
+                        timestamp: Date.now(),
+                        data: l
+                    });
+                }
+            }
+        }
+        await this.dataService.saveSetting({ key: 'repair_shared_sync_done', value: true });
+    }
+    // ============================================
+
     if (changes.length === 0) return;
 
     const syncData = {
@@ -504,8 +535,8 @@ export class SyncService {
 
     if (existingFileId) {
       // 下載現有內容，合併後更新
-      const existingData = await this._downloadFile(existingFileId);
-      const existing = existingData || { changes: [] };
+      const res = await this._downloadFile(existingFileId);
+      const existing = res?.data || { changes: [] };
       existing.changes = [...(existing.changes || []), ...changes];
       existing.timestamp = Date.now();
       existing.deviceId = this.deviceId;
@@ -528,15 +559,15 @@ export class SyncService {
     await this.ensureValidToken();
 
     // 列出所有 sync log 檔案
-    const res = await fetch(
+    const resList = await fetch(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       }
     );
 
-    if (!res.ok) throw new Error(`Failed to list sync logs (${res.status})`);
-    const data = await res.json();
+    if (!resList.ok) throw new Error(`Failed to list sync logs (${resList.status})`);
+    const data = await resList.json();
     const files = data.files || [];
 
     const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
@@ -552,11 +583,12 @@ export class SyncService {
 
       // 如果檔案在上次拉取後有修改
       if (new Date(file.modifiedTime).getTime() > lastPullTime) {
-        const syncLog = await this._downloadFile(file.id);
+        const resFile = await this._downloadFile(file.id);
+        const syncLog = resFile?.data;
         if (syncLog?.changes) {
           // 只取比上次拉取時間更新的變更
           const newChanges = syncLog.changes.filter(
-            (c) => c.timestamp > lastPullTime
+            (c) => c.timestamp >= lastPullTime
           );
           allRemoteChanges.push(...newChanges);
         }
@@ -583,43 +615,48 @@ export class SyncService {
   }
 
   /**
-   * 合併遠端變更到本地 IndexedDB（兩階段混合排序）
+   * 合併遠端變更到本地 IndexedDB
    * @param {Array} changes 變更列表
    */
   async applyRemoteChanges(changes) {
     if (!changes || changes.length === 0) return;
 
-    // 定義建立依賴的拓撲順序 (Add階段限定)
+    // 定義建立依賴的拓撲順序
     const topoOrder = ['custom_categories', 'ledgers', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
-    const adds = changes.filter(c => c.operation === 'add');
-    const updates = changes.filter(c => c.operation === 'update');
-    const deletes = changes.filter(c => c.operation === 'delete');
+    // 嚴格排序邏輯：
+    // 1. 主要依據 timestamp (由舊到新)
+    // 2. 若 timestamp 相同，則依據操作類型 (add > update > delete)
+    // 3. 若操作類型也相同，則依據 topoOrder
+    const sortedChanges = [...changes].sort((a, b) => {
+        if (a.timestamp !== b.timestamp) {
+            return a.timestamp - b.timestamp;
+        }
 
-    // 1. Add 階段：必須先依照依賴關係拓撲排序，確保基礎資料先建立
-    // 同一層級（或是未定義的 store）則依照時間先後發生順序（越舊的越先）
-    adds.sort((a, b) => {
+        const opWeight = { 'add': 0, 'update': 1, 'delete': 2 };
+        if (a.operation !== b.operation) {
+            return opWeight[a.operation] - opWeight[b.operation];
+        }
+
         const orderA = topoOrder.indexOf(a.storeName);
         const orderB = topoOrder.indexOf(b.storeName);
-        
-        // 若兩個 store 皆在拓撲清單且權重不同，以拓撲為主
-        if (orderA !== -1 && orderB !== -1 && orderA !== orderB) {
-            return orderA - orderB;
-        }
-        // 否則退回到時間軸排序
-        return a.timestamp - b.timestamp;
+        return orderA - orderB;
     });
 
-    // 2. Update 與 Delete 階段：嚴格遵守時間先後順序，確保最新狀態蓋掉舊狀態 (Last-Write-Wins)
-    updates.sort((a, b) => a.timestamp - b.timestamp);
-    deletes.sort((a, b) => a.timestamp - b.timestamp);
-
-    // 依序執行：所有 Add -> 所有 Update -> 所有 Delete
-    const ordered = [...adds, ...updates, ...deletes];
-
-    for (const change of ordered) {
+    for (const change of sortedChanges) {
       try {
         const { operation, storeName, recordId, data } = change;
+        console.log(`[SyncService] applyRemoteChange: ${operation} ${storeName}`, data?.uuid || data?.name || recordId);
+
+        // 預檢測：如果是 add 且 UUID 已存在，自動轉向 update，避免 Unique Constraint 失敗導致同步中斷
+        if (operation === 'add' && data.uuid) {
+            const existing = await this.dataService.getByUUID(storeName, data.uuid);
+            if (existing) {
+                await this._applyUpdateWithId(storeName, existing.id, data);
+                continue;
+            }
+        }
+
         switch (operation) {
           case 'add':
             await this._applyAdd(storeName, data);
@@ -645,12 +682,12 @@ export class SyncService {
   async markAllRemoteChangesAsPulled() {
     await this.ensureValidToken();
     try {
-        const res = await fetch(
+        const resList = await fetch(
           `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
           { headers: { Authorization: `Bearer ${this.accessToken}` } }
         );
-        if (!res.ok) throw new Error('Failed to list sync logs');
-        const data = await res.json();
+        if (!resList.ok) throw new Error('Failed to list sync logs');
+        const data = await resList.json();
         const files = data.files || [];
 
         const lastPull = await this.dataService.getSetting('sync_last_pull_timestamps');
@@ -671,18 +708,152 @@ export class SyncService {
   }
 
   /**
-   * 執行完整同步（push + pull）
+   * 將共用帳本的本地變更推送到各自的 Drive 共享檔案
    */
-  async performSync() {
+  async pushSharedLedgerChanges() {
+    await this.ensureValidToken();
+
+    const ledgers = await this.dataService.getLedgers();
+    console.log('[SyncService] pushShared: all ledgers =', JSON.stringify(ledgers.map(l => ({ id: l.id, name: l.name, isShared: l.isShared, sharedFileId: l.sharedFileId, type: l.type }))));
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
+    console.log('[SyncService] pushShared: filtered =', sharedLedgers.length, sharedLedgers.map(l => l.name));
+
+    for (const ledger of sharedLedgers) {
+      try {
+        // ==================== 完整比對式推送 ====================
+        // 核心理念：不依賴 lastPushTimestamp，每次都比對「本地所有日誌」vs「雲端日誌」
+        // 如果本地有但雲端沒有 → 推送上去
+        // 好處：即使被其他裝置覆蓋，下次同步一定會發現缺漏並自動補回
+
+        // 1. 取得本機對此共用帳本的「全部」變更日誌
+        const allLocalChanges = await this.dataService.getChangesSince(0, { sharedLedgerUuid: ledger.uuid });
+        if (allLocalChanges.length === 0) continue;
+
+        // 2. 下載雲端目前版本
+        const resFile = await this._downloadFile(ledger.sharedFileId);
+        if (!resFile) {
+          console.warn(`[SyncService] pushShared: 無法下載 "${ledger.name}" 的雲端檔案，略過`);
+          continue;
+        }
+
+        const cloudData = resFile.data || { changes: [] };
+        const cloudChanges = cloudData.changes || [];
+
+        // 3. 建立雲端日誌鍵集合
+        const cloudKeySet = new Set();
+        cloudChanges.forEach(log => {
+            const key = `${log.deviceId || 'unknown'}|${log.timestamp}|${log.operation}|${log.storeName}`;
+            cloudKeySet.add(key);
+        });
+
+        // 4. 找出「本地有但雲端沒有」的日誌
+        const myMissingChanges = allLocalChanges
+          .map(log => ({ ...log, deviceId: this.deviceId }))
+          .filter(log => {
+              const key = `${this.deviceId}|${log.timestamp}|${log.operation}|${log.storeName}`;
+              return !cloudKeySet.has(key);
+          });
+
+        if (myMissingChanges.length === 0) {
+          console.log(`[SyncService] pushShared: "${ledger.name}" 已完全同步，無需推送`);
+          continue;
+        }
+
+        // 5. 合併並上傳
+        cloudData.changes = [...cloudChanges, ...myMissingChanges];
+        cloudData.timestamp = Date.now();
+        cloudData.deviceId = this.deviceId;
+
+        await this._updateFile(ledger.sharedFileId, JSON.stringify(cloudData));
+        console.log(`[SyncService] pushShared: "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`);
+
+      } catch (e) {
+        console.error(`[SyncService] pushSharedLedgerChanges failed for "${ledger.name}":`, e.message);
+      }
+    }
+  }
+
+  /**
+   * 從各個共用帳本檔案拉取遠端變更（完整比對式）
+   */
+  async pullSharedLedgerChanges() {
+    await this.ensureValidToken();
+
+    const ledgers = await this.dataService.getLedgers();
+    const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
+
+    // 讀取「已套用過的遠端日誌鍵」集合，避免重複 apply
+    const appliedKeysSetting = await this.dataService.getSetting('sync_shared_applied_keys');
+    const appliedKeys = new Set(appliedKeysSetting?.value || []);
+    const allRemoteChanges = [];
+
+    for (const ledger of sharedLedgers) {
+      try {
+        const resFile = await this._downloadFile(ledger.sharedFileId);
+        const fileData = resFile?.data;
+        if (!fileData?.changes) continue;
+
+        // 從雲端日誌中找出「不是自己推的」且「尚未套用過」的變更
+        for (const change of fileData.changes) {
+          if (change.deviceId === this.deviceId) continue; // 自己推的，略過
+          const key = `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`;
+          if (appliedKeys.has(key)) continue; // 已套用過，略過
+          allRemoteChanges.push(change);
+          appliedKeys.add(key); // 標記為已套用
+        }
+      } catch (e) {
+        console.warn(`[SyncService] pullSharedLedgerChanges failed for ledger ${ledger.name}:`, e);
+      }
+    }
+
+    if (allRemoteChanges.length > 0) {
+      console.log(`[SyncService] pullShared: 收到 ${allRemoteChanges.length} 筆遠端變更，準備套用...`);
+      allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp);
+      await this.applyRemoteChanges(allRemoteChanges);
+    }
+
+    // 持久化已套用鍵集合（轉為 Array 存入 settings）
+    // 為避免無限增長，只保留最近 30 天的鍵
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const trimmedKeys = [...appliedKeys].filter(key => {
+        const ts = parseInt(key.split('|')[1], 10);
+        return !isNaN(ts) && ts > thirtyDaysAgo;
+    });
+    await this.dataService.saveSetting({ key: 'sync_shared_applied_keys', value: trimmedKeys });
+  }
+
+  /**
+   * 執行完整同步（push + pull + shared）
+   * @param {boolean} isManual 是否為手動觸發（忽略個人同步的關閉設定）
+   */
+  async performSync(isManual = false) {
     if (this._syncing) return;
     this._syncing = true;
 
     try {
-      await this.pushChanges();
-      await this.pullChanges();
+      const autoSyncSetting = await this.dataService.getSetting('sync_auto_enabled');
+      const isPersonalEnabled = isManual || !!(autoSyncSetting?.value);
+
+      console.log('[SyncService] performSync start', { isManual, isPersonalEnabled });
+
+      if (isPersonalEnabled) await this.pushChanges();
+      await this.pushSharedLedgerChanges();
+
+      if (isPersonalEnabled) await this.pullChanges();
+      await this.pullSharedLedgerChanges();
+
+      console.log('[SyncService] performSync complete');
     } finally {
       this._syncing = false;
     }
+  }
+
+  /**
+   * 確保共用帳本的自動同步已啟動（在加入/建立共用帳本後呼叫）
+   */
+  async ensureSharedSync() {
+    if (!this.isSignedIn()) return;
+    this.startAutoSync();
   }
 
   // ────────────────────────────────────────────────
@@ -755,27 +926,20 @@ export class SyncService {
   }
 
   /**
-   * 啟動自動同步
-   * @param {number} intervalMs 同步間隔（毫秒）
+   * 啟動自動同步（僅在開啟時和回到前景時觸發，避免持續消耗流量）
    */
-  startAutoSync(intervalMs) {
+  startAutoSync() {
     this.stopAutoSync();
 
     // 啟動後立即同步一次
-    this.performSync().catch((err) =>
+    this.performSync(false).catch((err) =>
       console.error('[SyncService] Auto sync error:', err)
     );
 
-    this._autoSyncIntervalId = setInterval(() => {
-      this.performSync().catch((err) =>
-        console.error('[SyncService] Auto sync error:', err)
-      );
-    }, intervalMs);
-
-    // 頁面 visibility 變化時也觸發同步
+    // 頁面回到前景時觸發同步（例如切換 APP、鎖螢幕後回來）
     this._visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isSignedIn()) {
-        this.performSync().catch((err) =>
+        this.performSync(false).catch((err) =>
           console.error('[SyncService] Visibility sync error:', err)
         );
       }
@@ -894,9 +1058,27 @@ export class SyncService {
   }
 
   /**
+   * 刪除 Google Drive 上的檔案
+   * @param {string} fileId
+   */
+  async deleteFile(fileId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+      }
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`刪除檔案失敗 (${res.status})`);
+    }
+  }
+
+  /**
    * 下載檔案內容
    * @param {string} fileId
-   * @returns {Promise<object|null>}
+   * @returns {Promise<{data: object, etag: string}|null>}
    */
   async _downloadFile(fileId) {
     const res = await fetch(
@@ -906,7 +1088,8 @@ export class SyncService {
       }
     );
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+    return { data };
   }
 
   /**
@@ -952,9 +1135,124 @@ export class SyncService {
   }
 
   /**
+   * 建立共用檔案到外部 (Drive Root)
+   * @param {string} fileName
+   * @param {string} content
+   * @returns {Promise<object>}
+   */
+  async _createSharedFile(fileName, content) {
+    const metadata = {
+      name: fileName,
+      // 不指定 parents，預設放在使用者的根目錄
+      mimeType: 'application/json',
+    };
+
+    const boundary = '-------314159265358979323846';
+    const body = [
+      `--${boundary}`,
+      'Content-Type: application/json; charset=UTF-8',
+      '',
+      JSON.stringify(metadata),
+      `--${boundary}`,
+      'Content-Type: application/json',
+      '',
+      content,
+      `--${boundary}--`,
+    ].join('\r\n');
+
+    const res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+
+    if (!res.ok) throw new Error(`Failed to create shared file (${res.status})`);
+    return await res.json();
+  }
+
+  /**
+   * 將指定檔案授權給其他 Email (Writer)
+   * @param {string} fileId
+   * @param {string} emailAddress
+   */
+  async grantFilePermission(fileId, emailAddress) {
+    await this.ensureValidToken();
+
+    const body = {
+        role: 'writer',
+        type: 'user',
+        emailAddress: emailAddress
+    };
+
+    const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=false`,
+        {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        }
+    );
+
+    if (!res.ok) {
+        let errStr = '';
+        try {
+            const errJson = await res.json();
+            errStr = errJson.error?.message || '';
+        } catch(e) {
+            console.warn('Failed to parse error response', e);
+        }
+        throw new Error(`Failed to grant permission (${res.status}): ${errStr}`);
+    }
+    return await res.json();
+  }
+
+  /**
+   * 拿取檔案目前的權限清單
+   * @param {string} fileId
+   * @returns {Promise<Array>}
+   */
+  async getFilePermissions(fileId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,emailAddress,role,displayName)`,
+      { headers: { Authorization: `Bearer ${this.accessToken}` } }
+    );
+    if (!res.ok) throw new Error('Failed to get permissions');
+    const data = await res.json();
+    return data.permissions;
+  }
+
+  /**
+   * 移除檔案分享權限
+   * @param {string} fileId
+   * @param {string} permissionId
+   */
+  async removeFilePermission(fileId, permissionId) {
+    await this.ensureValidToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${this.accessToken}` }
+      }
+    );
+    if (!res.ok) throw new Error('Failed to remove permission');
+  }
+
+  /**
    * 更新既有檔案內容
    * @param {string} fileId
    * @param {string} content
+   * @param {string|null} matchTag - 用於樂觀鎖的 ETag
    */
   async _updateFile(fileId, content) {
     const res = await fetch(
@@ -968,8 +1266,12 @@ export class SyncService {
         body: content,
       }
     );
-
-    if (!res.ok) throw new Error(`Failed to update file (${res.status})`);
+    if (!res.ok) {
+      let errMsg = `Failed to update file (${res.status})`;
+      try { const j = await res.json(); errMsg += ': ' + (j.error?.message || ''); } catch(_) { console.warn('Failed to parse error', _); }
+      console.error('[SyncService] _updateFile error:', errMsg);
+      throw new Error(errMsg);
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -1039,9 +1341,14 @@ export class SyncService {
     if (!data.ledgerUuid) return data;
     try {
       const ledgers = await this.dataService.getLedgers();
-      const matched = ledgers.find(l => l.uuid === data.ledgerUuid);
-      // fallback to active ledger if not found (or should we throw?)
-      // generally we should have received the ledger object right before it because of topoOrder
+      let matched = ledgers.find(l => l.uuid === data.ledgerUuid);
+
+      // If no exact UUID match, but the data indicates it belongs to the default ledger
+      if (!matched && (data.ledgerId === 1 || data.ledgerName === '預設帳本')) {
+         matched = ledgers.find(l => l.id === 1);
+      }
+
+      console.log(`[SyncService] _resolveLedgerId: uuid=${data.ledgerUuid}, matched=${matched?.id} (${matched?.name}), activeLedgerId=${this.dataService.activeLedgerId}`);
       return { ...data, ledgerId: matched ? matched.id : this.dataService.activeLedgerId };
     } catch (_) {
       return data;
@@ -1085,13 +1392,15 @@ export class SyncService {
    * @returns {object} 已修正 accountId 的 data
    */
   async _resolveRecurringAccountId(data) {
-    if (!data.accountUuid) return data;
+    if (!data.accountUuid) {
+      return { ...data, accountId: null };
+    }
     try {
       const accounts = await this.dataService.getAccounts({ allLedgers: true });
       const matched = accounts.find(a => a.uuid === data.accountUuid);
       return { ...data, accountId: matched ? matched.id : null };
     } catch (_) {
-      return data;
+      return { ...data, accountId: null };
     }
   }
 
@@ -1167,6 +1476,16 @@ export class SyncService {
         }
     }
 
+    // 針對預設帳本 (id: 1) 的特殊處理：不同裝置初始化時預設帳本會有不同的 UUID，
+    // 若同步時發現來源為預設帳本，且本地也有預設帳本，則應合併（更新）而非新增，避免產生多個預設帳本
+    if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
+        const localDefaultLedger = await this.dataService.getLedger(1);
+        if (localDefaultLedger) {
+            await this._applyUpdateWithId(storeName, 1, data);
+            return;
+        }
+    }
+
     switch (storeName) {
       case 'ledgers': {
         await this.dataService.addLedger(data, true);
@@ -1174,37 +1493,37 @@ export class SyncService {
       }
       case 'records': {
         // 同步時解析全部外鍵 UUID
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveRecordAccountId(resolved);
-        resolved = await this._resolveRecordDebtId(resolved);
-        await this.dataService.addRecord(resolved, true);
+        let resolvedRecord = await this._resolveLedgerId(data);
+        resolvedRecord = await this._resolveRecordAccountId(resolvedRecord);
+        resolvedRecord = await this._resolveRecordDebtId(resolvedRecord);
+        await this.dataService.addRecord(resolvedRecord, true);
         break;
       }
       case 'accounts': {
-        let resolved = await this._resolveLedgerId(data);
-        await this.dataService.addAccount(resolved, true);
+        const resolvedAccount = await this._resolveLedgerId(data);
+        await this.dataService.addAccount(resolvedAccount, true);
         break;
       }
       case 'contacts': {
-        let resolved = await this._resolveLedgerId(data);
-        await this.dataService.addContact(resolved, true);
+        const resolvedContact = await this._resolveLedgerId(data);
+        await this.dataService.addContact(resolvedContact, true);
         break;
       }
       case 'debts': {
         // 同步時解析 contactUuid → contactId， recordUuid → recordId
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveDebtContactId(resolved);
-        resolved = await this._resolveDebtRecordId(resolved);
-        resolved = await this._resolveDebtPayments(resolved);
-        const debtId = await this.dataService.addDebt(resolved, true);
+        let resolvedDebt = await this._resolveLedgerId(data);
+        resolvedDebt = await this._resolveDebtContactId(resolvedDebt);
+        resolvedDebt = await this._resolveDebtRecordId(resolvedDebt);
+        resolvedDebt = await this._resolveDebtPayments(resolvedDebt);
+        const debtId = await this.dataService.addDebt(resolvedDebt, true);
 
         // 如果該欠款關聯了一個紀錄 (包含初次建立紀錄與還款紀錄)，且該紀錄在本地已存在
         // 則反向更新該紀錄的 debtId，解決 topoOrder 造成的單向綁定問題
-        if (resolved.recordId && debtId) {
-            await this.dataService.updateRecord(resolved.recordId, { debtId: debtId }, true);
+        if (resolvedDebt.recordId && debtId) {
+            await this.dataService.updateRecord(resolvedDebt.recordId, { debtId: debtId }, true);
         }
-        if (resolved.payments && Array.isArray(resolved.payments) && debtId) {
-          for (const p of resolved.payments) {
+        if (resolvedDebt.payments && Array.isArray(resolvedDebt.payments) && debtId) {
+          for (const p of resolvedDebt.payments) {
             if (p.recordId) {
               await this.dataService.updateRecord(p.recordId, { debtId: debtId }, true);
             }
@@ -1213,9 +1532,9 @@ export class SyncService {
         break;
       }
       case 'recurring_transactions': {
-        let resolved = await this._resolveLedgerId(data);
-        resolved = await this._resolveRecurringAccountId(resolved);
-        await this.dataService.addRecurringTransaction(resolved);
+        let resolvedRecurring = await this._resolveLedgerId(data);
+        resolvedRecurring = await this._resolveRecurringAccountId(resolvedRecurring);
+        await this.dataService.addRecurringTransaction(resolvedRecurring);
         break;
       }
       default:
@@ -1281,6 +1600,14 @@ export class SyncService {
             await this._applyUpdateWithId(storeName, existing.id, data);
             return;
         } else {
+            // 針對預設帳本 (id: 1) 的特殊處理
+            if (storeName === 'ledgers' && (data.id === 1 || data.name === '預設帳本')) {
+                const localDefaultLedger = await this.dataService.getLedger(1);
+                if (localDefaultLedger) {
+                    await this._applyUpdateWithId(storeName, 1, data);
+                    return;
+                }
+            }
             // Not found by UUID, treat as Add (upsert)
             await this._applyAdd(storeName, data);
             return;
@@ -1294,41 +1621,50 @@ export class SyncService {
   async _applyUpdateWithId(storeName, id, data) {
     switch (storeName) {
         case 'ledgers': {
-          await this.dataService.updateLedger(id, data, true);
+          // 保護本地的共用元資料，防止被遠端的舊資料（無此欄位）覆蓋
+          // 只有當 remote data 沒有指定這些欄位時，才用 local 的值填補
+          const localLedger = await this.dataService.getLedger(id);
+          const protectedData = { ...data };
+          if (localLedger) {
+            if (protectedData.isShared === undefined) protectedData.isShared = localLedger.isShared;
+            if (protectedData.sharedFileId === undefined) protectedData.sharedFileId = localLedger.sharedFileId;
+            if (protectedData.type === undefined) protectedData.type = localLedger.type;
+          }
+          await this.dataService.updateLedger(id, protectedData, true);
           break;
         }
         case 'records': {
           // 同步時解析全部外鍵 UUID
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveRecordAccountId(resolved);
-          resolved = await this._resolveRecordDebtId(resolved);
-          await this.dataService.updateRecord(id, resolved, true);
+          let resolvedRecord = await this._resolveLedgerId(data);
+          resolvedRecord = await this._resolveRecordAccountId(resolvedRecord);
+          resolvedRecord = await this._resolveRecordDebtId(resolvedRecord);
+          await this.dataService.updateRecord(id, resolvedRecord, true);
           break;
         }
         case 'accounts': {
-          let resolved = await this._resolveLedgerId(data);
-          await this.dataService.updateAccount(id, resolved, true);
+          const resolvedAccount = await this._resolveLedgerId(data);
+          await this.dataService.updateAccount(id, resolvedAccount, true);
           break;
         }
         case 'contacts': {
-          let resolved = await this._resolveLedgerId(data);
-          await this.dataService.updateContact(id, resolved, true);
+          const resolvedContact = await this._resolveLedgerId(data);
+          await this.dataService.updateContact(id, resolvedContact, true);
           break;
         }
         case 'debts': {
           // 同步時解析 contactUuid → contactId， recordUuid → recordId
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveDebtContactId(resolved);
-          resolved = await this._resolveDebtRecordId(resolved);
-          resolved = await this._resolveDebtPayments(resolved);
-          await this.dataService.updateDebt(id, resolved, true);
+          let resolvedDebt = await this._resolveLedgerId(data);
+          resolvedDebt = await this._resolveDebtContactId(resolvedDebt);
+          resolvedDebt = await this._resolveDebtRecordId(resolvedDebt);
+          resolvedDebt = await this._resolveDebtPayments(resolvedDebt);
+          await this.dataService.updateDebt(id, resolvedDebt, true);
 
           // 同步更新關聯紀錄 (包含初次建立紀錄與還款紀錄)
-          if (resolved.recordId) {
-              await this.dataService.updateRecord(resolved.recordId, { debtId: id }, true);
+          if (resolvedDebt.recordId) {
+              await this.dataService.updateRecord(resolvedDebt.recordId, { debtId: id }, true);
           }
-          if (resolved.payments && Array.isArray(resolved.payments)) {
-            for (const p of resolved.payments) {
+          if (resolvedDebt.payments && Array.isArray(resolvedDebt.payments)) {
+            for (const p of resolvedDebt.payments) {
               if (p.recordId) {
                 await this.dataService.updateRecord(p.recordId, { debtId: id }, true);
               }
@@ -1337,9 +1673,9 @@ export class SyncService {
           break;
         }
         case 'recurring_transactions': {
-          let resolved = await this._resolveLedgerId(data);
-          resolved = await this._resolveRecurringAccountId(resolved);
-          await this.dataService.updateRecurringTransaction(id, resolved, true);
+          let resolvedRecurring = await this._resolveLedgerId(data);
+          resolvedRecurring = await this._resolveRecurringAccountId(resolvedRecurring);
+          await this.dataService.updateRecurringTransaction(id, resolvedRecurring, true);
           break;
         }
         default:
@@ -1392,6 +1728,74 @@ export class SyncService {
         default:
           console.warn('[SyncService] Unknown store for delete:', storeName);
       }
+  }
+
+  // ──────────────────────────────────────────────
+  // Google Picker API
+  // ──────────────────────────────────────────────
+
+  /**
+   * 打開 Google Picker 選擇共用帳本檔案
+   * 透過這個方式選取的/授權的檔案，會被 Google 自動賦予 drive.file 權限
+   * @param {string|string[]} [fileIds=null] - 若已知 File ID，可傳入加速授權流程
+   * @returns {Promise<string>} 回傳選擇的檔案 ID
+   */
+  async openSharedLedgerPicker(fileIds = null) {
+    if (typeof gapi === 'undefined') {
+      throw new Error('Google API 未載入');
+    }
+
+    return new Promise((resolve, reject) => {
+      gapi.load('picker', {
+        callback: () => {
+          const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+            .setMimeTypes('application/json');
+
+          const builder = new google.picker.PickerBuilder()
+            .addView(view)
+            .setTitle(fileIds ? '請同意授權存取此共用帳本' : '在「與我共用」尋找共用帳本 (EasyAccounting_Shared 開頭)')
+            .setOAuthToken(this.accessToken)
+            .setCallback((data) => {
+              if (data.action === google.picker.Action.PICKED) {
+                const file = data.docs[0];
+                resolve(file.id);
+              } else if (data.action === google.picker.Action.CANCEL) {
+                reject(new Error('使用者取消選擇'));
+              }
+            });
+
+          // 如果有 API Key 則設定，沒有也能跑（僅在公開連結或特殊情況下可能會有影響）
+          if (GOOGLE_API_KEY) {
+            builder.setDeveloperKey(GOOGLE_API_KEY);
+          }
+
+          // 解析 App ID
+          if (GOOGLE_CLIENT_ID) {
+            const appId = GOOGLE_CLIENT_ID.split('-')[0];
+            if (appId) {
+                builder.setAppId(appId);
+            }
+          }
+
+          // 新版 API 支援傳入已知 File ID（例如從輸入框貼上的代碼）進行無縫授權
+          if (fileIds) {
+            const idsString = Array.isArray(fileIds) ? fileIds.join(',') : fileIds;
+            if (typeof view.setFileIds === 'function') {
+                view.setFileIds(idsString);
+            } else {
+                // 退回最傳統的搜尋方式
+                view.setQuery(idsString);
+            }
+          } else {
+            // 沒有提供 File ID 時，傳統的瀏覽模式
+            view.setMode(google.picker.DocsViewMode.LIST);
+          }
+
+          const picker = builder.build();
+          picker.setVisible(true);
+        }
+      });
+    });
   }
 }
 

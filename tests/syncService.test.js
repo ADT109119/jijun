@@ -174,13 +174,15 @@ describe('SyncService', () => {
                 })
             });
 
-            // Mock downloading file content
+            // Mock downloading file content - Note that _downloadFile now returns { data: { changes: [...] } } in main branch
             vi.spyOn(syncService, '_downloadFile').mockResolvedValue({
-                changes: [
-                    { operation: 'add', storeName: 'accounts', timestamp: 100, data: { id: 1, name: 'Remote Acc', uuid: 'acc-uuid' } },
-                    { operation: 'add', storeName: 'records', timestamp: 200, data: { id: 1, amount: 50, accountUuid: 'acc-uuid', uuid: 'rec-uuid' } },
-                    { operation: 'update', storeName: 'records', timestamp: 300, data: { uuid: 'rec-uuid', amount: 100 } }
-                ]
+                data: {
+                    changes: [
+                        { operation: 'add', storeName: 'accounts', timestamp: 100, data: { id: 1, name: 'Remote Acc', uuid: 'acc-uuid' } },
+                        { operation: 'add', storeName: 'records', timestamp: 200, data: { id: 1, amount: 50, accountUuid: 'acc-uuid', uuid: 'rec-uuid' } },
+                        { operation: 'update', storeName: 'records', timestamp: 300, data: { uuid: 'rec-uuid', amount: 100 } }
+                    ]
+                }
             });
 
             vi.spyOn(syncService, '_applyAdd').mockResolvedValue();
@@ -188,11 +190,11 @@ describe('SyncService', () => {
 
             await syncService.pullChanges();
 
-            // applyRemoteChanges logic check
+            // The main branch applies changes primarily by timestamp now
             expect(syncService._applyAdd).toHaveBeenCalledTimes(2);
             expect(syncService._applyUpdate).toHaveBeenCalledTimes(1);
 
-            // Accounts should be applied before records (topoOrder logic)
+            // Since timestamp 100 < 200, 'accounts' is added before 'records'
             expect(syncService._applyAdd.mock.calls[0][0]).toBe('accounts');
             expect(syncService._applyAdd.mock.calls[1][0]).toBe('records');
 
@@ -201,10 +203,10 @@ describe('SyncService', () => {
     });
 
     describe('applyRemoteChanges Conflict Resolution & Ordering', () => {
-        it('should enforce topological sorting during add phase', async () => {
+        it('should enforce topological sorting during add phase when timestamps are equal', async () => {
             const changes = [
                 { operation: 'add', storeName: 'records', timestamp: 100, data: { uuid: 'rec-1' } },
-                { operation: 'add', storeName: 'ledgers', timestamp: 200, data: { uuid: 'ledg-1' } }, // newer but should be created first
+                { operation: 'add', storeName: 'ledgers', timestamp: 100, data: { uuid: 'ledg-1' } }, // same timestamp, but ledgers is higher in topoOrder
             ];
 
             const appliedOrder = [];

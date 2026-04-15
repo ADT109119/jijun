@@ -146,6 +146,144 @@
     npm run format
     ```
 
+### 🤖 Android 開發（Capacitor）
+
+> [!IMPORTANT]
+> 在執行任何 Capacitor 同步指令前，**必須先建置**（`npm run build`）。Capacitor 會將 `dist/` 目錄打包進 Android 專案，不接受開發伺服器的 HMR 輸出。
+
+#### 日常開發同步流程（最常用）
+
+每次修改 Web 端程式碼後，依序執行：
+
+```bash
+# 1. 建置 Web 產出物
+npm run build
+
+# 2. 將 dist/ 同步進 android/ 原生專案
+npx cap sync android
+
+# 3. 開啟 Android Studio（選用，如需檢視原生層）
+npx cap open android
+```
+
+若只修改了 Web 資源（HTML/CSS/JS），不需要重新編譯原生模組，可以使用更快的 `copy`：
+
+```bash
+npm run build && npx cap copy android
+```
+
+#### 常用指令速查
+
+| 指令 | 說明 |
+|------|------|
+| `npx cap sync android` | 完整同步：複製 Web 資源 **+** 更新原生插件（推薦每次依賴更動後使用）|
+| `npx cap copy android` | 僅複製 Web 資源，跳過插件更新（速度較快）|
+| `npx cap open android` | 在 Android Studio 開啟原生專案 |
+| `npx cap run android` | 在連接的裝置 / 模擬器上直接執行（需要 ADB）|
+| `npx cap update android` | 更新原生插件至最新版本（`npm update` 後使用）|
+| `npx cap doctor` | 檢查 Capacitor 環境是否正確配置 |
+
+#### 完整首次建置流程
+
+第一次在新環境建置 Android APK：
+
+```bash
+# 1. 安裝 Node 依賴
+npm install
+
+# 2. 建置 Web 端
+npm run build
+
+# 3. 同步到 Android 專案（含插件）
+npx cap sync android
+
+# 4. 開啟 Android Studio，在 Studio 內 Build → Generate Signed APK
+npx cap open android
+```
+
+#### Capacitor 設定說明
+
+專案設定檔：[`capacitor.config.json`](capacitor.config.json)
+
+```json
+{
+  "appId": "com.walkingfish.easyaccounting",
+  "appName": "輕鬆記帳",
+  "webDir": "dist"
+}
+```
+
+- `webDir: "dist"` — Capacitor 會從此目錄讀取 Web 資源，因此 **build 是同步前提**。
+- `androidScheme: "https"` — 讓 WebView 以 HTTPS 方式載入本地資源，避免混合內容錯誤。
+
+
+## 🎨 外觀主題系統
+
+輕鬆記帳提供完整的主題系統，讓開發者可以透過 JSON 定義視覺風格，無需修改任何程式碼。
+
+### 主題運作原理
+
+- **主題是一個 `.json` 檔案**，放在 `public/themes/` 目錄下
+- 系統讀取主題後，將顏色注入全域 CSS 變數（`--wabi-*`），並透過 `MutationObserver` 監聽 DOM 持續替換指定圖示
+- 主題可從「設定 → 外觀主題 → 主題商店」安裝，或直接匯入 `.json` 檔
+
+### 主題 JSON 結構摘要
+
+```json
+{
+  "id": "com.yourname.themename",
+  "name": "主題名稱",
+  "version": "1.0",
+  "author": "作者",
+  "colors": {
+    "wabi-primary": "#...",
+    "wabi-bg": "#...",
+    "wabi-surface": "#...",
+    "wabi-keypad": "#..."
+  },
+  "icons": {
+    "nav#bottom-nav a[data-page='add'] i.fa-plus": {
+      "type": "svg",
+      "svg": "<svg ...>...</svg>",
+      "className": "w-8 h-8"
+    }
+  }
+}
+```
+
+> **完整開發文件** → 詳見 **[THEME_DEV_GUIDE.md](THEME_DEV_GUIDE.md)**
+
+### 內建主題
+
+| 主題 ID | 名稱 | 特色 |
+|---------|------|------|
+| `com.walkingfish.theme.dark` | 深色模式 | 護眼深色，自動更新，不可刪除 |
+| `com.walkingfish.theme.sakura` | 櫻花粉 | 粉紅色系＋自訂五瓣花 SVG 圖示 |
+| `com.walkingfish.theme.ocean` | 深海湛藍 | 沉穩藍色系 |
+| `com.walkingfish.theme.cyberpunk` | 賽博龐克 | 霓虹黃／粉／青交錯 |
+| `com.walkingfish.theme.hightech` | 高科技駭客 | Matrix 黑綠代碼風 |
+
+### 主題商店商店條目（`public/themes/index.json`）
+
+每個主題在商店中需要額外提供以下資訊：
+
+```json
+{
+  "id": "...",
+  "file": "themes/yourtheme.json",
+  "svgPreview": "<svg>...</svg>",
+  "iconPreview": "fa-solid fa-moon",
+  "colorsPreview": {
+    "bg": "#...", "primary": "#..."
+  }
+}
+```
+
+- `svgPreview`（優先）：以 SVG 字串作為商店卡片縮圖，系統以主色為背景、白色呈現圖示
+- `iconPreview`：使用 FontAwesome class，以背景色＋主色文字呈現
+- 兩者若都缺省，則以色點顯示
+- `colorsPreview` 提供預覽色塊，最多顯示 5 色
+
 ## 🔄 資料遷移
 
 新版本會自動檢測並遷移舊版本的資料：
@@ -263,7 +401,7 @@
 
 - [x] 雲端備份&同步功能
 - [x] 多帳戶支援
--   深色模式
+- [x] 深色模式
 -   多語言支援
 - [x] 推送通知 (每日提醒)
 -   更多圖表類型

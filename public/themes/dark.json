@@ -1,0 +1,22 @@
+{
+  "id": "com.walkingfish.theme.dark",
+  "name": "深色模式 (Dark Mode)",
+  "description": "保護眼睛的深色主題，減少螢幕刺眼光線。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#0f172a",
+    "wabi-primary": "#f8fafc",
+    "wabi-expense": "#f87171",
+    "wabi-income": "#34d399",
+    "wabi-accent": "#3b82f6",
+    "wabi-text-primary": "#f8fafc",
+    "wabi-text-secondary": "#cbd5e1",
+    "wabi-surface": "#1e293b",
+    "wabi-border": "#334155",
+    "wabi-keypad": "#334155"
+  },
+  "icons": {
+
+  }
+}

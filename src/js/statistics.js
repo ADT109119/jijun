@@ -132,10 +132,10 @@ export class StatisticsManager {
                 <div class="flex justify-end items-center gap-2 mt-2 text-xs text-wabi-text-secondary">
                     <span>跟錢包過不去</span>
                     <div class="flex gap-1">
-                        <div class="size-3 bg-red-100 rounded-sm"></div>
-                        <div class="size-3 bg-red-300 rounded-sm"></div>
-                        <div class="size-3 bg-red-500 rounded-sm"></div>
-                        <div class="size-3 bg-red-700 rounded-sm"></div>
+                        <div class="size-3 bg-wabi-expense opacity-25 rounded-sm"></div>
+                        <div class="size-3 bg-wabi-expense opacity-50 rounded-sm"></div>
+                        <div class="size-3 bg-wabi-expense opacity-75 rounded-sm"></div>
+                        <div class="size-3 bg-wabi-expense opacity-100 rounded-sm"></div>
                     </div>
                     <span>花錢如流水</span>
                 </div>
@@ -254,14 +254,14 @@ export class StatisticsManager {
             const icon = category ? category.icon : 'fa-solid fa-question';
             
             return `
-                <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
+                <div class="flex items-center justify-between p-3 rounded-lg bg-wabi-bg border border-wabi-border">
                     <div class="flex items-center gap-3">
-                        <div class="flex size-8 items-center justify-center rounded-full bg-red-100 text-red-500 font-bold text-xs">
+                        <div class="flex size-8 items-center justify-center rounded-full bg-wabi-expense/20 text-wabi-expense font-bold text-xs">
                              ${index + 1}
                         </div>
                         <div>
-                             <p class="text-sm font-bold text-gray-800">${r.description || categoryName}</p>
-                             <div class="flex items-center gap-2 text-xs text-gray-400">
+                             <p class="text-sm font-bold text-wabi-text-primary">${r.description || categoryName}</p>
+                             <div class="flex items-center gap-2 text-xs text-wabi-text-secondary">
                                  <span><i class="${icon} mr-1"></i>${categoryName}</span>
                                  <span>•</span>
                                  <span>${r.date}</span>
@@ -618,16 +618,16 @@ export class StatisticsManager {
             
             const cell = document.createElement('div');
             // Default color
-            cell.className = 'size-3 rounded-sm bg-gray-100 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer relative group';
+            cell.className = 'size-3 rounded-sm bg-wabi-border transition-all hover:ring-2 hover:ring-wabi-expense/50 cursor-pointer relative group';
             // Tooltip using title for now
             cell.title = `${dateStr}: $${amount}`;
 
             if (amount > 0) {
                 const intensity = amount / (maxAmount || 1);
-                if (intensity > 0.75) cell.className = 'size-3 rounded-sm bg-red-700 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
-                else if (intensity > 0.5) cell.className = 'size-3 rounded-sm bg-red-500 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
-                else if (intensity > 0.25) cell.className = 'size-3 rounded-sm bg-red-300 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
-                else cell.className = 'size-3 rounded-sm bg-red-100 transition-all hover:ring-2 hover:ring-red-300 cursor-pointer';
+                if (intensity > 0.75) cell.className = 'size-3 rounded-sm bg-wabi-expense opacity-100 transition-all hover:ring-2 hover:ring-wabi-expense/50 cursor-pointer';
+                else if (intensity > 0.5) cell.className = 'size-3 rounded-sm bg-wabi-expense opacity-75 transition-all hover:ring-2 hover:ring-wabi-expense/50 cursor-pointer';
+                else if (intensity > 0.25) cell.className = 'size-3 rounded-sm bg-wabi-expense opacity-50 transition-all hover:ring-2 hover:ring-wabi-expense/50 cursor-pointer';
+                else cell.className = 'size-3 rounded-sm bg-wabi-expense opacity-25 transition-all hover:ring-2 hover:ring-wabi-expense/50 cursor-pointer';
             }
             
             container.appendChild(cell);

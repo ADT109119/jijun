@@ -2,11 +2,25 @@ export default {
     meta: {
         id: 'com.walkingfish.shopping_list',
         name: '待辦購物清單',
-        version: '1.3',
+        version: '1.4',
         description: '在首頁顯示購物清單，買完直接記帳！',
         author: 'The walking fish 步行魚',
         icon: 'fa-list-check'
     },
+    escapeHTML(str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/[&<>"']/g, function(match) {
+            const escapeMap = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return escapeMap[match];
+        });
+    },
+
     init(context) {
         this.context = context;
         this.items = context.storage.getJSON('list') || [];
@@ -32,7 +46,7 @@ export default {
         if (!item) return;
 
         // Confirm purchase
-        const confirmed = await this.context.ui.showConfirm('已購買？', `是否將 "${item.name}" 加入支出紀錄？`);
+        const confirmed = await this.context.ui.showConfirm('已購買？', `是否將 "${this.escapeHTML(item.name)}" 加入支出紀錄？`);
         
         if (confirmed) {
             // Remove from list
@@ -68,7 +82,7 @@ export default {
                 
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="shop-add-input" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-wabi-primary transition-colors" placeholder="新增項目 (例如: 衛生紙)">
-                    <button id="shop-add-btn" class="bg-wabi-primary text-white rounded-lg w-10 shrink-0 flex items-center justify-center hover:bg-opacity-90">
+                    <button id="shop-add-btn" class="bg-wabi-primary text-wabi-surface rounded-lg w-10 shrink-0 flex items-center justify-center hover:bg-opacity-90">
                         <i class="fa-solid fa-plus"></i>
                     </button>
                 </div>
@@ -111,7 +125,7 @@ export default {
                     <div class="w-5 h-5 rounded border border-gray-300 flex items-center justify-center hover:border-wabi-primary transition-colors">
                         <i class="fa-solid fa-check text-wabi-primary opacity-0 scale-50 transition-all"></i>
                     </div>
-                    <span class="text-sm text-gray-700">${item.name}</span>
+                    <span class="text-sm text-gray-700">${this.escapeHTML(item.name)}</span>
                 </div>
                 <button class="text-gray-300 hover:text-red-500 delete-btn opacity-0 group-hover:opacity-100 transition-opacity px-2" data-id="${item.id}">
                     <i class="fa-solid fa-times"></i>

@@ -2,10 +2,24 @@ export default {
     meta: {
         id: 'com.example.wheel',
         name: '命運大轉盤',
-        version: '1.2',
+        version: '1.3',
         description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
         author: 'The walking fish 步行魚'
     },
+    escapeHTML(str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/[&<>"']/g, function(match) {
+            const escapeMap = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return escapeMap[match];
+        });
+    },
+
     init(context) {
         this.context = context;
         this.STORAGE_KEY = 'wheel_plugin_data';
@@ -91,7 +105,7 @@ export default {
                 ${data.wheels.map(w => `
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:border-wabi-primary transition-colors wheel-item" data-id="${w.id}">
                         <div class="flex-1">
-                            <h3 class="font-bold text-lg text-gray-800">${w.name}</h3>
+                            <h3 class="font-bold text-lg text-gray-800">${this.escapeHTML(w.name)}</h3>
                             <p class="text-sm text-gray-500">${w.items.length} 個選項</p>
                         </div>
                         <div class="flex gap-2">
@@ -156,7 +170,7 @@ export default {
                 
                 <div class="mb-4">
                     <label class="block text-sm font-bold text-gray-700 mb-1">轉盤名稱</label>
-                    <input type="text" id="wheel-name" value="${wheel.name}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-wabi-primary outline-none" placeholder="例如：午餐吃什麼">
+                    <input type="text" id="wheel-name" value="${this.escapeHTML(wheel.name)}" class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-wabi-primary outline-none" placeholder="例如：午餐吃什麼">
                 </div>
 
                 <div class="mb-6">
@@ -166,7 +180,7 @@ export default {
                 </div>
 
                 <div class="flex gap-4">
-                    <button id="wheel-save-btn" class="flex-1 bg-wabi-primary text-white py-2 rounded-lg font-bold hover:bg-opacity-90">儲存</button>
+                    <button id="wheel-save-btn" class="flex-1 bg-wabi-primary text-wabi-surface py-2 rounded-lg font-bold hover:bg-opacity-90">儲存</button>
                     <button id="wheel-cancel-btn" class="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-bold hover:bg-gray-200">取消</button>
                 </div>
             </div>
@@ -218,7 +232,7 @@ export default {
 
         content.innerHTML = `
             <div class="flex flex-col items-center h-full">
-                <h2 class="text-2xl font-bold text-wabi-primary mb-6">${wheel.name}</h2>
+                <h2 class="text-2xl font-bold text-wabi-primary mb-6">${this.escapeHTML(wheel.name)}</h2>
                 
                 <div class="relative mb-8 w-[320px] mx-auto">
                     <canvas id="wheel-canvas" width="320" height="320"></canvas>
@@ -228,7 +242,7 @@ export default {
                     </div>
                 </div>
 
-                <button id="spin-btn" class="bg-wabi-primary text-white px-12 py-3 rounded-full text-xl font-bold shadow-lg hover:bg-opacity-90 active:scale-95 transition-transform flex items-center gap-2">
+                <button id="spin-btn" class="bg-wabi-primary text-wabi-surface px-12 py-3 rounded-full text-xl font-bold shadow-lg hover:bg-opacity-90 active:scale-95 transition-transform flex items-center gap-2">
                     <i class="fa-solid fa-rotate"></i> 開始轉動！
                 </button>
                 

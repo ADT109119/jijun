@@ -8,13 +8,13 @@ export class StorePage {
     async render() {
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 h-full flex flex-col bg-wabi-bg max-w-3xl mx-auto">
-                <header class="flex items-center gap-4 mb-4 shrink-0 bg-white p-4 -m-4 mb-4 shadow-sm border-b border-gray-100 sticky top-0 z-10">
-                    <a href="#plugins" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-600 transition-colors">
+                <header class="flex items-center gap-4 mb-4 shrink-0 bg-wabi-surface p-4 -m-4 mb-4 shadow-sm border-b border-wabi-border sticky top-0 z-10">
+                    <a href="#plugins" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-wabi-bg text-wabi-text-secondary transition-colors">
                         <i class="fa-solid fa-chevron-left text-xl"></i>
                     </a>
                     <div class="flex-1 relative">
                         <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" id="store-search" class="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-full outline-none focus:ring-2 focus:ring-wabi-primary transition-all placeholder-gray-400" placeholder="搜尋擴充功能...">
+                        <input type="text" id="store-search" class="w-full pl-10 pr-4 py-2 bg-wabi-bg rounded-full outline-none focus:ring-2 focus:ring-wabi-primary transition-all placeholder-gray-400" placeholder="搜尋擴充功能...">
                     </div>
                 </header>
 
@@ -66,19 +66,19 @@ export class StorePage {
                       btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`;
                  }
              } else {
-                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-white hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
+                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
              }
 
              return `
-                    <div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
+                    <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl aspect-square group-hover:scale-110 transition-transform">
                                 <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
                             </div>
                             <div>
-                                <h4 class="font-bold text-gray-800 text-lg">${p.name}</h4>
-                                <p class="text-sm text-gray-500 line-clamp-1">${p.description}</p>
-                                <p class="text-xs text-gray-400 mt-1">v${p.version} • ${p.author || 'Unknown'}</p>
+                                <h4 class="font-bold text-wabi-text-primary text-lg">${p.name}</h4>
+                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${p.description}</p>
+                                <p class="text-xs text-wabi-text-secondary mt-1">v${p.version} • ${p.author || 'Unknown'}</p>
                             </div>
                         </div>
                         ${btnHtml}

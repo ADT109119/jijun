@@ -209,11 +209,11 @@ export class HomePage {
                     <h3 class="text-lg font-semibold mb-4 text-wabi-primary text-center">選擇月份</h3>
                     <!-- Year Navigation -->
                     <div class="flex items-center justify-between mb-6">
-                        <button id="prev-year" class="p-2 rounded-full hover:bg-gray-200/50 text-wabi-primary">
+                        <button id="prev-year" class="p-2 rounded-full hover:bg-wabi-bg/50 text-wabi-primary">
                             <i class="fa-solid fa-chevron-left"></i>
                         </button>
                         <span id="current-year" class="text-xl font-bold text-wabi-primary">${selectedYear}年</span>
-                        <button id="next-year" class="p-2 rounded-full hover:bg-gray-200/50 text-wabi-primary">
+                        <button id="next-year" class="p-2 rounded-full hover:bg-wabi-bg/50 text-wabi-primary">
                             <i class="fa-solid fa-chevron-right"></i>
                         </button>
                     </div>
@@ -226,7 +226,7 @@ export class HomePage {
                         }).join('')}
                     </div>
                     <div class="flex justify-end">
-                        <button id="cancel-month-year" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
+                        <button id="cancel-month-year" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
                     </div>
                 </div>
             `;
@@ -276,18 +276,18 @@ export class HomePage {
             const order = this.app.pluginManager.widgetOrder;
             const activeWidgets = order.filter(id => this.app.pluginManager.homeWidgets.has(id));
 
-            if (activeWidgets.length === 0) return '<p class="text-center text-gray-400 py-4">無可用的小工具</p>';
+            if (activeWidgets.length === 0) return '<p class="text-center text-wabi-text-secondary py-4">無可用的小工具</p>';
 
             return activeWidgets.map((id, index) => {
                 const name = this.app.pluginManager.getPluginName(id) || '未知小工具';
                 return `
-                   <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2 transition-all">
-                       <span class="font-medium text-gray-700">${name}</span>
+                   <div class="flex items-center justify-between p-3 bg-wabi-bg rounded-lg border border-wabi-border mb-2 transition-all">
+                       <span class="font-medium text-wabi-text-primary">${name}</span>
                        <div class="flex gap-1">
-                           <button class="p-2 text-gray-400 hover:text-wabi-primary move-widget-btn hover:bg-white rounded-md transition-colors" data-id="${id}" data-dir="-1" ${index === 0 ? 'disabled class="p-2 text-gray-200 cursor-not-allowed"' : ''}>
+                           <button class="p-2 text-wabi-text-secondary hover:text-wabi-primary move-widget-btn hover:bg-wabi-surface rounded-md transition-colors" data-id="${id}" data-dir="-1" ${index === 0 ? 'disabled class="p-2 text-wabi-text-secondary opacity-50 cursor-not-allowed"' : ''}>
                                 <i class="fa-solid fa-arrow-up"></i>
                            </button>
-                           <button class="p-2 text-gray-400 hover:text-wabi-primary move-widget-btn hover:bg-white rounded-md transition-colors" data-id="${id}" data-dir="1" ${index === activeWidgets.length - 1 ? 'disabled class="p-2 text-gray-200 cursor-not-allowed"' : ''}>
+                           <button class="p-2 text-wabi-text-secondary hover:text-wabi-primary move-widget-btn hover:bg-wabi-surface rounded-md transition-colors" data-id="${id}" data-dir="1" ${index === activeWidgets.length - 1 ? 'disabled class="p-2 text-wabi-text-secondary opacity-50 cursor-not-allowed"' : ''}>
                                 <i class="fa-solid fa-arrow-down"></i>
                            </button>
                        </div>
@@ -305,18 +305,18 @@ export class HomePage {
         }
 
         modal.innerHTML = `
-            <div class="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
+            <div class="bg-wabi-surface rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xl font-bold text-gray-800">調整顯示順序</h3>
-                    <button id="close-widget-modal" class="text-gray-400 hover:text-gray-600">
+                    <h3 class="text-xl font-bold text-wabi-text-primary">調整顯示順序</h3>
+                    <button id="close-widget-modal" class="text-wabi-text-secondary hover:text-wabi-text-primary">
                         <i class="fa-solid fa-times text-xl"></i>
                     </button>
                 </div>
                 <div id="widget-order-list" class="overflow-y-auto flex-1 mb-4">
                     ${renderList()}
                 </div>
-                <div class="mt-auto pt-2 border-t border-gray-100">
-                     <p class="text-xs text-center text-gray-400">點擊箭頭調整順序</p>
+                <div class="mt-auto pt-2 border-t border-wabi-border">
+                     <p class="text-xs text-center text-wabi-text-secondary">點擊箭頭調整順序</p>
                 </div>
             </div>
         `;

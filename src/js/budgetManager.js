@@ -1,5 +1,5 @@
 // 預算管理模組
-import { formatCurrency, getDateRange, showToast } from './utils.js'
+import { formatCurrency, getDateRange, showToast, escapeHTML } from './utils.js'
 import Sortable from 'sortablejs'
 
 export class BudgetManager {
@@ -184,7 +184,7 @@ export class BudgetManager {
                       <div class="flex justify-between items-end mb-1">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i class="${catStat.icon} text-wabi-text-secondary"></i>
-                          <span class="text-sm text-wabi-text-primary truncate">${catStat.name}</span>
+                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}</span>
                         </div>
                         <div class="text-right flex-shrink-0">
                           <div class="text-sm font-medium ${catStat.isOverBudget ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
@@ -259,7 +259,7 @@ export class BudgetManager {
           <button id="save-budget-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
             儲存
           </button>
-          <button id="cancel-budget-btn" class="px-6 bg-wabi-border hover:bg-gray-300/80 text-wabi-text-primary py-3 rounded-lg transition-colors">
+          <button id="cancel-budget-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
             取消
           </button>
         </div>
@@ -269,7 +269,7 @@ export class BudgetManager {
     document.body.appendChild(modal)
 
     const categoryBudgetsList = modal.querySelector('#category-budgets-list');
-    let workingCategoryBudgets = { ...this.categoryBudgets };
+    const workingCategoryBudgets = { ...this.categoryBudgets };
     let workingCategoryBudgetOrder = [...(this.categoryBudgetOrder || Object.keys(this.categoryBudgets))];
     let sortableInstance = null;
 
@@ -308,7 +308,7 @@ export class BudgetManager {
             <i class="fas fa-grip-vertical"></i>
           </div>
           <div class="flex-shrink-0 w-6 text-center"><i class="${catIcon} text-wabi-text-secondary"></i></div>
-          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${catName}</div>
+          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${escapeHTML(catName)}</div>
           <div class="flex-col w-28">
             <input type="number" data-id="${catId}" value="${amount}" min="0" step="100" class="cat-budget-amt w-full bg-transparent border-b border-wabi-border focus:border-wabi-accent outline-none text-right px-1 py-1 text-sm text-wabi-text-primary">
           </div>

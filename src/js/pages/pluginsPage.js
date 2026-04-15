@@ -32,7 +32,7 @@ export class PluginsPage {
                     <h3 class="font-bold text-wabi-primary mb-3">已安裝應用程式</h3>
                     <div class="space-y-3 mb-6">
                         ${Array.from(this.app.pluginManager.customPages.entries()).map(([route, page]) => `
-                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-gray-50">
+                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-wabi-bg">
                                 <div>
                                     <h4 class="font-bold text-wabi-text-primary">${page.title}</h4>
                                     <p class="text-xs text-wabi-text-secondary mt-1">#${route}</p>
@@ -92,14 +92,14 @@ export class PluginsPage {
                         }
                     } else {
                         // Not installed
-                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-white hover:bg-opacity-90 shadow"
+                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow"
                             data-url="${p.file}" data-id="${p.id}">
                             安裝
                         </button>`;
                     }
 
                     return `
-                    <div class="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                    <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl aspect-square">
                                 <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
