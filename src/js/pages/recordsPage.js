@@ -19,6 +19,12 @@ export class RecordsPage {
                     </button>
                 </div>
 
+                <!-- Search Bar -->
+                <div class="mb-4 relative">
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-wabi-text-secondary"></i>
+                    <input type="text" id="records-search-input" class="w-full pl-10 pr-4 py-2 bg-wabi-surface border border-wabi-border rounded-lg outline-none focus:ring-2 focus:ring-wabi-primary transition-all text-wabi-text-primary text-sm placeholder-gray-400" placeholder="搜尋紀錄備註或金額...">
+                </div>
+
                 <!-- Period Filter (Date Filter) - New Row -->
                 <div id="records-period-filter" class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-4">
                     <button data-period="week" class="period-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">週</button>

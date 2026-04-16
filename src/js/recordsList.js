@@ -17,6 +17,7 @@ export class RecordsListManager {
             accounts: new Set(), // Add accounts filter
             customStartDate: null,
             customEndDate: null,
+            searchQuery: '',
         };
     }
 
@@ -78,6 +79,14 @@ export class RecordsListManager {
         if (this.advancedModeEnabled) {
             this.container.querySelector('#records-account-filter-btn').addEventListener('click', () => {
                 this.showAccountFilterModal();
+            });
+        }
+
+        const searchInput = this.container.querySelector('#records-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.filters.searchQuery = e.target.value.trim().toLowerCase();
+                this.applyFiltersAndRender();
             });
         }
     }
@@ -236,6 +245,15 @@ export class RecordsListManager {
 
         if (this.advancedModeEnabled && this.filters.accounts.size > 0) {
             baseFilteredRecords = baseFilteredRecords.filter(r => this.filters.accounts.has(String(r.accountId)));
+        }
+
+        if (this.filters.searchQuery) {
+            const query = this.filters.searchQuery;
+            baseFilteredRecords = baseFilteredRecords.filter(r => {
+                const noteMatch = r.note && r.note.toLowerCase().includes(query);
+                const amountMatch = r.amount.toString().includes(query);
+                return noteMatch || amountMatch;
+            });
         }
 
         // 2. Perform transfer offsetting on this base list to get records for summary calculation

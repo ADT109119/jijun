@@ -10,6 +10,7 @@ export class PluginManager {
     this.customPages = new Map(); // routeId -> { title, renderFn }
     this.homeWidgets = new Map(); // id -> renderFn
     this.widgetOrder = []; 
+    this.hiddenWidgets = [];
     this.hooks = new Map(); // hookName -> Set<callback>
   }
 
@@ -115,6 +116,8 @@ export class PluginManager {
   async init() {
     const savedOrder = await this.dataService.getSetting('widgetOrder');
     this.widgetOrder = savedOrder ? savedOrder.value : [];
+    const savedHidden = await this.dataService.getSetting('hiddenWidgets');
+    this.hiddenWidgets = savedHidden ? savedHidden.value : [];
     await this.loadInstalledPlugins();
   }
 
@@ -455,6 +458,7 @@ export class PluginManager {
 
       // 1. Render based on order
       this.widgetOrder.forEach(id => {
+          if (this.hiddenWidgets.includes(id)) return;
           const renderFn = this.homeWidgets.get(id);
           if (renderFn) {
               this.renderSingleWidget(container, id, renderFn);
@@ -463,6 +467,7 @@ export class PluginManager {
 
       // 2. Render any active widgets NOT in widgetOrder (cleanup/fallback)
       this.homeWidgets.forEach((renderFn, id) => {
+          if (this.hiddenWidgets.includes(id)) return;
           if (!this.widgetOrder.includes(id)) {
               this.renderSingleWidget(container, id, renderFn);
           }
@@ -495,6 +500,10 @@ export class PluginManager {
 
   async saveWidgetOrder() {
       await this.dataService.saveSetting({ key: 'widgetOrder', value: this.widgetOrder });
+  }
+
+  async saveHiddenWidgets() {
+      await this.dataService.saveSetting({ key: 'hiddenWidgets', value: this.hiddenWidgets });
   }
 
   getCustomPage(routeId) {
