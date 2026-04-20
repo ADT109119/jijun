@@ -1,4 +1,5 @@
 import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange } from '../utils.js';
+import Sortable from 'sortablejs';
 
 export class HomePage {
     constructor(app) {
@@ -275,52 +276,100 @@ export class HomePage {
         const renderList = () => {
             const order = this.app.pluginManager.widgetOrder;
             const activeWidgets = order.filter(id => this.app.pluginManager.homeWidgets.has(id));
+            const hiddenWidgets = this.app.pluginManager.hiddenWidgets;
 
             if (activeWidgets.length === 0) return '<p class="text-center text-wabi-text-secondary py-4">無可用的小工具</p>';
 
             return activeWidgets.map((id, index) => {
                 const name = this.app.pluginManager.getPluginName(id) || '未知小工具';
+                const isHidden = hiddenWidgets.includes(id);
+                const eyeIcon = isHidden ? 'fa-eye-slash' : 'fa-eye';
+                const eyeColor = isHidden ? 'text-wabi-text-secondary' : 'text-wabi-primary';
+                const opacityClass = isHidden ? 'opacity-50' : '';
+
                 return `
-                   <div class="flex items-center justify-between p-3 bg-wabi-bg rounded-lg border border-wabi-border mb-2 transition-all">
-                       <span class="font-medium text-wabi-text-primary">${name}</span>
-                       <div class="flex gap-1">
-                           <button class="p-2 text-wabi-text-secondary hover:text-wabi-primary move-widget-btn hover:bg-wabi-surface rounded-md transition-colors" data-id="${id}" data-dir="-1" ${index === 0 ? 'disabled class="p-2 text-wabi-text-secondary opacity-50 cursor-not-allowed"' : ''}>
-                                <i class="fa-solid fa-arrow-up"></i>
-                           </button>
-                           <button class="p-2 text-wabi-text-secondary hover:text-wabi-primary move-widget-btn hover:bg-wabi-surface rounded-md transition-colors" data-id="${id}" data-dir="1" ${index === activeWidgets.length - 1 ? 'disabled class="p-2 text-wabi-text-secondary opacity-50 cursor-not-allowed"' : ''}>
-                                <i class="fa-solid fa-arrow-down"></i>
-                           </button>
+                   <div class="sortable-item flex items-center justify-between p-3 bg-wabi-bg rounded-lg border border-wabi-border mb-2 transition-all ${opacityClass}" data-id="${id}">
+                       <div class="flex items-center gap-2">
+                           <div class="drag-handle cursor-grab text-wabi-text-secondary px-1 touch-none shrink-0">
+                                <i class="fa-solid fa-grip-vertical"></i>
+                           </div>
+                           <span class="font-medium text-wabi-text-primary">${name}</span>
                        </div>
+                       <button class="toggle-hide-btn p-2 hover:bg-wabi-surface rounded-md transition-colors ${eyeColor}" data-id="${id}">
+                           <i class="fa-solid ${eyeIcon}"></i>
+                       </button>
                    </div>
                 `;
             }).join('');
         };
 
-        const updateContent = () => {
-            const listContainer = modal.querySelector('#widget-order-list');
-            if(listContainer) {
-                listContainer.innerHTML = renderList();
-                bindEvents();
-            }
-        }
-
         modal.innerHTML = `
             <div class="bg-wabi-surface rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xl font-bold text-wabi-text-primary">調整顯示順序</h3>
+                    <h3 class="text-xl font-bold text-wabi-text-primary">調整顯示與順序</h3>
                     <button id="close-widget-modal" class="text-wabi-text-secondary hover:text-wabi-text-primary">
                         <i class="fa-solid fa-times text-xl"></i>
                     </button>
                 </div>
-                <div id="widget-order-list" class="overflow-y-auto flex-1 mb-4">
+                <div id="widget-order-list" class="overflow-y-auto flex-1 mb-4 space-y-2">
                     ${renderList()}
                 </div>
                 <div class="mt-auto pt-2 border-t border-wabi-border">
-                     <p class="text-xs text-center text-wabi-text-secondary">點擊箭頭調整順序</p>
+                     <p class="text-xs text-center text-wabi-text-secondary">拖曳調整順序，點擊眼睛圖示切換顯示</p>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
+
+        const listEl = modal.querySelector('#widget-order-list');
+
+        const sortableInstance = new Sortable(listEl, {
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'opacity-50',
+            onEnd: async () => {
+                const items = listEl.querySelectorAll('.sortable-item');
+                const newOrder = Array.from(items).map(item => item.dataset.id);
+                this.app.pluginManager.widgetOrder = newOrder;
+                await this.app.pluginManager.saveWidgetOrder();
+            }
+        });
+
+        const bindEvents = () => {
+            modal.querySelectorAll('.toggle-hide-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = btn.dataset.id;
+                    const hiddenWidgets = this.app.pluginManager.hiddenWidgets;
+
+                    if (hiddenWidgets.includes(id)) {
+                        this.app.pluginManager.hiddenWidgets = hiddenWidgets.filter(wId => wId !== id);
+                    } else {
+                        this.app.pluginManager.hiddenWidgets.push(id);
+                    }
+
+                    await this.app.pluginManager.saveHiddenWidgets();
+
+                    // Update UI for the specific item without re-rendering the whole list (to avoid interrupting sortable)
+                    const itemEl = btn.closest('.sortable-item');
+                    const icon = btn.querySelector('i');
+
+                    if (this.app.pluginManager.hiddenWidgets.includes(id)) {
+                        icon.classList.remove('fa-eye');
+                        icon.classList.add('fa-eye-slash');
+                        btn.classList.remove('text-wabi-primary');
+                        btn.classList.add('text-wabi-text-secondary');
+                        itemEl.classList.add('opacity-50');
+                    } else {
+                        icon.classList.remove('fa-eye-slash');
+                        icon.classList.add('fa-eye');
+                        btn.classList.remove('text-wabi-text-secondary');
+                        btn.classList.add('text-wabi-primary');
+                        itemEl.classList.remove('opacity-50');
+                    }
+                });
+            });
+        };
+        bindEvents();
 
         const close = () => {
             modal.remove();
@@ -329,17 +378,5 @@ export class HomePage {
         };
 
         modal.querySelector('#close-widget-modal').addEventListener('click', close);
-
-        const bindEvents = () => {
-            modal.querySelectorAll('.move-widget-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const id = btn.dataset.id;
-                    const dir = parseInt(btn.dataset.dir);
-                    await this.app.pluginManager.moveWidget(id, dir);
-                    updateContent();
-                });
-            });
-        };
-        bindEvents();
     }
 }

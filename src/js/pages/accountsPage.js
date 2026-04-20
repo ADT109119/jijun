@@ -82,6 +82,7 @@ export class AccountsPage {
                     </div>
                 </div>
                 <div class="flex gap-2">
+                    <button class="adjust-balance-btn" data-id="${account.id}" data-balance="${currentBalance}"><i class="fa-solid fa-scale-balanced text-wabi-text-secondary"></i></button>
                     <button class="edit-account-btn" data-id="${account.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
                     <button class="delete-account-btn" data-id="${account.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
                 </div>
@@ -97,6 +98,15 @@ export class AccountsPage {
 
         document.getElementById('transfer-btn').addEventListener('click', () => {
             this.showTransferModal();
+        });
+
+        container.querySelectorAll('.adjust-balance-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10);
+                const currentBalance = parseFloat(e.currentTarget.dataset.balance);
+                const account = await this.app.dataService.getAccount(accountId);
+                this.showAdjustBalanceModal(account, currentBalance);
+            });
         });
 
         container.querySelectorAll('.edit-account-btn').forEach(btn => {
@@ -121,6 +131,111 @@ export class AccountsPage {
                     this.render(); // Re-render the page
                 }
             });
+        });
+    }
+
+    showAdjustBalanceModal(account, currentBalance) {
+        const modal = document.createElement('div');
+        modal.id = 'adjust-balance-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-bold text-wabi-primary">餘額矯正</h3>
+
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-sm font-medium text-wabi-text-secondary">目前餘額</p>
+                        <p class="text-lg font-bold text-wabi-text-primary mt-1">${formatCurrency(currentBalance)}</p>
+                    </div>
+                    <div>
+                        <label class="text-sm font-medium text-wabi-text-secondary">實際餘額</label>
+                        <input type="number" id="actual-balance-input" value="${currentBalance}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" step="0.01" required>
+                    </div>
+                    <div id="difference-display" class="hidden">
+                        <p class="text-sm font-medium text-wabi-text-secondary">差額</p>
+                        <p id="difference-amount" class="text-lg font-bold mt-1"></p>
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="add-adjustment-record" class="h-4 w-4 text-wabi-primary focus:ring-wabi-primary border-gray-300 rounded" checked>
+                        <label for="add-adjustment-record" class="text-sm text-wabi-text-secondary cursor-pointer">加入記帳紀錄 (平帳)</label>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 pt-4 border-t border-wabi-border mt-2">
+                    <button id="save-adjustment-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">儲存</button>
+                    <button id="cancel-adjustment-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const closeModal = () => modal.remove();
+        const actualBalanceInput = modal.querySelector('#actual-balance-input');
+        const diffDisplay = modal.querySelector('#difference-display');
+        const diffAmountEl = modal.querySelector('#difference-amount');
+
+        const updateDifference = () => {
+            const actual = parseFloat(actualBalanceInput.value) || 0;
+            const diff = actual - currentBalance;
+            if (diff === 0) {
+                diffDisplay.classList.add('hidden');
+            } else {
+                diffDisplay.classList.remove('hidden');
+                diffAmountEl.textContent = formatCurrency(Math.abs(diff));
+                if (diff > 0) {
+                    diffAmountEl.className = 'text-lg font-bold mt-1 text-wabi-income';
+                    diffAmountEl.textContent = '+ ' + diffAmountEl.textContent;
+                } else {
+                    diffAmountEl.className = 'text-lg font-bold mt-1 text-wabi-expense';
+                    diffAmountEl.textContent = '- ' + diffAmountEl.textContent;
+                }
+            }
+        };
+
+        actualBalanceInput.addEventListener('input', updateDifference);
+        modal.querySelector('#cancel-adjustment-btn').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        modal.querySelector('#save-adjustment-btn').addEventListener('click', async () => {
+            const actual = parseFloat(actualBalanceInput.value);
+            if (isNaN(actual)) {
+                showToast('請輸入有效的金額', 'error');
+                return;
+            }
+
+            const diff = actual - currentBalance;
+            if (diff === 0) {
+                showToast('餘額無變動');
+                closeModal();
+                return;
+            }
+
+            const createRecord = modal.querySelector('#add-adjustment-record').checked;
+
+            if (createRecord) {
+                // Ensure the "adjustment" category exists or handle it gracefully.
+                // Since there is no built-in "adjustment" category we just set category to 'other' and note to '平帳'
+                const type = diff > 0 ? 'income' : 'expense';
+                const newRecord = {
+                    amount: Math.abs(diff),
+                    type: type,
+                    category: 'other',
+                    date: formatDateToString(new Date()),
+                    note: '平帳',
+                    accountId: account.id
+                };
+                await this.app.dataService.addRecord(newRecord);
+                showToast('已新增平帳紀錄');
+            } else {
+                account.balance += diff;
+                await this.app.dataService.updateAccount(account.id, account);
+                showToast('已更新帳戶初始餘額');
+            }
+
+            this.render();
+            closeModal();
         });
     }
 
