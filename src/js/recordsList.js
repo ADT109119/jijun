@@ -250,9 +250,9 @@ export class RecordsListManager {
         if (this.filters.searchQuery) {
             const query = this.filters.searchQuery;
             baseFilteredRecords = baseFilteredRecords.filter(r => {
-                const noteMatch = r.note && r.note.toLowerCase().includes(query);
+                const descriptionMatch = r.description && r.description.toLowerCase().includes(query);
                 const amountMatch = r.amount.toString().includes(query);
-                return noteMatch || amountMatch;
+                return descriptionMatch || amountMatch;
             });
         }
 
