@@ -1,10 +1,10 @@
 export class LicensePage {
-    constructor(app) {
-        this.app = app;
-    }
+  constructor(app) {
+    this.app = app
+  }
 
-    async render() {
-        this.app.appContainer.innerHTML = `
+  async render() {
+    this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <div class="flex items-center justify-between mb-6">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -76,6 +76,6 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
                     </ul>
                 </div>
             </div>
-        `;
-    }
+        `
+  }
 }

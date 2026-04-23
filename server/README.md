@@ -6,11 +6,11 @@
 
 ## 端點
 
-| Method | Path | 說明 |
-|--------|------|------|
-| `POST` | `/api/auth/token` | Authorization Code → Access Token |
-| `POST` | `/api/auth/refresh` | Refresh Token → 新 Access Token |
-| `GET`  | `/api/health` | 健康檢查 |
+| Method | Path                | 說明                              |
+| ------ | ------------------- | --------------------------------- |
+| `POST` | `/api/auth/token`   | Authorization Code → Access Token |
+| `POST` | `/api/auth/refresh` | Refresh Token → 新 Access Token   |
+| `GET`  | `/api/health`       | 健康檢查                          |
 
 ---
 
@@ -93,6 +93,7 @@ easy-accounting-sync-server/
 ```
 
 **好處**：
+
 - CI/CD 獨立管理，前後端部署不互相影響
 - Worker 部署可用 GitHub Actions 自動化
 - 前端可以是靜態站點（GitHub Pages），後端是 Worker 或 Docker
@@ -122,12 +123,14 @@ jobs:
 ```
 
 需在 GitHub Repo → Settings → Secrets 中設定：
+
 - `CLOUDFLARE_API_TOKEN` — Cloudflare API Token
 - Worker 的 `GOOGLE_CLIENT_ID` 和 `GOOGLE_CLIENT_SECRET` 需透過 `wrangler secret put` 預先設定
 
 ### Monorepo（替代方案）
 
 如果偏好 Monorepo，可將 `server/` 保留在主專案中，但需注意：
+
 - `.gitignore` 中要排除 `server/node_modules`
 - CI/CD 需設定路徑過濾，只有 `server/` 變更時才觸發部署
 
@@ -135,9 +138,9 @@ jobs:
 
 ## 環境變數
 
-| 變數名 | 必要 | 說明 |
-|--------|:----:|------|
-| `GOOGLE_CLIENT_ID` | ✅ | Google OAuth Client ID |
-| `GOOGLE_CLIENT_SECRET` | ✅ | Google OAuth Client Secret |
-| `ALLOWED_ORIGINS` | ❌ | CORS 允許的 Origin（逗號分隔，預設 `*`） |
-| `PORT` | ❌ | Standalone 模式埠號（預設 `8787`） |
+| 變數名                 | 必要 | 說明                                     |
+| ---------------------- | :--: | ---------------------------------------- |
+| `GOOGLE_CLIENT_ID`     |  ✅  | Google OAuth Client ID                   |
+| `GOOGLE_CLIENT_SECRET` |  ✅  | Google OAuth Client Secret               |
+| `ALLOWED_ORIGINS`      |  ❌  | CORS 允許的 Origin（逗號分隔，預設 `*`） |
+| `PORT`                 |  ❌  | Standalone 模式埠號（預設 `8787`）       |

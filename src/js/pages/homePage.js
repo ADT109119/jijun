@@ -1,16 +1,23 @@
-import { formatCurrency, formatDate, showToast, getDateRange, formatDateToString, getMonthRange } from '../utils.js';
-import Sortable from 'sortablejs';
+import {
+  formatCurrency,
+  formatDate,
+  showToast,
+  getDateRange,
+  formatDateToString,
+  getMonthRange,
+} from '../utils.js'
+import Sortable from 'sortablejs'
 
 export class HomePage {
-    constructor(app) {
-        this.app = app;
-    }
+  constructor(app) {
+    this.app = app
+  }
 
-    async render() {
-        const activeLedger = this.app.ledgerManager.getActiveLedger();
-        const ledgerCount = this.app.ledgerManager.getAllLedgers().length;
+  async render() {
+    const activeLedger = this.app.ledgerManager.getActiveLedger()
+    const ledgerCount = this.app.ledgerManager.getAllLedgers().length
 
-        this.app.appContainer.innerHTML = `
+    this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center justify-between mb-6">
@@ -19,13 +26,17 @@ export class HomePage {
                         <i class="fa-solid fa-chevron-down text-base"></i>
                     </button>
                     <div class="flex items-center gap-2">
-                        ${ledgerCount > 1 ? `
+                        ${
+                          ledgerCount > 1
+                            ? `
                         <button id="home-ledger-btn" class="flex items-center gap-2 px-2.5 py-1.5 bg-wabi-primary/5 rounded-lg border border-wabi-border hover:bg-wabi-primary/10 transition-colors md:hidden" title="切換帳本">
                             <div class="flex items-center justify-center rounded text-white shrink-0 size-6 text-xs" style="background-color: ${activeLedger?.color || '#334A52'}">
                                 <i class="${activeLedger?.icon || 'fa-solid fa-book'} text-[10px]"></i>
                             </div>
                             <span class="text-xs font-medium text-wabi-text-primary max-w-[60px] truncate">${activeLedger?.name || '預設帳本'}</span>
-                        </button>` : ''}
+                        </button>`
+                            : ''
+                        }
                         <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
                             <i class="fa-solid fa-gear text-xl"></i>
                         </a>
@@ -69,98 +80,125 @@ export class HomePage {
                     <div id="recent-records-container" class="space-y-2"></div>
                 </div>
             </div>
-        `;
-        this.setupEventListeners();
-        await this.populateHomeMonthFilter();
-        this.app.pluginManager.renderHomeWidgets(document.getElementById('plugin-home-widgets'));
+        `
+    this.setupEventListeners()
+    await this.populateHomeMonthFilter()
+    this.app.pluginManager.renderHomeWidgets(
+      document.getElementById('plugin-home-widgets')
+    )
 
-        // Manage Widgets Handler
-        const manageWidgetsBtn = document.getElementById('manage-widgets-btn');
-        if (manageWidgetsBtn) {
-            manageWidgetsBtn.addEventListener('click', () => this.showWidgetOrderModal());
-        }
-
-        await this.loadHomePageData();
+    // Manage Widgets Handler
+    const manageWidgetsBtn = document.getElementById('manage-widgets-btn')
+    if (manageWidgetsBtn) {
+      manageWidgetsBtn.addEventListener('click', () =>
+        this.showWidgetOrderModal()
+      )
     }
 
-    setupEventListeners() {
-        const monthSelectorBtn = document.getElementById('home-month-selector-btn');
-        if (monthSelectorBtn) {
-            monthSelectorBtn.addEventListener('click', () => {
-                const currentMonthDisplay = document.getElementById('home-month-display').textContent;
-                const [year, month] = currentMonthDisplay.split(' / ').map(Number);
-                this.showMonthYearPickerModal(year, month - 1, (newMonthString) => {
-                    this.loadHomePageData(newMonthString);
-                });
-            });
-        }
-        const homeLedgerBtn = document.getElementById('home-ledger-btn');
-        if (homeLedgerBtn) {
-            homeLedgerBtn.addEventListener('click', () => this.app.showLedgerSwitcherPopup());
-        }
+    await this.loadHomePageData()
+  }
+
+  setupEventListeners() {
+    const monthSelectorBtn = document.getElementById('home-month-selector-btn')
+    if (monthSelectorBtn) {
+      monthSelectorBtn.addEventListener('click', () => {
+        const currentMonthDisplay =
+          document.getElementById('home-month-display').textContent
+        const [year, month] = currentMonthDisplay.split(' / ').map(Number)
+        this.showMonthYearPickerModal(year, month - 1, newMonthString => {
+          this.loadHomePageData(newMonthString)
+        })
+      })
+    }
+    const homeLedgerBtn = document.getElementById('home-ledger-btn')
+    if (homeLedgerBtn) {
+      homeLedgerBtn.addEventListener('click', () =>
+        this.app.showLedgerSwitcherPopup()
+      )
+    }
+  }
+
+  async populateHomeMonthFilter() {
+    const allRecords = await this.app.dataService.getRecords()
+    const months = [...new Set(allRecords.map(r => r.date.slice(0, 7)))]
+      .sort()
+      .reverse()
+
+    const currentMonth = formatDateToString(new Date()).slice(0, 7)
+    if (!months.includes(currentMonth)) {
+      months.unshift(currentMonth)
     }
 
-    async populateHomeMonthFilter() {
-        const allRecords = await this.app.dataService.getRecords();
-        const months = [...new Set(allRecords.map(r => r.date.slice(0, 7)))].sort().reverse();
+    // Update the display for the new button
+    const monthDisplay = document.getElementById('home-month-display')
+    if (monthDisplay) {
+      monthDisplay.textContent = currentMonth.replace('-', ' / ')
+    }
+  }
 
-        const currentMonth = formatDateToString(new Date()).slice(0, 7);
-        if (!months.includes(currentMonth)) {
-            months.unshift(currentMonth);
-        }
+  async loadHomePageData(selectedMonthString = null) {
+    const selectedMonth =
+      selectedMonthString ||
+      document
+        .getElementById('home-month-display')
+        .textContent.replace(' / ', '-')
 
-        // Update the display for the new button
-        const monthDisplay = document.getElementById('home-month-display');
-        if (monthDisplay) {
-            monthDisplay.textContent = currentMonth.replace('-', ' / ');
-        }
+    const year = parseInt(selectedMonth.split('-')[0])
+    const month = parseInt(selectedMonth.split('-')[1]) - 1
+    const { startDate, endDate } = getMonthRange(year, month)
+
+    const [stats, allRecords] = await Promise.all([
+      this.app.dataService.getStatistics(startDate, endDate, null, true), // Exclude transfers from totals
+      this.app.dataService.getRecords(),
+    ])
+    const recentRecords = allRecords.slice(0, 5)
+
+    const balanceCardTitle = document.querySelector(
+      '.page.active .bg-wabi-surface p:first-child'
+    )
+    if (balanceCardTitle) {
+      balanceCardTitle.textContent = `${selectedMonth.replace('-', ' / ')} 結餘`
     }
 
-    async loadHomePageData(selectedMonthString = null) {
-        const selectedMonth = selectedMonthString || document.getElementById('home-month-display').textContent.replace(' / ', '-');
+    document.getElementById('home-balance').textContent = formatCurrency(
+      stats.totalIncome - stats.totalExpense
+    )
+    document.getElementById('home-income').textContent = formatCurrency(
+      stats.totalIncome
+    )
+    document.getElementById('home-expense').textContent = formatCurrency(
+      stats.totalExpense
+    )
 
-        const year = parseInt(selectedMonth.split('-')[0]);
-        const month = parseInt(selectedMonth.split('-')[1]) - 1;
-        const { startDate, endDate } = getMonthRange(year, month);
+    const container = document.getElementById('recent-records-container')
+    if (recentRecords.length === 0) {
+      container.innerHTML = `<p class="text-center text-wabi-text-secondary py-4">還沒有任何紀錄喔！</p>`
+    } else {
+      container.innerHTML = recentRecords
+        .map(record => {
+          const isIncome = record.type === 'income'
+          let icon, name, color
 
-        const [stats, allRecords] = await Promise.all([
-            this.app.dataService.getStatistics(startDate, endDate, null, true), // Exclude transfers from totals
-            this.app.dataService.getRecords()
-        ]);
-        const recentRecords = allRecords.slice(0, 5);
+          if (record.category === 'transfer') {
+            icon = 'fa-solid fa-money-bill-transfer'
+            name = '帳戶間轉帳'
+            color = 'bg-gray-400'
+          } else {
+            const category = this.app.categoryManager.getCategoryById(
+              record.type,
+              record.category
+            )
+            icon = category?.icon || 'fa-solid fa-question'
+            name = category?.name || '未分類'
+            color = category?.color || 'bg-gray-400'
+          }
 
-        const balanceCardTitle = document.querySelector('.page.active .bg-wabi-surface p:first-child');
-        if (balanceCardTitle) {
-            balanceCardTitle.textContent = `${selectedMonth.replace('-', ' / ')} 結餘`;
-        }
+          const colorStyle = color.startsWith('#')
+            ? `style="background-color: ${color}"`
+            : ''
+          const colorClass = !color.startsWith('#') ? color : ''
 
-        document.getElementById('home-balance').textContent = formatCurrency(stats.totalIncome - stats.totalExpense);
-        document.getElementById('home-income').textContent = formatCurrency(stats.totalIncome);
-        document.getElementById('home-expense').textContent = formatCurrency(stats.totalExpense);
-
-        const container = document.getElementById('recent-records-container');
-        if (recentRecords.length === 0) {
-            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-4">還沒有任何紀錄喔！</p>`;
-        } else {
-            container.innerHTML = recentRecords.map(record => {
-                const isIncome = record.type === 'income';
-                let icon, name, color;
-
-                if (record.category === 'transfer') {
-                    icon = 'fa-solid fa-money-bill-transfer';
-                    name = '帳戶間轉帳';
-                    color = 'bg-gray-400';
-                } else {
-                    const category = this.app.categoryManager.getCategoryById(record.type, record.category);
-                    icon = category?.icon || 'fa-solid fa-question';
-                    name = category?.name || '未分類';
-                    color = category?.color || 'bg-gray-400';
-                }
-
-                const colorStyle = color.startsWith('#') ? `style="background-color: ${color}"` : '';
-                const colorClass = !color.startsWith('#') ? color : '';
-
-                return `
+          return `
                     <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
                         <div class="flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
                             <i class="${icon} text-2xl"></i>
@@ -174,38 +212,44 @@ export class HomePage {
                             <p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>
                         </div>
                     </div>
-                `;
-            }).join('');
-        }
-
-        this.loadBudgetWidget();
+                `
+        })
+        .join('')
     }
 
-    async loadBudgetWidget() {
-        const container = document.getElementById('budget-widget-container');
-        if (!container) return;
-        container.innerHTML = await this.app.budgetManager.renderBudgetWidget();
-        // Re-bind events for the new widget content
-        const editBudgetBtn = document.getElementById('edit-budget-btn');
-        if (editBudgetBtn) {
-            editBudgetBtn.addEventListener('click', () => this.app.budgetManager.showBudgetModal());
-        }
-        const setBudgetBtn = document.getElementById('set-budget-btn');
-        if (setBudgetBtn) {
-            setBudgetBtn.addEventListener('click', () => this.app.budgetManager.showBudgetModal());
-        }
+    this.loadBudgetWidget()
+  }
+
+  async loadBudgetWidget() {
+    const container = document.getElementById('budget-widget-container')
+    if (!container) return
+    container.innerHTML = await this.app.budgetManager.renderBudgetWidget()
+    // Re-bind events for the new widget content
+    const editBudgetBtn = document.getElementById('edit-budget-btn')
+    if (editBudgetBtn) {
+      editBudgetBtn.addEventListener('click', () =>
+        this.app.budgetManager.showBudgetModal()
+      )
     }
+    const setBudgetBtn = document.getElementById('set-budget-btn')
+    if (setBudgetBtn) {
+      setBudgetBtn.addEventListener('click', () =>
+        this.app.budgetManager.showBudgetModal()
+      )
+    }
+  }
 
-    showMonthYearPickerModal(initialYear, initialMonthIndex, onApply) {
-        const modal = document.createElement('div');
-        modal.id = 'month-year-picker-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+  showMonthYearPickerModal(initialYear, initialMonthIndex, onApply) {
+    const modal = document.createElement('div')
+    modal.id = 'month-year-picker-modal'
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
 
-        let selectedYear = initialYear;
-        let selectedMonth = initialMonthIndex + 1; // 1-indexed month
+    let selectedYear = initialYear
+    let selectedMonth = initialMonthIndex + 1 // 1-indexed month
 
-        const renderModalContent = () => {
-            modal.innerHTML = `
+    const renderModalContent = () => {
+      modal.innerHTML = `
                 <div class="bg-wabi-bg rounded-lg max-w-xs w-full p-6">
                     <h3 class="text-lg font-semibold mb-4 text-wabi-primary text-center">選擇月份</h3>
                     <!-- Year Navigation -->
@@ -221,73 +265,86 @@ export class HomePage {
                     <!-- Month Grid -->
                     <div id="month-grid" class="grid grid-cols-3 gap-3 mb-6">
                         ${Array.from({ length: 12 }, (_, i) => {
-                            const monthNum = i + 1;
-                            const isActive = monthNum === selectedMonth ? 'bg-wabi-accent text-wabi-primary' : 'bg-wabi-surface text-wabi-text-primary';
-                            return `<button data-month="${monthNum}" class="month-btn p-3 rounded-lg font-medium ${isActive}">${monthNum}月</button>`;
+                          const monthNum = i + 1
+                          const isActive =
+                            monthNum === selectedMonth
+                              ? 'bg-wabi-accent text-wabi-primary'
+                              : 'bg-wabi-surface text-wabi-text-primary'
+                          return `<button data-month="${monthNum}" class="month-btn p-3 rounded-lg font-medium ${isActive}">${monthNum}月</button>`
                         }).join('')}
                     </div>
                     <div class="flex justify-end">
                         <button id="cancel-month-year" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
                     </div>
                 </div>
-            `;
+            `
 
-            // Attach event listeners after rendering content
-            modal.querySelector('#prev-year').addEventListener('click', () => {
-                selectedYear--;
-                renderModalContent();
-            });
-            modal.querySelector('#next-year').addEventListener('click', () => {
-                selectedYear++;
-                renderModalContent();
-            });
-            modal.querySelectorAll('.month-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    selectedMonth = parseInt(e.target.dataset.month);
-                    const newMonthString = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+      // Attach event listeners after rendering content
+      modal.querySelector('#prev-year').addEventListener('click', () => {
+        selectedYear--
+        renderModalContent()
+      })
+      modal.querySelector('#next-year').addEventListener('click', () => {
+        selectedYear++
+        renderModalContent()
+      })
+      modal.querySelectorAll('.month-btn').forEach(button => {
+        button.addEventListener('click', e => {
+          selectedMonth = parseInt(e.target.dataset.month)
+          const newMonthString = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`
 
-                    // Update the display and call the callback
-                    document.getElementById('home-month-display').textContent = newMonthString.replace('-', ' / ');
-                    if (onApply) {
-                        onApply(newMonthString);
-                    }
-                    modal.remove();
-                });
-            });
-            modal.querySelector('#cancel-month-year').addEventListener('click', () => {
-                modal.remove();
-            });
-        };
-
-        renderModalContent(); // Initial render
-        document.body.appendChild(modal);
-
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
+          // Update the display and call the callback
+          document.getElementById('home-month-display').textContent =
+            newMonthString.replace('-', ' / ')
+          if (onApply) {
+            onApply(newMonthString)
+          }
+          modal.remove()
+        })
+      })
+      modal
+        .querySelector('#cancel-month-year')
+        .addEventListener('click', () => {
+          modal.remove()
+        })
     }
 
-    showWidgetOrderModal() {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in';
+    renderModalContent() // Initial render
+    document.body.appendChild(modal)
 
-        const renderList = () => {
-            const order = this.app.pluginManager.widgetOrder;
-            const activeWidgets = order.filter(id => this.app.pluginManager.homeWidgets.has(id));
-            const hiddenWidgets = this.app.pluginManager.hiddenWidgets;
+    modal.addEventListener('click', e => {
+      if (e.target === modal) {
+        modal.remove()
+      }
+    })
+  }
 
-            if (activeWidgets.length === 0) return '<p class="text-center text-wabi-text-secondary py-4">無可用的小工具</p>';
+  showWidgetOrderModal() {
+    const modal = document.createElement('div')
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 animation-fade-in'
 
-            return activeWidgets.map((id, index) => {
-                const name = this.app.pluginManager.getPluginName(id) || '未知小工具';
-                const isHidden = hiddenWidgets.includes(id);
-                const eyeIcon = isHidden ? 'fa-eye-slash' : 'fa-eye';
-                const eyeColor = isHidden ? 'text-wabi-text-secondary' : 'text-wabi-primary';
-                const opacityClass = isHidden ? 'opacity-50' : '';
+    const renderList = () => {
+      const order = this.app.pluginManager.widgetOrder
+      const activeWidgets = order.filter(id =>
+        this.app.pluginManager.homeWidgets.has(id)
+      )
+      const hiddenWidgets = this.app.pluginManager.hiddenWidgets
 
-                return `
+      if (activeWidgets.length === 0)
+        return '<p class="text-center text-wabi-text-secondary py-4">無可用的小工具</p>'
+
+      return activeWidgets
+        .map((id, index) => {
+          const name = this.app.pluginManager.getPluginName(id) || '未知小工具'
+          const isHidden = hiddenWidgets.includes(id)
+          const eyeIcon = isHidden ? 'fa-eye-slash' : 'fa-eye'
+          const eyeColor = isHidden
+            ? 'text-wabi-text-secondary'
+            : 'text-wabi-primary'
+          const opacityClass = isHidden ? 'opacity-50' : ''
+
+          return `
                    <div class="sortable-item flex items-center justify-between p-3 bg-wabi-bg rounded-lg border border-wabi-border mb-2 transition-all ${opacityClass}" data-id="${id}">
                        <div class="flex items-center gap-2">
                            <div class="drag-handle cursor-grab text-wabi-text-secondary px-1 touch-none shrink-0">
@@ -299,11 +356,12 @@ export class HomePage {
                            <i class="fa-solid ${eyeIcon}"></i>
                        </button>
                    </div>
-                `;
-            }).join('');
-        };
+                `
+        })
+        .join('')
+    }
 
-        modal.innerHTML = `
+    modal.innerHTML = `
             <div class="bg-wabi-surface rounded-xl max-w-sm w-full p-6 shadow-xl transform transition-all scale-100 flex flex-col max-h-[80vh]">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-xl font-bold text-wabi-text-primary">調整顯示與順序</h3>
@@ -318,65 +376,69 @@ export class HomePage {
                      <p class="text-xs text-center text-wabi-text-secondary">拖曳調整順序，點擊眼睛圖示切換顯示</p>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+    document.body.appendChild(modal)
 
-        const listEl = modal.querySelector('#widget-order-list');
+    const listEl = modal.querySelector('#widget-order-list')
 
-        const sortableInstance = new Sortable(listEl, {
-            animation: 150,
-            handle: '.drag-handle',
-            ghostClass: 'opacity-50',
-            onEnd: async () => {
-                const items = listEl.querySelectorAll('.sortable-item');
-                const newOrder = Array.from(items).map(item => item.dataset.id);
-                this.app.pluginManager.widgetOrder = newOrder;
-                await this.app.pluginManager.saveWidgetOrder();
-            }
-        });
+    const sortableInstance = new Sortable(listEl, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'opacity-50',
+      onEnd: async () => {
+        const items = listEl.querySelectorAll('.sortable-item')
+        const newOrder = Array.from(items).map(item => item.dataset.id)
+        this.app.pluginManager.widgetOrder = newOrder
+        await this.app.pluginManager.saveWidgetOrder()
+      },
+    })
 
-        const bindEvents = () => {
-            modal.querySelectorAll('.toggle-hide-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const id = btn.dataset.id;
-                    const hiddenWidgets = this.app.pluginManager.hiddenWidgets;
+    const bindEvents = () => {
+      modal.querySelectorAll('.toggle-hide-btn').forEach(btn => {
+        btn.addEventListener('click', async e => {
+          const id = btn.dataset.id
+          const hiddenWidgets = this.app.pluginManager.hiddenWidgets
 
-                    if (hiddenWidgets.includes(id)) {
-                        this.app.pluginManager.hiddenWidgets = hiddenWidgets.filter(wId => wId !== id);
-                    } else {
-                        this.app.pluginManager.hiddenWidgets.push(id);
-                    }
+          if (hiddenWidgets.includes(id)) {
+            this.app.pluginManager.hiddenWidgets = hiddenWidgets.filter(
+              wId => wId !== id
+            )
+          } else {
+            this.app.pluginManager.hiddenWidgets.push(id)
+          }
 
-                    await this.app.pluginManager.saveHiddenWidgets();
+          await this.app.pluginManager.saveHiddenWidgets()
 
-                    // Update UI for the specific item without re-rendering the whole list (to avoid interrupting sortable)
-                    const itemEl = btn.closest('.sortable-item');
-                    const icon = btn.querySelector('i');
+          // Update UI for the specific item without re-rendering the whole list (to avoid interrupting sortable)
+          const itemEl = btn.closest('.sortable-item')
+          const icon = btn.querySelector('i')
 
-                    if (this.app.pluginManager.hiddenWidgets.includes(id)) {
-                        icon.classList.remove('fa-eye');
-                        icon.classList.add('fa-eye-slash');
-                        btn.classList.remove('text-wabi-primary');
-                        btn.classList.add('text-wabi-text-secondary');
-                        itemEl.classList.add('opacity-50');
-                    } else {
-                        icon.classList.remove('fa-eye-slash');
-                        icon.classList.add('fa-eye');
-                        btn.classList.remove('text-wabi-text-secondary');
-                        btn.classList.add('text-wabi-primary');
-                        itemEl.classList.remove('opacity-50');
-                    }
-                });
-            });
-        };
-        bindEvents();
-
-        const close = () => {
-            modal.remove();
-            // Re-render home widgets to reflect changes immediately
-            this.app.pluginManager.renderHomeWidgets(document.getElementById('plugin-home-widgets'));
-        };
-
-        modal.querySelector('#close-widget-modal').addEventListener('click', close);
+          if (this.app.pluginManager.hiddenWidgets.includes(id)) {
+            icon.classList.remove('fa-eye')
+            icon.classList.add('fa-eye-slash')
+            btn.classList.remove('text-wabi-primary')
+            btn.classList.add('text-wabi-text-secondary')
+            itemEl.classList.add('opacity-50')
+          } else {
+            icon.classList.remove('fa-eye-slash')
+            icon.classList.add('fa-eye')
+            btn.classList.remove('text-wabi-text-secondary')
+            btn.classList.add('text-wabi-primary')
+            itemEl.classList.remove('opacity-50')
+          }
+        })
+      })
     }
+    bindEvents()
+
+    const close = () => {
+      modal.remove()
+      // Re-render home widgets to reflect changes immediately
+      this.app.pluginManager.renderHomeWidgets(
+        document.getElementById('plugin-home-widgets')
+      )
+    }
+
+    modal.querySelector('#close-widget-modal').addEventListener('click', close)
+  }
 }

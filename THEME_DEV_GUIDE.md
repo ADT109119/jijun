@@ -38,16 +38,16 @@
 
 您可以覆寫以下 10 種系統預設的 CSS 變數，它們影響了全站的 TailwindCSS 樣式：
 
-* `wabi-bg`：最底層背景色 (預設：`#F5F5F3`)
-* `wabi-primary`：主色調，通常用於頂部導覽、按鈕背景或標題字 (預設：`#334A52`)
-* `wabi-expense`：支出顏色，用於支出金額或支出按鈕 (預設：`#B95A5A`)
-* `wabi-income`：收入顏色，用於收入金額或收入按鈕 (預設：`#6A9C89`)
-* `wabi-accent`：強調色，目前主要用於新增紀錄 `+` 按鈕背景 (預設：`#E2B67A`)
-* `wabi-text-primary`：主要文字顏色，如標題或一般內文 (預設：`#2D3748`)
-* `wabi-text-secondary`：次要文字顏色，如描述或未選取的標籤 (預設：`#718096`)
-* `wabi-surface`：卡片背景色，如明細列表的卡片 (預設：`#FFFFFF`)
-* `wabi-border`：邊框顏色，分隔線或卡片邊框 (預設：`#E2E8F0`)
-* `wabi-keypad`：記帳小鍵盤背景底色 (預設：`#E5E7EB`)
+- `wabi-bg`：最底層背景色 (預設：`#F5F5F3`)
+- `wabi-primary`：主色調，通常用於頂部導覽、按鈕背景或標題字 (預設：`#334A52`)
+- `wabi-expense`：支出顏色，用於支出金額或支出按鈕 (預設：`#B95A5A`)
+- `wabi-income`：收入顏色，用於收入金額或收入按鈕 (預設：`#6A9C89`)
+- `wabi-accent`：強調色，目前主要用於新增紀錄 `+` 按鈕背景 (預設：`#E2B67A`)
+- `wabi-text-primary`：主要文字顏色，如標題或一般內文 (預設：`#2D3748`)
+- `wabi-text-secondary`：次要文字顏色，如描述或未選取的標籤 (預設：`#718096`)
+- `wabi-surface`：卡片背景色，如明細列表的卡片 (預設：`#FFFFFF`)
+- `wabi-border`：邊框顏色，分隔線或卡片邊框 (預設：`#E2E8F0`)
+- `wabi-keypad`：記帳小鍵盤背景底色 (預設：`#E5E7EB`)
 
 ## 3. Icons 替換方式
 
@@ -56,16 +56,19 @@
 您可以透過 `type` 屬性指定三種替換模式：
 
 ### (1) 替換為 FontAwesome Icon
+
 ```json
 "nav#bottom-nav a[data-page='home'] i.fa-house": {
   "type": "fontawesome",
   "className": "fa-solid fa-star"
 }
 ```
-* **type**: 必須為 `"fontawesome"`。
-* **className**: 指定您想替換的 fontawesome class。
+
+- **type**: 必須為 `"fontawesome"`。
+- **className**: 指定您想替換的 fontawesome class。
 
 ### (2) 替換為 SVG 字串
+
 ```json
 ".add-btn-icon": {
   "type": "svg",
@@ -73,11 +76,13 @@
   "className": "text-wabi-primary w-6 h-6"
 }
 ```
-* **type**: 必須為 `"svg"`。
-* **svg**: 完整的 SVG 標籤字串 (如果包含引號，請在 JSON 中轉義 `\"`)。
-* **className** (可選): 您想加在 `<svg>` 標籤上的 class。
+
+- **type**: 必須為 `"svg"`。
+- **svg**: 完整的 SVG 標籤字串 (如果包含引號，請在 JSON 中轉義 `\"`)。
+- **className** (可選): 您想加在 `<svg>` 標籤上的 class。
 
 ### (3) 替換為 圖片 (PNG / JPG / Base64)
+
 ```json
 "#sidebar-ledger-icon i": {
   "type": "image",
@@ -87,10 +92,11 @@
   "height": "24px"
 }
 ```
-* **type**: 必須為 `"image"`。
-* **src**: 圖片的路徑，可以是相對於網站的 URL，也強烈建議直接塞入 **Base64** 以確保離線可用性。
-* **width** / **height** (可選): 強制設定圖片大小。
-* **className** (可選): 追加在 `<img>` 標籤上的 class。
+
+- **type**: 必須為 `"image"`。
+- **src**: 圖片的路徑，可以是相對於網站的 URL，也強烈建議直接塞入 **Base64** 以確保離線可用性。
+- **width** / **height** (可選): 強制設定圖片大小。
+- **className** (可選): 追加在 `<img>` 標籤上的 class。
 
 > **注意：**因為畫面元素可能隨著頁面切換或動態載入產生，主題系統會使用 `MutationObserver` 持續監聽 DOM 變化，並自動替換後續出現的元素，確保您設定的替換能夠完美套用到每一個角落。
 
@@ -121,11 +127,11 @@
 
 ### 縮圖優先順序（三選一）
 
-| 欄位 | 說明 | 呈現方式 |
-|------|------|----------|
-| `svgPreview` | 自訂 SVG 字串（**最優先**）| 以 `primary` 色為背景正方形，SVG 以白色 `currentColor` 呈現 |
-| `iconPreview` | FontAwesome class 字串 | 以 `bg` 色為背景，FA icon 以 `primary` 色呈現 |
-| （兩者皆無）| 自動回退 | 以 `bg` 色為背景、`primary` 色圓點 |
+| 欄位          | 說明                        | 呈現方式                                                    |
+| ------------- | --------------------------- | ----------------------------------------------------------- |
+| `svgPreview`  | 自訂 SVG 字串（**最優先**） | 以 `primary` 色為背景正方形，SVG 以白色 `currentColor` 呈現 |
+| `iconPreview` | FontAwesome class 字串      | 以 `bg` 色為背景，FA icon 以 `primary` 色呈現               |
+| （兩者皆無）  | 自動回退                    | 以 `bg` 色為背景、`primary` 色圓點                          |
 
 > **建議**：凡主題有自訂圖示者（如 Sakura 的五瓣花），一律使用 `svgPreview` 以保持品牌一致性。
 
