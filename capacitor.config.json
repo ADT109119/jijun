@@ -7,7 +7,12 @@
   },
   "plugins": {
     "GoogleAuth": {
-      "scopes": ["profile", "email", "https://www.googleapis.com/auth/drive.appdata", "https://www.googleapis.com/auth/drive.file"],
+      "scopes": [
+        "profile",
+        "email",
+        "https://www.googleapis.com/auth/drive.appdata",
+        "https://www.googleapis.com/auth/drive.file"
+      ],
       "serverClientId": "350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
     }

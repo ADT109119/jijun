@@ -1,0 +1,31 @@
+
+  VITE v5.4.21  ready in 333 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+3:43:18 AM [vite] warning:
+/app/src/js/pluginManager.js
+262|        const url = URL.createObjectURL(blob)
+263|
+264|        const module = await import(url)
+   |                                    ^^^
+265|        if (module.default && typeof module.default.init === 'function') {
+266|          let storage = null
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js
+3:43:18 AM [vite] warning:
+/app/src/js/pluginManager.js
+416|            // @ts-ignore
+417|            /* @vite-ignore */
+418|            const module = await import(url)
+   |                                        ^^^
+419|            meta = module.default?.meta || {}
+420|          } catch (err) {
+The above dynamic import cannot be analyzed by Vite.
+See https://github.com/rollup/plugins/tree/master/packages/dynamic-import-vars#limitations for supported dynamic import formats. If this is intended to be left as-is, you can use the /* @vite-ignore */ comment inside the import() call to suppress this warning.
+
+  Plugin: vite:import-analysis
+  File: /app/src/js/pluginManager.js

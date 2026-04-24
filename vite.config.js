@@ -30,16 +30,16 @@ function serviceWorkerVersionPlugin() {
       } catch (e) {
         // dev 模式下不會有 dist/serviceWorker.js，靜默忽略
       }
-    }
+    },
   }
 }
 
 export default defineConfig({
   plugins: [
     legacy({
-      targets: ['defaults', 'not IE 11']
+      targets: ['defaults', 'not IE 11'],
     }),
-    serviceWorkerVersionPlugin()
+    serviceWorkerVersionPlugin(),
   ],
   define: {
     // 編譯時常數：所有 src/ 下的 JS 都可直接使用
@@ -48,7 +48,9 @@ export default defineConfig({
     __AD_IS_TESTING__: JSON.stringify(adConfig.isTesting ?? true),
     __AD_ADSENSE_CLIENT_ID__: JSON.stringify(adConfig.adsenseClientId ?? ''),
     __AD_ADSENSE_AD_SLOT__: JSON.stringify(adConfig.adsenseAdSlot ?? ''),
-    __AD_GPT_REWARDED_PATH__: JSON.stringify(adConfig.gptRewardedAdUnitPath ?? ''),
+    __AD_GPT_REWARDED_PATH__: JSON.stringify(
+      adConfig.gptRewardedAdUnitPath ?? ''
+    ),
     __AD_ADMOB_BANNER_ID__: JSON.stringify(adConfig.admobBannerId ?? ''),
     __AD_ADMOB_REWARDED_ID__: JSON.stringify(adConfig.admobRewardedId ?? ''),
   },
@@ -57,12 +59,12 @@ export default defineConfig({
     assetsDir: 'assets',
     rollupOptions: {
       input: {
-        main: 'index.html'
-      }
-    }
+        main: 'index.html',
+      },
+    },
   },
   server: {
     port: 3000,
-    open: true
-  }
+    open: true,
+  },
 })

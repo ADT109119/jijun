@@ -1,74 +1,81 @@
 export default {
-    meta: {
-        id: 'com.walkingfish.e_invoice',
-        name: '電子發票掃描 (Beta 版)',
-        version: '1.3',
-        description: '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
-        author: 'The walking fish 步行魚',
-        icon: 'fa-qrcode',
-        permissions: ['camera', 'storage', 'data:write', 'ui', 'network']
-    },
+  meta: {
+    id: 'com.walkingfish.e_invoice',
+    name: '電子發票掃描 (Beta 版)',
+    version: '1.3',
+    description:
+      '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
+    author: 'The walking fish 步行魚',
+    icon: 'fa-qrcode',
+    permissions: ['camera', 'storage', 'data:write', 'ui', 'network'],
+  },
 
-    init(context) {
-        this.context = context;
+  init(context) {
+    this.context = context
 
-        // 當頁面渲染後觸發
-        context.events.on('onPageRenderAfter', (page) => {
-            if (page === 'add') {
-                this.injectScannerButton();
-            }
-        });
+    // 當頁面渲染後觸發
+    context.events.on('onPageRenderAfter', page => {
+      if (page === 'add') {
+        this.injectScannerButton()
+      }
+    })
 
-        // 註冊發票清單頁面與首頁 Widget
-        this.registerInvoiceListPage();
-        this.registerWidget();
+    // 註冊發票清單頁面與首頁 Widget
+    this.registerInvoiceListPage()
+    this.registerWidget()
 
-        // 背景檢查中獎
-        setTimeout(() => this.initBackgroundCheck(), 5000);
-    },
+    // 背景檢查中獎
+    setTimeout(() => this.initBackgroundCheck(), 5000)
+  },
 
-    injectScannerButton() {
-        const categoryContainer = document.getElementById('add-selected-category');
-        if (!categoryContainer) return;
+  injectScannerButton() {
+    const categoryContainer = document.getElementById('add-selected-category')
+    if (!categoryContainer) return
 
-        if (document.getElementById('einvoice-scan-btn')) return;
+    if (document.getElementById('einvoice-scan-btn')) return
 
-        const row = categoryContainer.parentElement;
-        const parent = row.parentElement;
+    const row = categoryContainer.parentElement
+    const parent = row.parentElement
 
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'mt-1 flex px-1'; 
+    const btnContainer = document.createElement('div')
+    btnContainer.className = 'mt-1 flex px-1'
 
-        const btn = document.createElement('button');
-        btn.id = 'einvoice-scan-btn';
-        btn.className = 'text-sm text-wabi-primary bg-wabi-primary/10 px-3 py-1.5 rounded-lg hover:bg-wabi-primary/20 transition-colors flex items-center gap-2 mr-2';
-        btn.innerHTML = '<i class="fa-solid fa-qrcode"></i> 掃描發票 <span class="text-[10px] bg-wabi-primary text-wabi-surface px-1 rounded">Beta</span>';
+    const btn = document.createElement('button')
+    btn.id = 'einvoice-scan-btn'
+    btn.className =
+      'text-sm text-wabi-primary bg-wabi-primary/10 px-3 py-1.5 rounded-lg hover:bg-wabi-primary/20 transition-colors flex items-center gap-2 mr-2'
+    btn.innerHTML =
+      '<i class="fa-solid fa-qrcode"></i> 掃描發票 <span class="text-[10px] bg-wabi-primary text-wabi-surface px-1 rounded">Beta</span>'
 
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.openScannerModal();
-        });
+    btn.addEventListener('click', e => {
+      e.preventDefault()
+      this.openScannerModal()
+    })
 
-        btnContainer.appendChild(btn);
+    btnContainer.appendChild(btn)
 
-        const existingContainer = row.nextElementSibling;
-        if (existingContainer && existingContainer.querySelector('#currency-open-btn')) {
-            existingContainer.insertBefore(btn, existingContainer.firstChild);
-        } else {
-            if (row.nextSibling) {
-                parent.insertBefore(btnContainer, row.nextSibling);
-            } else {
-                parent.appendChild(btnContainer);
-            }
-        }
-    },
+    const existingContainer = row.nextElementSibling
+    if (
+      existingContainer &&
+      existingContainer.querySelector('#currency-open-btn')
+    ) {
+      existingContainer.insertBefore(btn, existingContainer.firstChild)
+    } else {
+      if (row.nextSibling) {
+        parent.insertBefore(btnContainer, row.nextSibling)
+      } else {
+        parent.appendChild(btnContainer)
+      }
+    }
+  },
 
-    async openScannerModal() {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-80 z-[80] flex flex-col items-center justify-center p-4 animation-fade-in';
-        modal.id = 'einvoice-scanner-modal';
+  async openScannerModal() {
+    const modal = document.createElement('div')
+    modal.className =
+      'fixed inset-0 bg-black bg-opacity-80 z-[80] flex flex-col items-center justify-center p-4 animation-fade-in'
+    modal.id = 'einvoice-scanner-modal'
 
-        modal.innerHTML = `
+    modal.innerHTML = `
             <div class="bg-white rounded-xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative">
                 <div class="flex justify-between items-center p-4 bg-gray-50 border-b border-gray-200">
                     <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -96,440 +103,490 @@ export default {
                     </div>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+    document.body.appendChild(modal)
 
-        this.scannerActive = true;
-        this.videoStream = null;
+    this.scannerActive = true
+    this.videoStream = null
 
-        const closeBtn = modal.querySelector('#einvoice-close-btn');
+    const closeBtn = modal.querySelector('#einvoice-close-btn')
 
-        const closeModal = async () => {
-            this.scannerActive = false;
-            if (this.videoStream) {
-                this.videoStream.getTracks().forEach(track => track.stop());
-                this.videoStream = null;
-            }
-            modal.remove();
-        };
+    const closeModal = async () => {
+      this.scannerActive = false
+      if (this.videoStream) {
+        this.videoStream.getTracks().forEach(track => track.stop())
+        this.videoStream = null
+      }
+      modal.remove()
+    }
 
-        closeBtn.addEventListener('click', closeModal);
+    closeBtn.addEventListener('click', closeModal)
 
-        await this.startCustomScanner(modal, closeModal);
-    },
+    await this.startCustomScanner(modal, closeModal)
+  },
 
-    async startCustomScanner(modal, closeModal) {
-        const video = modal.querySelector('#reader-video');
-        const canvas = modal.querySelector('#reader-canvas');
-        const loadingEl = modal.querySelector('#reader-loading');
-        const hintEl = modal.querySelector('#scan-hint');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  async startCustomScanner(modal, closeModal) {
+    const video = modal.querySelector('#reader-video')
+    const canvas = modal.querySelector('#reader-canvas')
+    const loadingEl = modal.querySelector('#reader-loading')
+    const hintEl = modal.querySelector('#scan-hint')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
+    try {
+      const constraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          advanced: [{ focusMode: 'continuous' }],
+        },
+      }
+
+      this.videoStream = await navigator.mediaDevices.getUserMedia(constraints)
+      video.srcObject = this.videoStream
+      video.setAttribute('playsinline', true)
+      await video.play()
+
+      if (loadingEl) {
+        loadingEl.style.opacity = '0'
+        setTimeout(() => {
+          loadingEl.style.display = 'none'
+        }, 300)
+      }
+
+      let barcodeDetector = null
+      if ('BarcodeDetector' in window) {
         try {
-            const constraints = {
-                video: {
-                    facingMode: 'environment',
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    advanced: [{ focusMode: 'continuous' }]
-                }
-            };
-
-            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = this.videoStream;
-            video.setAttribute('playsinline', true);
-            await video.play();
-
-            if (loadingEl) {
-                loadingEl.style.opacity = '0';
-                setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
-            }
-
-            let barcodeDetector = null;
-            if ('BarcodeDetector' in window) {
-                try {
-                    barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-                } catch (e) {
-                    console.warn('BarcodeDetector init failed, fallback to jsQR', e);
-                }
-            }
-
-            if (!barcodeDetector) {
-                if (!window.jsQR) {
-                    try {
-                        await this.loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js');
-                    } catch (e) {
-                        this.context.ui.showToast('無法載入掃描模組，請檢查網路連線', 'error');
-                        closeModal();
-                        return;
-                    }
-                }
-            }
-
-            let lastScanTime = 0;
-
-            const scanLoop = async (timestamp) => {
-                if (!this.scannerActive) return;
-
-                // 控制掃描頻率，避免過度消耗效能 (約每秒 15 幀)
-                if (timestamp - lastScanTime >= 66 && video.readyState === video.HAVE_ENOUGH_DATA) {
-                    lastScanTime = timestamp;
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-
-                    // 將影片繪製到 canvas，以便分析和繪製框線
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                    let qrResults = [];
-
-                    try {
-                        if (barcodeDetector) {
-                            const barcodes = await barcodeDetector.detect(canvas);
-                            qrResults = barcodes.map(b => ({
-                                rawValue: b.rawValue,
-                                cornerPoints: b.cornerPoints
-                            }));
-                        } else if (window.jsQR) {
-                            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                            // jsQR 每次只能找一個，且比較耗效能，我們讓他掃描整張圖片
-                            const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
-                                inversionAttempts: "dontInvert",
-                            });
-                            if (code) {
-                                qrResults = [{
-                                    rawValue: code.data,
-                                    cornerPoints: [
-                                        code.location.topLeftCorner,
-                                        code.location.topRightCorner,
-                                        code.location.bottomRightCorner,
-                                        code.location.bottomLeftCorner
-                                    ]
-                                }];
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Scan error:', e);
-                    }
-
-                    let foundValidInvoice = false;
-
-                    for (const result of qrResults) {
-                        const { rawValue, cornerPoints } = result;
-
-                        // 判斷是否為合法的左側發票 (前兩碼大寫英文 + 8碼數字 + 7碼日期...)
-                        const isLeftInvoice = rawValue && rawValue.length >= 37 && /^[A-Z]{2}\d{15}/.test(rawValue.substring(0, 17));
-
-                        // 繪製偵測框
-                        if (cornerPoints && cornerPoints.length === 4) {
-                            ctx.beginPath();
-                            ctx.moveTo(cornerPoints[0].x, cornerPoints[0].y);
-                            for (let i = 1; i < cornerPoints.length; i++) {
-                                ctx.lineTo(cornerPoints[i].x, cornerPoints[i].y);
-                            }
-                            ctx.closePath();
-
-                            if (isLeftInvoice) {
-                                ctx.lineWidth = 6;
-                                ctx.strokeStyle = '#22c55e'; // 綠色
-                                ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
-                                ctx.fill();
-                                ctx.stroke();
-                                foundValidInvoice = true;
-
-                                // 停止掃描並處理結果
-                                this.scannerActive = false;
-                                this.handleScanResult(rawValue, closeModal);
-                                break;
-                            } else {
-                                ctx.lineWidth = 6;
-                                ctx.strokeStyle = '#eab308'; // 黃色
-                                ctx.stroke();
-
-                                if (hintEl) {
-                                    hintEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-yellow-500"></i><span class="text-yellow-700">這似乎是明細，請掃左側 QR Code</span>`;
-                                    hintEl.className = "mt-5 flex items-center justify-center gap-2 text-xs bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-200 w-full max-w-[280px] transition-all";
-                                }
-                            }
-                        }
-                    }
-
-                    if (!foundValidInvoice && qrResults.length === 0) {
-                        if (hintEl && hintEl.className.includes('bg-yellow-50')) {
-                            hintEl.innerHTML = `<i class="fa-solid fa-circle-info text-gray-400"></i><span>請將左側發票 QR Code 置於畫面中</span>`;
-                            hintEl.className = "mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px] transition-all";
-                        }
-                    }
-                }
-
-                if (this.scannerActive) {
-                    requestAnimationFrame(scanLoop);
-                }
-            };
-
-            requestAnimationFrame(scanLoop);
-
+          barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] })
         } catch (e) {
-            console.error('啟動相機失敗詳細錯誤:', e);
-            if (loadingEl) {
-                loadingEl.style.opacity = '1';
-                loadingEl.innerHTML = `
+          console.warn('BarcodeDetector init failed, fallback to jsQR', e)
+        }
+      }
+
+      if (!barcodeDetector) {
+        if (!window.jsQR) {
+          try {
+            await this.loadScript(
+              'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
+            )
+          } catch (e) {
+            this.context.ui.showToast(
+              '無法載入掃描模組，請檢查網路連線',
+              'error'
+            )
+            closeModal()
+            return
+          }
+        }
+      }
+
+      let lastScanTime = 0
+
+      const scanLoop = async timestamp => {
+        if (!this.scannerActive) return
+
+        // 控制掃描頻率，避免過度消耗效能 (約每秒 15 幀)
+        if (
+          timestamp - lastScanTime >= 66 &&
+          video.readyState === video.HAVE_ENOUGH_DATA
+        ) {
+          lastScanTime = timestamp
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+
+          // 將影片繪製到 canvas，以便分析和繪製框線
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+          let qrResults = []
+
+          try {
+            if (barcodeDetector) {
+              const barcodes = await barcodeDetector.detect(canvas)
+              qrResults = barcodes.map(b => ({
+                rawValue: b.rawValue,
+                cornerPoints: b.cornerPoints,
+              }))
+            } else if (window.jsQR) {
+              const imageData = ctx.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height
+              )
+              // jsQR 每次只能找一個，且比較耗效能，我們讓他掃描整張圖片
+              const code = window.jsQR(
+                imageData.data,
+                imageData.width,
+                imageData.height,
+                {
+                  inversionAttempts: 'dontInvert',
+                }
+              )
+              if (code) {
+                qrResults = [
+                  {
+                    rawValue: code.data,
+                    cornerPoints: [
+                      code.location.topLeftCorner,
+                      code.location.topRightCorner,
+                      code.location.bottomRightCorner,
+                      code.location.bottomLeftCorner,
+                    ],
+                  },
+                ]
+              }
+            }
+          } catch (e) {
+            console.warn('Scan error:', e)
+          }
+
+          let foundValidInvoice = false
+
+          for (const result of qrResults) {
+            const { rawValue, cornerPoints } = result
+
+            // 判斷是否為合法的左側發票 (前兩碼大寫英文 + 8碼數字 + 7碼日期...)
+            const isLeftInvoice =
+              rawValue &&
+              rawValue.length >= 37 &&
+              /^[A-Z]{2}\d{15}/.test(rawValue.substring(0, 17))
+
+            // 繪製偵測框
+            if (cornerPoints && cornerPoints.length === 4) {
+              ctx.beginPath()
+              ctx.moveTo(cornerPoints[0].x, cornerPoints[0].y)
+              for (let i = 1; i < cornerPoints.length; i++) {
+                ctx.lineTo(cornerPoints[i].x, cornerPoints[i].y)
+              }
+              ctx.closePath()
+
+              if (isLeftInvoice) {
+                ctx.lineWidth = 6
+                ctx.strokeStyle = '#22c55e' // 綠色
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.2)'
+                ctx.fill()
+                ctx.stroke()
+                foundValidInvoice = true
+
+                // 停止掃描並處理結果
+                this.scannerActive = false
+                this.handleScanResult(rawValue, closeModal)
+                break
+              } else {
+                ctx.lineWidth = 6
+                ctx.strokeStyle = '#eab308' // 黃色
+                ctx.stroke()
+
+                if (hintEl) {
+                  hintEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-yellow-500"></i><span class="text-yellow-700">這似乎是明細，請掃左側 QR Code</span>`
+                  hintEl.className =
+                    'mt-5 flex items-center justify-center gap-2 text-xs bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-200 w-full max-w-[280px] transition-all'
+                }
+              }
+            }
+          }
+
+          if (!foundValidInvoice && qrResults.length === 0) {
+            if (hintEl && hintEl.className.includes('bg-yellow-50')) {
+              hintEl.innerHTML = `<i class="fa-solid fa-circle-info text-gray-400"></i><span>請將左側發票 QR Code 置於畫面中</span>`
+              hintEl.className =
+                'mt-5 flex items-center justify-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100 w-full max-w-[280px] transition-all'
+            }
+          }
+        }
+
+        if (this.scannerActive) {
+          requestAnimationFrame(scanLoop)
+        }
+      }
+
+      requestAnimationFrame(scanLoop)
+    } catch (e) {
+      console.error('啟動相機失敗詳細錯誤:', e)
+      if (loadingEl) {
+        loadingEl.style.opacity = '1'
+        loadingEl.innerHTML = `
                     <div class="text-red-400 text-center px-4">
                         <i class="fa-solid fa-triangle-exclamation text-3xl mb-3"></i><br>
                         無法啟動相機<br>
                         <span class="text-xs text-gray-300 mt-2 block">請確認相機權限，或檢查是否處於 HTTPS 環境</span>
-                    </div>`;
-            }
+                    </div>`
+      }
+    }
+  },
+
+  loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) return resolve()
+      const script = document.createElement('script')
+      script.src = src
+      script.onload = resolve
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  },
+
+  async handleScanResult(qrData, closeModal) {
+    if (!qrData || qrData.length < 37) return
+
+    // 檢查是否為左側發票 QR Code (前兩碼大寫英文 + 8碼數字發票號碼 + 7碼數字日期)
+    if (!/^[A-Z]{2}\d{15}/.test(qrData.substring(0, 17))) {
+      // 如果掃到右側明細或其他不符格式的條碼，靜默忽略並繼續掃描
+      return
+    }
+
+    // 1. 成功掃描到內容，立刻關閉掃描視窗，讓後續的 Modal 可以正常顯示在最上層
+    await closeModal()
+
+    try {
+      const invNum = qrData.substring(0, 10)
+      const dateStr = qrData.substring(10, 17)
+      const totalAmountHex = qrData.substring(29, 37)
+
+      const totalAmount = parseInt(totalAmountHex, 16)
+      const rocYear = parseInt(dateStr.substring(0, 3), 10)
+      const month = parseInt(dateStr.substring(3, 5), 10)
+
+      if (isNaN(rocYear)) throw new Error('Invalid year')
+
+      const startMonth = month % 2 === 0 ? month - 1 : month
+      const endMonth = startMonth + 1
+      const periodStr = `${rocYear}年${String(startMonth).padStart(2, '0')}-${String(endMonth).padStart(2, '0')}月`
+
+      // 2. 檢查是否為重複發票
+      let invoices = []
+      try {
+        const stored = await this.context.storage.getItem('invoices')
+        if (stored) invoices = JSON.parse(stored)
+      } catch (e) {
+        console.warn('Failed to parse invoices', e)
+      }
+
+      const isDuplicate = invoices.some(inv => inv.number === invNum)
+
+      if (isDuplicate) {
+        // 相機 Modal 已關閉，Confirm 視窗現在能完美呈現在最上層
+        const wantToRecordAgain = await this.context.ui.showConfirm(
+          '發票已掃描過',
+          `這張發票 (${invNum}) 已經存在掃描紀錄中。<br><br>請問您是要重新將金額帶入記帳頁面嗎？`
+        )
+
+        if (wantToRecordAgain) {
+          // 若是重複掃描，為了避免覆蓋舊紀錄，直接建構簡易假資料帶入表單即可
+          this.fillAddForm({ number: invNum, amount: totalAmount })
         }
-    },
+        return
+      }
 
-    loadScript(src) {
-        return new Promise((resolve, reject) => {
-            if (document.querySelector(`script[src="${src}"]`)) return resolve();
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
-    },
+      // 3. 嘗試取得店家名稱 (發票格式第 45-52 碼為賣方統編)
+      const sellerBan = qrData.length >= 53 ? qrData.substring(45, 53) : ''
+      let storeName = ''
 
-    async handleScanResult(qrData, closeModal) {
-        if (!qrData || qrData.length < 37) return;
-
-        // 檢查是否為左側發票 QR Code (前兩碼大寫英文 + 8碼數字發票號碼 + 7碼數字日期)
-        if (!/^[A-Z]{2}\d{15}/.test(qrData.substring(0, 17))) {
-            // 如果掃到右側明細或其他不符格式的條碼，靜默忽略並繼續掃描
-            return;
-        }
-
-        // 1. 成功掃描到內容，立刻關閉掃描視窗，讓後續的 Modal 可以正常顯示在最上層
-        await closeModal();
-
+      if (sellerBan && sellerBan !== '00000000' && /^\d{8}$/.test(sellerBan)) {
         try {
-            const invNum = qrData.substring(0, 10);
-            const dateStr = qrData.substring(10, 17);
-            const totalAmountHex = qrData.substring(29, 37);
+          // 為了避免網路卡頓影響體驗，加上 2 秒的逾時限制
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 2000)
 
-            const totalAmount = parseInt(totalAmountHex, 16);
-            const rocYear = parseInt(dateStr.substring(0, 3), 10);
-            const month = parseInt(dateStr.substring(3, 5), 10);
+          const res = await fetch(
+            `https://company.g0v.ronny.tw/api/show/${sellerBan}`,
+            { signal: controller.signal }
+          )
+          clearTimeout(timeoutId)
 
-            if (isNaN(rocYear)) throw new Error('Invalid year');
-
-            const startMonth = month % 2 === 0 ? month - 1 : month;
-            const endMonth = startMonth + 1;
-            const periodStr = `${rocYear}年${String(startMonth).padStart(2, '0')}-${String(endMonth).padStart(2, '0')}月`;
-
-            // 2. 檢查是否為重複發票
-            let invoices = [];
-            try {
-                const stored = await this.context.storage.getItem('invoices');
-                if (stored) invoices = JSON.parse(stored);
-            } catch (e) { console.warn('Failed to parse invoices', e); }
-
-            const isDuplicate = invoices.some(inv => inv.number === invNum);
-
-            if (isDuplicate) {
-                // 相機 Modal 已關閉，Confirm 視窗現在能完美呈現在最上層
-                const wantToRecordAgain = await this.context.ui.showConfirm(
-                    '發票已掃描過', 
-                    `這張發票 (${invNum}) 已經存在掃描紀錄中。<br><br>請問您是要重新將金額帶入記帳頁面嗎？`
-                );
-                
-                if (wantToRecordAgain) {
-                    // 若是重複掃描，為了避免覆蓋舊紀錄，直接建構簡易假資料帶入表單即可
-                    this.fillAddForm({ number: invNum, amount: totalAmount });
-                }
-                return;
+          if (res.ok) {
+            const data = await res.json()
+            if (data && data.data) {
+              storeName = data.data['公司名稱'] || data.data['商業名稱'] || ''
+              // 過濾常見的長尾後綴，讓名稱更簡潔乾淨 (例如: 統一超商股份有限公司 -> 統一超商)
+              storeName = storeName
+                .replace(/股份有限公司|有限公司|企業行|實業|商行/g, '')
+                .trim()
             }
-
-            // 3. 嘗試取得店家名稱 (發票格式第 45-52 碼為賣方統編)
-            const sellerBan = qrData.length >= 53 ? qrData.substring(45, 53) : '';
-            let storeName = '';
-
-            if (sellerBan && sellerBan !== '00000000' && /^\d{8}$/.test(sellerBan)) {
-                try {
-                    // 為了避免網路卡頓影響體驗，加上 2 秒的逾時限制
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 2000); 
-                    
-                    const res = await fetch(`https://company.g0v.ronny.tw/api/show/${sellerBan}`, { signal: controller.signal });
-                    clearTimeout(timeoutId);
-                    
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data && data.data) {
-                            storeName = data.data['公司名稱'] || data.data['商業名稱'] || '';
-                            // 過濾常見的長尾後綴，讓名稱更簡潔乾淨 (例如: 統一超商股份有限公司 -> 統一超商)
-                            storeName = storeName.replace(/股份有限公司|有限公司|企業行|實業|商行/g, '').trim();
-                        }
-                    }
-                } catch (e) {
-                    // 逾時或無網路，則靜默忽略，單純顯示發票號碼
-                }
-            }
-
-            const invoiceData = {
-                number: invNum,
-                amount: totalAmount,
-                date: dateStr,
-                period: periodStr,
-                storeName: storeName,
-                sellerBan: sellerBan,
-                scannedAt: Date.now(),
-                isWinning: null 
-            };
-
-            // 全新發票：儲存並帶入表單
-            await this.saveInvoice(invoiceData, invoices);
-            this.context.ui.showToast(`成功掃描發票: ${invNum}`, 'success');
-            this.fillAddForm(invoiceData);
-
+          }
         } catch (e) {
-            this.context.ui.showToast('發票解析失敗，請重新掃描', 'error');
+          // 逾時或無網路，則靜默忽略，單純顯示發票號碼
         }
-    },
+      }
 
-    async saveInvoice(invoiceData, currentInvoices) {
-        currentInvoices.push(invoiceData);
-        await this.context.storage.setItem('invoices', JSON.stringify(currentInvoices));
-        return true;
-    },
+      const invoiceData = {
+        number: invNum,
+        amount: totalAmount,
+        date: dateStr,
+        period: periodStr,
+        storeName: storeName,
+        sellerBan: sellerBan,
+        scannedAt: Date.now(),
+        isWinning: null,
+      }
 
-    fillAddForm(invoiceData) {
-        const noteInput = document.getElementById('add-note-input');
-        const currentNote = noteInput ? noteInput.value.trim() : '';
-        
-        // 將店家名稱帶入備註最前方，格式為：[店家名稱] 既有備註 (發票號碼)
-        const storeText = invoiceData.storeName ? `[${invoiceData.storeName}] ` : '';
-        const newNote = currentNote 
-            ? `${storeText}${currentNote} (發票:${invoiceData.number})` 
-            : `${storeText}發票號碼: ${invoiceData.number}`;
+      // 全新發票：儲存並帶入表單
+      await this.saveInvoice(invoiceData, invoices)
+      this.context.ui.showToast(`成功掃描發票: ${invNum}`, 'success')
+      this.fillAddForm(invoiceData)
+    } catch (e) {
+      this.context.ui.showToast('發票解析失敗，請重新掃描', 'error')
+    }
+  },
 
-        this.context.ui.openAddPage({
-            amount: invoiceData.amount,
-            description: newNote,
-            type: 'expense'
-        });
-    },
+  async saveInvoice(invoiceData, currentInvoices) {
+    currentInvoices.push(invoiceData)
+    await this.context.storage.setItem(
+      'invoices',
+      JSON.stringify(currentInvoices)
+    )
+    return true
+  },
 
-    // ===== 對獎核心邏輯 =====
+  fillAddForm(invoiceData) {
+    const noteInput = document.getElementById('add-note-input')
+    const currentNote = noteInput ? noteInput.value.trim() : ''
 
-    async initBackgroundCheck(force = false) {
-        let invoices = [];
+    // 將店家名稱帶入備註最前方，格式為：[店家名稱] 既有備註 (發票號碼)
+    const storeText = invoiceData.storeName ? `[${invoiceData.storeName}] ` : ''
+    const newNote = currentNote
+      ? `${storeText}${currentNote} (發票:${invoiceData.number})`
+      : `${storeText}發票號碼: ${invoiceData.number}`
+
+    this.context.ui.openAddPage({
+      amount: invoiceData.amount,
+      description: newNote,
+      type: 'expense',
+    })
+  },
+
+  // ===== 對獎核心邏輯 =====
+
+  async initBackgroundCheck(force = false) {
+    let invoices = []
+    try {
+      const stored = await this.context.storage.getItem('invoices')
+      if (stored) invoices = JSON.parse(stored)
+    } catch (e) {
+      console.warn('Failed to parse invoices for background check', e)
+      return
+    }
+
+    if (invoices.length === 0 && !force) return
+
+    const lastSync =
+      (await this.context.storage.getItem('last_sync_winning_numbers')) || 0
+    const now = Date.now()
+    let winningData = null
+
+    if (force || now - lastSync > 24 * 60 * 60 * 1000) {
+      winningData = await this.fetchWinningNumbers()
+      if (winningData) {
+        let existingWin = {}
         try {
-            const stored = await this.context.storage.getItem('invoices');
-            if (stored) invoices = JSON.parse(stored);
+          const storedWin =
+            await this.context.storage.getItem('winning_numbers')
+          if (storedWin) existingWin = JSON.parse(storedWin)
         } catch (e) {
-            console.warn('Failed to parse invoices for background check', e);
-            return;
+          console.warn('Failed to parse existing winning numbers', e)
         }
 
-        if (invoices.length === 0 && !force) return;
+        winningData = { ...existingWin, ...winningData }
+        await this.context.storage.setItem(
+          'winning_numbers',
+          JSON.stringify(winningData)
+        )
+        await this.context.storage.setItem('last_sync_winning_numbers', now)
+      }
+    } else {
+      const storedWinning =
+        await this.context.storage.getItem('winning_numbers')
+      if (storedWinning) winningData = JSON.parse(storedWinning)
+    }
 
-        const lastSync = await this.context.storage.getItem('last_sync_winning_numbers') || 0;
-        const now = Date.now();
-        let winningData = null;
+    if (!winningData) return
 
-        if (force || now - lastSync > 24 * 60 * 60 * 1000) {
-            winningData = await this.fetchWinningNumbers();
-            if (winningData) {
-                let existingWin = {};
-                try {
-                    const storedWin = await this.context.storage.getItem('winning_numbers');
-                    if (storedWin) existingWin = JSON.parse(storedWin);
-                } catch(e) { console.warn('Failed to parse existing winning numbers', e); }
-                
-                winningData = { ...existingWin, ...winningData };
-                await this.context.storage.setItem('winning_numbers', JSON.stringify(winningData));
-                await this.context.storage.setItem('last_sync_winning_numbers', now);
-            }
-        } else {
-            const storedWinning = await this.context.storage.getItem('winning_numbers');
-            if (storedWinning) winningData = JSON.parse(storedWinning);
+    let hasChanges = false
+    let newWinningCount = 0
+
+    for (const inv of invoices) {
+      if (inv.isWinning !== true) {
+        const result = this.checkInvoiceWinning(
+          inv.number,
+          inv.period,
+          winningData
+        )
+        if (result !== null && result !== inv.isWinning) {
+          inv.isWinning = result
+          hasChanges = true
+          if (result === true) newWinningCount++
         }
+      }
+    }
 
-        if (!winningData) return;
+    if (hasChanges) {
+      await this.context.storage.setItem('invoices', JSON.stringify(invoices))
+      if (newWinningCount > 0) {
+        this.context.ui.showAlert(
+          '🎉 恭喜中獎！',
+          `您有 ${newWinningCount} 張掃描的發票中獎了！請至「發票清單」查看。`
+        )
+      }
+    }
+  },
 
-        let hasChanges = false;
-        let newWinningCount = 0;
+  async fetchWinningNumbers() {
+    try {
+      const res = await fetch('https://api.invoice.tw/api/v1/invoice/latest')
+      if (!res.ok) throw new Error('Network response was not ok')
+      return await res.json()
+    } catch (e) {
+      console.warn('API 連線失敗，載入內建備用中獎號碼')
+      return {
+        '115年01-02月': {
+          super: '87510041',
+          special: '32220522',
+          first: ['21677046', '44662410', '31262513'],
+        },
+        '114年11-12月': {
+          super: '97023797',
+          special: '00507588',
+          first: ['92377231', '05232592', '78125249'],
+        },
+        '114年09-10月': {
+          super: '25834483',
+          special: '46587380',
+          first: ['41016094', '98081574', '07309261'],
+        },
+      }
+    }
+  },
 
-        for (const inv of invoices) {
-            if (inv.isWinning !== true) { 
-                const result = this.checkInvoiceWinning(inv.number, inv.period, winningData);
-                if (result !== null && result !== inv.isWinning) {
-                    inv.isWinning = result;
-                    hasChanges = true;
-                    if (result === true) newWinningCount++;
-                }
-            }
-        }
+  checkInvoiceWinning(invoiceNumber, period, winningData) {
+    const periodData = winningData[period]
+    if (!periodData) {
+      const periods = Object.keys(winningData)
+      if (periods.length === 0) return null
+      const maxPeriod = periods.sort((a, b) => b.localeCompare(a))[0]
+      if (period <= maxPeriod) return false
+      return null
+    }
 
-        if (hasChanges) {
-            await this.context.storage.setItem('invoices', JSON.stringify(invoices));
-            if (newWinningCount > 0) {
-                this.context.ui.showAlert('🎉 恭喜中獎！', `您有 ${newWinningCount} 張掃描的發票中獎了！請至「發票清單」查看。`);
-            }
-        }
-    },
+    const { super: superNum, special, first } = periodData
 
-    async fetchWinningNumbers() {
-        try {
-            const res = await fetch('https://api.invoice.tw/api/v1/invoice/latest'); 
-            if (!res.ok) throw new Error('Network response was not ok');
-            return await res.json();
-        } catch (e) {
-            console.warn('API 連線失敗，載入內建備用中獎號碼');
-            return {
-                "115年01-02月": {
-                    super: "87510041",
-                    special: "32220522",
-                    first: ["21677046", "44662410", "31262513"]
-                },
-                "114年11-12月": {
-                    super: "97023797",
-                    special: "00507588",
-                    first: ["92377231", "05232592", "78125249"]
-                },
-                "114年09-10月": {
-                    super: "25834483",
-                    special: "46587380",
-                    first: ["41016094", "98081574", "07309261"]
-                }
-            };
-        }
-    },
+    if (invoiceNumber === superNum) return true
+    if (invoiceNumber === special) return true
 
-    checkInvoiceWinning(invoiceNumber, period, winningData) {
-        const periodData = winningData[period];
-        if (!periodData) {
-            const periods = Object.keys(winningData);
-            if (periods.length === 0) return null;
-            const maxPeriod = periods.sort((a, b) => b.localeCompare(a))[0];
-            if (period <= maxPeriod) return false;
-            return null;
-        }
+    for (const f of first) {
+      for (let i = 0; i <= 5; i++) {
+        const targetMatch = f.substring(i)
+        const myMatch = invoiceNumber.substring(i)
+        if (myMatch === targetMatch) return true
+      }
+    }
+    return false
+  },
 
-        const { super: superNum, special, first } = periodData;
+  // ===== UI 註冊邏輯 =====
 
-        if (invoiceNumber === superNum) return true;
-        if (invoiceNumber === special) return true;
-
-        for (const f of first) {
-            for (let i = 0; i <= 5; i++) { 
-                const targetMatch = f.substring(i);
-                const myMatch = invoiceNumber.substring(i);
-                if (myMatch === targetMatch) return true;
-            }
-        }
-        return false; 
-    },
-
-    // ===== UI 註冊邏輯 =====
-
-    registerWidget() {
-        this.context.ui.registerHomeWidget('e_invoice_widget', async (container) => {
-            container.innerHTML = `
+  registerWidget() {
+    this.context.ui.registerHomeWidget('e_invoice_widget', async container => {
+      container.innerHTML = `
                 <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors" onclick="window.location.hash='#invoice_list'">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-full bg-wabi-primary/10 text-wabi-primary flex items-center justify-center">
@@ -542,13 +599,16 @@ export default {
                     </div>
                     <i class="fa-solid fa-chevron-right text-gray-300"></i>
                 </div>
-            `;
-        });
-    },
+            `
+    })
+  },
 
-    registerInvoiceListPage() {
-        this.context.ui.registerPage('invoice_list', '發票清單 (Beta)', async (container) => {
-            container.innerHTML = `
+  registerInvoiceListPage() {
+    this.context.ui.registerPage(
+      'invoice_list',
+      '發票清單 (Beta)',
+      async container => {
+        container.innerHTML = `
                 <div class="p-4 flex flex-col h-full pb-20">
                     <div class="flex justify-between items-center mb-4 shrink-0">
                         <h2 class="text-xl font-bold text-gray-800">發票管理 <span class="text-sm font-normal text-gray-500">(Beta)</span></h2>
@@ -574,89 +634,111 @@ export default {
                         <div class="text-center text-gray-500 py-8"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i><br>載入中...</div>
                     </div>
                 </div>
-            `;
+            `
 
-            let invoices = [];
-            let winningData = {};
-            let availablePeriods = [];
-            let currentPeriodIndex = 0;
+        let invoices = []
+        let winningData = {}
+        let availablePeriods = []
+        let currentPeriodIndex = 0
 
-            const loadData = async () => {
-                try {
-                    const storedInv = await this.context.storage.getItem('invoices');
-                    if (storedInv) invoices = JSON.parse(storedInv);
-                    const storedWin = await this.context.storage.getItem('winning_numbers');
-                    if (storedWin) winningData = JSON.parse(storedWin);
-                } catch(e) { console.warn('Failed to parse storage data', e); }
+        const loadData = async () => {
+          try {
+            const storedInv = await this.context.storage.getItem('invoices')
+            if (storedInv) invoices = JSON.parse(storedInv)
+            const storedWin =
+              await this.context.storage.getItem('winning_numbers')
+            if (storedWin) winningData = JSON.parse(storedWin)
+          } catch (e) {
+            console.warn('Failed to parse storage data', e)
+          }
 
-                const periodsSet = new Set();
-                invoices.forEach(i => periodsSet.add(i.period));
-                Object.keys(winningData).forEach(p => periodsSet.add(p));
+          const periodsSet = new Set()
+          invoices.forEach(i => periodsSet.add(i.period))
+          Object.keys(winningData).forEach(p => periodsSet.add(p))
 
-                if (periodsSet.size === 0) {
-                    const now = new Date();
-                    const rocYear = now.getFullYear() - 1911;
-                    const month = now.getMonth() + 1;
-                    const startM = month % 2 === 0 ? month - 1 : month;
-                    const endM = startM + 1;
-                    periodsSet.add(`${rocYear}年${String(startM).padStart(2, '0')}-${String(endM).padStart(2, '0')}月`);
-                }
+          if (periodsSet.size === 0) {
+            const now = new Date()
+            const rocYear = now.getFullYear() - 1911
+            const month = now.getMonth() + 1
+            const startM = month % 2 === 0 ? month - 1 : month
+            const endM = startM + 1
+            periodsSet.add(
+              `${rocYear}年${String(startM).padStart(2, '0')}-${String(endM).padStart(2, '0')}月`
+            )
+          }
 
-                availablePeriods = Array.from(periodsSet).sort((a, b) => b.localeCompare(a));
-            };
+          availablePeriods = Array.from(periodsSet).sort((a, b) =>
+            b.localeCompare(a)
+          )
+        }
 
-            const renderUI = () => {
-                if (availablePeriods.length === 0) return;
-                
-                const currentPeriod = availablePeriods[currentPeriodIndex];
-                
-                container.querySelector('#period-display').innerText = currentPeriod;
-                container.querySelector('#prev-period-btn').disabled = (currentPeriodIndex >= availablePeriods.length - 1); 
-                container.querySelector('#next-period-btn').disabled = (currentPeriodIndex <= 0); 
+        const renderUI = () => {
+          if (availablePeriods.length === 0) return
 
-                const winData = winningData[currentPeriod];
-                const winContainer = container.querySelector('#winning-numbers-container');
-                const winContent = container.querySelector('#winning-numbers-content');
-                
-                if (winData) {
-                    winContent.innerHTML = `
+          const currentPeriod = availablePeriods[currentPeriodIndex]
+
+          container.querySelector('#period-display').innerText = currentPeriod
+          container.querySelector('#prev-period-btn').disabled =
+            currentPeriodIndex >= availablePeriods.length - 1
+          container.querySelector('#next-period-btn').disabled =
+            currentPeriodIndex <= 0
+
+          const winData = winningData[currentPeriod]
+          const winContainer = container.querySelector(
+            '#winning-numbers-container'
+          )
+          const winContent = container.querySelector('#winning-numbers-content')
+
+          if (winData) {
+            winContent.innerHTML = `
                         <div class="bg-white/70 p-2.5 rounded-lg border border-white"><span class="text-gray-500 text-xs block mb-1">特別獎 (1000萬)</span> <span class="font-bold text-red-500 font-mono tracking-wider">${winData.super}</span></div>
                         <div class="bg-white/70 p-2.5 rounded-lg border border-white"><span class="text-gray-500 text-xs block mb-1">特獎 (200萬)</span> <span class="font-bold text-red-500 font-mono tracking-wider">${winData.special}</span></div>
                         <div class="col-span-2 bg-white/70 p-2.5 rounded-lg border border-white"><span class="text-gray-500 text-xs block mb-1">頭獎 (20萬)</span> <span class="font-bold text-gray-700 font-mono tracking-wider">${winData.first.join(' , ')}</span></div>
-                    `;
-                    winContainer.classList.remove('hidden');
-                } else {
-                    winContainer.classList.add('hidden');
-                }
+                    `
+            winContainer.classList.remove('hidden')
+          } else {
+            winContainer.classList.add('hidden')
+          }
 
-                const listContainer = container.querySelector('#einvoice-list-container');
-                const periodInvoices = invoices.filter(inv => inv.period === currentPeriod);
-                periodInvoices.sort((a, b) => b.scannedAt - a.scannedAt);
+          const listContainer = container.querySelector(
+            '#einvoice-list-container'
+          )
+          const periodInvoices = invoices.filter(
+            inv => inv.period === currentPeriod
+          )
+          periodInvoices.sort((a, b) => b.scannedAt - a.scannedAt)
 
-                if (periodInvoices.length === 0) {
-                    listContainer.innerHTML = '<div class="text-center text-gray-400 py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200 mt-2"><i class="fa-solid fa-receipt text-3xl mb-3 text-gray-300"></i><br>此月份尚無掃描發票</div>';
-                    return;
-                }
+          if (periodInvoices.length === 0) {
+            listContainer.innerHTML =
+              '<div class="text-center text-gray-400 py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200 mt-2"><i class="fa-solid fa-receipt text-3xl mb-3 text-gray-300"></i><br>此月份尚無掃描發票</div>'
+            return
+          }
 
-                listContainer.innerHTML = periodInvoices.map((inv) => {
-                    let statusHtml = '<span class="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full font-medium">尚未開獎</span>';
-                    let borderClass = 'border-gray-100';
+          listContainer.innerHTML = periodInvoices
+            .map(inv => {
+              let statusHtml =
+                '<span class="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full font-medium">尚未開獎</span>'
+              let borderClass = 'border-gray-100'
 
-                    if (inv.isWinning === true) {
-                        statusHtml = '<span class="text-xs text-red-600 bg-red-50 font-bold px-2.5 py-1 rounded-full border border-red-200 flex items-center gap-1 shadow-sm"><i class="fa-solid fa-gift"></i> 恭喜中獎</span>';
-                        borderClass = 'border-red-200 bg-red-50/20';
-                    } else if (inv.isWinning === false) {
-                        statusHtml = '<span class="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100">未中獎</span>';
-                    }
+              if (inv.isWinning === true) {
+                statusHtml =
+                  '<span class="text-xs text-red-600 bg-red-50 font-bold px-2.5 py-1 rounded-full border border-red-200 flex items-center gap-1 shadow-sm"><i class="fa-solid fa-gift"></i> 恭喜中獎</span>'
+                borderClass = 'border-red-200 bg-red-50/20'
+              } else if (inv.isWinning === false) {
+                statusHtml =
+                  '<span class="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100">未中獎</span>'
+              }
 
-                    const y = inv.date.substring(0, 3);
-                    const m = inv.date.substring(3, 5);
-                    const d = inv.date.substring(5, 7);
-                    
-                    // 若有紀錄店家名稱，也顯示在清單上
-                    const storeBadge = inv.storeName ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-2">${inv.storeName}</span>` : '';
+              const y = inv.date.substring(0, 3)
+              const m = inv.date.substring(3, 5)
+              const d = inv.date.substring(5, 7)
 
-                    return `
+              // 若有紀錄店家名稱，也顯示在清單上
+              const storeBadge = inv.storeName
+                ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded ml-2">${inv.storeName}</span>`
+                : ''
+
+              return `
                         <div class="bg-white p-4 rounded-xl shadow-sm border ${borderClass} flex justify-between items-center transition-all hover:shadow-md">
                             <div>
                                 <div class="font-bold text-gray-800 text-lg tracking-widest font-mono flex items-center">${inv.number} ${storeBadge}</div>
@@ -674,54 +756,69 @@ export default {
                                 </div>
                             </div>
                         </div>
-                    `;
-                }).join('');
+                    `
+            })
+            .join('')
 
-                container.querySelectorAll('.delete-invoice-btn').forEach(btn => {
-                    btn.addEventListener('click', async (e) => {
-                        const scannedAt = parseInt(e.currentTarget.dataset.scannedAt, 10);
-                        const confirm = await this.context.ui.showConfirm('移除發票', '確定要移除這張發票嗎？移除後將無法自動對獎，但不會影響已記帳的紀錄。');
-                        if (confirm) {
-                            invoices = invoices.filter(inv => inv.scannedAt !== scannedAt);
-                            await this.context.storage.setItem('invoices', JSON.stringify(invoices));
-                            this.context.ui.showToast('發票已移除', 'success');
-                            renderUI();
-                        }
-                    });
-                });
-            };
+          container.querySelectorAll('.delete-invoice-btn').forEach(btn => {
+            btn.addEventListener('click', async e => {
+              const scannedAt = parseInt(e.currentTarget.dataset.scannedAt, 10)
+              const confirm = await this.context.ui.showConfirm(
+                '移除發票',
+                '確定要移除這張發票嗎？移除後將無法自動對獎，但不會影響已記帳的紀錄。'
+              )
+              if (confirm) {
+                invoices = invoices.filter(inv => inv.scannedAt !== scannedAt)
+                await this.context.storage.setItem(
+                  'invoices',
+                  JSON.stringify(invoices)
+                )
+                this.context.ui.showToast('發票已移除', 'success')
+                renderUI()
+              }
+            })
+          })
+        }
 
-            container.querySelector('#prev-period-btn').addEventListener('click', () => {
-                if (currentPeriodIndex < availablePeriods.length - 1) {
-                    currentPeriodIndex++; 
-                    renderUI();
-                }
-            });
+        container
+          .querySelector('#prev-period-btn')
+          .addEventListener('click', () => {
+            if (currentPeriodIndex < availablePeriods.length - 1) {
+              currentPeriodIndex++
+              renderUI()
+            }
+          })
 
-            container.querySelector('#next-period-btn').addEventListener('click', () => {
-                if (currentPeriodIndex > 0) {
-                    currentPeriodIndex--; 
-                    renderUI();
-                }
-            });
+        container
+          .querySelector('#next-period-btn')
+          .addEventListener('click', () => {
+            if (currentPeriodIndex > 0) {
+              currentPeriodIndex--
+              renderUI()
+            }
+          })
 
-            container.querySelector('#einvoice-sync-btn').addEventListener('click', async () => {
-                const btn = container.querySelector('#einvoice-sync-btn');
-                const originalHtml = btn.innerHTML;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 對獎中...';
-                btn.disabled = true;
+        container
+          .querySelector('#einvoice-sync-btn')
+          .addEventListener('click', async () => {
+            const btn = container.querySelector('#einvoice-sync-btn')
+            const originalHtml = btn.innerHTML
+            btn.innerHTML =
+              '<i class="fa-solid fa-spinner fa-spin"></i> 對獎中...'
+            btn.disabled = true
 
-                await this.initBackgroundCheck(true); 
-                await loadData();
-                renderUI();
+            await this.initBackgroundCheck(true)
+            await loadData()
+            renderUI()
 
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-                this.context.ui.showToast('對獎更新完成', 'success');
-            });
+            btn.innerHTML = originalHtml
+            btn.disabled = false
+            this.context.ui.showToast('對獎更新完成', 'success')
+          })
 
-            await loadData();
-            renderUI();
-        });
-    }
-};
+        await loadData()
+        renderUI()
+      }
+    )
+  },
+}
