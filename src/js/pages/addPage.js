@@ -1,4 +1,4 @@
-import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML } from '../utils.js';
+import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML, calculateAmortizationDetails } from '../utils.js';
 
 export class AddPage {
     constructor(app) {
@@ -30,6 +30,9 @@ export class AddPage {
                                         <i class="fa-solid fa-handshake text-lg"></i>
                                     </button>
                                 ` : ''}
+                                <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
+                                    <i class="fa-solid fa-credit-card text-lg"></i>
+                                </button>
                                 ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
                             </div>
                         </div>
@@ -50,6 +53,65 @@ export class AddPage {
                                 <option value="">選擇聯絡人...</option>
                             </select>
                             <p class="text-xs text-wabi-text-secondary mt-2">儲存時將同時建立欠款記錄</p>
+                        </div>
+
+                        <!-- Installment Panel (hidden by default) -->
+                        <div id="installment-panel" class="hidden bg-blue-500/10 rounded-lg p-4 mb-4 border border-blue-500/30">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-blue-600"><i class="fa-solid fa-credit-card mr-2"></i>分期/攤提</span>
+                                <button id="close-installment-panel" class="text-wabi-text-secondary hover:text-blue-600">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="mb-2">
+                                <input type="text" id="installment-name" maxlength="40" placeholder="名稱（如：MacBook 分期）"
+                                    class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500" />
+                            </div>
+                            <div class="flex h-9 w-full items-center justify-center rounded-lg bg-blue-500/5 p-1 mb-2">
+                                <button class="inst-type-btn flex-1 h-full rounded-md px-3 py-1 text-xs font-medium bg-blue-500 text-white" data-inst-type="installment">分期付款</button>
+                                <button class="inst-type-btn flex-1 h-full rounded-md px-3 py-1 text-xs font-medium text-wabi-text-secondary" data-inst-type="depreciation">折舊</button>
+                                <button class="inst-type-btn flex-1 h-full rounded-md px-3 py-1 text-xs font-medium text-wabi-text-secondary" data-inst-type="amortization">攤提</button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <div>
+                                    <label class="text-xs text-wabi-text-secondary">總期數</label>
+                                    <input type="number" id="installment-periods" min="1" max="600" placeholder="12"
+                                        class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500" />
+                                </div>
+                                <div>
+                                    <label class="text-xs text-wabi-text-secondary">頻率</label>
+                                    <select id="installment-frequency" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500">
+                                        <option value="monthly" selected>每月</option>
+                                        <option value="weekly">每週</option>
+                                        <option value="yearly">每年</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <div>
+                                    <label class="text-xs text-wabi-text-secondary">首付金額 <span class="opacity-50">(選填)</span></label>
+                                    <input type="number" id="installment-downpayment" min="0" step="0.01" placeholder="0"
+                                        class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500" />
+                                </div>
+                                <div>
+                                    <label class="text-xs text-wabi-text-secondary">年利率 % <span class="opacity-50">(選填)</span></label>
+                                    <input type="number" id="installment-interest" min="0" max="100" step="0.01" placeholder="0"
+                                        class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500" />
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="text-xs text-wabi-text-secondary">每期小數點處理 <span class="opacity-50">(差額會在最後一期補齊)</span></label>
+                                <select id="installment-decimal-strategy" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-blue-500">
+                                    <option value="round" selected>四捨五入 (至整數)</option>
+                                    <option value="ceil">無條件進位 (至整數)</option>
+                                    <option value="floor">無條件捨去 (至整數)</option>
+                                    <option value="keep">保留小數 (至小數第二位)</option>
+                                </select>
+                            </div>
+                            <div id="installment-calc-preview" class="p-2 bg-blue-500/5 rounded-lg text-xs text-wabi-text-secondary">
+                                <span>每期金額：</span><strong id="installment-per-period" class="text-blue-600">--</strong>
+                            </div>
+                            <p class="text-xs text-wabi-text-secondary mt-2">金額/分類/日期由上方記帳欄位帶入，儲存時自動建立分期計畫。</p>
                         </div>
 
                         <!-- Type Switcher & Amount -->
@@ -184,6 +246,10 @@ export class AddPage {
                 toggleDebtBtn.classList.toggle('text-wabi-text-secondary', !debtEnabled);
                 if (debtEnabled) {
                     await loadContacts();
+                    const instBtn = document.getElementById('toggle-installment-btn');
+                    if (instBtn && instBtn.classList.contains('text-blue-500')) {
+                        instBtn.click();
+                    }
                 }
             });
 
@@ -213,6 +279,73 @@ export class AddPage {
             document.getElementById('debt-contact-select')?.addEventListener('change', (e) => {
                 debtContactId = e.target.value ? parseInt(e.target.value) : null;
             });
+        }
+
+        // --- 分期/攤提面板 ---
+        const installmentBtn = document.getElementById('toggle-installment-btn');
+        const installmentPanel = document.getElementById('installment-panel');
+        let installmentEnabled = false;
+        let installmentType = 'installment';
+
+        if (installmentBtn && installmentPanel) {
+            installmentBtn.addEventListener('click', () => {
+                installmentEnabled = !installmentEnabled;
+                installmentPanel.classList.toggle('hidden', !installmentEnabled);
+                installmentBtn.classList.toggle('text-blue-500', installmentEnabled);
+                installmentBtn.classList.toggle('bg-blue-500/10', installmentEnabled);
+                installmentBtn.classList.toggle('text-wabi-text-secondary', !installmentEnabled);
+                if (installmentEnabled) {
+                    const dBtn = document.getElementById('toggle-debt-btn');
+                    if (dBtn && dBtn.classList.contains('text-wabi-primary')) {
+                        dBtn.click();
+                    }
+                }
+            });
+
+            document.getElementById('close-installment-panel')?.addEventListener('click', () => {
+                installmentEnabled = false;
+                installmentPanel.classList.add('hidden');
+                installmentBtn.classList.remove('text-blue-500', 'bg-blue-500/10');
+                installmentBtn.classList.add('text-wabi-text-secondary');
+            });
+
+            // 類型切換
+            document.querySelectorAll('.inst-type-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    installmentType = btn.dataset.instType;
+                    document.querySelectorAll('.inst-type-btn').forEach(b => {
+                        b.classList.remove('bg-blue-500', 'text-white');
+                        b.classList.add('text-wabi-text-secondary');
+                    });
+                    btn.classList.remove('text-wabi-text-secondary');
+                    btn.classList.add('bg-blue-500', 'text-white');
+                });
+            });
+
+            // 即時計算每期金額
+            const calcPreview = () => {
+                const total = parseFloat(currentAmount) || 0;
+                const periods = parseInt(document.getElementById('installment-periods')?.value) || 0;
+                const downPayment = parseFloat(document.getElementById('installment-downpayment')?.value) || 0;
+                const annualRate = parseFloat(document.getElementById('installment-interest')?.value) || 0;
+                const display = document.getElementById('installment-per-period');
+                if (!display || total <= 0 || periods <= 0) { if (display) display.textContent = '--'; return; }
+                const principal = Math.max(0, total - downPayment);
+                const decimalStrategy = document.getElementById('installment-decimal-strategy')?.value || 'round';
+                const freq = document.getElementById('installment-frequency')?.value || 'monthly';
+                
+                const { amountPerPeriod } = calculateAmortizationDetails(principal, periods, annualRate, freq, decimalStrategy);
+                display.textContent = `$${amountPerPeriod.toLocaleString('zh-TW')}`;
+            };
+            ['installment-periods', 'installment-downpayment', 'installment-interest'].forEach(id => {
+                document.getElementById(id)?.addEventListener('input', calcPreview);
+            });
+            document.getElementById('installment-frequency')?.addEventListener('change', calcPreview);
+            document.getElementById('installment-decimal-strategy')?.addEventListener('change', calcPreview);
+            // 金額變動時也更新
+            const origUpdateAmount = () => calcPreview();
+            const amountObserver = new MutationObserver(origUpdateAmount);
+            amountObserver.observe(amountDisplay, { childList: true, characterData: true, subtree: true });
         }
 
         // --- Account Selector Logic ---
@@ -336,6 +469,115 @@ export class AddPage {
             }
         };
 
+        const saveInstallmentPlan = async (amount) => {
+            const instName = document.getElementById('installment-name')?.value.trim();
+            const instPeriods = parseInt(document.getElementById('installment-periods')?.value);
+            if (!instName) { showToast('請輸入分期名稱', 'error'); return; }
+            if (!instPeriods || instPeriods <= 0) { showToast('請輸入有效的期數', 'error'); return; }
+            const instDownPayment = parseFloat(document.getElementById('installment-downpayment')?.value) || 0;
+            const instRate = parseFloat(document.getElementById('installment-interest')?.value) || 0;
+            const instFrequency = document.getElementById('installment-frequency')?.value || 'monthly';
+            const decimalStrategy = document.getElementById('installment-decimal-strategy')?.value || 'round';
+            const principal = Math.max(0, amount - instDownPayment);
+            
+            const { amountPerPeriod } = calculateAmortizationDetails(principal, instPeriods, instRate, instFrequency, decimalStrategy);
+
+            await this.app.dataService.addAmortization({
+                name: instName,
+                type: installmentType,
+                recordType: currentType,
+                category: selectedCategory,
+                totalAmount: amount,
+                downPayment: instDownPayment,
+                interestRate: instRate,
+                periods: instPeriods,
+                completedPeriods: 0,
+                amountPerPeriod,
+                frequency: instFrequency,
+                decimalStrategy,
+                startDate: currentDate,
+                nextDueDate: currentDate,
+                status: 'active',
+                description: noteInput.value || '',
+                accountId: advancedModeEnabled ? selectedAccountId : null,
+            });
+            await this.app.processAmortizations();
+            showToast(`「${instName}」分期計畫已建立！`);
+            window.location.hash = 'records';
+        };
+
+        const saveRegularRecord = async (amount) => {
+            const recordData = {
+                type: currentType,
+                category: selectedCategory,
+                amount: amount,
+                description: noteInput.value,
+                date: currentDate,
+                accountId: advancedModeEnabled ? selectedAccountId : null
+            };
+
+            if (isEditMode) {
+                try {
+                    const numericId = parseInt(recordId, 10);
+                    await this.app.dataService.updateRecord(numericId, recordData);
+
+                    // If record has existing debt, check if amount changed and update
+                    if (recordToEdit.debtId && recordToEdit.amount !== amount) {
+                        const debt = await this.app.dataService.getDebt(recordToEdit.debtId);
+                        if (debt && !debt.settled) {
+                            const oldOriginal = debt.originalAmount ?? debt.amount ?? 0;
+                            const oldRemaining = debt.remainingAmount ?? oldOriginal;
+                            const paidAmount = oldOriginal - oldRemaining;
+                            const newRemaining = Math.max(0, amount - paidAmount);
+                            await this.app.dataService.updateDebt(recordToEdit.debtId, {
+                                originalAmount: amount,
+                                remainingAmount: newRemaining
+                            });
+                        }
+                    }
+
+                    // If record doesn't have debt but user enabled debt, create one
+                    if (debtEnabled && debtContactId && !recordToEdit.debtId) {
+                        const debtId = await this.app.dataService.addDebt({
+                            type: debtType,
+                            contactId: debtContactId,
+                            amount: amount,
+                            date: currentDate,
+                            description: noteInput.value || selectedCategory,
+                            recordId: numericId
+                        });
+                        await this.app.dataService.updateRecord(numericId, { debtId: debtId });
+                        showToast('更新成功並建立欠款記錄！');
+                    } else {
+                        showToast('更新成功！');
+                    }
+                    window.location.hash = 'records';
+                } catch (e) {
+                    console.error('Update failed or cancelled:', e);
+                }
+            } else {
+                const newRecordId = await this.app.dataService.addRecord(recordData);
+                if (!newRecordId) return;
+                this.app.quickSelectManager.addRecord(recordData.type, recordData.category, recordData.description, recordData.accountId);
+
+                if (debtEnabled && debtContactId) {
+                    const debtId = await this.app.dataService.addDebt({
+                        type: debtType,
+                        contactId: debtContactId,
+                        amount: amount,
+                        date: currentDate,
+                        description: noteInput.value || selectedCategory,
+                        recordId: newRecordId
+                    });
+                    await this.app.dataService.updateRecord(newRecordId, { debtId: debtId });
+                    showToast('儲存成功並建立欠款記錄！');
+                } else {
+                    showToast('儲存成功！');
+                }
+                window.location.hash = 'records';
+            }
+        };
+
         const handleKeypad = async (key) => {
             if (key >= '0' && key <= '9' || key === '00') {
                 if (currentAmount === '0') currentAmount = '';
@@ -359,83 +601,10 @@ export class AddPage {
                     return;
                 }
                 if (amount > 0 && selectedCategory) {
-                    const recordData = {
-                        type: currentType,
-                        category: selectedCategory,
-                        amount: amount,
-                        description: noteInput.value,
-                        date: currentDate,
-                        accountId: advancedModeEnabled ? selectedAccountId : null
-                    };
-
-                    let newRecordId = null;
-                    if (isEditMode) {
-                        try {
-                            const numericId = parseInt(recordId, 10);
-                            await this.app.dataService.updateRecord(numericId, recordData);
-
-                        // If record has existing debt, check if amount changed and update
-                        if (recordToEdit.debtId && recordToEdit.amount !== amount) {
-                            const debt = await this.app.dataService.getDebt(recordToEdit.debtId);
-                            if (debt && !debt.settled) {
-                                // Update debt amount proportionally
-                                const oldOriginal = debt.originalAmount ?? debt.amount ?? 0;
-                                const oldRemaining = debt.remainingAmount ?? oldOriginal;
-                                const paidAmount = oldOriginal - oldRemaining;
-                                const newRemaining = Math.max(0, amount - paidAmount);
-                                await this.app.dataService.updateDebt(recordToEdit.debtId, {
-                                    originalAmount: amount,
-                                    remainingAmount: newRemaining
-                                });
-                            }
-                        }
-
-                        // If record doesn't have debt but user enabled debt, create one
-                        if (debtEnabled && debtContactId && !recordToEdit.debtId) {
-                            const debtId = await this.app.dataService.addDebt({
-                                type: debtType,
-                                contactId: debtContactId,
-                                amount: amount,
-                                date: currentDate,
-                                description: noteInput.value || selectedCategory,
-                                recordId: numericId
-                            });
-                            await this.app.dataService.updateRecord(numericId, { debtId: debtId });
-                            showToast('更新成功並建立欠款記錄！');
-                        } else {
-                            showToast('更新成功！');
-                        }
-
-                        // Proceed to navigation only on success
-                        window.location.hash = 'records';
-
-                    } catch (e) {
-                        console.error('Update failed or cancelled:', e);
-                        // Stay on page
-                        return;
-                    }
+                    if (installmentEnabled && !isEditMode) {
+                        await saveInstallmentPlan(amount);
                     } else {
-                        newRecordId = await this.app.dataService.addRecord(recordData);
-                        if (!newRecordId) return; // Cancelled by plugin or error
-                        this.app.quickSelectManager.addRecord(recordData.type, recordData.category, recordData.description, recordData.accountId);
-
-                        // Create debt record if enabled
-                        if (debtEnabled && debtContactId) {
-                            const debtId = await this.app.dataService.addDebt({
-                                type: debtType,
-                                contactId: debtContactId,
-                                amount: amount,
-                                date: currentDate,
-                                description: noteInput.value || selectedCategory,
-                                recordId: newRecordId
-                            });
-                            // Update record with debtId to create bidirectional link
-                            await this.app.dataService.updateRecord(newRecordId, { debtId: debtId });
-                            showToast('儲存成功並建立欠款記錄！');
-                        } else {
-                            showToast('儲存成功！');
-                        }
-                        window.location.hash = 'records';
+                        await saveRegularRecord(amount);
                     }
                 } else {
                     showToast('請輸入金額並選擇分類', 'error');
@@ -598,6 +767,49 @@ export class AddPage {
                                 }
                             });
                         }
+                    }
+                }
+            }
+
+            // Load associated amortization if exists
+            if (recordToEdit.amortizationId) {
+                const amort = await this.app.dataService.getAmortization(recordToEdit.amortizationId);
+                if (amort) {
+                    const amortInfoPanel = document.createElement('div');
+                    amortInfoPanel.className = 'bg-blue-500/10 rounded-lg p-4 mb-4 border border-blue-500/30';
+                    amortInfoPanel.innerHTML = `
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium text-blue-600">
+                                <i class="fa-solid fa-credit-card mr-2"></i>由分期計畫產生
+                            </span>
+                            <button id="view-amort-link-btn" class="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-blue-600">
+                                查看計畫
+                            </button>
+                        </div>
+                        <div class="text-sm text-wabi-text-secondary">
+                            <p><strong class="text-wabi-text-primary">名稱：</strong>${escapeHTML(amort.name)}</p>
+                            <p><strong class="text-wabi-text-primary">期數進度：</strong>${amort.completedPeriods} / ${amort.periods} 期</p>
+                            <p><strong class="text-wabi-text-primary">總金額：</strong>${formatCurrency(amort.totalAmount)}</p>
+                        </div>
+                    `;
+                    const header = this.app.appContainer.querySelector('.page .flex.items-center.pb-2');
+                    if (header && header.nextElementSibling) {
+                        header.parentNode.insertBefore(amortInfoPanel, header.nextElementSibling);
+                    }
+                    const viewBtn = document.getElementById('view-amort-link-btn');
+                    if (viewBtn) {
+                        viewBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            window.location.hash = '#amortizations';
+                        });
+                    }
+                    
+                    // Hide the toggle installment button
+                    if (installmentBtn) {
+                        installmentBtn.classList.add('hidden');
+                    }
+                    if (installmentPanel) {
+                        installmentPanel.classList.add('hidden');
                     }
                 }
             }

@@ -50,10 +50,10 @@ export class DebtManager {
         </div>
 
         <!-- Filter Tabs -->
-        <div class="flex h-10 w-full items-center justify-center rounded-lg bg-wabi-bg/50 p-1 mb-4">
-          <button data-filter="unsettled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'unsettled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">未結清</button>
-          <button data-filter="settled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'settled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">已結清</button>
-          <button data-filter="all" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'all' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary'}">全部</button>
+        <div class="flex h-10 w-full items-center justify-center rounded-lg bg-wabi-bg border border-wabi-border p-1 mb-4">
+          <button data-filter="unsettled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'unsettled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary hover:text-wabi-text-primary'}">未結清</button>
+          <button data-filter="settled" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'settled' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary hover:text-wabi-text-primary'}">已結清</button>
+          <button data-filter="all" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'all' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary hover:text-wabi-text-primary'}">全部</button>
         </div>
 
         <!-- Contact Filter -->

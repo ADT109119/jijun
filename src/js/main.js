@@ -1,5 +1,5 @@
 import DataService from './dataService.js';
-import { formatDateToString, calculateNextDueDate, shouldSkipDate } from './utils.js';
+import { formatDateToString, calculateNextDueDate, shouldSkipDate, calculateAmortizationDetails } from './utils.js';
 import { BudgetManager } from './budgetManager.js';
 import { CategoryManager } from './categoryManager.js';
 import { ChangelogManager } from './changelog.js';
@@ -26,6 +26,7 @@ import { StatsPage } from './pages/statsPage.js';
 import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
 import { LedgersPage } from './pages/ledgersPage.js';
+import { AmortizationsPage } from './pages/amortizationsPage.js';
 import { StorePage } from './pages/storePage.js';
 import { ThemesPage } from './pages/themesPage.js';
 import { ThemeStorePage } from './pages/themeStorePage.js';
@@ -96,6 +97,7 @@ class EasyAccountingApp {
         }
 
         this.processRecurringTransactions();
+        this.processAmortizations();
         
         // Initialize plugins
         await this.pluginManager.init();
@@ -139,6 +141,7 @@ class EasyAccountingApp {
         this.router.register('debts', new DebtsPage(this));
         this.router.register('contacts', new ContactsPage(this));
         this.router.register('ledgers', new LedgersPage(this));
+        this.router.register('amortizations', new AmortizationsPage(this));
         this.router.register('plugins', new PluginsPage(this));
         this.router.register('store', new StorePage(this));
         this.router.register('themes', new ThemesPage(this));
@@ -196,6 +199,77 @@ class EasyAccountingApp {
             // Update the recurring transaction with the final new due date
             if (nextDueDate !== tx.nextDueDate) {
                 await this.dataService.updateRecurringTransaction(tx.id, { nextDueDate });
+            }
+        }
+    }
+
+    // ==================== 攤提/分期自動記帳 ====================
+    async processAmortizations() {
+        const today = formatDateToString(new Date());
+        const items = await this.dataService.getAmortizations({ allLedgers: true });
+
+        for (const item of items) {
+            if (item.status !== 'active') continue;
+
+            let { nextDueDate, completedPeriods } = item;
+            let iterations = 0;
+            const MAX_ITERATIONS = 365;
+
+            while (nextDueDate && nextDueDate <= today && completedPeriods < item.periods && iterations < MAX_ITERATIONS) {
+                iterations++;
+
+                // 處理最後一期的差額
+                let generateAmount = item.amountPerPeriod;
+                if (completedPeriods === item.periods - 1 && item.periods > 1) {
+                    const principal = Math.max(0, item.totalAmount - (item.downPayment || 0));
+                    const { exactTotalToPay } = calculateAmortizationDetails(
+                        principal, 
+                        item.periods, 
+                        item.interestRate || 0, 
+                        item.frequency, 
+                        item.decimalStrategy || 'round'
+                    );
+                    
+                    const historyRecords = await this.dataService.getRecords({ amortizationId: item.id, allLedgers: true });
+                    const actualPaidSoFar = historyRecords.reduce((sum, r) => sum + r.amount, 0);
+                    const remaining = exactTotalToPay - actualPaidSoFar;
+                    
+                    if (item.decimalStrategy === 'keep') {
+                        generateAmount = Math.max(0, Math.round(remaining * 100) / 100);
+                    } else {
+                        generateAmount = Math.max(0, Math.round(remaining));
+                    }
+                }
+
+                // 產生一筆記帳紀錄
+                if (generateAmount > 0) {
+                    const newRecord = {
+                        type: item.recordType || 'expense',
+                        amount: generateAmount,
+                        category: item.category,
+                        description: `${item.name} (第 ${completedPeriods + 1}/${item.periods} 期)`,
+                        date: nextDueDate,
+                        accountId: item.accountId || undefined,
+                        ledgerId: item.ledgerId,
+                        amortizationId: item.id, // 標記關聯 ID
+                    };
+
+                    await this.dataService.addRecord(newRecord, true); // skipLog = true 以避免洗版
+                }
+                
+                completedPeriods++;
+
+                // 計算下一期日期
+                nextDueDate = calculateNextDueDate(nextDueDate, item.frequency, 1);
+            }
+
+            // 更新攤提狀態
+            if (completedPeriods !== item.completedPeriods || nextDueDate !== item.nextDueDate) {
+                const updates = { completedPeriods, nextDueDate };
+                if (completedPeriods >= item.periods) {
+                    updates.status = 'completed';
+                }
+                await this.dataService.updateAmortization(item.id, updates);
             }
         }
     }

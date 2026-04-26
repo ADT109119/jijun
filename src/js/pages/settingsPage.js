@@ -111,9 +111,8 @@ export class SettingsPage {
                         <div id="manage-accounts-link-container" class="hidden">
                             ${this.createSettingItem('fa-solid fa-credit-card', '帳戶管理', 'manage-accounts-btn')}
                         </div>
-                        <div id="manage-recurring-link-container" class="hidden">
-                             ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
-                        </div>
+                        ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
+                        ${this.createSettingItem('fa-solid fa-chart-gantt', '攤提/分期管理', 'manage-amortizations-btn')}
                         <!-- Debt Management Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
                             <div class="flex items-center gap-4">
@@ -352,7 +351,6 @@ export class SettingsPage {
                 advancedModeToggle.checked = isEnabled;
                 if (isEnabled) {
                     document.getElementById('manage-accounts-link-container').classList.remove('hidden');
-                    document.getElementById('manage-recurring-link-container').classList.remove('hidden');
                 }
             });
 
@@ -378,6 +376,13 @@ export class SettingsPage {
         if (manageRecurringBtn) {
             manageRecurringBtn.addEventListener('click', () => {
                 window.location.hash = '#recurring';
+            });
+        }
+
+        const manageAmortizationsBtn = document.getElementById('manage-amortizations-btn');
+        if (manageAmortizationsBtn) {
+            manageAmortizationsBtn.addEventListener('click', () => {
+                window.location.hash = '#amortizations';
             });
         }
 

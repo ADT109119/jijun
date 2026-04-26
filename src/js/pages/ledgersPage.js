@@ -1,5 +1,6 @@
 // ==================== 帳本管理頁面 ====================
 import { showToast, escapeHTML } from '../utils.js';
+import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js';
 
 export class LedgersPage {
     constructor(app) {
@@ -133,9 +134,9 @@ export class LedgersPage {
     _showEditModal(ledger) {
         const isEdit = !!ledger;
         const colors = this.app.ledgerManager.getColorOptions();
-        const icons = this.app.ledgerManager.getIconOptions();
+        const defaultIcons = this.app.ledgerManager.getIconOptions();
         const selectedColor = ledger?.color || colors[0];
-        const selectedIcon = ledger?.icon || icons[0];
+        const selectedIcon = ledger?.icon || defaultIcons[0];
 
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]';
@@ -158,6 +159,10 @@ export class LedgersPage {
                         ${colors.map(c => `
                             <button class="color-option size-8 rounded-full border-2 transition-all ${c === selectedColor ? 'border-wabi-primary scale-110 ring-2 ring-wabi-primary/30' : 'border-transparent hover:scale-110'}" data-color="${c}" style="background-color: ${c}"></button>
                         `).join('')}
+                        <button id="custom-color-trigger" class="size-8 rounded-full border-2 border-dashed border-wabi-border flex items-center justify-center hover:border-wabi-primary hover:scale-110 transition-all relative overflow-hidden" title="自訂顏色">
+                            <i class="fa-solid fa-palette text-xs text-wabi-text-secondary"></i>
+                            <input type="color" id="custom-color-input" value="${selectedColor}" class="absolute inset-0 opacity-0 cursor-pointer" />
+                        </button>
                     </div>
                     <input type="hidden" id="ledger-color-input" value="${selectedColor}" />
                 </div>
@@ -165,14 +170,26 @@ export class LedgersPage {
                 <!-- 圖示 -->
                 <div class="mb-6">
                     <label class="text-sm font-medium text-wabi-text-primary block mb-2">圖示</label>
-                    <div id="icon-picker" class="grid grid-cols-8 gap-2">
-                        ${icons.map(ic => `
+                    <div class="relative mb-2">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-wabi-text-secondary text-sm"></i>
+                        <input type="text" id="ledger-icon-search"
+                            class="w-full pl-9 pr-3 py-2 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                            placeholder="搜尋圖示（英文，如 wallet、car）" />
+                    </div>
+                    <div id="icon-picker" class="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto p-1">
+                        ${defaultIcons.map(ic => `
                             <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
                                 ${ic === selectedIcon ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
                                 data-icon="${ic}">
                                 <i class="${ic}"></i>
                             </button>
                         `).join('')}
+                    </div>
+                    <div class="mt-2 flex gap-2">
+                        <input type="text" id="ledger-custom-icon-input"
+                            class="flex-1 px-3 py-1.5 rounded-lg border border-wabi-border bg-wabi-surface text-xs focus:ring-wabi-primary focus:border-wabi-primary outline-none"
+                            placeholder="自訂圖示 class（如 fa-solid fa-rocket）" />
+                        <button id="apply-custom-icon-btn" class="px-3 py-1.5 bg-wabi-primary/10 text-wabi-primary rounded-lg text-xs font-medium hover:bg-wabi-primary/20 transition-colors shrink-0">套用</button>
                     </div>
                     <input type="hidden" id="ledger-icon-input" value="${selectedIcon}" />
                 </div>
@@ -206,8 +223,13 @@ export class LedgersPage {
         const iconInput = modal.querySelector('#ledger-icon-input');
         const previewIcon = modal.querySelector('#preview-icon');
         const previewName = modal.querySelector('#preview-name');
+        const iconPicker = modal.querySelector('#icon-picker');
+        const iconSearchInput = modal.querySelector('#ledger-icon-search');
+        const customColorInput = modal.querySelector('#custom-color-input');
+        const customColorTrigger = modal.querySelector('#custom-color-trigger');
+        const customIconInput = modal.querySelector('#ledger-custom-icon-input');
 
-        // 更新預覽
+        // ==================== 預覽更新 ====================
         const updatePreview = () => {
             previewIcon.style.backgroundColor = colorInput.value;
             previewIcon.innerHTML = `<i class="${iconInput.value} text-xl"></i>`;
@@ -216,31 +238,98 @@ export class LedgersPage {
 
         nameInput.addEventListener('input', updatePreview);
 
-        // 顏色選擇
-        modal.querySelectorAll('.color-option').forEach(btn => {
-            btn.addEventListener('click', () => {
-                modal.querySelectorAll('.color-option').forEach(b => b.classList.remove('border-wabi-primary', 'scale-110', 'ring-2', 'ring-wabi-primary/30'));
-                btn.classList.add('border-wabi-primary', 'scale-110', 'ring-2', 'ring-wabi-primary/30');
-                colorInput.value = btn.dataset.color;
-                updatePreview();
+        // ==================== 顏色選擇 ====================
+        const selectColor = (color) => {
+            modal.querySelectorAll('.color-option').forEach(b => {
+                b.classList.remove('border-wabi-primary', 'scale-110', 'ring-2', 'ring-wabi-primary/30');
+                b.classList.add('border-transparent');
             });
+            // 嘗試高亮匹配的預設色
+            const matched = modal.querySelector(`.color-option[data-color="${color}"]`);
+            if (matched) {
+                matched.classList.remove('border-transparent');
+                matched.classList.add('border-wabi-primary', 'scale-110', 'ring-2', 'ring-wabi-primary/30');
+            }
+            colorInput.value = color;
+            updatePreview();
+        };
+
+        modal.querySelectorAll('.color-option').forEach(btn => {
+            btn.addEventListener('click', () => selectColor(btn.dataset.color));
         });
 
-        // 圖示選擇
-        modal.querySelectorAll('.icon-option').forEach(btn => {
-            btn.addEventListener('click', () => {
-                modal.querySelectorAll('.icon-option').forEach(b => {
+        customColorInput.addEventListener('input', (e) => {
+            selectColor(e.target.value);
+            // 自訂色按鈕本身也顯示選中色
+            customColorTrigger.style.backgroundColor = e.target.value;
+            customColorTrigger.querySelector('i').style.display = 'none';
+        });
+
+        // ==================== 圖示選擇 ====================
+        const selectIcon = (iconClass) => {
+            iconInput.value = iconClass;
+            // 更新圖示選中狀態
+            modal.querySelectorAll('.icon-option').forEach(b => {
+                if (b.dataset.icon === iconClass) {
+                    b.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary');
+                    b.classList.add('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
+                } else {
                     b.classList.remove('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
                     b.classList.add('bg-wabi-bg', 'text-wabi-text-secondary');
-                });
-                btn.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary');
-                btn.classList.add('bg-wabi-primary', 'text-wabi-surface', 'shadow-sm');
-                iconInput.value = btn.dataset.icon;
-                updatePreview();
+                }
             });
+            updatePreview();
+        };
+
+        // 圖示格線點擊代理
+        iconPicker.addEventListener('click', (e) => {
+            const btn = e.target.closest('.icon-option');
+            if (btn) selectIcon(btn.dataset.icon);
         });
 
-        // 儲存
+        // ==================== 圖示搜尋 ====================
+        let searchTimeout = null;
+        iconSearchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                const keyword = iconSearchInput.value.trim().toLowerCase();
+                if (!keyword) {
+                    // 重置為預設圖示
+                    iconPicker.innerHTML = defaultIcons.map(ic => `
+                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
+                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                            data-icon="${ic}">
+                            <i class="${ic}"></i>
+                        </button>
+                    `).join('');
+                    return;
+                }
+
+                const results = FONT_AWESOME_ICONS.filter(i => i.includes(keyword)).slice(0, 100);
+                if (results.length === 0) {
+                    iconPicker.innerHTML = '<p class="text-xs text-wabi-text-secondary col-span-6 text-center py-4">找不到符合的圖示</p>';
+                } else {
+                    iconPicker.innerHTML = results.map(ic => `
+                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
+                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                            data-icon="${ic}">
+                            <i class="${ic}"></i>
+                        </button>
+                    `).join('');
+                }
+            }, 250);
+        });
+
+        // ==================== 自訂圖示 class ====================
+        modal.querySelector('#apply-custom-icon-btn').addEventListener('click', () => {
+            const customClass = customIconInput.value.trim();
+            if (customClass) {
+                selectIcon(customClass);
+                customIconInput.value = '';
+            }
+        });
+
+        // ==================== 儲存 ====================
         modal.querySelector('#ledger-save-btn').addEventListener('click', async () => {
             const name = nameInput.value.trim();
             if (!name) { showToast('請輸入帳本名稱', 'error'); return; }

@@ -6,11 +6,6 @@ export class RecurringPage {
     }
 
     async render() {
-        const advancedMode = await this.app.dataService.getSetting('advancedAccountModeEnabled');
-        if (!advancedMode?.value) {
-            window.location.hash = '#settings';
-            return;
-        }
 
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">

@@ -369,6 +369,7 @@ export class RecordsListManager {
                 const name = isTransfer ? '帳戶間轉帳' : (category?.name || '未分類');
                 const color = category?.color || 'bg-gray-400';
                 const hasDebt = !!record.debtId;
+                const hasAmortization = !!record.amortizationId;
                 
                 // Check debt status and calculate display
                 const debt = hasDebt ? this.debtsMap?.[record.debtId] : null;
@@ -462,6 +463,7 @@ export class RecordsListManager {
                         <div class="flex flex-col justify-center min-w-0">
                             <div class="flex items-center gap-2">
                                 <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
+                                ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-sm cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
                                 ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
                                 ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
                             </div>
@@ -488,6 +490,15 @@ export class RecordsListManager {
             }).join('');
             return dateHeader + recordsHtml;
         }).join('');
+
+        // 分期圖標點擊跳轉
+        listContainer.querySelectorAll('.amort-link-icon').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.location.hash = '#amortizations';
+            });
+        });
     }
 
     updateSummary(records) {

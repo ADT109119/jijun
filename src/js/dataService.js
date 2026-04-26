@@ -8,7 +8,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 10 // Schema version 10: Add themes store
+    this.dbVersion = 12 // Schema version 12: Add amortizationId index to records
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
@@ -215,6 +215,27 @@ class DataService {
             if (oldVersion < 10) {
                 if (!db.objectStoreNames.contains('themes')) {
                     db.createObjectStore('themes', { keyPath: 'id' });
+                }
+            }
+            // Schema version 11: Amortizations (攤提/折舊/分期)
+            if (oldVersion < 11) {
+                if (!db.objectStoreNames.contains('amortizations')) {
+                    const aStore = db.createObjectStore('amortizations', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    aStore.createIndex('uuid', 'uuid', { unique: true });
+                    aStore.createIndex('ledgerId', 'ledgerId');
+                    aStore.createIndex('status', 'status');
+                }
+            }
+            // Schema version 12: Add amortizationId index to records
+            if (oldVersion < 12) {
+                if (db.objectStoreNames.contains('records')) {
+                    const recordStore = transaction.objectStore('records');
+                    if (!recordStore.indexNames.contains('amortizationId')) {
+                        recordStore.createIndex('amortizationId', 'amortizationId', { unique: false });
+                    }
                 }
             }
           }
@@ -424,7 +445,15 @@ class DataService {
     try {
       const tx = this.db.transaction('records', 'readonly')
       const store = tx.objectStore('records')
-      let records = await store.getAll()
+      let records = []
+
+      // Performance optimization: use index for amortizationId if available
+      if (filters.amortizationId && store.indexNames.contains('amortizationId')) {
+        const index = store.index('amortizationId');
+        records = await index.getAll(filters.amortizationId);
+      } else {
+        records = await store.getAll()
+      }
 
       // 帳本篩選（allLedgers = true 時跳過，用於匯出/備份）
       if (!filters.allLedgers) {
@@ -452,6 +481,10 @@ class DataService {
 
       if (filters.accountId) {
         records = records.filter(record => record.accountId === filters.accountId);
+      }
+
+      if (filters.amortizationId) {
+        records = records.filter(record => record.amortizationId === filters.amortizationId);
       }
 
       return records.sort((a, b) => b.timestamp - a.timestamp)
@@ -575,6 +608,93 @@ class DataService {
       return true
     } catch (error) {
       console.error('刪除記錄失敗:', error)
+      throw error;
+    }
+  }
+
+  // --- Amortization Methods (攤提/折舊/分期) ---
+  async addAmortization(data, skipLog = false) {
+    try {
+      if (!data.uuid) data.uuid = this.generateUUID();
+      const dataToSave = {
+        ...data,
+        ledgerId: data.ledgerId ?? this.activeLedgerId,
+        createdAt: data.createdAt ?? Date.now(),
+      };
+      const tx = this.db.transaction('amortizations', 'readwrite');
+      const id = await tx.store.add(dataToSave);
+      await tx.done;
+      if (!skipLog) await this.logChange('add', 'amortizations', id, dataToSave);
+      return id;
+    } catch (error) {
+      console.error('Failed to add amortization:', error);
+      throw error;
+    }
+  }
+
+  async getAmortizations(filters = {}) {
+    try {
+      let items = await this.db.getAll('amortizations');
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        items = items.filter(a => a.ledgerId === targetLedgerId);
+      }
+      if (filters.status) {
+        items = items.filter(a => a.status === filters.status);
+      }
+      return items;
+    } catch (error) {
+      console.error('Failed to get amortizations:', error);
+      return [];
+    }
+  }
+
+  async getAmortization(id) {
+    try {
+      return await this.db.get('amortizations', id);
+    } catch (error) {
+      console.error(`Failed to get amortization ${id}:`, error);
+      return null;
+    }
+  }
+
+  async updateAmortization(id, updates, skipLog = false) {
+    try {
+      const tx = this.db.transaction('amortizations', 'readwrite');
+      const item = await tx.store.get(id);
+      if (item) {
+        const finalUpdates = { ...updates };
+        if (skipLog) {
+          delete finalUpdates.id;
+          if (item.uuid) finalUpdates.uuid = item.uuid;
+        }
+        const updated = { ...item, ...finalUpdates };
+        await tx.store.put(updated);
+        await tx.done;
+        if (!skipLog) await this.logChange('update', 'amortizations', id, updated);
+        return updated;
+      }
+      throw new Error('Amortization not found');
+    } catch (error) {
+      console.error(`Failed to update amortization ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteAmortization(id, skipLog = false) {
+    try {
+      const tx = this.db.transaction('amortizations', 'readwrite');
+      let uuid = null;
+      if (!skipLog) {
+        const item = await tx.store.get(id);
+        uuid = item?.uuid;
+      }
+      await tx.store.delete(id);
+      await tx.done;
+      if (!skipLog) await this.logChange('delete', 'amortizations', id, { uuid });
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete amortization ${id}:`, error);
       throw error;
     }
   }
@@ -853,6 +973,10 @@ class DataService {
       try {
           recurring_transactions = await this.db.getAll('recurring_transactions');
       } catch (e) {console.warn('Silenced error:', e);}
+      let amortizations = [];
+      try {
+          amortizations = await this.getAmortizations({ allLedgers: true });
+      } catch (e) {console.warn('Silenced error:', e);}
 
       const exportData = {
         version: '2.3.0',
@@ -868,6 +992,7 @@ class DataService {
         contacts: contacts,
         debts: debts,
         recurring_transactions: recurring_transactions,
+        amortizations: amortizations,
         customCategories: customCategories,
         categoryOrder: categoryOrder,
         hiddenCategories: hiddenCategories,
@@ -929,6 +1054,11 @@ class DataService {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
               await txR.store.clear();
               await txR.done;
+            } catch (e) {console.warn('Silenced error:', e);}
+            try {
+              const txA = this.db.transaction('amortizations', 'readwrite');
+              await txA.store.clear();
+              await txA.done;
             } catch (e) {console.warn('Silenced error:', e);}
           }
           await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
@@ -1179,6 +1309,23 @@ class DataService {
                   await txRecur.store.add(rtData);
               }
               await txRecur.done;
+          }
+
+          // 10. 匯入 Amortizations (攤提/折舊/分期)
+          if (data.amortizations && Array.isArray(data.amortizations)) {
+              try {
+                  const txAmort = this.db.transaction('amortizations', 'readwrite');
+                  for (const am of data.amortizations) {
+                      const { id, ...amData } = am;
+                      if (!amData.uuid) amData.uuid = this.generateUUID();
+                      amData.ledgerId = getMappedLedgerId(amData.ledgerId);
+                      if (amData.accountId !== undefined && oldAccountIdToNewIdMap.has(amData.accountId)) {
+                          amData.accountId = oldAccountIdToNewIdMap.get(amData.accountId);
+                      }
+                      await txAmort.store.add(amData);
+                  }
+                  await txAmort.done;
+              } catch (e) { console.warn('匯入攤提資料時發生錯誤:', e); }
           }
 
           resolve({ 
@@ -2162,7 +2309,7 @@ class DataService {
     if (id === 1) throw new Error('不可刪除預設帳本');
     try {
       // 連帶刪除歸屬此帳本的所有資料
-      const dataStores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions'];
+      const dataStores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations'];
       for (const storeName of dataStores) {
         const tx = this.db.transaction(storeName, 'readwrite');
         const index = tx.store.index('ledgerId');

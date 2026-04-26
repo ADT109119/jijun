@@ -408,3 +408,41 @@ export function shouldSkipDate(date, skipRules) {
 
   return false; // If no rules matched, do not skip
 }
+
+/**
+ * 計算攤提/分期/折舊的每期金額與理論總額
+ * @param {number} principal - 本金 (總額 - 首付)
+ * @param {number} periods - 總期數
+ * @param {number} annualRate - 年利率 (百分比，例如 3.5 = 3.5%)
+ * @param {string} frequency - 扣款頻率 ('monthly', 'weekly', 'yearly')
+ * @param {string} decimalStrategy - 小數點處理 ('round', 'ceil', 'floor', 'keep')
+ * @returns {object} { amountPerPeriod, exactTotalToPay }
+ */
+export function calculateAmortizationDetails(principal, periods, annualRate, frequency, decimalStrategy = 'round') {
+  if (principal <= 0 || periods <= 0) {
+    return { amountPerPeriod: 0, exactTotalToPay: 0 };
+  }
+
+  let exactPMT;
+  let exactTotalToPay;
+
+  if (annualRate > 0) {
+    let periodRate = annualRate / 100 / 12;
+    if (frequency === 'weekly') periodRate = annualRate / 100 / 52;
+    else if (frequency === 'yearly') periodRate = annualRate / 100;
+    
+    exactPMT = principal * (periodRate * Math.pow(1 + periodRate, periods)) / (Math.pow(1 + periodRate, periods) - 1);
+    exactTotalToPay = exactPMT * periods;
+  } else {
+    exactPMT = principal / periods;
+    exactTotalToPay = principal;
+  }
+
+  let amountPerPeriod;
+  if (decimalStrategy === 'ceil') amountPerPeriod = Math.ceil(exactPMT);
+  else if (decimalStrategy === 'floor') amountPerPeriod = Math.floor(exactPMT);
+  else if (decimalStrategy === 'round') amountPerPeriod = Math.round(exactPMT);
+  else amountPerPeriod = Math.round(exactPMT * 100) / 100;
+
+  return { amountPerPeriod, exactTotalToPay };
+}
