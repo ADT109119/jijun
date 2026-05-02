@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { escapeHTML, formatDateToString, formatCurrency, isValidDate } from '../../src/js/utils.js';
+import { describe, it, expect, vi } from 'vitest';
+import { escapeHTML, formatDateToString, formatCurrency, isValidDate, debounce, throttle, deepClone, generateId } from '../../src/js/utils.js';
 
 describe('escapeHTML', () => {
     it('null / undefined 回傳空字串', () => {
@@ -132,5 +132,245 @@ describe('isValidDate', () => {
         const invalid = new Date('invalid');
         expect(isValidDate(valid)).toBe(true);
         expect(isValidDate(invalid)).toBe(false);
+    });
+});
+
+describe('debounce', () => {
+    it('多次呼叫只執行最後一次', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const debounced = debounce(fn, 100);
+        
+        debounced();
+        debounced();
+        debounced();
+
+        // 在 delay 前不應執行
+        expect(fn).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(100);
+        
+        expect(fn).toHaveBeenCalledTimes(1);
+        vi.restoreAllMocks();
+    });
+
+    it('延遲後執行函數並傳遞參數', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const debounced = debounce(fn, 50);
+        
+        debounced('arg1', 'arg2');
+        
+        await vi.advanceTimersByTimeAsync(60);
+        
+        expect(fn).toHaveBeenCalledWith('arg1', 'arg2');
+        vi.restoreAllMocks();
+    });
+
+    it('重置計時器', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const debounced = debounce(fn, 100);
+        
+        debounced(); // 第一次呼叫
+        
+        await vi.advanceTimersByTimeAsync(50);
+        expect(fn).not.toHaveBeenCalled();
+        
+        debounced(); // 重置計時器（從 T+50 開始重新計算）
+        
+        // 需要再推進 100ms（從 reset 點算起）
+        await vi.advanceTimersByTimeAsync(100);
+        
+        expect(fn).toHaveBeenCalledTimes(1);
+        vi.restoreAllMocks();
+    });
+});
+
+describe('throttle', () => {
+    it('在限制時間內只執行一次', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const throttled = throttle(fn, 100);
+        
+        throttled(); // 第一次：執行
+        expect(fn).toHaveBeenCalledTimes(1);
+        
+        throttled(); // 第二次：被节流
+        expect(fn).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(50);
+        
+        throttled(); // 仍在限制內
+        expect(fn).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(60);
+        
+        throttled(); // 超過限制，重新執行
+        expect(fn).toHaveBeenCalledTimes(2);
+        vi.restoreAllMocks();
+    });
+
+    it('傳遞參數和 this context', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const throttled = throttle(fn, 100);
+        
+        throttled.call({ value: 42 }, 'testArg');
+        
+        expect(fn).toHaveBeenCalledWith('testArg');
+        vi.restoreAllMocks();
+    });
+
+    it('連續快速呼叫只保留第一次', async () => {
+        vi.useFakeTimers();
+        
+        const fn = vi.fn();
+        const throttled = throttle(fn, 200);
+        
+        for (let i = 0; i < 10; i++) {
+            throttled(i);
+        }
+        
+        expect(fn).toHaveBeenCalledTimes(1);
+        expect(fn).toHaveBeenCalledWith(0); // 只保留第一次的參數
+        
+        await vi.advanceTimersByTimeAsync(200);
+        
+        throttled('after-throttle');
+        expect(fn).toHaveBeenCalledTimes(2);
+        vi.restoreAllMocks();
+    });
+});
+
+describe('deepClone', () => {
+    it('基本型別原樣回傳', () => {
+        expect(deepClone(null)).toBeNull();
+        expect(deepClone(undefined)).toBeUndefined();
+        expect(deepClone(42)).toBe(42);
+        expect(deepClone('string')).toBe('string');
+        expect(deepClone(true)).toBe(true);
+    });
+
+    it('Date 物件正確拷貝', () => {
+        const original = new Date('2024-01-15T10:30:00Z');
+        const cloned = deepClone(original);
+        
+        expect(cloned).toBeInstanceOf(Date);
+        expect(cloned.getTime()).toBe(original.getTime());
+        expect(cloned).not.toBe(original); // 不同物件
+    });
+
+    it('陣列深層拷貝', () => {
+        const original = [1, 'two', { three: 3 }];
+        const cloned = deepClone(original);
+        
+        expect(cloned).toEqual(original);
+        expect(cloned).not.toBe(original); // 不同物件
+        
+        // 修改 clone 不影響原始
+        cloned[0] = 999;
+        expect(original[0]).toBe(1);
+    });
+
+    it('巢狀物件深層拷貝', () => {
+        const original = {
+            a: 1,
+            b: {
+                c: 2,
+                d: {
+                    e: 'deep'
+                }
+            },
+            f: [3, 4]
+        };
+        
+        const cloned = deepClone(original);
+        
+        expect(cloned).toEqual(original);
+        expect(cloned).not.toBe(original);
+        expect(cloned.b).not.toBe(original.b);
+        expect(cloned.b.d).not.toBe(original.b.d);
+        expect(cloned.f).not.toBe(original.f);
+        
+        // 修改 clone 不影響原始
+        cloned.b.c = 999;
+        expect(original.b.c).toBe(2);
+    });
+
+    it('空物件/陣列', () => {
+        expect(deepClone({})).toEqual({});
+        expect(deepClone([])).toEqual([]);
+        
+        const emptyObj = deepClone({});
+        const emptyArr = deepClone([]);
+        
+        expect(emptyObj).not.toBe({});
+        expect(emptyArr).not.toBe([]);
+    });
+
+    it('包含 undefined 值的物件', () => {
+        const original = { a: 1, b: undefined, c: null };
+        const cloned = deepClone(original);
+        
+        expect(cloned.a).toBe(1);
+        expect(cloned.b).toBeUndefined();
+        expect(cloned.c).toBeNull();
+    });
+
+    it('不拷貝 prototype 屬性', () => {
+        function MyClass() { this.x = 1; }
+        MyClass.prototype.y = 2;
+        
+        const instance = new MyClass();
+        const cloned = deepClone(instance);
+        
+        expect(cloned).toEqual({ x: 1 });
+        expect(cloned.y).toBeUndefined(); // prototype 屬性不被拷貝
+    });
+});
+
+describe('generateId', () => {
+    it('回傳字串類型', () => {
+        const id = generateId();
+        expect(typeof id).toBe('string');
+    });
+
+    it('生成的 ID 不重複', () => {
+        const ids = new Set();
+        for (let i = 0; i < 100; i++) {
+            ids.add(generateId());
+        }
+        expect(ids.size).toBe(100); // 所有 ID 都不同
+    });
+
+    it('使用 crypto.randomUUID 時格式正確', () => {
+        const originalRandomUUID = globalThis.crypto?.randomUUID;
+        
+        if (globalThis.crypto && globalThis.crypto.randomUUID) {
+            const id = generateId();
+            // UUID v4 格式：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+            expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+        }
+    });
+
+    it('fallback 模式產生有效 ID', () => {
+        const originalCrypto = globalThis.crypto;
+        
+        // 模擬 crypto 不存在
+        delete globalThis.crypto;
+        
+        try {
+            const id = generateId();
+            expect(typeof id).toBe('string');
+            expect(id.length).toBeGreaterThan(0);
+        } finally {
+            globalThis.crypto = originalCrypto;
+        }
     });
 });
