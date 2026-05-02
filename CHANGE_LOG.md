@@ -1,5 +1,19 @@
 # 輕鬆記帳 2.0 - 更新日誌
 
+## v2.1.5.3 (2026-05-03) - 單元測試基礎建設與匯入安全強化
+
+### ✨ 新功能
+- **單元測試基礎建設**：引入 Vitest + jsdom，新增覆蓋 utils、dataService、ledgerManager、categories、amortization、pluginStorage、rewardService 等核心模組的單元測試。
+
+### 🐛 錯誤修復
+- **GPT 監聽器清理**：修復 rewardService.js 中 GPT 獎勵廣告事件監聽器未完全清理的問題，避免重複呼叫與記憶體洩漏。
+
+### 🔧 改進優化
+- **匯入資料安全強化**：匯入前自動建立完整備份快照（含 IndexedDB stores 與 localStorage settings），失敗時可一鍵還原至匯入前狀態。
+- **對話框 UX 統一**：將 categoryManager、debtManager 中的原生 `alert` / `confirm` 替換為自訂對話框組件，保持介面風格一致。
+
+---
+
 ## v2.1.5.2 (2026-04-26) - 分期/攤提引擎升級與管理優化
 
 ### ✨ 新功能

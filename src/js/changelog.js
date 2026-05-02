@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.5.3": {
+    date: "2026-05-03",
+    title: "單元測試基礎建設與匯入安全強化",
+    features: [
+      "新增單元測試基礎建設：引入 Vitest + jsdom，覆蓋 utils、dataService、ledgerManager、categories、amortization、pluginStorage、rewardService 等核心模組"
+    ],
+    bugfixes: [
+      "修復 rewardService.js GPT 獎勵廣告事件監聽器未完全清理的問題，避免重複呼叫與記憶體洩漏"
+    ],
+    improvements: [
+      "匯入資料安全強化：匯入前自動建立完整備份快照，失敗時可一鍵還原至匯入前狀態",
+      "使用者體驗優化：將 categoryManager、debtManager 中的原生 alert/confirm 替換為自訂對話框組件"
+    ]
+  },
   "2.1.5.2": {
     date: "2026-04-26",
     title: "分期/攤提引擎升級與管理優化",
