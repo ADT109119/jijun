@@ -1031,6 +1031,7 @@ class DataService {
       const reader = new FileReader()
       
       reader.onload = async (event) => {
+        let backupSnapshot = null;
         try {
           const data = JSON.parse(event.target.result)
 
@@ -1041,6 +1042,13 @@ class DataService {
               resolve({ success: false, message: '使用者取消操作' })
               return
             }
+          }
+
+          // --- 建立備份快照（用於錯誤時還原）---
+          try {
+            backupSnapshot = await this._exportFullBackup();
+          } catch (e) {
+            console.warn('建立匯入備份失敗，無法提供 undo 功能:', e);
           }
 
           // --- 清除所有舊資料 ---
@@ -1333,8 +1341,19 @@ class DataService {
           })
 
         } catch (error) {
-          console.error('解析匯入檔案失敗:', error)
-          reject(new Error('檔案格式錯誤或損壞'))
+          if (backupSnapshot && error.message !== '檔案格式錯誤或損壞') {
+            console.error('匯入失敗，嘗試從備份還原...', error);
+            try {
+              await this._restoreFromBackup(backupSnapshot);
+              reject(new Error(`匯入失敗且已自動還原：${error.message}`));
+            } catch (restoreError) {
+              console.error('備份還原也失敗了！資料可能已損壞:', restoreError);
+              reject(new Error(`匯入失敗且無法從備份還原，請手動恢復！原始錯誤：${error.message}`));
+            }
+          } else {
+            console.error('解析匯入檔案失敗:', error)
+            reject(new Error('檔案格式錯誤或損壞'))
+          }
         }
       }
 
@@ -1344,6 +1363,84 @@ class DataService {
 
       reader.readAsText(file)
     }) 
+  }
+
+  // --- 匯入備份/還原方法（用於 importData undo）---
+
+  /** 將所有 store 資料序列化為 JSON 物件 */
+  async _exportFullBackup() {
+    if (this.useLocalStorage) {
+      return { localStorage: { ...localStorage }, ledgers: [], records: [], accounts: [], contacts: [], debts: [], recurring_transactions: [], amortizations: [] };
+    }
+    const backup = {};
+    const stores = ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations'];
+    for (const storeName of stores) {
+      try {
+        const tx = this.db.transaction(storeName, 'readonly');
+        backup[storeName] = await tx.store.toArray();
+        await tx.done;
+      } catch (e) { console.warn(`備份 store ${storeName} 失敗:`, e); }
+    }
+    // Also export settings from localStorage
+    backup._settings = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('easy_accounting_')) {
+        backup._settings[key] = localStorage.getItem(key);
+      }
+    }
+    return backup;
+  }
+
+  /** 從備份快照還原所有 store */
+  async _restoreFromBackup(backup) {
+    if (this.useLocalStorage) {
+      // Clear and restore localStorage
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('easy_accounting_')) {
+          keysToRemove.push(key);
+        }
+      }
+      for (const key of keysToRemove) {
+        localStorage.removeItem(key);
+      }
+      // Restore settings
+      if (backup._settings) {
+        for (const [key, val] of Object.entries(backup._settings)) {
+          localStorage.setItem(key, val);
+        }
+      }
+      return;
+    }
+
+    const stores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'ledgers'];
+    for (const storeName of stores) {
+      try {
+        // Clear existing data
+        const clearTx = this.db.transaction(storeName, 'readwrite');
+        await clearTx.store.clear();
+        await clearTx.done;
+
+        // Restore backed up data
+        if (backup[storeName] && backup[storeName].length > 0) {
+          const restoreTx = this.db.transaction(storeName, 'readwrite');
+          for (const item of backup[storeName]) {
+            delete item.id; // Let DB generate new IDs to avoid conflicts
+            await restoreTx.store.add(item);
+          }
+          await restoreTx.done;
+        }
+      } catch (e) { console.warn(`還原 store ${storeName} 失敗:`, e); }
+    }
+
+    // Restore settings
+    if (backup._settings) {
+      for (const [key, val] of Object.entries(backup._settings)) {
+        localStorage.setItem(key, val);
+      }
+    }
   }
 
   // 清除所有記錄

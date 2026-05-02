@@ -434,11 +434,12 @@ export class RewardService {
 
     // ── Web GPT 獎勵廣告 ────────────────────────────
 
-    /** 安全 resolve，防止重複呼叫 */
-    _safeResolve(value) {
+    /** 安全 resolve，防止重複呼叫（自動清理 listeners + slot） */
+    _resolveWithCleanup(value) {
         if (this._hasResolved) return;
         this._hasResolved = true;
-        if (this._resolveReward) this._resolveReward(value);
+        this._cleanupRewardedSlot();
+        this._resolveReward?.(value);
     }
 
     /** 註冊 GPT 事件監聯並追蹤，供清理時移除 */
@@ -464,7 +465,7 @@ export class RewardService {
                 try {
                     // 前置檢查：確認 GPT API 完整可用
                     if (!googletag.enums?.OutOfPageFormat?.REWARDED) {
-                        this._showInternalAd().then(v => this._safeResolve(v));
+                        this._showInternalAd().then(v => this._resolveWithCleanup(v));
                         return;
                     }
 
@@ -479,7 +480,7 @@ export class RewardService {
 
                     // 行動裝置檢查
                     if (!this._rewardedSlot) {
-                        this._showInternalAd().then(v => this._safeResolve(v));
+                        this._showInternalAd().then(v => this._resolveWithCleanup(v));
                         return;
                     }
 
@@ -504,20 +505,17 @@ export class RewardService {
                         if (this._rewardPayload) {
                             this._grantAdFree();
                             showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
-                            this._safeResolve(true);
+                            this._resolveWithCleanup(true);
                         } else {
                             showToast('未完成觀看，無法獲得獎勵', 'error');
-                            this._safeResolve(false);
+                            this._resolveWithCleanup(false);
                         }
-
-                        this._cleanupRewardedSlot();
                     });
 
                     // 無廣告可用 → 顯示內建推廣廣告
                     this._addGptListener('slotRenderEnded', (event) => {
                         if (event.slot === this._rewardedSlot && event.isEmpty) {
-                            this._cleanupRewardedSlot();
-                            this._showInternalAd().then(v => this._safeResolve(v));
+                            this._showInternalAd().then(v => this._resolveWithCleanup(v));
                         }
                     });
 
@@ -530,8 +528,7 @@ export class RewardService {
                     googletag.display(this._rewardedSlot);
                 } catch (e) {
                     console.error('獎勵廣告初始化失敗:', e);
-                    this._cleanupRewardedSlot();
-                    this._showInternalAd().then(v => this._safeResolve(v));
+                    this._resolveWithCleanup(false);
                 }
             });
         });
@@ -666,8 +663,7 @@ export class RewardService {
 
         this._modal.querySelector('#reward-cancel-btn').addEventListener('click', () => {
             this._dismissModal();
-            this._cleanupRewardedSlot();
-            this._safeResolve(false);
+            this._resolveWithCleanup(false);
         });
     }
 
