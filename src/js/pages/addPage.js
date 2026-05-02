@@ -1,4 +1,4 @@
-import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML, calculateAmortizationDetails } from '../utils.js';
+import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML, calculateAmortizationDetails, customConfirm } from '../utils.js';
 
 export class AddPage {
     constructor(app) {
@@ -759,7 +759,7 @@ export class AddPage {
                         const removeDebtBtn = document.getElementById('remove-debt-link-btn');
                         if (removeDebtBtn) {
                             removeDebtBtn.addEventListener('click', async () => {
-                                if (confirm('確定要取消此記錄與欠款的關聯嗎？欠款記錄將被刪除。')) {
+                                if (await customConfirm('確定要取消此記錄與欠款的關聯嗎？欠款記錄將被刪除。')) {
                                     await this.app.dataService.deleteDebt(debt.id);
                                     await this.app.dataService.updateRecord(numericRecordId, { debtId: null });
                                     showToast('已取消欠款關聯');
@@ -869,7 +869,7 @@ export class AddPage {
 
         if (isEditMode) {
             document.getElementById('delete-record-btn').addEventListener('click', async () => {
-                if (confirm('確定要刪除這筆紀錄嗎？')) {
+                if (await customConfirm('確定要刪除這筆紀錄嗎？')) {
                     const id = parseInt(recordId, 10);
                     const record = await this.app.dataService.getRecord(id);
                     const associatedDebtId = record?.debtId;
@@ -877,7 +877,7 @@ export class AddPage {
                     await this.app.dataService.deleteRecord(id);
                     
                     if (associatedDebtId) {
-                        if (confirm('此紀錄有關聯的欠款，是否也要一併刪除該欠款？')) {
+                        if (await customConfirm('此紀錄有關聯的欠款，是否也要一併刪除該欠款？')) {
                             await this.app.dataService.deleteDebt(associatedDebtId);
                             showToast('紀錄與關聯欠款已刪除');
                         } else {

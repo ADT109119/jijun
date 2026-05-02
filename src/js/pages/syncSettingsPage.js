@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js';
+import { showToast, customConfirm } from '../utils.js';
 
 export class SyncSettingsPage {
     constructor(app) {
@@ -197,7 +197,7 @@ export class SyncSettingsPage {
         const signOutBtn = document.getElementById('sync-sign-out-btn');
         if (signOutBtn) {
             signOutBtn.addEventListener('click', async () => {
-                if (!confirm('確定要登出 Google 帳號？這會停止自動同步。')) return;
+                if (!(await customConfirm('確定要登出 Google 帳號？這會停止自動同步。'))) return;
                 await this.app.syncService.signOut();
                 showToast('已登出 Google 帳號', 'success');
                 await this.render();
@@ -263,7 +263,7 @@ export class SyncSettingsPage {
 
                     modal.querySelectorAll('.restore-backup-item').forEach(btn => {
                         btn.addEventListener('click', async () => {
-                            if (!confirm('確定要從此備份還原？這將覆蓋目前的所有資料。')) return;
+                            if (!(await customConfirm('確定要從此備份還原？這將覆蓋目前的所有資料。'))) return;
                             const fileId = btn.dataset.fileId;
                             modal.remove();
                             try {

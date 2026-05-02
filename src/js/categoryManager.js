@@ -2,7 +2,7 @@
 import { CATEGORIES } from './categories.js'
 import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 import Sortable from 'sortablejs'
-import { escapeHTML } from './utils.js'
+import { escapeHTML, customAlert } from './utils.js'
 
 export class CategoryManager {
   constructor(dataService = null) {
@@ -386,17 +386,17 @@ export class CategoryManager {
       const name = document.getElementById('category-name').value.trim()
       
       if (!name) {
-        alert('請輸入分類名稱')
+        customAlert('請輸入分類名稱')
         return
       }
       
       if (!selectedIcon) {
-        alert('請選擇圖示')
+        customAlert('請選擇圖示')
         return
       }
       
       if (!selectedColor) {
-        alert('請選擇顏色')
+        customAlert('請選擇顏色')
         return
       }
       
@@ -419,7 +419,7 @@ export class CategoryManager {
         this.closeAddCategoryModal()
         if (onUpdateCallback) onUpdateCallback();
       } else {
-        alert(categoryToEdit ? '更新分類失敗' : '新增分類失敗')
+        customAlert(categoryToEdit ? '更新分類失敗' : '新增分類失敗')
       }
     })
     
@@ -535,7 +535,7 @@ export class CategoryManager {
                  resolve(true);
              } catch (e) {
                  console.error('刪除與轉移失敗', e);
-                 alert('刪除與轉移過程發生錯誤。');
+                  customAlert('刪除與轉移過程發生錯誤。');
                  cleanup();
                  resolve(false);
              }

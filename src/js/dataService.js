@@ -1,5 +1,4 @@
-// 資料服務模組 - 使用 IndexedDB 進行資料儲存
-// 如果 idb 不可用，使用全域的 idb
+import { customConfirm } from './utils.js';
 const openDB = window.idb?.openDB || (() => {
   console.warn('IndexedDB 不可用，將使用 localStorage')
   return null
@@ -1037,7 +1036,7 @@ class DataService {
 
           // 確認是否要覆蓋現有資料
           if ((await this.getRecords()).length > 0) {
-            const confirmed = confirm(`匯入新資料將會覆蓋所有現有資料 (包含紀錄、帳戶、分類設定)。\n\n確定要繼續嗎？`)
+            const confirmed = await customConfirm(`匯入新資料將會覆蓋所有現有資料 (包含紀錄、帳戶、分類設定)。\n\n確定要繼續嗎？`)
             if (!confirmed) {
               resolve({ success: false, message: '使用者取消操作' })
               return

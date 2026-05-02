@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js';
+import { showToast, customConfirm } from '../utils.js';
 
 export class PluginsPage {
     constructor(app) {
@@ -159,7 +159,7 @@ export class PluginsPage {
         // Handle Delete
         document.querySelectorAll('.delete-plugin-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (confirm('確定要移除此擴充功能嗎？')) {
+                if (await customConfirm('確定要移除此擴充功能嗎？')) {
                     await this.app.pluginManager.uninstallPlugin(btn.dataset.id);
                     this.render();
                 }

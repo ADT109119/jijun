@@ -1,5 +1,5 @@
 // ==================== 帳本管理頁面 ====================
-import { showToast, escapeHTML } from '../utils.js';
+import { showToast, escapeHTML, customConfirm } from '../utils.js';
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js';
 
 export class LedgersPage {
@@ -111,7 +111,7 @@ export class LedgersPage {
                 const id = parseInt(btn.dataset.id);
                 const ledger = this.app.ledgerManager.getAllLedgers().find(l => l.id === id);
                 if (!ledger) return;
-                if (!confirm(`確定要刪除「${ledger.name}」帳本嗎？\n\n⚠️ 此操作不可復原，帳本內的所有記帳資料、帳戶、欠款等都會一併刪除。`)) return;
+                if (!(await customConfirm(`確定要刪除「${ledger.name}」帳本嗎？\n\n⚠️ 此操作不可復原，帳本內的所有記帳資料、帳戶、欠款等都會一併刪除。`))) return;
                 try {
                     const wasActive = this.app.dataService.activeLedgerId === id;
                     await this.app.ledgerManager.deleteLedger(id);
@@ -499,7 +499,7 @@ export class LedgersPage {
                     
                     if (isOwner && u.role !== 'owner') {
                         el.querySelector('.remove-user-btn')?.addEventListener('click', async () => {
-                            if (!confirm(`確定要移除「${u.emailAddress || u.displayName}」的共用權限嗎？`)) return;
+                            if (!(await customConfirm(`確定要移除「${u.emailAddress || u.displayName}」的共用權限嗎？`))) return;
                             try {
                                 el.style.opacity = '0.5';
                                 await this.app.ledgerManager.removeSharedUser(ledger.id, u.id);
@@ -520,7 +520,7 @@ export class LedgersPage {
             // == 取消共用 (擁有者專用) ==
             if (isOwner) {
                 modal.querySelector('#unshare-btn')?.addEventListener('click', async () => {
-                    if (!confirm(`⚠️ 確定要取消共用「${ledger.name}」嗎？\n\n所有參與者將失去存取權限，雲端共享檔案將被永久刪除。帳本資料仍會保留在您本地。`)) return;
+                    if (!(await customConfirm(`⚠️ 確定要取消共用「${ledger.name}」嗎？\n\n所有參與者將失去存取權限，雲端共享檔案將被永久刪除。帳本資料仍會保留在您本地。`))) return;
                     
                     const btn = modal.querySelector('#unshare-btn');
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>處理中...';

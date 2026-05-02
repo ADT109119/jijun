@@ -1,5 +1,5 @@
 // 欠款管理模組
-import { formatCurrency, formatDate, formatDateToString, showToast } from './utils.js';
+import { formatCurrency, formatDate, formatDateToString, showToast, customConfirm, customAlert } from './utils.js';
 
 export class DebtManager {
   constructor(dataService) {
@@ -398,7 +398,7 @@ export class DebtManager {
     listContainer.querySelectorAll('.settle-debt-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const debtId = parseInt(btn.dataset.id);
-        if (confirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
+        if (await customConfirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
           await this.dataService.settleDebt(debtId);
           showToast('已結清欠款並產生記帳紀錄', 'success');
           // Maintain current filter state instead of full re-render
@@ -430,12 +430,12 @@ export class DebtManager {
         const debtId = parseInt(btn.dataset.id);
         const debt = await this.dataService.getDebt(debtId);
         
-        if (confirm('確定要刪除此欠款記錄嗎？')) {
+        if (await customConfirm('確定要刪除此欠款記錄嗎？')) {
           const recordId = debt?.recordId;
           await this.dataService.deleteDebt(debtId);
           
           if (recordId) {
-              if (confirm('此欠款有關聯的記帳紀錄，是否也要一併刪除該紀錄？')) {
+              if (await customConfirm('此欠款有關聯的記帳紀錄，是否也要一併刪除該紀錄？')) {
                   await this.dataService.deleteRecord(recordId);
                   showToast('欠款與關聯紀錄已刪除', 'success');
               } else {
@@ -547,12 +547,12 @@ export class DebtManager {
       const amount = parseFloat(modal.querySelector('#partial-amount').value);
 
       if (!amount || amount <= 0) {
-        alert('請輸入有效金額');
+        customAlert('請輸入有效金額');
         return;
       }
 
       if (amount > remainingAmount) {
-        alert(`金額不能超過剩餘金額 ${formatCurrency(remainingAmount)}`);
+        customAlert(`金額不能超過剩餘金額 ${formatCurrency(remainingAmount)}`);
         return;
       }
 
@@ -638,7 +638,7 @@ export class DebtManager {
     const contacts = await this.dataService.getContacts();
 
     if (contacts.length === 0) {
-      alert('請先新增聯絡人');
+      customAlert('請先新增聯絡人');
       window.location.hash = '#contacts';
       return;
     }
@@ -740,7 +740,7 @@ export class DebtManager {
       const description = modal.querySelector('#debt-description').value;
 
       if (!contactId || !amount || amount <= 0 || !date) {
-        alert('請填寫完整資料');
+        customAlert('請填寫完整資料');
         return;
       }
 
@@ -833,13 +833,13 @@ export class DebtManager {
       const text = modal.querySelector('#reminder-text').value;
       try {
         await navigator.clipboard.writeText(text);
-        alert('訊息已複製到剪貼簿！');
+        customAlert('訊息已複製到剪貼簿！');
         closeModal();
       } catch (err) {
         // Fallback for older browsers
         modal.querySelector('#reminder-text').select();
         document.execCommand('copy');
-        alert('訊息已複製！');
+        customAlert('訊息已複製！');
         closeModal();
       }
     });
@@ -857,16 +857,16 @@ export class DebtManager {
         } catch (err) {
           // User cancelled or share failed
           if (err.name !== 'AbortError') {
-            alert('分享失敗，請使用複製功能');
+            customAlert('分享失敗，請使用複製功能');
           }
         }
       } else {
         // Fallback: copy to clipboard
         try {
           await navigator.clipboard.writeText(text);
-          alert('您的瀏覽器不支援分享功能，訊息已複製到剪貼簿！');
+          customAlert('您的瀏覽器不支援分享功能，訊息已複製到剪貼簿！');
         } catch (err) {
-          alert('分享功能不支援，請使用複製功能');
+          customAlert('分享功能不支援，請使用複製功能');
         }
       }
     });
@@ -943,10 +943,10 @@ export class DebtManager {
         // Check if contact has debts
         const debts = await this.dataService.getDebts({ contactId });
         if (debts.length > 0) {
-          alert('此聯絡人尚有關聯的欠款記錄，無法刪除。');
+          customAlert('此聯絡人尚有關聯的欠款記錄，無法刪除。');
           return;
         }
-        if (confirm('確定要刪除此聯絡人嗎？')) {
+        if (await customConfirm('確定要刪除此聯絡人嗎？')) {
           await this.dataService.deleteContact(contactId);
           await this.renderContactsPage(container);
         }
@@ -1049,7 +1049,7 @@ export class DebtManager {
       const name = modal.querySelector('#contact-name').value.trim();
 
       if (!name) {
-        alert('請輸入聯絡人名稱');
+        customAlert('請輸入聯絡人名稱');
         return;
       }
 

@@ -1,4 +1,4 @@
-import { formatCurrency, showToast, formatDateToString, escapeHTML } from '../utils.js';
+import { formatCurrency, showToast, formatDateToString, escapeHTML, customConfirm } from '../utils.js';
 
 export class RecurringPage {
     constructor(app) {
@@ -78,7 +78,7 @@ export class RecurringPage {
         pageElement.querySelectorAll('.delete-recurring-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const txId = parseInt(e.currentTarget.dataset.id, 10);
-                if (confirm('確定要刪除此週期性交易嗎？')) {
+                if (await customConfirm('確定要刪除此週期性交易嗎？')) {
                     await this.app.dataService.deleteRecurringTransaction(txId);
                     showToast('已刪除週期性交易');
                     this.render();

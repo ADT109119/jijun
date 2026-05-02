@@ -1,5 +1,5 @@
 // ==================== 攤提/折舊/分期管理頁面 ====================
-import { showToast, escapeHTML, calculateAmortizationDetails } from '../utils.js';
+import { showToast, escapeHTML, calculateAmortizationDetails, customConfirm } from '../utils.js';
 import { showAmortizationModal } from '../amortizationModal.js';
 
 // ==================== 常數 ====================
@@ -171,7 +171,7 @@ export class AmortizationsPage {
             btn.addEventListener('click', async () => {
                 const item = await this.app.dataService.getAmortization(parseInt(btn.dataset.id));
                 if (!item) return;
-                if (!confirm(`確定要刪除「${item.name}」嗎？\n\n⚠️ 已產生的記帳紀錄不會被刪除。`)) return;
+                if (!(await customConfirm(`確定要刪除「${item.name}」嗎？\n\n⚠️ 已產生的記帳紀錄不會被刪除。`))) return;
                 await this.app.dataService.deleteAmortization(parseInt(btn.dataset.id));
                 showToast('已刪除', 'success');
                 await this.render();

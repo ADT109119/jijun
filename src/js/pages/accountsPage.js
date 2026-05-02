@@ -1,4 +1,4 @@
-import { formatCurrency, showToast, escapeHTML, formatDateToString } from '../utils.js';
+import { formatCurrency, showToast, escapeHTML, formatDateToString, customAlert, customConfirm } from '../utils.js';
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js';
 
 export class AccountsPage {
@@ -122,10 +122,10 @@ export class AccountsPage {
                 const accountId = parseInt(e.currentTarget.dataset.id, 10);
                 const records = await this.app.dataService.getRecords({ accountId });
                 if (records.length > 0) {
-                    alert('此帳戶尚有交易紀錄，無法刪除。');
+                    customAlert('此帳戶尚有交易紀錄，無法刪除。');
                     return;
                 }
-                if (confirm('確定要刪除此帳戶嗎？')) {
+                if (await customConfirm('確定要刪除此帳戶嗎？')) {
                     await this.app.dataService.deleteAccount(accountId);
                     showToast('帳戶已刪除');
                     this.render(); // Re-render the page
