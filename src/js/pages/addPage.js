@@ -11,6 +11,8 @@ export class AddPage {
         const isEditMode = !!recordId;
         const debtEnabled = await this.app.dataService.getSetting('debtManagementEnabled');
         const showDebtBtn = !!debtEnabled?.value;
+        const amortizationEnabled = await this.app.dataService.getSetting('amortizationEnabled');
+        const showInstallmentBtn = !!amortizationEnabled?.value;
 
         // Use a fixed container to ensure perfect pinning to the viewport (considering bottom nav on mobile)
         this.app.appContainer.innerHTML = `
@@ -30,9 +32,11 @@ export class AddPage {
                                         <i class="fa-solid fa-handshake text-lg"></i>
                                     </button>
                                 ` : ''}
-                                <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
-                                    <i class="fa-solid fa-credit-card text-lg"></i>
-                                </button>
+                                ${showInstallmentBtn ? `
+                                    <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
+                                        <i class="fa-solid fa-credit-card text-lg"></i>
+                                    </button>
+                                ` : ''}
                                 ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
                             </div>
                         </div>

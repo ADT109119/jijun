@@ -112,7 +112,23 @@ export class SettingsPage {
                             ${this.createSettingItem('fa-solid fa-credit-card', '帳戶管理', 'manage-accounts-btn')}
                         </div>
                         ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
-                        ${this.createSettingItem('fa-solid fa-chart-gantt', '攤提/分期管理', 'manage-amortizations-btn')}
+                        <!-- Amortization Management Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-chart-gantt"></i>
+                                </div>
+                                <p class="text-wabi-text-primary text-base font-normal">攤提/分期管理</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="amortization-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-amortizations-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-chart-gantt', '攤提/分期管理', 'manage-amortizations-btn')}
+                        </div>
                         <!-- Debt Management Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
                             <div class="flex items-center gap-4">
@@ -129,6 +145,30 @@ export class SettingsPage {
                         </div>
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
+                        </div>
+
+                        <!-- Default Records Period -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">明細預設時間範圍</p>
+                                    <p class="text-xs text-wabi-text-secondary">進入明細頁面時的預設時間範圍</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="default-period-container" class="px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
+                            <div class="mt-2">
+                                <select id="default-period-select" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary w-full p-2 outline-none appearance-none">
+                                    <option value="week">本週</option>
+                                    <option value="month">本月</option>
+                                    <option value="today">今天</option>
+                                    <option value="last7days">近 7 天</option>
+                                    <option value="last">上次時間範圍</option>
+                                </select>
+                            </div>
                         </div>
 
                         
@@ -379,6 +419,29 @@ export class SettingsPage {
             });
         }
 
+        // Amortization Management Toggle
+        const amortizationManagementToggle = document.getElementById('amortization-management-toggle');
+        if (amortizationManagementToggle) {
+            this.app.dataService.getSetting('amortizationEnabled').then(setting => {
+                const isEnabled = !!setting?.value;
+                amortizationManagementToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-amortizations-link-container').classList.remove('hidden');
+                }
+            });
+
+            amortizationManagementToggle.addEventListener('change', async (e) => {
+                const isEnabled = e.target.checked;
+                await this.app.dataService.saveSetting({ key: 'amortizationEnabled', value: isEnabled });
+                if (isEnabled) {
+                    document.getElementById('manage-amortizations-link-container').classList.remove('hidden');
+                } else {
+                    document.getElementById('manage-amortizations-link-container').classList.add('hidden');
+                }
+                showToast(`攤提/分期管理已${isEnabled ? '啟用' : '停用'}`);
+            });
+        }
+
         const manageAmortizationsBtn = document.getElementById('manage-amortizations-btn');
         if (manageAmortizationsBtn) {
             manageAmortizationsBtn.addEventListener('click', () => {
@@ -413,6 +476,20 @@ export class SettingsPage {
         if (manageDebtsBtn) {
             manageDebtsBtn.addEventListener('click', () => {
                 window.location.hash = '#debts';
+            });
+        }
+
+        // Default Records Period Setting
+        const defaultPeriodSelect = document.getElementById('default-period-select');
+        if (defaultPeriodSelect) {
+            this.app.dataService.getSetting('defaultRecordsPeriod').then(setting => {
+                const periodValue = setting?.value || 'month';
+                defaultPeriodSelect.value = periodValue;
+            });
+
+            defaultPeriodSelect.addEventListener('change', async (e) => {
+                await this.app.dataService.saveSetting({ key: 'defaultRecordsPeriod', value: e.target.value });
+                showToast('已設定明細預設時間範圍');
             });
         }
 

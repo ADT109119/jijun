@@ -30,14 +30,55 @@ export class RecordsListManager {
             this.container.querySelector('#records-account-filter-btn').classList.remove('hidden');
         }
 
-        // Initialize custom dates with current month so arrows work immediately
-        const initialRange = getDateRange('month');
-        this.filters.customStartDate = initialRange.startDate;
-        this.filters.customEndDate = initialRange.endDate;
+        // Load default period setting
+        const defaultPeriodSetting = await this.dataService.getSetting('defaultRecordsPeriod');
+        let defaultPeriod = defaultPeriodSetting?.value || 'month';
+
+        if (defaultPeriod === 'last') {
+            // Restore last used period and dates
+            const savedLast = await this.dataService.getSetting('lastRecordsPeriodState');
+            const stateData = savedLast?.value || savedLast;
+            if (stateData?.period && stateData?.customStartDate && stateData?.customEndDate) {
+                this.filters.period = stateData.period;
+                this.filters.customStartDate = stateData.customStartDate;
+                this.filters.customEndDate = stateData.customEndDate;
+            } else {
+                const initialRange = getDateRange('month');
+                this.filters.period = 'month';
+                this.filters.customStartDate = initialRange.startDate;
+                this.filters.customEndDate = initialRange.endDate;
+            }
+        } else if (defaultPeriod === 'today' || defaultPeriod === 'last7days') {
+            const initialRange = getDateRange(defaultPeriod);
+            this.filters.period = 'custom';
+            this.filters.customStartDate = initialRange.startDate;
+            this.filters.customEndDate = initialRange.endDate;
+        } else {
+            this.filters.period = defaultPeriod;
+            const initialRange = getDateRange(defaultPeriod);
+            this.filters.customStartDate = initialRange.startDate;
+            this.filters.customEndDate = initialRange.endDate;
+        }
 
         this.modalsContainer = this.container.querySelector('#records-modals-container');
         this.setupEventListeners();
+        this.updatePeriodButtons();
         await this.loadAndRenderRecords();
+
+        // Save initial state so "last" option works on next visit
+        await this._saveLastPeriodState();
+    }
+
+    async _saveLastPeriodState() {
+        try {
+            await this.dataService.saveSetting({ key: 'lastRecordsPeriodState', value: {
+                period: this.filters.period,
+                customStartDate: this.filters.customStartDate,
+                customEndDate: this.filters.customEndDate,
+            }});
+        } catch (error) {
+            console.error('Failed to save last records period state:', error);
+        }
     }
 
     setupEventListeners() {
@@ -51,6 +92,7 @@ export class RecordsListManager {
                     const newRange = getDateRange(period);
                     this.filters.customStartDate = newRange.startDate;
                     this.filters.customEndDate = newRange.endDate;
+                    this._saveLastPeriodState();
                     this.updatePeriodButtons();
                     this.loadAndRenderRecords();
                 }
@@ -154,6 +196,7 @@ export class RecordsListManager {
         // So shifting implies we switch to "custom" conceptually, but visually we can keep the current period highlighted
         // or switch to custom. Let's switch to custom to be accurate.
         this.filters.period = 'custom';
+        this._saveLastPeriodState();
         this.updatePeriodButtons();
 
         this.loadAndRenderRecords();
@@ -602,6 +645,13 @@ export class RecordsListManager {
             this.modalsContainer.innerHTML = '';
         });
         this.modalsContainer.querySelector('#close-cat-modal').addEventListener('click', () => this.modalsContainer.innerHTML = '');
+
+        // Close modal when clicking the overlay background
+        this.modalsContainer.querySelector('#category-filter-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'category-filter-modal') {
+                this.modalsContainer.innerHTML = '';
+            }
+        });
     }
 
     showAccountFilterModal() {
@@ -639,6 +689,13 @@ export class RecordsListManager {
             this.modalsContainer.innerHTML = '';
         });
         this.modalsContainer.querySelector('#close-acc-modal').addEventListener('click', () => this.modalsContainer.innerHTML = '');
+
+        // Close modal when clicking the overlay background
+        this.modalsContainer.querySelector('#account-filter-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'account-filter-modal') {
+                this.modalsContainer.innerHTML = '';
+            }
+        });
     }
 
     showDateRangeModal() {
@@ -649,6 +706,7 @@ export class RecordsListManager {
                 this.filters.period = 'custom';
                 this.filters.customStartDate = start;
                 this.filters.customEndDate = end;
+                this._saveLastPeriodState();
                 this.updatePeriodButtons();
                 this.loadAndRenderRecords();
             }
