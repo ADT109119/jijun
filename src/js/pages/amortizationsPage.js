@@ -23,6 +23,12 @@ export class AmortizationsPage {
 
     // ==================== 頁面渲染 ====================
     async render() {
+        const amortizationEnabled = await this.app.dataService.getSetting('amortizationEnabled');
+        if (!amortizationEnabled?.value) {
+            window.location.hash = '#settings';
+            return;
+        }
+
         const items = await this.app.dataService.getAmortizations();
 
         this.app.appContainer.innerHTML = `
