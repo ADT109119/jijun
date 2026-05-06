@@ -225,7 +225,7 @@ export class BudgetManager {
     let categoryOptions = '<option value="" disabled selected>選擇分類...</option>';
     if (window.app && window.app.categoryManager) {
       const expenseCategories = window.app.categoryManager.getAllCategories('expense');
-      categoryOptions += expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      categoryOptions += expenseCategories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
     }
 
     modal.innerHTML = `

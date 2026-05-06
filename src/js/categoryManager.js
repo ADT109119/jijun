@@ -197,11 +197,11 @@ export class CategoryManager {
               <div class="flex items-center space-x-2 mb-2">
                 <input type="text" id="custom-icon-input" 
                        placeholder="輸入 Font Awesome class (如: fas fa-heart)"
-                       value="${categoryToEdit ? categoryToEdit.icon : ''}"
+                       value="${categoryToEdit ? escapeHTML(categoryToEdit.icon) : ''}"
                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                 <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                   <span id="icon-preview" class="text-lg text-wabi-primary">
-                    <i class="${categoryToEdit ? categoryToEdit.icon : 'fas fa-eye'}"></i>
+                    <i class="${escapeHTML(categoryToEdit ? categoryToEdit.icon : 'fas fa-eye')}"></i>
                   </span>
                 </button>
               </div>

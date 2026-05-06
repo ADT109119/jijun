@@ -238,7 +238,7 @@ export class AddPage {
                 const select = document.getElementById('debt-contact-select');
                 if (select) {
                     select.innerHTML = `<option value="">選擇聯絡人...</option>` +
-                        contacts.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                        contacts.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
                 }
             };
 
@@ -934,10 +934,10 @@ export class AddPage {
 
         const accountListHtml = accounts.map(account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg ${account.color} text-white shrink-0 size-10">
-                    <i class="${account.icon} text-xl"></i>
+                <div class="flex items-center justify-center rounded-lg bg-${escapeHTML(account.color || 'gray')} text-white shrink-0 size-10">
+                    <i class="${escapeHTML(account.icon || 'fa-solid fa-wallet')} text-xl"></i>
                 </div>
-                <span class="font-medium text-wabi-text-primary">${account.name}</span>
+                <span class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</span>
             </button>
         `).join('');
 

@@ -264,7 +264,7 @@ export class AccountsPage {
                             <div class="flex items-center space-x-2 mb-2">
                                 <input type="text" id="custom-icon-input" 
                                        placeholder="設定預設 (如: fas fa-wallet)"
-                                       value="${accountToEdit?.icon || 'fa-solid fa-wallet'}"
+                                       value="${escapeHTML(accountToEdit?.icon || 'fa-solid fa-wallet')}"
                                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                                 <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">

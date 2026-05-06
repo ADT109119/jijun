@@ -331,7 +331,8 @@ class EasyAccountingApp {
             // but the user's issue was "Sidebar background color didn't revert/adjust properly".
             // Let's ensure we use the entity's ledger color, but we don't mess with the rest of the sidebar's CSS.
             iconEl.style.backgroundColor = ledger.color || '#334A52';
-            iconEl.innerHTML = `<i class="${ledger.icon || 'fa-solid fa-book'}"></i>`;
+            const safeIcon = /^fa-(solid|regular|brands)\s+\S+$/.test(ledger.icon) ? ledger.icon : 'fa-solid fa-book';
+            iconEl.innerHTML = `<i class="${safeIcon}"></i>`;
         }
         if (nameEl) nameEl.textContent = ledger.name;
     }

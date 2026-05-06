@@ -1,5 +1,5 @@
 // 欠款管理模組
-import { formatCurrency, formatDate, formatDateToString, showToast, customConfirm, customAlert } from './utils.js';
+import { formatCurrency, formatDate, formatDateToString, showToast, customConfirm, customAlert, escapeHTML } from './utils.js';
 
 export class DebtManager {
   constructor(dataService) {
@@ -60,7 +60,7 @@ export class DebtManager {
         <div class="mb-4">
           <select id="contact-filter-select" class="w-full p-3 bg-wabi-surface rounded-lg border border-wabi-border text-wabi-text-primary">
             <option value="">👤 所有聯絡人</option>
-            ${contacts.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+            ${contacts.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')}
           </select>
         </div>
 
@@ -648,7 +648,7 @@ export class DebtManager {
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
 
     const contactOptions = contacts.map(c => 
-      `<option value="${c.id}" ${debtToEdit?.contactId === c.id ? 'selected' : ''}>${c.name}</option>`
+      `<option value="${c.id}" ${debtToEdit?.contactId === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
     ).join('');
 
     modal.innerHTML = `
@@ -993,7 +993,7 @@ export class DebtManager {
         
         <div class="mb-6">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">名稱</label>
-          <input type="text" id="contact-name" value="${contactToEdit?.name || ''}" placeholder="輸入聯絡人名稱"
+          <input type="text" id="contact-name" value="${escapeHTML(contactToEdit?.name || '')}" placeholder="輸入聯絡人名稱"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 

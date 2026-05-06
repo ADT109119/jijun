@@ -147,7 +147,7 @@ export function showAmortizationModal(app, item = null, prefill = {}, onSaved = 
         const type = recordTypeSelect.value;
         const categories = app.categoryManager.getAllCategories(type);
         categorySelect.innerHTML = '<option value="">-- 選擇分類 --</option>' +
-            categories.map(c => `<option value="${c.id}" ${defaults.category === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+            categories.map(c => `<option value="${c.id}" ${defaults.category === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('');
     };
     populateCategories();
     recordTypeSelect.addEventListener('change', populateCategories);

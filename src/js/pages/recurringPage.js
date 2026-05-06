@@ -99,9 +99,9 @@ export class RecurringPage {
         const accounts = advancedModeEnabled ? await this.app.dataService.getAccounts() : [];
 
         // Prepare category and account options
-        const expenseCategories = this.app.categoryManager.getAllCategories('expense').map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        const incomeCategories = this.app.categoryManager.getAllCategories('income').map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        const accountOptions = advancedModeEnabled ? accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('') : '';
+        const expenseCategories = this.app.categoryManager.getAllCategories('expense').map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+        const incomeCategories = this.app.categoryManager.getAllCategories('income').map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+        const accountOptions = advancedModeEnabled ? accounts.map(acc => `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`).join('') : '';
 
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">

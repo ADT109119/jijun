@@ -1,7 +1,7 @@
 import { Chart, registerables } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import { zhTW } from 'date-fns/locale';
-import { formatCurrency, getDateRange } from './utils.js';
+import { formatCurrency, getDateRange, escapeHTML } from './utils.js';
 import { createDateRangeModal } from './datePickerModal.js';
 
 Chart.register(...registerables);
@@ -37,7 +37,7 @@ export class StatisticsManager {
 
         
 
-                const accountFilterOptions = this.accounts.map(acc => `<option value="${acc.id}">${acc.name}</option>`).join('');
+                const accountFilterOptions = this.accounts.map(acc => `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`).join('');
 
                 const accountFilterHTML = this.advancedModeEnabled ? `
 
