@@ -73,5 +73,20 @@
       "surface": "#0A0A0A",
       "accent": "#00CC00"
     }
+  },
+  {
+    "id": "com.walkingfish.theme.twilight",
+    "name": "暮紫薄紅 (Twilight)",
+    "description": "黃昏時分的紫粉漸層，像東京夜空般優雅而神秘。",
+    "version": "1.0",
+    "author": "The walking fish 步行魚",
+    "file": "themes/twilight.json",
+    "iconPreview": "fa-solid fa-cloud-moon",
+    "colorsPreview": {
+      "bg": "#F3EEF8",
+      "primary": "#7C5CBF",
+      "surface": "#FFFFFF",
+      "accent": "#C8A8E8"
+    }
   }
 ]
