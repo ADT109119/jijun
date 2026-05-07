@@ -1,0 +1,25 @@
+{
+  "id": "com.walkingfish.theme.twilight",
+  "name": "暮紫薄紅 (Twilight)",
+  "description": "黃昏時分的紫粉漸層，像東京夜空般優雅而神秘。",
+  "version": "1.0",
+  "author": "The walking fish 步行魚",
+  "colors": {
+    "wabi-bg": "#F3EEF8",
+    "wabi-primary": "#7C5CBF",
+    "wabi-expense": "#D94F6B",
+    "wabi-income": "#4AB89A",
+    "wabi-accent": "#C8A8E8",
+    "wabi-text-primary": "#3B2E5A",
+    "wabi-text-secondary": "#7B6E99",
+    "wabi-surface": "#FFFFFF",
+    "wabi-border": "#DDD3EE",
+    "wabi-keypad": "#EBE3F5"
+  },
+  "icons": {
+    "#bottom-nav a[data-page='stats'] i.fa-chart-pie": {
+      "type": "fontawesome",
+      "className": "fa-solid fa-cloud-moon"
+    }
+  }
+}
