@@ -934,7 +934,7 @@ export class AddPage {
 
         const accountListHtml = accounts.map(account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg bg-${escapeHTML(account.color || 'gray')} text-white shrink-0 size-10">
+                <div class="flex items-center justify-center rounded-lg ${escapeHTML(account.color || 'bg-gray-500')} text-white shrink-0 size-10">
                     <i class="${escapeHTML(account.icon || 'fa-solid fa-wallet')} text-xl"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</span>
