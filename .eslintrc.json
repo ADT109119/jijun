@@ -3,6 +3,7 @@
     "browser": true,
     "es2021": true,
     "serviceworker": true,
+    "jest": true,
     "node": true
   },
   "globals": {
@@ -18,6 +19,7 @@
     "__AD_ADMOB_REWARDED_ID__": "readonly",
     "__AD_IS_TESTING__": "readonly",
     "gapi": "readonly",
+    "vi": "readonly",
     "google": "readonly"
   },
   "extends": [

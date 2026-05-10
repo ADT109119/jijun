@@ -32,7 +32,7 @@ export class RecordsListManager {
 
         // Load default period setting
         const defaultPeriodSetting = await this.dataService.getSetting('defaultRecordsPeriod');
-        let defaultPeriod = defaultPeriodSetting?.value || 'month';
+        const defaultPeriod = defaultPeriodSetting?.value || 'month';
 
         if (defaultPeriod === 'last') {
             // Restore last used period and dates
