@@ -5,6 +5,7 @@
 
 body {
     font-family: 'Inter', 'Noto Sans TC', sans-serif;
+    padding-top: env(safe-area-inset-top, 0px); /* 避開系統狀態列 */
     padding-bottom: 80px; /* Space for bottom navigation */
     background-color: #F5F5F3; /* wabi-bg */
 }

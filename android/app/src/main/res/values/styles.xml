@@ -13,6 +13,9 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- 狀態列背景色與 app 背景一致，使用深色圖示 -->
+        <item name="android:statusBarColor">#F5F5F3</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
 
