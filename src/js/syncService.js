@@ -8,10 +8,10 @@
 import { showToast } from './utils.js';
 
 /** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
-const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 /** @type {string} Google API Key（供 Google Picker 使用，請在 Google Cloud Console 產生 API 金鑰） */
-const GOOGLE_API_KEY = 'AIzaSyDcTWTpa2OGfX0IcOpcOTP2GTpPa8Za0fw'; // 填入您的 API Key
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
