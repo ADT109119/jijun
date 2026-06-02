@@ -1,5 +1,7 @@
 // src/js/quickSelectManager.js
 
+import { escapeHTML } from './utils.js';
+
 const QUICK_SELECT_STORAGE_KEY = 'quickSelectRecords';
 const MAX_TOTAL_RECORDS = 20;
 const MAX_DISPLAY_RECORDS = 5;
@@ -149,7 +151,7 @@ export class QuickSelectManager {
                                 <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-6" ${colorStyle}>
                                     <i class="${category.icon} text-xs"></i>
                                 </div>
-                                <span class="text-wabi-text-primary font-medium truncate max-w-[100px]">${descriptionText}</span>
+                                <span class="text-wabi-text-primary font-medium truncate max-w-[100px]">${escapeHTML(descriptionText)}</span>
                             </button>
                         `;
                     }).join('')}
