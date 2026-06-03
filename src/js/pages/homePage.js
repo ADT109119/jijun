@@ -200,9 +200,10 @@ export class HomePage {
         if (!container) return;
 
         // Only show if debt feature is enabled
-        const debtEnabled = localStorage.getItem('debt_enabled');
+        const debtEnabledSetting = await this.app.dataService.getSetting('debtManagementEnabled');
+        const debtEnabled = !!debtEnabledSetting?.value;
         if (!debtEnabled) {
-            container.innerHTML = '';
+            container.innerHTML = `<div class="text-center text-xs text-wabi-text-secondary py-2 mb-6 border border-dashed border-wabi-border rounded-xl">偵錯：功能已啟用狀態為關閉 (Setting=${JSON.stringify(debtEnabledSetting)})</div>`;
             return;
         }
 
@@ -212,7 +213,7 @@ export class HomePage {
 
             // Hide if no debts exist
             if (totalReceivable === 0 && totalPayable === 0) {
-                container.innerHTML = '';
+                container.innerHTML = `<div class="text-center text-xs text-wabi-text-secondary py-2 mb-6 border border-dashed border-wabi-border rounded-xl">偵錯：功能已啟用，但無未結清欠款紀錄 (Receivable=${totalReceivable}, Payable=${totalPayable}, Data=${JSON.stringify(summary)})</div>`;
                 return;
             }
 
@@ -242,7 +243,7 @@ export class HomePage {
             `;
         } catch (e) {
             console.warn('Failed to load debt summary:', e);
-            container.innerHTML = '';
+            container.innerHTML = `<div class="text-center text-xs text-red-500 py-2 mb-6 border border-dashed border-red-200 rounded-xl">偵錯：載入異常，原因：${e.message}</div>`;
         }
     }
 
