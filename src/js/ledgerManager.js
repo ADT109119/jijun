@@ -90,6 +90,11 @@ export class LedgerManager {
             await this.app.budgetManager.loadBudget();
         }
 
+        // 重新載入分類設定（因為分類現在是 per-ledger）
+        if (this.app.categoryManager) {
+            await this.app.categoryManager.init();
+        }
+
         // 導航回首頁並強制重新渲染
         if (this.app.updateSidebarLedger) {
             this.app.updateSidebarLedger();

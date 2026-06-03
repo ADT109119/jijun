@@ -948,12 +948,12 @@ class DataService {
     try {
       const ledgers = await this.getLedgers();
       const records = includeRecords ? await this.getRecords({ allLedgers: true }) : [];
-      const customCategoriesSetting = includeCategories ? await this.getSetting('custom_categories') : null;
-      const customCategories = customCategoriesSetting?.value || null;
-      const categoryOrderSetting = includeCategories ? await this.getSetting('category_order') : null;
-      const categoryOrder = categoryOrderSetting?.value || null;
-      const hiddenCategoriesSetting = includeCategories ? await this.getSetting('hidden_categories') : null;
-      const hiddenCategories = hiddenCategoriesSetting?.value || null;
+      const customCategoriesSetting = includeCategories ? await this.getCategorySettingsMap() : null;
+      const categoryOrderSetting = includeCategories ? await this.getCategorySettingsMap('category_order') : null;
+      const hiddenCategoriesSetting = includeCategories ? await this.getCategorySettingsMap('hidden_categories') : null;
+      const customCategoriesMap = customCategoriesSetting || {};
+      const categoryOrderMap = categoryOrderSetting || {};
+      const hiddenCategoriesMap = hiddenCategoriesSetting || {};
       
       const allSettings = await this.db.getAll('settings');
       const budgetSettingsMap = {};
@@ -992,9 +992,9 @@ class DataService {
         debts: debts,
         recurring_transactions: recurring_transactions,
         amortizations: amortizations,
-        customCategories: customCategories,
-        categoryOrder: categoryOrder,
-        hiddenCategories: hiddenCategories,
+        customCategories: customCategoriesMap,
+        categoryOrder: categoryOrderMap,
+        hiddenCategories: hiddenCategoriesMap,
         budgetSettingsMap: budgetSettingsMap,
         metadata: {
           totalRecords: records.length,
@@ -1068,7 +1068,6 @@ class DataService {
               await txA.done;
             } catch (e) {console.warn('Silenced error:', e);}
           }
-          await this.saveSetting({ key: 'custom_categories', value: { expense: [], income: [] } });
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: false });
           await this.saveSetting({ key: 'debtManagementEnabled', value: false });
 
@@ -1080,18 +1079,7 @@ class DataService {
           await this.saveSetting({ key: 'advancedAccountModeEnabled', value: advancedModeEnabled });
           await this.saveSetting({ key: 'debtManagementEnabled', value: debtManagementEnabled });
 
-          // 2. 匯入自訂分類
-          if (data.customCategories) {
-            await this.saveSetting({ key: 'custom_categories', value: data.customCategories });
-          }
-          if (data.categoryOrder) {
-            await this.saveSetting({ key: 'category_order', value: data.categoryOrder });
-          }
-          if (data.hiddenCategories) {
-            await this.saveSetting({ key: 'hidden_categories', value: data.hiddenCategories });
-          }
-          
-          // 3. 匯入帳本 (ledgers) 及建立 mapped ID
+          // 2. 匯入帳本 (ledgers) 及建立 mapped ID（必須在分類之前）
           const oldLedgerIdToNewIdMap = new Map();
           if (data.ledgers && Array.isArray(data.ledgers) && data.ledgers.length > 0) {
               if (!this.useLocalStorage) {
@@ -1124,6 +1112,25 @@ class DataService {
               }
               return this.activeLedgerId;
           };
+
+          // 3. 匯入自訂分類 (per-ledger) — 在 ledger import 之後，因為需要 ID mapping
+          const _importPerLedgerCategories = async (dataVal, settingKey) => {
+            if (!dataVal) return;
+            /* Detect format: legacy = { expense: [], income: [] }, per-ledger map = { "1": {...}, "2": {...} } */
+            const isLegacyFormat = dataVal.expense !== undefined || dataVal.income !== undefined;
+            if (isLegacyFormat) {
+              await this.saveCategorySetting(settingKey, dataVal);
+            } else {
+              for (const [oldLidStr, val] of Object.entries(dataVal)) {
+                const oldLid = parseInt(oldLidStr);
+                const newLid = oldLedgerIdToNewIdMap.has(oldLid) ? oldLedgerIdToNewIdMap.get(oldLid) : this.activeLedgerId;
+                await this.saveCategorySetting(settingKey, val, newLid);
+              }
+            }
+          };
+          await _importPerLedgerCategories(data.customCategories, 'custom_categories');
+          await _importPerLedgerCategories(data.categoryOrder, 'category_order');
+          await _importPerLedgerCategories(data.hiddenCategories, 'hidden_categories');
 
           if (data.budgetSettingsMap) {
             for (const [key, val] of Object.entries(data.budgetSettingsMap)) {
@@ -1689,11 +1696,11 @@ class DataService {
         contactUuid: d.contactUuid || contactUuidMap.get(d.contactId) || null,
     }));
 
-    const customCategoriesSetting = await this.getSetting('custom_categories');
+    const customCategoriesSetting = await this.getCategorySetting('custom_categories');
     const customCategories = customCategoriesSetting?.value || null;
-    const categoryOrderSetting = await this.getSetting('category_order');
+    const categoryOrderSetting = await this.getCategorySetting('category_order');
     const categoryOrder = categoryOrderSetting?.value || null;
-    const hiddenCategoriesSetting = await this.getSetting('hidden_categories');
+    const hiddenCategoriesSetting = await this.getCategorySetting('hidden_categories');
     const hiddenCategories = hiddenCategoriesSetting?.value || null;
     const budgetSettingsSetting = await this.getSetting('budget_settings');
     const budgetSettings = budgetSettingsSetting?.value || null;
@@ -1727,6 +1734,81 @@ class DataService {
         totalLedgers: ledgers.length,
       },
     };
+  }
+
+  // --- Category Settings Methods (per-ledger) ---
+  /**
+   * 批次取得所有帳本的分類設定（用於匯出）
+   * Returns { [ledgerId]: value } map
+   */
+  async getCategorySettingsMap(baseKey = 'custom_categories') {
+    const ledgers = await this.getLedgers();
+    const result = {};
+
+    for (const ledger of ledgers) {
+      const val = await this.getCategorySetting(baseKey, ledger.id);
+      if (val && val.value !== undefined) {
+        result[ledger.id] = val.value;
+      }
+    }
+
+    // Also check legacy global key as fallback for ledger 1
+    if (!result[ledgers[0]?.id]) {
+      const globalVal = await this.getSetting(baseKey);
+      if (globalVal && globalVal.value !== undefined) {
+        result[ledgers[0].id] = globalVal.value;
+      }
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
+  }
+
+  /**
+   * 取得指定帳本的分類設定（custom_categories / category_order / hidden_categories）
+   * Key 格式: `${key}_${ledgerId}`
+   * 如果 per-ledger 不存在，會嘗試從全域 key 遷移一次
+   */
+  async getCategorySetting(key, ledgerId = null) {
+    const targetLedgerId = ledgerId ?? this.activeLedgerId;
+    const scopedKey = `${key}_${targetLedgerId}`;
+
+    if (this.useLocalStorage) {
+      let val = JSON.parse(localStorage.getItem(scopedKey) || 'null');
+      // Migration: 如果 per-ledger key 不存在，從全域 key 遷移
+      if (!val) {
+        const globalVal = JSON.parse(localStorage.getItem(key) || 'null');
+        if (globalVal) {
+          localStorage.setItem(scopedKey, JSON.stringify(globalVal));
+          val = globalVal;
+        }
+      }
+      return val;
+    }
+
+    try {
+      let val = await this.db.get('settings', scopedKey);
+      // Migration: 如果 per-ledger key 不存在，從全域 key 遷移
+      if (!val) {
+        const globalVal = await this.db.get('settings', key);
+        if (globalVal) {
+          await this.db.put('settings', { ...globalVal, key: scopedKey });
+          val = globalVal;
+        }
+      }
+      return val;
+    } catch (error) {
+      console.error(`Failed to get category setting '${scopedKey}':`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 儲存指定帳本的分類設定
+   */
+  async saveCategorySetting(key, value, ledgerId = null) {
+    const targetLedgerId = ledgerId ?? this.activeLedgerId;
+    const scopedKey = `${key}_${targetLedgerId}`;
+    return await this.saveSetting({ key: scopedKey, value });
   }
 
   // --- Settings Methods ---

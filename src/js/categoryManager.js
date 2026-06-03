@@ -19,14 +19,14 @@ export class CategoryManager {
     }
 
     try {
-      let saved = await this.dataService.getSetting('custom_categories');
+      let saved = await this.dataService.getCategorySetting('custom_categories');
       
       // Migration from localStorage if IndexedDB is empty but localStorage has data
       if (!saved || !saved.value) {
         const localSaved = localStorage.getItem('customCategories');
         if (localSaved) {
           saved = { value: JSON.parse(localSaved) };
-          await this.dataService.saveSetting({ key: 'custom_categories', value: saved.value });
+          await this.dataService.saveCategorySetting('custom_categories', saved.value);
         }
       }
 
@@ -34,10 +34,10 @@ export class CategoryManager {
          this.customCategories = saved.value;
       }
       
-      const order = await this.dataService.getSetting('category_order');
+      const order = await this.dataService.getCategorySetting('category_order');
       if (order && order.value) this.categoryOrder = order.value;
       
-      const hidden = await this.dataService.getSetting('hidden_categories');
+      const hidden = await this.dataService.getCategorySetting('hidden_categories');
       if (hidden && hidden.value) this.hiddenCategories = hidden.value;
 
     } catch (error) {
@@ -48,12 +48,13 @@ export class CategoryManager {
   async saveCategorySettings(skipLog = false) {
     try {
       if (this.dataService) {
-        await this.dataService.saveSetting({ key: 'category_order', value: this.categoryOrder });
-        await this.dataService.saveSetting({ key: 'hidden_categories', value: this.hiddenCategories });
+        await this.dataService.saveCategorySetting('category_order', this.categoryOrder);
+        await this.dataService.saveCategorySetting('hidden_categories', this.hiddenCategories);
         
         if (!skipLog) {
-            this.dataService.logChange('update', 'category_order', 'all', this.categoryOrder);
-            this.dataService.logChange('update', 'hidden_categories', 'all', this.hiddenCategories);
+            const ledgerId = this.dataService.activeLedgerId;
+            this.dataService.logChange('update', `category_order_${ledgerId}`, 'all', this.categoryOrder);
+            this.dataService.logChange('update', `hidden_categories_${ledgerId}`, 'all', this.hiddenCategories);
         }
       }
       return true;
@@ -66,9 +67,10 @@ export class CategoryManager {
   async saveCustomCategories(skipLog = false) {
     try {
       if (this.dataService) {
-        await this.dataService.saveSetting({ key: 'custom_categories', value: this.customCategories });
+        await this.dataService.saveCategorySetting('custom_categories', this.customCategories);
         if (!skipLog) {
-          this.dataService.logChange('update', 'custom_categories', 'all', this.customCategories);
+          const ledgerId = this.dataService.activeLedgerId;
+          this.dataService.logChange('update', `custom_categories_${ledgerId}`, 'all', this.customCategories);
         }
       }
       return true

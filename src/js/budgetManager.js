@@ -74,7 +74,7 @@ export class BudgetManager {
 
       // Update local storage as a quick backup
       localStorage.setItem(`monthlyBudget${ledgerSuffix}`, this.currentBudget.toString())
-      localStorage.setItem(`categoryBudgets${ledgerSuffix}`, JSON.parse(JSON.stringify(this.categoryBudgets)))
+      localStorage.setItem(`categoryBudgets${ledgerSuffix}`, JSON.stringify(this.categoryBudgets))
       localStorage.setItem(`categoryBudgetOrder${ledgerSuffix}`, JSON.stringify(this.categoryBudgetOrder))
 
       if (this.dataService) {

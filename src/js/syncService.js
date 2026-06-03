@@ -5,13 +5,18 @@
  * Worker 僅負責 OAuth token exchange（因 client_secret 不能暴露在前端）。
  */
 
+// showToast 暫存以便未來使用（目前未使用）
+// eslint-disable-next-line no-unused-vars
 import { showToast } from './utils.js';
 
-/** @type {string} Google OAuth Client ID（在 Google Cloud Console 取得） */
-const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'; // 填入你的 Client ID
+/** @type {string} Google OAuth Client ID（透過 .env.local 設定，不硬編碼） */
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
-/** @type {string} Google API Key（供 Google Picker 使用，請在 Google Cloud Console 產生 API 金鑰） */
-const GOOGLE_API_KEY = 'AIzaSyDcTWTpa2OGfX0IcOpcOTP2GTpPa8Za0fw'; // 填入您的 API Key
+/** @type {string} Google API Key（透過 .env.local 設定，不硬編碼） */
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
+
+/** @type {string} 預設同步伺服器 URL（可透過 .env.local 的 VITE_SYNC_SERVER_URL 覆蓋） */
+const DEFAULT_SERVER_URL = 'https://jijun-server.the-walking-fish.com';
 
 /** @type {string[]} Google Drive API 所需 scope */
 const SCOPES = [
@@ -49,8 +54,8 @@ export class SyncService {
     /** @type {object|null} Google user profile */
     this.userInfo = null;
 
-    /** @type {string} 同步/驗證伺服器 URL */
-    this.serverUrl = 'https://jijun-server.the-walking-fish.com';
+    /** @type {string} 同步/驗證伺服器 URL（可透過 .env.local 的 VITE_SYNC_SERVER_URL 覆蓋） */
+    this.serverUrl = import.meta.env.VITE_SYNC_SERVER_URL || DEFAULT_SERVER_URL;
 
     /** @type {number|null} 自動同步 interval ID */
     this._autoSyncIntervalId = null;
@@ -619,7 +624,7 @@ export class SyncService {
     if (!changes || changes.length === 0) return;
 
     // 定義建立依賴的拓撲順序
-    const topoOrder = ['custom_categories', 'ledgers', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
+    const topoOrder = ['custom_categories', 'category_order', 'hidden_categories', 'ledgers', 'accounts', 'contacts', 'records', 'debts', 'recurring_transactions'];
 
     // 嚴格排序邏輯：
     // 1. 主要依據 timestamp (由舊到新)
@@ -1419,7 +1424,8 @@ export class SyncService {
    * @param {object} data
    */
   async _applyAdd(storeName, data) {
-    if (storeName === 'custom_categories') {
+    // Per-ledger custom_categories: custom_categories_${ledgerId}
+    if (storeName === 'custom_categories' || storeName?.startsWith('custom_categories_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.customCategories = data;
             window.app.categoryManager.saveCustomCategories(true);
@@ -1429,7 +1435,8 @@ export class SyncService {
         return;
     }
 
-    if (storeName === 'category_order') {
+    // Per-ledger category_order: category_order_${ledgerId}
+    if (storeName === 'category_order' || storeName?.startsWith('category_order_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.categoryOrder = data;
             await window.app.categoryManager.saveCategorySettings(true);
@@ -1439,7 +1446,8 @@ export class SyncService {
         return;
     }
 
-    if (storeName === 'hidden_categories') {
+    // Per-ledger hidden_categories: hidden_categories_${ledgerId}
+    if (storeName === 'hidden_categories' || storeName?.startsWith('hidden_categories_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.hiddenCategories = data;
             await window.app.categoryManager.saveCategorySettings(true);
@@ -1545,7 +1553,8 @@ export class SyncService {
    * @param {object} data
    */
   async _applyUpdate(storeName, recordId, data) {
-    if (storeName === 'custom_categories') {
+    // Per-ledger custom_categories
+    if (storeName === 'custom_categories' || storeName?.startsWith('custom_categories_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.customCategories = data;
             window.app.categoryManager.saveCustomCategories(true);
@@ -1555,7 +1564,8 @@ export class SyncService {
         return;
     }
 
-    if (storeName === 'category_order') {
+    // Per-ledger category_order
+    if (storeName === 'category_order' || storeName?.startsWith('category_order_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.categoryOrder = data;
             await window.app.categoryManager.saveCategorySettings(true);
@@ -1565,7 +1575,8 @@ export class SyncService {
         return;
     }
 
-    if (storeName === 'hidden_categories') {
+    // Per-ledger hidden_categories
+    if (storeName === 'hidden_categories' || storeName?.startsWith('hidden_categories_')) {
         if (window.app && window.app.categoryManager) {
             window.app.categoryManager.hiddenCategories = data;
             await window.app.categoryManager.saveCategorySettings(true);

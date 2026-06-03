@@ -27,6 +27,10 @@ jobs:
             # Runs a single command using the runners shell
             - name: try to build the project
               run: npm run build
+              env:
+                VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+                VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
+                VITE_SYNC_SERVER_URL: ${{ secrets.VITE_SYNC_SERVER_URL }}
 
             # use actions-gh-pages to deploy dist to gh-pages
             - name: Deploy

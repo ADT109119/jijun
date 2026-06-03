@@ -92,7 +92,7 @@ const mockDb = {
 };
 
 // 初始化所有 store
-for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations']) {
+for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'plugins']) {
     mockDb.initStore(name);
 }
 

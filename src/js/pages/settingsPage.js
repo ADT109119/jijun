@@ -61,15 +61,19 @@ export class SettingsPage {
                         ${this.createSettingItem('fa-solid fa-file-lines', '更新日誌', 'changelog-btn')}
                         ${this.createSettingItem('fa-solid fa-shield-halved', '隱私權政策', 'privacy-btn')}
                         ${this.createSettingItem('fa-solid fa-scale-balanced', '授權條款', 'license-btn')}
-                        <a href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
+                        <a id="github-repo-link" href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                                     <i class="fa-brands fa-github"></i>
                                 </div>
                                 <p class="text-wabi-text-primary text-base font-normal">GitHub 儲存庫</p>
                             </div>
-                            <div class="shrink-0 text-wabi-text-secondary">
-                                <i class="fa-solid fa-chevron-right"></i>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span id="github-stars" class="flex items-center gap-1 text-wabi-text-secondary text-sm">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .587l3.668 7.568 8.332 1.151-6.064 5.828 1.48 8.279-7.416-3.967-7.417 3.967 1.481-8.279-6.064-5.828 8.332-1.151z"/></svg>
+                                    <span id="star-count">載入中...</span>
+                                </span>
+                                <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                             </div>
                         </a>
                         <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
@@ -356,6 +360,19 @@ export class SettingsPage {
         if (versionInfo) {
             const latestVersion = this.app.changelogManager.getAllVersions()[0];
             versionInfo.textContent = `版本 v${latestVersion.version}`;
+        }
+
+        // GitHub Star 數量 (透過 GitHub API 動態取得)
+        const starCount = document.getElementById('star-count');
+        if (starCount) {
+            fetch('https://api.github.com/repos/ADT109119/jijun')
+                .then(res => res.json())
+                .then(data => {
+                    starCount.textContent = data.stargazers_count || 0;
+                })
+                .catch(() => {
+                    starCount.textContent = '';
+                });
         }
 
         // 深色模式快速切換

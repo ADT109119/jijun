@@ -51,6 +51,9 @@ export class HomePage {
                 <!-- Budget Widget -->
                 <div id="budget-widget-container"></div>
 
+                <!-- Debt Summary Widget -->
+                <div id="debt-summary-container"></div>
+
                 <!-- Plugin Widgets -->
                 <div class="flex items-center justify-between mb-2 mt-6">
                      <h3 class="text-sm font-bold text-wabi-text-secondary">小工具</h3>
@@ -179,6 +182,58 @@ export class HomePage {
         }
 
         this.loadBudgetWidget();
+        this.loadDebtSummary();
+    }
+
+    async loadDebtSummary() {
+        const container = document.getElementById('debt-summary-container');
+        if (!container) return;
+
+        // Only show if debt feature is enabled
+        const debtEnabled = localStorage.getItem('debt_enabled');
+        if (!debtEnabled) {
+            container.innerHTML = '';
+            return;
+        }
+
+        try {
+            const summary = await this.app.dataService.getDebtSummary();
+            const { totalReceivable, totalPayable } = summary;
+
+            // Hide if no debts exist
+            if (totalReceivable === 0 && totalPayable === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = `
+                <a href="#debts" class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-4 mb-6 flex items-center justify-between hover:border-wabi-primary/30 transition-colors block">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center justify-center rounded-lg bg-amber-100 text-amber-600 shrink-0 size-10">
+                            <i class="fa-solid fa-hand-holding-dollar text-lg"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-wabi-text-secondary">欠款總覽</p>
+                            <p class="text-xs text-wabi-text-secondary">點擊管理</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4 text-right">
+                        <div>
+                            <p class="text-xs text-wabi-text-secondary">他人欠我</p>
+                            <p class="text-sm font-bold text-wabi-income">${formatCurrency(totalReceivable)}</p>
+                        </div>
+                        <div class="w-px h-8 bg-wabi-border"></div>
+                        <div>
+                            <p class="text-xs text-wabi-text-secondary">我欠他人</p>
+                            <p class="text-sm font-bold text-wabi-expense">${formatCurrency(totalPayable)}</p>
+                        </div>
+                    </div>
+                </a>
+            `;
+        } catch (e) {
+            console.warn('Failed to load debt summary:', e);
+            container.innerHTML = '';
+        }
     }
 
     async loadBudgetWidget() {

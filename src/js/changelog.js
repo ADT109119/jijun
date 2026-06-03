@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.5.5": {
+    date: "2026-06-03",
+    title: "多帳本分類隔離、分帳插件 Bug 修復與部署優化",
+    features: [
+      "多帳本分類獨立化 (Per-Ledger Categories)：自訂分類、排序與隱藏設定由全域共享改為依帳本獨立儲存，並支援切換帳本自動重載"
+    ],
+    bugfixes: [
+      "修復分帳插件在自訂分帳模式下調用 addDebt 時因傳入 direction、note 等欄位名稱不正確導致的債務寫入錯誤",
+      "修復多帳本自訂分類同步漏洞：同步與備份導入時，分類設定將精準依據新舊帳本 ID 重對應寫入所屬帳本中，避免全域覆蓋"
+    ],
+    improvements: [
+      "優化 GitHub Actions 部署工作流，支援在打包時自動注入 VITE_GOOGLE_CLIENT_ID 等環境變數"
+    ]
+  },
   "2.1.5.4": {
     date: "2026-05-03",
     title: "攤提開關設定、明細篩選優化與預設時間範圍",
