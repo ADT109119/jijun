@@ -64,12 +64,22 @@ export class HomePage {
                 <div id="plugin-home-widgets" class="mb-6"></div>
 
                 <!-- Recent Transactions -->
-                <div>
+                <div class="mb-12">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-bold text-wabi-primary">最近紀錄</h3>
                         <a href="#records" class="text-sm font-medium text-wabi-accent hover:underline">查看全部</a>
                     </div>
                     <div id="recent-records-container" class="space-y-2"></div>
+                </div>
+
+                <!-- Footer (Privacy Policy Link for Google OAuth review) -->
+                <div class="pt-8 border-t border-wabi-border/50 text-center text-xs text-wabi-text-secondary opacity-60">
+                    <div class="flex justify-center gap-3 mb-1.5">
+                        <a href="#privacy" class="hover:underline">隱私權政策</a>
+                        <span>•</span>
+                        <a href="#license" class="hover:underline">授權條款</a>
+                    </div>
+                    <p>&copy; 2025 The walking fish 步行魚. All rights reserved.</p>
                 </div>
             </div>
         `;
