@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.e_invoice',
         name: '電子發票掃描 (Beta 版)',
-        version: '1.3',
+        version: '1.4',
         description: '開啟相機掃描電子發票 QR Code，自動帶入金額與號碼，並提供自動對獎功能。',
         author: 'The walking fish 步行魚',
         icon: 'fa-qrcode',
@@ -125,13 +125,17 @@ export default {
         const hintEl = modal.querySelector('#scan-hint');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+        // 離線裁切畫布，用於提升 jsQR 解析效能
+        const cropCanvas = document.createElement('canvas');
+        const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+
         try {
+            // 使用最基礎安全的 Constraints 啟動鏡頭，避免某些瀏覽器拒絕啟動
             const constraints = {
                 video: {
                     facingMode: 'environment',
                     width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    advanced: [{ focusMode: 'continuous' }]
+                    height: { ideal: 1080 }
                 }
             };
 
@@ -143,6 +147,23 @@ export default {
             if (loadingEl) {
                 loadingEl.style.opacity = '0';
                 setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
+            }
+
+            // 安全地套用自動對焦
+            try {
+                const track = this.videoStream.getVideoTracks()[0];
+                if (track) {
+                    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                    const constraintsToApply = {};
+                    if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+                        constraintsToApply.focusMode = 'continuous';
+                    }
+                    if (Object.keys(constraintsToApply).length > 0) {
+                        await track.applyConstraints({ advanced: [constraintsToApply] });
+                    }
+                }
+            } catch (focusErr) {
+                console.warn('Failed to apply advanced camera focus:', focusErr);
             }
 
             let barcodeDetector = null;
@@ -177,32 +198,113 @@ export default {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
 
-                    // 將影片繪製到 canvas，以便分析和繪製框線
+                    // 1. 將相機畫面繪製至主畫布
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // 2. 計算動態中央對焦區（裁切框大小約為短邊的 45%）
+                    const cropSize = Math.max(300, Math.min(600, Math.round(Math.min(canvas.width, canvas.height) * 0.45)));
+                    const sx = Math.round((canvas.width - cropSize) / 2);
+                    const sy = Math.round((canvas.height - cropSize) / 2);
+
+                    // 3. 將對焦區影像複製到離線畫布以供辨識 (實現數位變焦對焦，減少 jsQR 負擔)
+                    cropCanvas.width = cropSize;
+                    cropCanvas.height = cropSize;
+                    cropCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, cropSize, cropSize);
+
+                    // 4. 繪製半透明遮罩與對焦框 UI
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                    ctx.fillRect(0, 0, canvas.width, sy); // 上遮罩
+                    ctx.fillRect(0, sy + cropSize, canvas.width, canvas.height - (sy + cropSize)); // 下遮罩
+                    ctx.fillRect(0, sy, sx, cropSize); // 左遮罩
+                    ctx.fillRect(sx + cropSize, sy, canvas.width - (sx + cropSize), cropSize); // 右遮罩
+
+                    // 綠色中央細邊框
+                    ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx, sy, cropSize, cropSize);
+
+                    // 綠色粗角定位線 (角括號)
+                    const bracketLength = Math.round(cropSize * 0.08);
+                    ctx.strokeStyle = '#22c55e';
+                    ctx.lineWidth = 6;
+                    ctx.lineCap = 'round';
+
+                    // 左上角
+                    ctx.beginPath();
+                    ctx.moveTo(sx + bracketLength, sy);
+                    ctx.lineTo(sx, sy);
+                    ctx.lineTo(sx, sy + bracketLength);
+                    ctx.stroke();
+
+                    // 右上角
+                    ctx.beginPath();
+                    ctx.moveTo(sx + cropSize - bracketLength, sy);
+                    ctx.lineTo(sx + cropSize, sy);
+                    ctx.lineTo(sx + cropSize, sy + bracketLength);
+                    ctx.stroke();
+
+                    // 左下角
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sy + cropSize - bracketLength);
+                    ctx.lineTo(sx, sy + cropSize);
+                    ctx.lineTo(sx + bracketLength, sy + cropSize);
+                    ctx.stroke();
+
+                    // 右下角
+                    ctx.beginPath();
+                    ctx.moveTo(sx + cropSize - bracketLength, sy + cropSize);
+                    ctx.lineTo(sx + cropSize, sy + cropSize);
+                    ctx.lineTo(sx + cropSize, sy + cropSize - bracketLength);
+                    ctx.stroke();
+
+                    // 繪製雷射掃描動畫線
+                    const laserY = sy + (Math.sin(timestamp / 250) * 0.5 + 0.5) * cropSize;
+                    ctx.strokeStyle = 'rgba(34, 197, 94, 0.85)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(sx + 8, laserY);
+                    ctx.lineTo(sx + cropSize - 8, laserY);
+                    ctx.stroke();
+
+                    // 雷射微妙光暈
+                    ctx.save();
+                    ctx.shadowColor = '#22c55e';
+                    ctx.shadowBlur = 8;
+                    ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(sx + 8, laserY);
+                    ctx.lineTo(sx + cropSize - 8, laserY);
+                    ctx.stroke();
+                    ctx.restore();
 
                     let qrResults = [];
 
                     try {
                         if (barcodeDetector) {
-                            const barcodes = await barcodeDetector.detect(canvas);
+                            const barcodes = await barcodeDetector.detect(cropCanvas);
                             qrResults = barcodes.map(b => ({
                                 rawValue: b.rawValue,
-                                cornerPoints: b.cornerPoints
+                                // 將離線畫布坐標映射回主畫布坐標
+                                cornerPoints: b.cornerPoints.map(pt => ({
+                                    x: pt.x + sx,
+                                    y: pt.y + sy
+                                }))
                             }));
                         } else if (window.jsQR) {
-                            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                            // jsQR 每次只能找一個，且比較耗效能，我們讓他掃描整張圖片
+                            const imageData = cropCtx.getImageData(0, 0, cropSize, cropSize);
                             const code = window.jsQR(imageData.data, imageData.width, imageData.height, {
                                 inversionAttempts: "dontInvert",
                             });
                             if (code) {
                                 qrResults = [{
                                     rawValue: code.data,
+                                    // 將離線畫布坐標映射回主畫布坐標
                                     cornerPoints: [
-                                        code.location.topLeftCorner,
-                                        code.location.topRightCorner,
-                                        code.location.bottomRightCorner,
-                                        code.location.bottomLeftCorner
+                                        { x: code.location.topLeftCorner.x + sx, y: code.location.topLeftCorner.y + sy },
+                                        { x: code.location.topRightCorner.x + sx, y: code.location.topRightCorner.y + sy },
+                                        { x: code.location.bottomRightCorner.x + sx, y: code.location.bottomRightCorner.y + sy },
+                                        { x: code.location.bottomLeftCorner.x + sx, y: code.location.bottomLeftCorner.y + sy }
                                     ]
                                 }];
                             }
@@ -215,9 +317,10 @@ export default {
 
                     for (const result of qrResults) {
                         const { rawValue, cornerPoints } = result;
+                        const qrUpper = rawValue ? rawValue.toUpperCase() : '';
 
                         // 判斷是否為合法的左側發票 (前兩碼大寫英文 + 8碼數字 + 7碼日期...)
-                        const isLeftInvoice = rawValue && rawValue.length >= 37 && /^[A-Z]{2}\d{15}/.test(rawValue.substring(0, 17));
+                        const isLeftInvoice = qrUpper.length >= 37 && /^[A-Z]{2}\d{15}/.test(qrUpper.substring(0, 17));
 
                         // 繪製偵測框
                         if (cornerPoints && cornerPoints.length === 4) {
@@ -236,9 +339,11 @@ export default {
                                 ctx.stroke();
                                 foundValidInvoice = true;
 
-                                // 停止掃描並處理結果
+                                // 停止掃描並處理結果，延遲 150ms 以呈現綠色掃描成功效果
                                 this.scannerActive = false;
-                                this.handleScanResult(rawValue, closeModal);
+                                setTimeout(() => {
+                                    this.handleScanResult(qrUpper, closeModal);
+                                }, 150);
                                 break;
                             } else {
                                 ctx.lineWidth = 6;
@@ -296,8 +401,9 @@ export default {
     async handleScanResult(qrData, closeModal) {
         if (!qrData || qrData.length < 37) return;
 
+        const qrUpper = qrData.toUpperCase();
         // 檢查是否為左側發票 QR Code (前兩碼大寫英文 + 8碼數字發票號碼 + 7碼數字日期)
-        if (!/^[A-Z]{2}\d{15}/.test(qrData.substring(0, 17))) {
+        if (!/^[A-Z]{2}\d{15}/.test(qrUpper.substring(0, 17))) {
             // 如果掃到右側明細或其他不符格式的條碼，靜默忽略並繼續掃描
             return;
         }
@@ -306,9 +412,9 @@ export default {
         await closeModal();
 
         try {
-            const invNum = qrData.substring(0, 10);
-            const dateStr = qrData.substring(10, 17);
-            const totalAmountHex = qrData.substring(29, 37);
+            const invNum = qrUpper.substring(0, 10);
+            const dateStr = qrUpper.substring(10, 17);
+            const totalAmountHex = qrUpper.substring(29, 37);
 
             const totalAmount = parseInt(totalAmountHex, 16);
             const rocYear = parseInt(dateStr.substring(0, 3), 10);
@@ -475,12 +581,61 @@ export default {
 
     async fetchWinningNumbers() {
         try {
-            const res = await fetch('https://api.invoice.tw/api/v1/invoice/latest'); 
-            if (!res.ok) throw new Error('Network response was not ok');
-            return await res.json();
+            // 透過 AllOrigins JSON 代理（具備 CDN 快取）抓取官方開獎 XML，避開瀏覽器 CORS 限制
+            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://invoice.etax.nat.gov.tw/invoice.xml');
+            const res = await fetch(proxyUrl);
+            if (!res.ok) throw new Error('Proxy returned status ' + res.status);
+            const json = await res.json();
+            const xmlText = json.contents;
+            
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+            const items = xmlDoc.getElementsByTagName("item");
+            const parsedData = {};
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const titleNode = item.getElementsByTagName("title")[0];
+                const descNode = item.getElementsByTagName("description")[0];
+                if (!titleNode || !descNode) continue;
+                
+                const rawTitle = titleNode.textContent || "";
+                // 期別字串格式化：例如 "115年 03~04月" -> "115年03-04月"
+                const cleanedTitle = rawTitle.replace(/\s+/g, '').replace('~', '-');
+                const descText = descNode.textContent || "";
+                
+                // 使用正則表達式抽取中獎號碼
+                const superMatch = descText.match(/特別獎：\s*(\d{8})/);
+                const specialMatch = descText.match(/特獎：\s*(\d{8})/);
+                const firstMatch = descText.match(/頭獎：\s*(\d{8}(?:[、，,]\d{8})*)/);
+                
+                if (superMatch && specialMatch && firstMatch) {
+                    const superNum = superMatch[1];
+                    const specialNum = specialMatch[1];
+                    const firstNums = firstMatch[1].split(/[、，,]/).map(n => n.trim());
+                    
+                    parsedData[cleanedTitle] = {
+                        super: superNum,
+                        special: specialNum,
+                        first: firstNums
+                    };
+                }
+            }
+
+            if (Object.keys(parsedData).length > 0) {
+                return parsedData;
+            } else {
+                throw new Error('Failed to parse any winning numbers from XML');
+            }
         } catch (e) {
-            console.warn('API 連線失敗，載入內建備用中獎號碼');
+            console.warn('XML 代理連線或解析失敗，載入內建備用中獎號碼', e);
+            // 備用號碼（已同步更新至最新 115 年 03-04 月）
             return {
+                "115年03-04月": {
+                    super: "19531471",
+                    special: "85941329",
+                    first: ["07225810", "20231230", "83518781"]
+                },
                 "115年01-02月": {
                     super: "87510041",
                     special: "32220522",
