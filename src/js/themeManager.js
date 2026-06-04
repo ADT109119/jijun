@@ -50,6 +50,9 @@ export class ThemeManager {
 
     // Utility to convert hex to RGB triplet (e.g., "#334A52" -> "51 74 82")
     hexToRgbTriplet(hex) {
+        if (!hex || typeof hex !== 'string') {
+            return null;
+        }
         // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
         const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
         hex = hex.replace(shorthandRegex, function(m, r, g, b) {
