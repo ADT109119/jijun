@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.5.6": {
+    date: "2026-06-05",
+    title: "Google Drive 漸進式授權與首頁欠款小工具修復",
+    features: [
+      "漸進式授權 (Incremental Authorization)：將 Google Drive 權限拆分為基礎備份 (drive.appdata) 與共用帳本 (drive.file)，初次連結僅索取基礎權限，點選共享功能時才動態要求共享授權，提升隱私與安全性"
+    ],
+    bugfixes: [
+      "修復首頁欠款小工具的偵錯開發訊息洩漏問題，在未啟用功能或無未結清欠款時自動隱藏小工具區塊"
+    ],
+    improvements: []
+  },
   "2.1.5.5": {
     date: "2026-06-03",
     title: "多帳本分類隔離、分帳插件 Bug 修復與部署優化",
