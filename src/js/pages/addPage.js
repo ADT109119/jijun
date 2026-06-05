@@ -182,7 +182,7 @@ export class AddPage {
         let selectedCategory = null;
         let selectedAccountId = null; // New state for multi-account mode
         let currentDate = formatDateToString(new Date());
-        let keypadGridOpen = true;
+        let keypadGridOpen = false;
 
         // Debt panel state
         let debtEnabled = false;
@@ -394,12 +394,21 @@ export class AddPage {
 
         const toggleKeypadGrid = (force) => {
             const shouldOpen = force === undefined ? !keypadGridOpen : force;
+            const icon = keypadToggleBtn.querySelector('i');
             if (shouldOpen) {
                 keypadGrid.style.display = 'grid';
                 keypadToggleBtn.classList.add('bg-wabi-accent', 'text-wabi-primary');
+                if (icon) {
+                    icon.classList.remove('fa-keyboard');
+                    icon.classList.add('fa-chevron-up');
+                }
             } else {
                 keypadGrid.style.display = 'none';
                 keypadToggleBtn.classList.remove('bg-wabi-accent', 'text-wabi-primary');
+                if (icon) {
+                    icon.classList.remove('fa-chevron-up');
+                    icon.classList.add('fa-keyboard');
+                }
             }
             keypadGridOpen = shouldOpen;
         };
@@ -839,6 +848,12 @@ export class AddPage {
         }
 
         keypadToggleBtn.addEventListener('click', () => toggleKeypadGrid());
+
+        // Clicking amount display opens the keypad for quick input
+        amountDisplay.style.cursor = 'pointer';
+        amountDisplay.title = '點擊輸入金額';
+        amountDisplay.addEventListener('click', () => toggleKeypadGrid(true));
+
         dateInput.addEventListener('change', (e) => {
             currentDate = e.target.value;
             dateDisplay.textContent = formatDate(currentDate, 'short');
@@ -902,7 +917,8 @@ export class AddPage {
 
         updateTypeUI();
         updateAccountSelectorUI();
-        toggleKeypadGrid(true);
+        // Initialize keypad state: hidden by default, expanded in edit mode
+        toggleKeypadGrid(isEditMode);
     }
 
     createKeypadButton(key, isEditMode = false) {
