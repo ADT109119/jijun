@@ -105,7 +105,7 @@
 
 ## 更新歷史
 
-- **2026-06-05**: 新增 themeManager 單元測試 (27 tests)、修復 hexToRgbTriplet null 輸入崩潰、總測試數 265→292
+- **2026-06-05**: Code Review dataService.js (2,524 行) — 發現 15 項問題 (2 高/6 中/7 低)、效能 N+1 查詢風險、匯入還原 ID 映射問題；新增 code-review-dataService-2026-06-05.md；市場調研：記帳 App 趨勢 (Moneybook 全面收費、AI 記帳、本地優先)
 - **2026-06-04**: 重建 FEATURES.md (檔案意外遺失)、更新 GitHub Star 數功能已完成
 - **2026-06-03**: GitHub Star 數動態顯示功能上線、Code Review 發現 XSS 潛在風險
 - **2026-06-02**: Quick Select XSS 修復 (#B03)、單元測試 265 tests
