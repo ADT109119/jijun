@@ -18,8 +18,15 @@ const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 /** @type {string} 預設同步伺服器 URL（可透過 .env.local 的 VITE_SYNC_SERVER_URL 覆蓋） */
 const DEFAULT_SERVER_URL = 'https://jijun-server.the-walking-fish.com';
 
-/** @type {string[]} Google Drive API 所需 scope */
-const SCOPES = [
+/** @type {string[]} 基礎登入與個人備份所需 scope */
+const BASE_SCOPES = [
+  'https://www.googleapis.com/auth/drive.appdata',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+/** @type {string[]} 共享功能額外所需 scope */
+const SHARED_SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -102,6 +109,12 @@ export class SyncService {
       const isAutoSyncEnabled = autoSyncSetting?.value || false;
       const ledgers = await this.dataService.getLedgers();
       const hasShared = ledgers.some(l => l.isShared);
+
+      // 如果已經登入且有共用帳本，但尚未設定 sync_drive_file_authorized，預設為已獲得共享授權（相容舊用戶）
+      const authorizedSetting = await this.dataService.getSetting('sync_drive_file_authorized');
+      if (this.isSignedIn() && hasShared && authorizedSetting?.value === undefined) {
+         await this.dataService.saveSetting({ key: 'sync_drive_file_authorized', value: true });
+      }
       
       if ((isAutoSyncEnabled || hasShared) && this.isSignedIn()) {
         this.startAutoSync();
@@ -154,22 +167,40 @@ export class SyncService {
 
   /**
    * 使用 Google Identity Services (Web) 或 GoogleAuth (Native) 發起 OAuth 登入
+   * @param {boolean} [requestSharing=false] 是否要求共享權限
    * @returns {Promise<boolean>} 是否登入成功
    */
-  async signIn() {
+  async signIn(requestSharing = false) {
     if (isNative) {
-      return this._signInNative();
+      return this._signInNative(requestSharing);
     }
-    return this._signInWeb();
+    return this._signInWeb(requestSharing);
   }
 
   /**
    * 原生 App 登入：使用 @codetrix-studio/capacitor-google-auth
+   * @param {boolean} [requestSharing=false]
    */
-  async _signInNative() {
+  async _signInNative(requestSharing = false) {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-      await GoogleAuth.initialize(); // Initialize plugin
+      
+      const nativeScopes = requestSharing ? [
+        'profile',
+        'email',
+        'https://www.googleapis.com/auth/drive.appdata',
+        'https://www.googleapis.com/auth/drive.file'
+      ] : [
+        'profile',
+        'email',
+        'https://www.googleapis.com/auth/drive.appdata'
+      ];
+
+      await GoogleAuth.initialize({
+        scopes: nativeScopes,
+        grantOfflineAccess: true,
+      });
+
       const result = await GoogleAuth.signIn();
 
       if (!result.serverAuthCode) {
@@ -177,6 +208,9 @@ export class SyncService {
       }
 
       await this.handleAuthCallback(result.serverAuthCode);
+      if (requestSharing) {
+        await this.dataService.saveSetting({ key: 'sync_drive_file_authorized', value: true });
+      }
       return true;
     } catch (e) {
       console.error('[SyncService] Native signIn error:', e);
@@ -186,17 +220,20 @@ export class SyncService {
 
   /**
    * Web 登入：使用 Google Identity Services SDK
+   * @param {boolean} [requestSharing=false]
    */
-  async _signInWeb() {
+  async _signInWeb(requestSharing = false) {
     return new Promise((resolve, reject) => {
       if (!window.google?.accounts?.oauth2) {
         reject(new Error('Google Identity Services SDK 尚未載入 (WebView 中不支援此方式)'));
         return;
       }
 
+      const scopes = requestSharing ? SHARED_SCOPES : BASE_SCOPES;
+
       const client = window.google.accounts.oauth2.initCodeClient({
         client_id: GOOGLE_CLIENT_ID,
-        scope: SCOPES.join(' '),
+        scope: scopes.join(' '),
         ux_mode: 'popup',
         callback: async (response) => {
           if (response.error) {
@@ -205,6 +242,9 @@ export class SyncService {
           }
           try {
             await this.handleAuthCallback(response.code);
+            if (requestSharing) {
+              await this.dataService.saveSetting({ key: 'sync_drive_file_authorized', value: true });
+            }
             resolve(true);
           } catch (err) {
             reject(err);
@@ -318,6 +358,7 @@ export class SyncService {
     await this.dataService.saveSetting({ key: 'sync_tokens', value: null });
     await this.dataService.saveSetting({ key: 'sync_auto_enabled', value: false });
     await this.dataService.saveSetting({ key: 'sync_auto_backup_enabled', value: false });
+    await this.dataService.saveSetting({ key: 'sync_drive_file_authorized', value: false });
   }
 
   /**
@@ -333,6 +374,44 @@ export class SyncService {
         user_info: this.userInfo,
       },
     });
+  }
+
+  /**
+   * 檢查是否已授權共享檔案權限
+   * @returns {Promise<boolean>}
+   */
+  async isSharingAuthorized() {
+    const setting = await this.dataService.getSetting('sync_drive_file_authorized');
+    return !!setting?.value;
+  }
+
+  /**
+   * 確保已取得共享檔案權限，若無則引導使用者進行二次授權
+   * @returns {Promise<boolean>}
+   */
+  async ensureSharingPermission() {
+    await this.ensureValidToken();
+
+    const authorized = await this.isSharingAuthorized();
+    if (authorized) {
+      return true;
+    }
+
+    // 彈出確認提示，讓使用者知道為何要進行二次授權
+    const confirm = await import('./utils.js').then(m => m.customConfirm);
+    const proceeds = await confirm(
+      '【共用功能授權提示】\n\n此操作需要額外的 Google Drive 讀寫權限（存取此應用程式建立的共享檔案）。\n\n我們將為您發起二次授權，請在隨後出現的 Google 登入視窗中，勾選並同意「查看及編輯使用此 App 建立的特定檔案」權限。'
+    );
+    if (!proceeds) {
+      throw new Error('使用者取消了權限請求，無法執行此操作。');
+    }
+
+    // 發起帶有共享 scopes 的登入
+    const success = await this.signIn(true);
+    if (!success) {
+      throw new Error('共享權限授權失敗');
+    }
+    return true;
   }
 
   // ──────────────────────────────────────────────
@@ -715,6 +794,12 @@ export class SyncService {
   async pushSharedLedgerChanges() {
     await this.ensureValidToken();
 
+    const isAuthorized = await this.isSharingAuthorized();
+    if (!isAuthorized) {
+        console.warn('[SyncService] pushSharedLedgerChanges: No sharing permission authorized, skipping.');
+        return;
+    }
+
     const ledgers = await this.dataService.getLedgers();
     console.log('[SyncService] pushShared: all ledgers =', JSON.stringify(ledgers.map(l => ({ id: l.id, name: l.name, isShared: l.isShared, sharedFileId: l.sharedFileId, type: l.type }))));
     const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
@@ -780,6 +865,12 @@ export class SyncService {
    */
   async pullSharedLedgerChanges() {
     await this.ensureValidToken();
+
+    const isAuthorized = await this.isSharingAuthorized();
+    if (!isAuthorized) {
+        console.warn('[SyncService] pullSharedLedgerChanges: No sharing permission authorized, skipping.');
+        return;
+    }
 
     const ledgers = await this.dataService.getLedgers();
     const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId);
@@ -1064,7 +1155,7 @@ export class SyncService {
    * @param {string} fileId
    */
   async deleteFile(fileId) {
-    await this.ensureValidToken();
+    await this.ensureSharingPermission();
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}`,
       {
@@ -1143,6 +1234,7 @@ export class SyncService {
    * @returns {Promise<object>}
    */
   async _createSharedFile(fileName, content) {
+    await this.ensureSharingPermission();
     const metadata = {
       name: fileName,
       // 不指定 parents，預設放在使用者的根目錄
@@ -1184,7 +1276,7 @@ export class SyncService {
    * @param {string} emailAddress
    */
   async grantFilePermission(fileId, emailAddress) {
-    await this.ensureValidToken();
+    await this.ensureSharingPermission();
 
     const body = {
         role: 'writer',
@@ -1223,7 +1315,7 @@ export class SyncService {
    * @returns {Promise<Array>}
    */
   async getFilePermissions(fileId) {
-    await this.ensureValidToken();
+    await this.ensureSharingPermission();
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,emailAddress,role,displayName)`,
       { headers: { Authorization: `Bearer ${this.accessToken}` } }
@@ -1239,7 +1331,7 @@ export class SyncService {
    * @param {string} permissionId
    */
   async removeFilePermission(fileId, permissionId) {
-    await this.ensureValidToken();
+    await this.ensureSharingPermission();
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`,
       {
@@ -1749,6 +1841,7 @@ export class SyncService {
    * @returns {Promise<string>} 回傳選擇的檔案 ID
    */
   async openSharedLedgerPicker(fileIds = null) {
+    await this.ensureSharingPermission();
     if (typeof gapi === 'undefined') {
       throw new Error('Google API 未載入');
     }
