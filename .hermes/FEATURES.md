@@ -2,7 +2,7 @@
 
 ## 專案資訊
 - **GitHub**: https://github.com/ADT109119/jijun
-- **當前版本**: v2.1.5.5
+- **當前版本**: v2.1.5.6
 - **技術棧**: Vanilla JS + IndexedDB (idb) + Vite + Vitest + Playwright + Capacitor Android
 - **CSS**: Tailwind CDN + FontAwesome + Chart.js
 - **Schema**: IndexedDB v12 (多帳本 + 攤提/分期)
@@ -105,6 +105,7 @@
 
 ## 更新歷史
 
+- **2026-06-06**: 新增 notificationService 單元測試 (29 tests)、修復 pluginManager widget-to-plugin 對應 + pluginsPage 商店插件全顯示；GitHub 調研：3 open issues (#14, #9, #8)、1 open PR (Sentinel XSS fix)；市場趨勢：個人理財 App 市場 2026-2035 CAGR 20.57%、AI Agent 整合、Local-First 趨勢
 - **2026-06-05**: Code Review dataService.js (2,524 行) — 發現 15 項問題 (2 高/6 中/7 低)、效能 N+1 查詢風險、匯入還原 ID 映射問題；新增 code-review-dataService-2026-06-05.md；市場調研：記帳 App 趨勢 (Moneybook 全面收費、AI 記帳、本地優先)
 - **2026-06-04**: 重建 FEATURES.md (檔案意外遺失)、更新 GitHub Star 數功能已完成
 - **2026-06-03**: GitHub Star 數動態顯示功能上線、Code Review 發現 XSS 潛在風險
