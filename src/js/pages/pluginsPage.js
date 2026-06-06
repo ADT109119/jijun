@@ -73,7 +73,7 @@ export class PluginsPage {
                 const storePlugins = await res.json();
                 const storeContainer = document.getElementById('store-list-container');
 
-                storeContainer.innerHTML = storePlugins.slice(0, 3).map(p => {
+                storeContainer.innerHTML = storePlugins.map(p => {
                     const installed = plugins.find(i => i.id === p.id);
                     let btnHtml = '';
 
