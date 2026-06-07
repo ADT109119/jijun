@@ -7,10 +7,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/wheel.plugin.js",
     "icon": "fa-dharmachakra",
-    "permissions": [
-      "storage",
-      "ui"
-    ]
+    "permissions": ["storage", "ui"]
   },
   {
     "id": "com.walkingfish.budget_guard",
@@ -20,12 +17,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/budget_guard.plugin.js",
     "icon": "fa-shield-halved",
-    "permissions": [
-      "storage",
-      "data:read",
-      "data:write",
-      "ui"
-    ]
+    "permissions": ["storage", "data:read", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.pet",
@@ -35,10 +27,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/pet.plugin.js",
     "icon": "fa-cat",
-    "permissions": [
-      "storage",
-      "ui"
-    ]
+    "permissions": ["storage", "ui"]
   },
   {
     "id": "com.example.hello",
@@ -48,9 +37,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/hello.plugin.js",
     "icon": "fa-hand-spock",
-    "permissions": [
-      "ui"
-    ]
+    "permissions": ["ui"]
   },
   {
     "id": "com.walkingfish.achievements",
@@ -60,11 +47,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/achievements.plugin.js",
     "icon": "fa-trophy",
-    "permissions": [
-      "storage",
-      "data:read",
-      "ui"
-    ]
+    "permissions": ["storage", "data:read", "ui"]
   },
   {
     "id": "com.walkingfish.shopping_list",
@@ -74,11 +57,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/shopping.plugin.js",
     "icon": "fa-list-check",
-    "permissions": [
-      "storage",
-      "data:write",
-      "ui"
-    ]
+    "permissions": ["storage", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.currency_helper",
@@ -88,10 +67,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/currency.plugin.js",
     "icon": "fa-sack-dollar",
-    "permissions": [
-      "network",
-      "ui"
-    ]
+    "permissions": ["network", "ui"]
   },
   {
     "id": "com.walkingfish.bill_splitter",
@@ -101,11 +77,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/bill_splitter.plugin.js",
     "icon": "fa-file-invoice-dollar",
-    "permissions": [
-      "data:read",
-      "data:write",
-      "ui"
-    ]
+    "permissions": ["data:read", "data:write", "ui"]
   },
   {
     "id": "com.walkingfish.analytics_pro",
@@ -115,10 +87,7 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/analytics_pro.plugin.js",
     "icon": "fa-chart-line",
-    "permissions": [
-      "data:read",
-      "ui"
-    ]
+    "permissions": ["data:read", "ui"]
   },
   {
     "id": "com.walkingfish.e_invoice",
@@ -128,12 +97,6 @@
     "author": "The walking fish 步行魚",
     "file": "plugins/e_invoice.plugin.js",
     "icon": "fa-qrcode",
-    "permissions": [
-      "camera",
-      "storage",
-      "data:write",
-      "ui",
-      "network"
-    ]
+    "permissions": ["camera", "storage", "data:write", "ui", "network"]
   }
 ]

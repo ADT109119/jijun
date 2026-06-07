@@ -1,18 +1,18 @@
-import { getDateRange } from './utils.js';
+import { getDateRange } from './utils.js'
 
 export function createDateRangeModal({
   initialStartDate,
   initialEndDate,
   onApply,
 }) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0]
 
-  const modal = document.createElement('div');
-  modal.id = 'date-range-modal';
+  const modal = document.createElement('div')
+  modal.id = 'date-range-modal'
   modal.className =
-    'fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4';
-  modal.setAttribute('role', 'dialog');
-  modal.setAttribute('aria-modal', 'true');
+    'fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4'
+  modal.setAttribute('role', 'dialog')
+  modal.setAttribute('aria-modal', 'true')
 
   modal.innerHTML = `
     <div class="bg-wabi-bg w-full max-w-sm rounded-2xl shadow-xl p-6">
@@ -50,36 +50,36 @@ export function createDateRangeModal({
             <button id="close-date-modal" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
         </div>
     </div>
-  `;
+  `
 
-  const startDateInput = modal.querySelector('#custom-start-date');
-  const endDateInput = modal.querySelector('#custom-end-date');
+  const startDateInput = modal.querySelector('#custom-start-date')
+  const endDateInput = modal.querySelector('#custom-end-date')
 
-  const closeModal = () => modal.remove();
+  const closeModal = () => modal.remove()
 
-  modal.querySelectorAll('.quick-date-btn').forEach((button) => {
+  modal.querySelectorAll('.quick-date-btn').forEach(button => {
     button.addEventListener('click', () => {
-      const { startDate, endDate } = getDateRange(button.dataset.range);
-      startDateInput.value = startDate;
-      endDateInput.value = endDate;
-    });
-  });
+      const { startDate, endDate } = getDateRange(button.dataset.range)
+      startDateInput.value = startDate
+      endDateInput.value = endDate
+    })
+  })
 
   modal.querySelector('#apply-custom-date').addEventListener('click', () => {
-    const start = startDateInput.value;
-    const end = endDateInput.value;
+    const start = startDateInput.value
+    const end = endDateInput.value
     if (start && end) {
-      onApply(start, end);
-      closeModal();
+      onApply(start, end)
+      closeModal()
     }
-  });
+  })
 
-  modal.querySelector('#close-date-modal').addEventListener('click', closeModal);
-  modal.addEventListener('click', (e) => {
+  modal.querySelector('#close-date-modal').addEventListener('click', closeModal)
+  modal.addEventListener('click', e => {
     if (e.target === modal) {
-      closeModal();
+      closeModal()
     }
-  });
+  })
 
-  return modal;
+  return modal
 }
