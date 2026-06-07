@@ -1,50 +1,52 @@
 export default {
-    meta: {
-        id: 'com.example.wheel',
-        name: '命運大轉盤',
-        version: '1.3',
-        description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
-        author: 'The walking fish 步行魚'
-    },
-    escapeHTML(str) {
-        if (typeof str !== 'string') return str;
-        return str.replace(/[&<>"']/g, function(match) {
-            const escapeMap = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#39;'
-            };
-            return escapeMap[match];
-        });
-    },
+  meta: {
+    id: 'com.example.wheel',
+    name: '命運大轉盤',
+    version: '1.3',
+    description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
+    author: 'The walking fish 步行魚',
+  },
+  escapeHTML(str) {
+    if (typeof str !== 'string') return str
+    return str.replace(/[&<>"']/g, function (match) {
+      const escapeMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }
+      return escapeMap[match]
+    })
+  },
 
-    init(context) {
-        this.context = context;
-        this.STORAGE_KEY = 'wheel_plugin_data';
-        
-        // Register the full page
-        context.ui.registerPage('wheel', '命運大轉盤', (container) => this.render(container));
-        
-        // Optional: Show toast on load
-        // context.ui.showToast('轉盤插件已就緒', 'success');
-    },
+  init(context) {
+    this.context = context
+    this.STORAGE_KEY = 'wheel_plugin_data'
 
-    getData() {
-        // Use 'data' as key, prefix will be handled by PluginStorage
-        const data = this.context.storage.getJSON('data');
-        return data || { wheels: [] };
-    },
+    // Register the full page
+    context.ui.registerPage('wheel', '命運大轉盤', container =>
+      this.render(container)
+    )
 
-    saveData(data) {
-        this.context.storage.setJSON('data', data);
-    },
+    // Optional: Show toast on load
+    // context.ui.showToast('轉盤插件已就緒', 'success');
+  },
 
-    render(container) {
-        this.container = container;
-        // Basic Layout
-        container.innerHTML = `
+  getData() {
+    // Use 'data' as key, prefix will be handled by PluginStorage
+    const data = this.context.storage.getJSON('data')
+    return data || { wheels: [] }
+  },
+
+  saveData(data) {
+    this.context.storage.setJSON('data', data)
+  },
+
+  render(container) {
+    this.container = container
+    // Basic Layout
+    container.innerHTML = `
             <div class="page active flex flex-col h-full bg-wabi-bg max-w-3xl mx-auto">
                 <!-- Header -->
                 <header class="flex items-center justify-between p-4 bg-white border-b border-gray-200">
@@ -64,45 +66,48 @@ export default {
                     <!-- Views will be injected here -->
                 </main>
             </div>
-        `;
+        `
 
-        container.querySelector('#wheel-back-btn').addEventListener('click', () => {
-            // Check if we are in sub-view (Play/Edit) or Root
-            if (this.currentView === 'list') {
-                window.location.hash = '#plugins'; // Go back to settings/plugins
-            } else {
-                this.renderList(); // Go back to list
-            }
-        });
+    container.querySelector('#wheel-back-btn').addEventListener('click', () => {
+      // Check if we are in sub-view (Play/Edit) or Root
+      if (this.currentView === 'list') {
+        window.location.hash = '#plugins' // Go back to settings/plugins
+      } else {
+        this.renderList() // Go back to list
+      }
+    })
 
-        container.querySelector('#wheel-add-btn').addEventListener('click', () => {
-            this.renderEdit();
-        });
+    container.querySelector('#wheel-add-btn').addEventListener('click', () => {
+      this.renderEdit()
+    })
 
-        this.renderList();
-    },
+    this.renderList()
+  },
 
-    renderList() {
-        this.currentView = 'list';
-        const data = this.getData();
-        const content = this.container.querySelector('#wheel-content');
-        this.container.querySelector('#wheel-add-btn').classList.remove('hidden');
-        this.container.querySelector('#wheel-back-btn').innerHTML = '<i class="fa-solid fa-chevron-left text-xl"></i>'; // Reset icon if needed
+  renderList() {
+    this.currentView = 'list'
+    const data = this.getData()
+    const content = this.container.querySelector('#wheel-content')
+    this.container.querySelector('#wheel-add-btn').classList.remove('hidden')
+    this.container.querySelector('#wheel-back-btn').innerHTML =
+      '<i class="fa-solid fa-chevron-left text-xl"></i>' // Reset icon if needed
 
-        if (data.wheels.length === 0) {
-            content.innerHTML = `
+    if (data.wheels.length === 0) {
+      content.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-64 text-gray-400">
                     <i class="fa-solid fa-dharmachakra text-6xl mb-4 opacity-50"></i>
                     <p class="text-lg">還沒有轉盤喔</p>
                     <p class="text-sm">點擊右上角「新增」建立第一個轉盤</p>
                 </div>
-            `;
-            return;
-        }
+            `
+      return
+    }
 
-        content.innerHTML = `
+    content.innerHTML = `
             <div class="grid gap-4">
-                ${data.wheels.map(w => `
+                ${data.wheels
+                  .map(
+                    w => `
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:border-wabi-primary transition-colors wheel-item" data-id="${w.id}">
                         <div class="flex-1">
                             <h3 class="font-bold text-lg text-gray-800">${this.escapeHTML(w.name)}</h3>
@@ -120,51 +125,55 @@ export default {
                             </button>
                         </div>
                     </div>
-                `).join('')}
+                `
+                  )
+                  .join('')}
             </div>
-        `;
+        `
 
-        // Event Listeners
-        content.querySelectorAll('.wheel-item').forEach(el => {
-            el.addEventListener('click', (e) => {
-                if (!e.target.closest('button')) {
-                    this.renderPlay(el.dataset.id);
-                }
-            });
-        });
+    // Event Listeners
+    content.querySelectorAll('.wheel-item').forEach(el => {
+      el.addEventListener('click', e => {
+        if (!e.target.closest('button')) {
+          this.renderPlay(el.dataset.id)
+        }
+      })
+    })
 
-        content.querySelectorAll('.wheel-play-btn').forEach(btn => 
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.renderPlay(btn.dataset.id);
-            })
-        );
-        content.querySelectorAll('.wheel-edit-btn').forEach(btn => 
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.renderEdit(btn.dataset.id);
-            })
-        );
-        content.querySelectorAll('.wheel-delete-btn').forEach(btn => 
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if(confirm('確定要刪除這個轉盤嗎？')) {
-                    this.deleteWheel(btn.dataset.id);
-                    this.renderList();
-                }
-            })
-        );
-    },
+    content.querySelectorAll('.wheel-play-btn').forEach(btn =>
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        this.renderPlay(btn.dataset.id)
+      })
+    )
+    content.querySelectorAll('.wheel-edit-btn').forEach(btn =>
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        this.renderEdit(btn.dataset.id)
+      })
+    )
+    content.querySelectorAll('.wheel-delete-btn').forEach(btn =>
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        if (confirm('確定要刪除這個轉盤嗎？')) {
+          this.deleteWheel(btn.dataset.id)
+          this.renderList()
+        }
+      })
+    )
+  },
 
-    renderEdit(id = null) {
-        this.currentView = 'edit';
-        const data = this.getData();
-        const wheel = id ? data.wheels.find(w => w.id === id) : { name: '', items: [] };
-        
-        const content = this.container.querySelector('#wheel-content');
-        this.container.querySelector('#wheel-add-btn').classList.add('hidden'); // Hide add button
+  renderEdit(id = null) {
+    this.currentView = 'edit'
+    const data = this.getData()
+    const wheel = id
+      ? data.wheels.find(w => w.id === id)
+      : { name: '', items: [] }
 
-        content.innerHTML = `
+    const content = this.container.querySelector('#wheel-content')
+    this.container.querySelector('#wheel-add-btn').classList.add('hidden') // Hide add button
+
+    content.innerHTML = `
             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 max-w-lg mx-auto">
                 <h2 class="text-xl font-bold mb-4">${id ? '編輯轉盤' : '新增轉盤'}</h2>
                 
@@ -184,53 +193,58 @@ export default {
                     <button id="wheel-cancel-btn" class="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-bold hover:bg-gray-200">取消</button>
                 </div>
             </div>
-        `;
+        `
 
-        content.querySelector('#wheel-cancel-btn').addEventListener('click', () => this.renderList());
-        
-        content.querySelector('#wheel-save-btn').addEventListener('click', () => {
-            const name = content.querySelector('#wheel-name').value.trim();
-            const itemsStr = content.querySelector('#wheel-items').value.trim();
-            const items = itemsStr.split('\n').map(i => i.trim()).filter(i => i);
+    content
+      .querySelector('#wheel-cancel-btn')
+      .addEventListener('click', () => this.renderList())
 
-            if (!name) return alert('請輸入名稱');
-            if (items.length < 2) return alert('請至少輸入兩個選項');
+    content.querySelector('#wheel-save-btn').addEventListener('click', () => {
+      const name = content.querySelector('#wheel-name').value.trim()
+      const itemsStr = content.querySelector('#wheel-items').value.trim()
+      const items = itemsStr
+        .split('\n')
+        .map(i => i.trim())
+        .filter(i => i)
 
-            if (id) {
-                // Update
-                const idx = data.wheels.findIndex(w => w.id === id);
-                if (idx !== -1) {
-                    data.wheels[idx] = { ...data.wheels[idx], name, items };
-                }
-            } else {
-                // Create
-                data.wheels.push({
-                    id: Date.now().toString(),
-                    name,
-                    items
-                });
-            }
-            this.saveData(data);
-            this.renderList();
-        });
-    },
+      if (!name) return alert('請輸入名稱')
+      if (items.length < 2) return alert('請至少輸入兩個選項')
 
-    deleteWheel(id) {
-        const data = this.getData();
-        data.wheels = data.wheels.filter(w => w.id !== id);
-        this.saveData(data);
-    },
+      if (id) {
+        // Update
+        const idx = data.wheels.findIndex(w => w.id === id)
+        if (idx !== -1) {
+          data.wheels[idx] = { ...data.wheels[idx], name, items }
+        }
+      } else {
+        // Create
+        data.wheels.push({
+          id: Date.now().toString(),
+          name,
+          items,
+        })
+      }
+      this.saveData(data)
+      this.renderList()
+    })
+  },
 
-    renderPlay(id) {
-        this.currentView = 'play';
-        const data = this.getData();
-        const wheel = data.wheels.find(w => w.id === id);
-        if (!wheel) return this.renderList();
+  deleteWheel(id) {
+    const data = this.getData()
+    data.wheels = data.wheels.filter(w => w.id !== id)
+    this.saveData(data)
+  },
 
-        const content = this.container.querySelector('#wheel-content');
-        this.container.querySelector('#wheel-add-btn').classList.add('hidden');
+  renderPlay(id) {
+    this.currentView = 'play'
+    const data = this.getData()
+    const wheel = data.wheels.find(w => w.id === id)
+    if (!wheel) return this.renderList()
 
-        content.innerHTML = `
+    const content = this.container.querySelector('#wheel-content')
+    this.container.querySelector('#wheel-add-btn').classList.add('hidden')
+
+    content.innerHTML = `
             <div class="flex flex-col items-center h-full">
                 <h2 class="text-2xl font-bold text-wabi-primary mb-6">${this.escapeHTML(wheel.name)}</h2>
                 
@@ -248,143 +262,155 @@ export default {
                 
                 <div id="result-display" class="mt-6 text-xl font-bold text-gray-800 h-8"></div>
             </div>
-        `;
+        `
 
-        this.initCanvas(content.querySelector('#wheel-canvas'), wheel.items);
-        
-        const spinBtn = content.querySelector('#spin-btn');
-        spinBtn.addEventListener('click', () => {
-            if (this.isSpinning) return;
-            this.spin(wheel.items);
-        });
-    },
+    this.initCanvas(content.querySelector('#wheel-canvas'), wheel.items)
 
-    initCanvas(canvas, items) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
-        this.items = items;
-        this.arc = Math.PI * 2 / items.length;
-        this.angle = 0;
-        this.colors = ['#FFC107', '#FF5722', '#4CAF50', '#03A9F4', '#9C27B0', '#E91E63', '#3F51B5', '#009688'];
-        
-        this.draw();
-    },
+    const spinBtn = content.querySelector('#spin-btn')
+    spinBtn.addEventListener('click', () => {
+      if (this.isSpinning) return
+      this.spin(wheel.items)
+    })
+  },
 
-    draw() {
-        if (!this.ctx) return;
-        const ctx = this.ctx;
-        const width = this.canvas.width;
-        const center = width / 2;
-        const radius = width / 2 - 10;
+  initCanvas(canvas, items) {
+    this.canvas = canvas
+    this.ctx = canvas.getContext('2d')
+    this.items = items
+    this.arc = (Math.PI * 2) / items.length
+    this.angle = 0
+    this.colors = [
+      '#FFC107',
+      '#FF5722',
+      '#4CAF50',
+      '#03A9F4',
+      '#9C27B0',
+      '#E91E63',
+      '#3F51B5',
+      '#009688',
+    ]
 
-        ctx.clearRect(0, 0, width, width);
+    this.draw()
+  },
 
-        // Draw segments
-        this.items.forEach((item, i) => {
-            const angle = this.angle + i * this.arc;
-            ctx.beginPath();
-            ctx.fillStyle = this.colors[i % this.colors.length];
-            ctx.moveTo(center, center);
-            ctx.arc(center, center, radius, angle, angle + this.arc);
-            ctx.lineTo(center, center);
-            ctx.fill();
+  draw() {
+    if (!this.ctx) return
+    const ctx = this.ctx
+    const width = this.canvas.width
+    const center = width / 2
+    const radius = width / 2 - 10
 
-            // Text
-            ctx.save();
-            ctx.translate(center, center);
-            ctx.rotate(angle + this.arc / 2);
-            ctx.textAlign = "right";
-            ctx.fillStyle = "#fff";
-            ctx.font = "bold 16px Arial";
-            ctx.fillText(item, radius - 20, 6);
-            ctx.restore();
-        });
-        
-        // Draw center circle
-        ctx.beginPath();
-        ctx.arc(center, center, 30, 0, Math.PI * 2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-        ctx.shadowBlur = 5;
-        ctx.shadowColor = "rgba(0,0,0,0.2)";
-    },
+    ctx.clearRect(0, 0, width, width)
 
-    spin(items) {
-        this.isSpinning = true;
-        this.container.querySelector('#result-display').textContent = '';
-        
-        // Random spin amount (at least 5 full spins)
-        const spinAngle = Math.random() * 10 + 10 * Math.PI; 
-        const duration = 3000; // 3 seconds
-        let start = null;
-        
-        const animate = (timestamp) => {
-            if (!start) start = timestamp;
-            const progress = timestamp - start;
-            
-            if (progress < duration) {
-                // Ease out cubic
-                const t = 1 - Math.pow(1 - progress / duration, 3);
-                this.angle += (spinAngle * (1 - t)) * 0.1; // Simple deceleration simulation isn't quite right with fixed target, but for visual spin:
-                
-                // Let's implement ease-out to a target? 
-                // Simpler: Just add speed that decays.
-            }
-            
-            // Better Spin Logic:
-            // Calculate a target angle.
-            // Target = Current + MinSpins + RandomOffset
-            if (!this.targetAngle) {
-                 this.targetAngle = this.angle + (Math.PI * 2 * 5) + (Math.random() * Math.PI * 2);
-                 this.startAngle = this.angle;
-            }
-            
-            const p = progress / duration;
-            const ease = 1 - Math.pow(1 - p, 4); // Quartic ease out
-            
-            if (p < 1) {
-                this.angle = this.startAngle + (this.targetAngle - this.startAngle) * ease;
-                this.draw();
-                requestAnimationFrame(animate);
-            } else {
-                this.isSpinning = false;
-                this.targetAngle = null;
-                this.angle = this.angle % (Math.PI * 2);
-                this.draw();
-                this.showResult(items);
-            }
-        };
-        requestAnimationFrame(animate);
-    },
+    // Draw segments
+    this.items.forEach((item, i) => {
+      const angle = this.angle + i * this.arc
+      ctx.beginPath()
+      ctx.fillStyle = this.colors[i % this.colors.length]
+      ctx.moveTo(center, center)
+      ctx.arc(center, center, radius, angle, angle + this.arc)
+      ctx.lineTo(center, center)
+      ctx.fill()
 
-    showResult(items) {
-         // Calculate which item is at the top (angle 270 deg or -90 deg)
-         // Our "Pointer" is at Top (1.5 PI or -0.5 PI)
-         // But we draw from 0 (Right).
-         // So Top is 270deg (3*PI/2)
-         
-         // Current angle is the offset of the first item (index 0).
-         // Item i starts at angle + i*arc
-         
-         // We want to find i such that: angle + i*arc includes 270deg (normalized)
-         
-         const normalizedAngle = this.angle % (Math.PI * 2);
-         // The pointer is at 3PI/2.
-         // We need to find the segment that overlaps 3PI/2.
-         
-         // Let's reverse: Where is the pointer relative to the wheel?
-         // PointerAngle = 3PI/2
-         // RelativePointer = PointerAngle - normalizedAngle
-         
-         let relativePointer = (3 * Math.PI / 2) - normalizedAngle;
-         while (relativePointer < 0) relativePointer += Math.PI * 2;
-         while (relativePointer >= Math.PI * 2) relativePointer -= Math.PI * 2;
-         
-         const index = Math.floor(relativePointer / this.arc);
-         const winner = items[index];
-         
-         this.container.querySelector('#result-display').textContent = `🎉 結果：${winner}`;
-         
-         // Optional: Confetti or sound
+      // Text
+      ctx.save()
+      ctx.translate(center, center)
+      ctx.rotate(angle + this.arc / 2)
+      ctx.textAlign = 'right'
+      ctx.fillStyle = '#fff'
+      ctx.font = 'bold 16px Arial'
+      ctx.fillText(item, radius - 20, 6)
+      ctx.restore()
+    })
+
+    // Draw center circle
+    ctx.beginPath()
+    ctx.arc(center, center, 30, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'
+    ctx.fill()
+    ctx.shadowBlur = 5
+    ctx.shadowColor = 'rgba(0,0,0,0.2)'
+  },
+
+  spin(items) {
+    this.isSpinning = true
+    this.container.querySelector('#result-display').textContent = ''
+
+    // Random spin amount (at least 5 full spins)
+    const spinAngle = Math.random() * 10 + 10 * Math.PI
+    const duration = 3000 // 3 seconds
+    let start = null
+
+    const animate = timestamp => {
+      if (!start) start = timestamp
+      const progress = timestamp - start
+
+      if (progress < duration) {
+        // Ease out cubic
+        const t = 1 - Math.pow(1 - progress / duration, 3)
+        this.angle += spinAngle * (1 - t) * 0.1 // Simple deceleration simulation isn't quite right with fixed target, but for visual spin:
+
+        // Let's implement ease-out to a target?
+        // Simpler: Just add speed that decays.
+      }
+
+      // Better Spin Logic:
+      // Calculate a target angle.
+      // Target = Current + MinSpins + RandomOffset
+      if (!this.targetAngle) {
+        this.targetAngle =
+          this.angle + Math.PI * 2 * 5 + Math.random() * Math.PI * 2
+        this.startAngle = this.angle
+      }
+
+      const p = progress / duration
+      const ease = 1 - Math.pow(1 - p, 4) // Quartic ease out
+
+      if (p < 1) {
+        this.angle =
+          this.startAngle + (this.targetAngle - this.startAngle) * ease
+        this.draw()
+        requestAnimationFrame(animate)
+      } else {
+        this.isSpinning = false
+        this.targetAngle = null
+        this.angle = this.angle % (Math.PI * 2)
+        this.draw()
+        this.showResult(items)
+      }
     }
-};
+    requestAnimationFrame(animate)
+  },
+
+  showResult(items) {
+    // Calculate which item is at the top (angle 270 deg or -90 deg)
+    // Our "Pointer" is at Top (1.5 PI or -0.5 PI)
+    // But we draw from 0 (Right).
+    // So Top is 270deg (3*PI/2)
+
+    // Current angle is the offset of the first item (index 0).
+    // Item i starts at angle + i*arc
+
+    // We want to find i such that: angle + i*arc includes 270deg (normalized)
+
+    const normalizedAngle = this.angle % (Math.PI * 2)
+    // The pointer is at 3PI/2.
+    // We need to find the segment that overlaps 3PI/2.
+
+    // Let's reverse: Where is the pointer relative to the wheel?
+    // PointerAngle = 3PI/2
+    // RelativePointer = PointerAngle - normalizedAngle
+
+    let relativePointer = (3 * Math.PI) / 2 - normalizedAngle
+    while (relativePointer < 0) relativePointer += Math.PI * 2
+    while (relativePointer >= Math.PI * 2) relativePointer -= Math.PI * 2
+
+    const index = Math.floor(relativePointer / this.arc)
+    const winner = items[index]
+
+    this.container.querySelector('#result-display').textContent =
+      `🎉 結果：${winner}`
+
+    // Optional: Confetti or sound
+  },
+}

@@ -29,8 +29,11 @@
 function jsonResponse(body, status, corsHeaders) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...Object.fromEntries(corsHeaders.entries()), 'Content-Type': 'application/json' },
-  });
+    headers: {
+      ...Object.fromEntries(corsHeaders.entries()),
+      'Content-Type': 'application/json',
+    },
+  })
 }
 
 /**
@@ -40,18 +43,18 @@ function jsonResponse(body, status, corsHeaders) {
  * @returns {Headers}
  */
 function getCorsHeaders(request, allowedOriginsStr) {
-  const origin = request.headers.get('Origin') || '';
-  const allowedOrigins = (allowedOriginsStr || '').split(',').map((o) => o.trim());
-  const headers = new Headers();
+  const origin = request.headers.get('Origin') || ''
+  const allowedOrigins = (allowedOriginsStr || '').split(',').map(o => o.trim())
+  const headers = new Headers()
 
   if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Origin', origin)
   }
 
-  headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  headers.set('Access-Control-Max-Age', '86400');
-  return headers;
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  headers.set('Access-Control-Max-Age', '86400')
+  return headers
 }
 
 // ──────────────────────────────────────────────
@@ -67,10 +70,14 @@ function getCorsHeaders(request, allowedOriginsStr) {
  */
 async function handleTokenExchange(request, env, corsHeaders) {
   try {
-    const { code, redirect_uri } = await request.json();
+    const { code, redirect_uri } = await request.json()
 
     if (!code) {
-      return jsonResponse({ error: 'Missing authorization code' }, 400, corsHeaders);
+      return jsonResponse(
+        { error: 'Missing authorization code' },
+        400,
+        corsHeaders
+      )
     }
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -83,21 +90,25 @@ async function handleTokenExchange(request, env, corsHeaders) {
         redirect_uri: redirect_uri || 'postmessage',
         grant_type: 'authorization_code',
       }),
-    });
+    })
 
-    const data = await tokenResponse.json();
+    const data = await tokenResponse.json()
 
     if (!tokenResponse.ok) {
       return jsonResponse(
         { error: 'Token exchange failed', details: data },
         tokenResponse.status,
         corsHeaders
-      );
+      )
     }
 
-    return jsonResponse(data, 200, corsHeaders);
+    return jsonResponse(data, 200, corsHeaders)
   } catch (err) {
-    return jsonResponse({ error: 'Internal error', message: err.message }, 500, corsHeaders);
+    return jsonResponse(
+      { error: 'Internal error', message: err.message },
+      500,
+      corsHeaders
+    )
   }
 }
 
@@ -110,10 +121,10 @@ async function handleTokenExchange(request, env, corsHeaders) {
  */
 async function handleTokenRefresh(request, env, corsHeaders) {
   try {
-    const { refresh_token } = await request.json();
+    const { refresh_token } = await request.json()
 
     if (!refresh_token) {
-      return jsonResponse({ error: 'Missing refresh_token' }, 400, corsHeaders);
+      return jsonResponse({ error: 'Missing refresh_token' }, 400, corsHeaders)
     }
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -125,21 +136,25 @@ async function handleTokenRefresh(request, env, corsHeaders) {
         client_secret: env.GOOGLE_CLIENT_SECRET,
         grant_type: 'refresh_token',
       }),
-    });
+    })
 
-    const data = await tokenResponse.json();
+    const data = await tokenResponse.json()
 
     if (!tokenResponse.ok) {
       return jsonResponse(
         { error: 'Token refresh failed', details: data },
         tokenResponse.status,
         corsHeaders
-      );
+      )
     }
 
-    return jsonResponse(data, 200, corsHeaders);
+    return jsonResponse(data, 200, corsHeaders)
   } catch (err) {
-    return jsonResponse({ error: 'Internal error', message: err.message }, 500, corsHeaders);
+    return jsonResponse(
+      { error: 'Internal error', message: err.message },
+      500,
+      corsHeaders
+    )
   }
 }
 
@@ -156,7 +171,7 @@ function handleHealth(corsHeaders) {
     },
     200,
     corsHeaders
-  );
+  )
 }
 
 // ──────────────────────────────────────────────
@@ -170,31 +185,31 @@ function handleHealth(corsHeaders) {
  * @returns {Promise<Response>}
  */
 export async function handleRequest(request, env) {
-  const corsHeaders = getCorsHeaders(request, env.ALLOWED_ORIGINS);
-  const url = new URL(request.url);
-  const { pathname } = url;
-  const method = request.method.toUpperCase();
+  const corsHeaders = getCorsHeaders(request, env.ALLOWED_ORIGINS)
+  const url = new URL(request.url)
+  const { pathname } = url
+  const method = request.method.toUpperCase()
 
   // CORS preflight
   if (method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders })
   }
 
   // Route matching
   if (method === 'POST' && pathname === '/api/auth/token') {
-    return handleTokenExchange(request, env, corsHeaders);
+    return handleTokenExchange(request, env, corsHeaders)
   }
 
   if (method === 'POST' && pathname === '/api/auth/refresh') {
-    return handleTokenRefresh(request, env, corsHeaders);
+    return handleTokenRefresh(request, env, corsHeaders)
   }
 
   if (method === 'GET' && pathname === '/api/health') {
-    return handleHealth(corsHeaders);
+    return handleHealth(corsHeaders)
   }
 
   // 404 fallback
-  return jsonResponse({ error: 'Not found' }, 404, corsHeaders);
+  return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
 }
 
 // ──────────────────────────────────────────────
@@ -209,6 +224,6 @@ export default {
    * @returns {Promise<Response>}
    */
   async fetch(request, env) {
-    return handleRequest(request, env);
+    return handleRequest(request, env)
   },
-};
+}

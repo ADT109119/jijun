@@ -1,12 +1,12 @@
-import { RecordsListManager } from '../recordsList.js';
+import { RecordsListManager } from '../recordsList.js'
 
 export class RecordsPage {
-    constructor(app) {
-        this.app = app;
-    }
+  constructor(app) {
+    this.app = app
+  }
 
-    async render() {
-        this.app.appContainer.innerHTML = `
+  async render() {
+    this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="flex items-center pb-2 justify-between">
@@ -72,9 +72,13 @@ export class RecordsPage {
                 <!-- Modals -->
                 <div id="records-modals-container"></div>
             </div>
-        `;
-        const pageElement = this.app.appContainer.querySelector('.page');
-        const recordsListManager = new RecordsListManager(this.app.dataService, this.app.categoryManager, pageElement);
-        recordsListManager.init();
-    }
+        `
+    const pageElement = this.app.appContainer.querySelector('.page')
+    const recordsListManager = new RecordsListManager(
+      this.app.dataService,
+      this.app.categoryManager,
+      pageElement
+    )
+    recordsListManager.init()
+  }
 }
