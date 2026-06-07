@@ -105,6 +105,7 @@
 
 ## 更新歷史
 
+- **2026-06-07**: 新增 Router 單元測試 (26 tests, 總計 347)；網路調研：GitHub 無新 issue/PR、競爭對手 Moneybook 導入 GPT-4o 財富顧問、Actual Budget 與 Firefly III 功能對比；市場趨勢：記帳 App 市場持續成長
 - **2026-06-06**: 新增 notificationService 單元測試 (29 tests)、修復 pluginManager widget-to-plugin 對應 + pluginsPage 商店插件全顯示；GitHub 調研：3 open issues (#14, #9, #8)、1 open PR (Sentinel XSS fix)；市場趨勢：個人理財 App 市場 2026-2035 CAGR 20.57%、AI Agent 整合、Local-First 趨勢
 - **2026-06-05**: Code Review dataService.js (2,524 行) — 發現 15 項問題 (2 高/6 中/7 低)、效能 N+1 查詢風險、匯入還原 ID 映射問題；新增 code-review-dataService-2026-06-05.md；市場調研：記帳 App 趨勢 (Moneybook 全面收費、AI 記帳、本地優先)
 - **2026-06-04**: 重建 FEATURES.md (檔案意外遺失)、更新 GitHub Star 數功能已完成
