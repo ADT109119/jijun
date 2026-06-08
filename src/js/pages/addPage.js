@@ -27,6 +27,9 @@ export class AddPage {
                             </button>
                             <h2 class="text-lg font-bold flex-1 text-center">${isEditMode ? '編輯紀錄' : '新增紀錄'}</h2>
                             <div class="flex items-center gap-2">
+                                <button id="toggle-calculator-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="計算機">
+                                    <i class="fa-solid fa-calculator text-lg"></i>
+                                </button>
                                 ${showDebtBtn ? `
                                     <button id="toggle-debt-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="標記為欠款">
                                         <i class="fa-solid fa-handshake text-lg"></i>
@@ -39,6 +42,40 @@ export class AddPage {
                                 ` : ''}
                                 ${isEditMode ? '<button id="delete-record-btn" class="text-wabi-expense"><i class="fa-solid fa-trash-can"></i></button>' : ''}
                             </div>
+                        </div>
+
+                        <!-- Calculator Panel (hidden by default) -->
+                        <div id="calculator-panel" class="hidden bg-amber-500/10 rounded-lg p-4 mb-4 border border-amber-500/30">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-amber-600"><i class="fa-solid fa-calculator mr-2"></i>計算機</span>
+                                <button id="close-calculator-panel" class="text-wabi-text-secondary hover:text-amber-600">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <div id="calculator-display" class="w-full bg-wabi-surface border border-wabi-border rounded-lg p-3 mb-3 text-right text-xl font-mono font-bold text-wabi-text-primary min-h-[3rem] flex items-center justify-end break-all">0</div>
+                            <div class="grid grid-cols-4 gap-2">
+                                <button class="calc-btn calc-clear p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="C">C</button>
+                                <button class="calc-btn calc-op p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="÷">÷</button>
+                                <button class="calc-btn calc-op p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="×">×</button>
+                                <button class="calc-btn calc-op p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="⌫">⌫</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="7">7</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="8">8</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="9">9</button>
+                                <button class="calc-btn calc-op p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="-">−</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="4">4</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="5">5</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="6">6</button>
+                                <button class="calc-btn calc-op p-3 rounded-lg bg-wabi-expense/10 text-wabi-expense font-medium hover:bg-wabi-expense/20" data-key="+">+</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="1">1</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="2">2</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="3">3</button>
+                                <button class="calc-btn calc-equals row-span-2 p-3 rounded-lg bg-wabi-income text-wabi-surface font-medium hover:bg-wabi-income/80" data-key="=">=</button>
+                                <button class="calc-btn calc-num col-span-2 p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key="0">0</button>
+                                <button class="calc-btn calc-num p-3 rounded-lg bg-wabi-surface text-wabi-text-primary font-medium hover:bg-wabi-bg" data-key=".">.</button>
+                            </div>
+                            <button id="calc-use-result" class="w-full mt-3 py-2 rounded-lg bg-amber-500 text-wabi-surface font-medium hover:bg-amber-600">
+                                <i class="fa-solid fa-arrow-right-to-line mr-1"></i>填入金額
+                            </button>
                         </div>
 
                         <!-- Debt Panel (hidden by default) -->
@@ -350,6 +387,142 @@ export class AddPage {
             const origUpdateAmount = () => calcPreview();
             const amountObserver = new MutationObserver(origUpdateAmount);
             amountObserver.observe(amountDisplay, { childList: true, characterData: true, subtree: true });
+        }
+
+        // --- 計算機面板 ---
+        const calcBtn = document.getElementById('toggle-calculator-btn');
+        const calcPanel = document.getElementById('calculator-panel');
+        const calcDisplay = document.getElementById('calculator-display');
+        const closeCalcBtn = document.getElementById('close-calculator-panel');
+        const useResultBtn = document.getElementById('calc-use-result');
+
+        if (calcBtn && calcPanel) {
+            let calcValue = '0';     // 當前顯示值
+            let calcPrev = null;     // 運算前值
+            let calcOp = null;       // 當前運算子
+            let calcNew = true;      // 是否剛開始輸入新數字
+
+            const updateCalcDisplay = () => {
+                if (calcDisplay) {
+                    calcDisplay.textContent = calcValue;
+                }
+            };
+
+            const calculate = (a, op, b) => {
+                const numA = parseFloat(a);
+                const numB = parseFloat(b);
+                switch (op) {
+                    case '+': return numA + numB;
+                    case '-': return numA - numB;
+                    case '×': return numA * numB;
+                    case '÷': return numB !== 0 ? numA / numB : NaN;
+                    default: return numB;
+                }
+            };
+
+            const formatCalcResult = (num) => {
+                if (isNaN(num) || !isFinite(num)) return 'Error';
+                // 處理浮點數精度問題，最多保留 10 位數字
+                const result = parseFloat(num.toPrecision(12));
+                return result.toString();
+            };
+
+            // 開關計算機面板
+            calcBtn.addEventListener('click', () => {
+                const isHidden = calcPanel.classList.contains('hidden');
+                calcPanel.classList.toggle('hidden', !isHidden);
+                calcBtn.classList.toggle('text-amber-500', isHidden);
+                calcBtn.classList.toggle('bg-amber-500/10', isHidden);
+                calcBtn.classList.toggle('text-wabi-text-secondary', !isHidden);
+                // 開啟時關閉其他面板
+                if (isHidden) {
+                    if (debtPanel && !debtPanel.classList.contains('hidden')) {
+                        document.getElementById('close-debt-panel')?.click();
+                    }
+                    if (installmentPanel && !installmentPanel.classList.contains('hidden')) {
+                        document.getElementById('close-installment-panel')?.click();
+                    }
+                }
+            });
+
+            // 關閉計算機
+            if (closeCalcBtn) {
+                closeCalcBtn.addEventListener('click', () => {
+                    calcPanel.classList.add('hidden');
+                    calcBtn.classList.remove('text-amber-500', 'bg-amber-500/10');
+                    calcBtn.classList.add('text-wabi-text-secondary');
+                });
+            }
+
+            // 計算機按鈕事件
+            document.querySelectorAll('.calc-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const key = btn.dataset.key;
+
+                    if (key >= '0' && key <= '9' || key === '.') {
+                        // 數字 / 小數點
+                        if (calcNew) {
+                            calcValue = key === '.' ? '0.' : key;
+                            calcNew = false;
+                        } else {
+                            if (key === '.' && calcValue.includes('.')) return;
+                            // 限制數字長度（最多 12 位）
+                            if (calcValue.replace('.', '').length >= 12) return;
+                            calcValue += key;
+                        }
+                    } else if (key === 'C') {
+                        // 全部清除
+                        calcValue = '0';
+                        calcPrev = null;
+                        calcOp = null;
+                        calcNew = true;
+                    } else if (key === '⌫') {
+                        // 刪除最後一個字元
+                        if (!calcNew && calcValue.length > 1) {
+                            calcValue = calcValue.slice(0, -1);
+                        } else {
+                            calcValue = '0';
+                            calcNew = true;
+                        }
+                    } else if (['+', '-', '×', '÷'].includes(key)) {
+                        // 運算子
+                        if (calcPrev !== null && !calcNew) {
+                            // 連續運算
+                            calcValue = formatCalcResult(calculate(calcPrev, calcOp, calcValue));
+                        }
+                        calcPrev = calcValue;
+                        calcOp = key;
+                        calcNew = true;
+                    } else if (key === '=') {
+                        // 等於
+                        if (calcPrev !== null && calcOp) {
+                            calcValue = formatCalcResult(calculate(calcPrev, calcOp, calcValue));
+                            calcPrev = null;
+                            calcOp = null;
+                            calcNew = true;
+                        }
+                    }
+
+                    updateCalcDisplay();
+                });
+            });
+
+            // 填入金額按鈕
+            if (useResultBtn) {
+                useResultBtn.addEventListener('click', () => {
+                    if (calcValue && calcValue !== 'Error' && calcValue !== 'NaN' && calcValue !== 'Infinity') {
+                        const amount = parseFloat(calcValue);
+                        if (!isNaN(amount) && isFinite(amount)) {
+                            currentAmount = amount.toString();
+                            amountDisplay.textContent = formatCurrency(currentAmount);
+                            showToast(`金額已設為 $${amount.toLocaleString('zh-TW')}`);
+                            calcPanel.classList.add('hidden');
+                            calcBtn.classList.remove('text-amber-500', 'bg-amber-500/10');
+                            calcBtn.classList.add('text-wabi-text-secondary');
+                        }
+                    }
+                });
+            }
         }
 
         // --- Account Selector Logic ---
