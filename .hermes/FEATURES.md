@@ -107,6 +107,7 @@
 
 ## 更新歷史
 
+- **2026-06-10**: 新增 utils.js 單元測試 (47 tests: formatDate, getDateRange, getMonthRange, calculateNextDueDate, shouldSkipDate, calculateAmortizationDetails，總計 480)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、2 open PRs、Pursenal 跨平台記帳 (Flutter+複式記帳)、Daak/Ahorro/Percento 等 2026 熱門記帳 App 趨勢
 - **2026-06-09**: 新增 SyncService 單元測試 (34 tests, 總計 433)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、ezBookkeeping/Firefly III/Actual Budget 功能對比調研、市場趨勢：個人理財 App 持續成長
 - **2026-06-08**: 新增 QuickSelectManager 單元測試 (52 tests, 總計 399)；網路調研：GitHub 無新 issue (仍為 #14, #9, #8)、發現 BeeCount 開源記帳 (自建云+WebDAV/S3 同步+AI 記帳+MCP)、Moneybook 全面收費趨勢、開源記帳生態持續成長
 - **2026-06-07**: 新增 Router 單元測試 (26 tests, 總計 347)；網路調研：GitHub 無新 issue/PR、競爭對手 Moneybook 導入 GPT-4o 財富顧問、Actual Budget 與 Firefly III 功能對比；市場趨勢：記帳 App 市場持續成長
