@@ -17,7 +17,7 @@ export const CATEGORIES = {
     { id: 'parttime', name: '兼職', icon: 'fas fa-clock', color: 'bg-blue-400' },
     { id: 'invest', name: '投資', icon: 'fas fa-chart-line', color: 'bg-emerald-500' },
     { id: 'interest', name: '利息', icon: 'fas fa-university', color: 'bg-cyan-500' },
-    { id: 'debt_collection', name: '欠款回收', icon: 'fas fa-hand-holding-usd', color: 'bg-orange-500' },
+    { id: 'debt_collection', name: '欠款回收', icon: 'fas fa-hand-holding-usd', color: 'bg-orange-500' }, // Note: 此分類不計入統計（Issue #46 — 特別設計，非 bug）
     { id: 'another', name: '其他', icon: 'fas fa-box', color: 'bg-gray-500' }
   ]
 }
