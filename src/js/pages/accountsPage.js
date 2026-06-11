@@ -84,15 +84,22 @@ export class AccountsPage {
             }
 
             const accountEl = document.createElement('div');
+            const isCreditCard = account.type === 'credit_card';
             accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-12">
-                        <i class="${account.icon} text-2xl"></i>
+                    <div class="relative">
+                        <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-12">
+                            <i class="${account.icon} text-2xl"></i>
+                        </div>
+                        ${isCreditCard ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
                     </div>
                     <div>
-                        <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
-                        <p class="text-sm text-wabi-text-secondary">餘額: ${formatCurrency(currentBalance)}</p>
+                        <div class="flex items-center gap-2">
+                            <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
+                            ${isCreditCard ? '<span class="text-xs bg-wabi-expense/10 text-wabi-expense px-2 py-0.5 rounded-full">信用卡</span>' : ''}
+                        </div>
+                        <p class="text-sm ${isCreditCard ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${isCreditCard ? '欠款' : '餘額'}: ${formatCurrency(currentBalance)}</p>
                     </div>
                 </div>
                 <div class="flex gap-2">
@@ -265,21 +272,61 @@ export class AccountsPage {
 
     showAccountModal(accountToEdit = null) {
         const isEdit = !!accountToEdit;
+        const accountType = accountToEdit?.type || 'wallet';
         const modal = document.createElement('div');
         modal.id = 'account-form-modal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        const defaultCreditIcon = 'fa-solid fa-credit-card';
+        const defaultWalletIcon = 'fa-solid fa-wallet';
+        const currentIcon = accountToEdit?.icon || defaultWalletIcon;
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
                 
                 <div class="flex-1 overflow-y-auto pr-2 space-y-4">
                     <div>
+                        <label class="text-sm font-medium text-wabi-text-secondary">帳戶類型</label>
+                        <div class="flex gap-2 mt-1">
+                            <label class="flex-1 cursor-pointer">
+                                <input type="radio" name="account-type" value="wallet" ${accountType === 'wallet' ? 'checked' : ''} class="sr-only peer">
+                                <div class="p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
+                                    <i class="fa-solid fa-wallet text-lg mb-1"></i>
+                                    <p class="text-sm font-medium">一般帳戶</p>
+                                </div>
+                            </label>
+                            <label class="flex-1 cursor-pointer">
+                                <input type="radio" name="account-type" value="credit_card" ${accountType === 'credit_card' ? 'checked' : ''} class="sr-only peer">
+                                <div class="p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
+                                    <i class="fa-solid fa-credit-card text-lg mb-1"></i>
+                                    <p class="text-sm font-medium">信用卡</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
                         <label class="text-sm font-medium text-wabi-text-secondary">帳戶名稱</label>
                         <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" required>
                     </div>
                     <div>
-                        <label class="text-sm font-medium text-wabi-text-secondary">初始餘額</label>
+                        <label class="text-sm font-medium text-wabi-text-secondary" id="account-balance-label">初始餘額</label>
                         <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
+                    </div>
+
+                    <div id="credit-card-fields" class="space-y-3 ${accountType === 'credit_card' ? '' : 'hidden'}">
+                        <div>
+                            <label class="text-sm font-medium text-wabi-text-secondary">信用額度</label>
+                            <input type="number" id="credit-limit-input" value="${accountToEdit?.creditLimit || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-sm font-medium text-wabi-text-secondary">出帳日</label>
+                                <input type="number" id="statement-day-input" min="1" max="31" value="${accountToEdit?.statementDay || 25}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-wabi-text-secondary">繳款日</label>
+                                <input type="number" id="due-day-input" min="1" max="31" value="${accountToEdit?.dueDay || 15}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            </div>
+                        </div>
                     </div>
                     
                     <div>
@@ -288,11 +335,11 @@ export class AccountsPage {
                             <div class="flex items-center space-x-2 mb-2">
                                 <input type="text" id="custom-icon-input" 
                                        placeholder="設定預設 (如: fas fa-wallet)"
-                                       value="${escapeHTML(accountToEdit?.icon || 'fa-solid fa-wallet')}"
+                                       value="${escapeHTML(currentIcon)}"
                                        class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                                 <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
-                                    <i class="${accountToEdit?.icon || 'fa-solid fa-wallet'}"></i>
+                                    <i class="${currentIcon}"></i>
                                   </span>
                                 </button>
                             </div>
@@ -335,7 +382,12 @@ export class AccountsPage {
             if (e.target === modal) closeModal();
         });
 
-        let selectedIcon = accountToEdit?.icon || 'fa-solid fa-wallet';
+        // 帳戶類型切換邏輯
+        const creditCardFields = modal.querySelector('#credit-card-fields');
+        const balanceLabel = modal.querySelector('#account-balance-label');
+        const typeRadios = modal.querySelectorAll('input[name="account-type"]');
+
+        let selectedIcon = currentIcon;
         let selectedColor = accountToEdit?.color || 'bg-blue-500';
 
         // 自訂圖標輸入
@@ -357,6 +409,33 @@ export class AccountsPage {
         customIconInput.addEventListener('input', updateIconPreview);
         customIconInput.addEventListener('keyup', updateIconPreview);
         previewIconBtn.addEventListener('click', updateIconPreview);
+
+        const updateAccountTypeUI = () => {
+            const selectedType = modal.querySelector('input[name="account-type"]:checked').value;
+            if (selectedType === 'credit_card') {
+                creditCardFields.classList.remove('hidden');
+                balanceLabel.textContent = '初始欠款';
+            } else {
+                creditCardFields.classList.add('hidden');
+                balanceLabel.textContent = '初始餘額';
+            }
+        };
+
+        typeRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                const selectedType = radio.value;
+                // 切換類型時更新預設圖示
+                if (selectedType === 'credit_card') {
+                    customIconInput.value = 'fa-solid fa-credit-card';
+                    selectedIcon = 'fa-solid fa-credit-card';
+                } else {
+                    customIconInput.value = 'fa-solid fa-wallet';
+                    selectedIcon = 'fa-solid fa-wallet';
+                }
+                updateIconPreview();
+                updateAccountTypeUI();
+            });
+        });
 
         // 圖示渲染邏輯
         const iconSelector = document.getElementById('icon-selector');
@@ -465,12 +544,22 @@ export class AccountsPage {
                 return;
             }
 
+            const selectedType = modal.querySelector('input[name="account-type"]:checked').value;
+
             const accountData = {
+                type: selectedType,
                 name: name,
                 balance: parseFloat(document.getElementById('account-balance-input').value) || 0,
                 icon: selectedIcon,
                 color: selectedColor,
             };
+
+            // 信用卡額外欄位
+            if (selectedType === 'credit_card') {
+                accountData.creditLimit = parseFloat(document.getElementById('credit-limit-input').value) || 0;
+                accountData.statementDay = parseInt(document.getElementById('statement-day-input').value, 10) || 25;
+                accountData.dueDay = parseInt(document.getElementById('due-day-input').value, 10) || 15;
+            }
 
             if (isEdit) {
                 await this.app.dataService.updateAccount(accountToEdit.id, { ...accountToEdit, ...accountData });
