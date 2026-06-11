@@ -26,6 +26,12 @@ const mockDb = {
         return Promise.resolve(data.find(item => item.id === key) || null);
     },
 
+    // 支援 DataService 的 db.getAll('storeName') API
+    async getAll(storeName) {
+        const data = this.initStore(storeName);
+        return Promise.resolve([...data]);
+    },
+
     transaction(stores, mode) {
         const storeNames = typeof stores === 'string' ? [stores] : stores;
         const storeName = storeNames[0];
@@ -92,7 +98,7 @@ const mockDb = {
 };
 
 // 初始化所有 store
-for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'plugins']) {
+for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'plugins', 'credit_statements']) {
     mockDb.initStore(name);
 }
 

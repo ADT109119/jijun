@@ -280,3 +280,257 @@ describe('DataService — addRecord / getRecords filtering', () => {
         expect(expenses[0].amount).toBe(100);
     });
 });
+
+describe('DataService — Credit Card (Schema v13)', () => {
+    let ds;
+
+    beforeEach(async () => {
+        clearMockData();
+        localStorage.clear();
+        ds = new DataService();
+        ds.db = await globalThis.idb.openDB();
+    });
+
+    describe('addAccount with credit_card type', () => {
+        it('新增信用卡帳戶應有正確預設值', async () => {
+            const id = await ds.addAccount({
+                name: 'Test Credit Card',
+                icon: 'fa-credit-card',
+                balance: 0,
+                type: 'credit_card',
+                color: '#ff0000'
+            });
+            expect(typeof id).toBe('number');
+
+            const account = await ds.getAccount(id);
+            expect(account.type).toBe('credit_card');
+            expect(account.creditLimit).toBe(0);
+            expect(account.statementDay).toBe(25);
+            expect(account.dueDay).toBe(15);
+        });
+
+        it('信用卡可自訂 creditLimit', async () => {
+            const id = await ds.addAccount({
+                name: 'Premium Card',
+                icon: 'fa-credit-card',
+                balance: 0,
+                type: 'credit_card',
+                creditLimit: 50000,
+                statementDay: 20,
+                dueDay: 10,
+                color: '#00ff00'
+            });
+
+            const account = await ds.getAccount(id);
+            expect(account.creditLimit).toBe(50000);
+            expect(account.statementDay).toBe(20);
+            expect(account.dueDay).toBe(10);
+        });
+
+        it('普通帳戶不應有信用卡欄位預設值', async () => {
+            const id = await ds.addAccount({
+                name: '現金',
+                icon: 'fa-wallet',
+                balance: 1000,
+                color: '#0000ff'
+            });
+
+            const account = await ds.getAccount(id);
+            expect(account.type).toBe('wallet');
+            expect(account.creditLimit).toBeUndefined();
+        });
+    });
+
+    describe('addCreditStatement', () => {
+        it('新增信用卡帳單並回傳 ID', async () => {
+            const id = await ds.addCreditStatement({
+                accountId: 1,
+                period: '2024-06',
+                statementDate: Date.now(),
+                dueDate: Date.now() + 86400000 * 15,
+                amount: 1000,
+                status: 'unpaid',
+                recordCount: 5,
+                createdAt: Date.now()
+            });
+            expect(typeof id).toBe('number');
+
+            const stmt = await ds.getCreditStatement(id);
+            expect(stmt).not.toBeNull();
+            expect(stmt.amount).toBe(1000);
+            expect(stmt.status).toBe('unpaid');
+            expect(stmt.period).toBe('2024-06');
+        });
+
+        it('新增帳單時自動產生 uuid', async () => {
+            const id = await ds.addCreditStatement({
+                accountId: 1,
+                period: '2024-06',
+                amount: 500,
+                status: 'unpaid',
+                createdAt: Date.now()
+            });
+
+            const stmt = await ds.getCreditStatement(id);
+            expect(stmt.uuid).toBeDefined();
+            expect(stmt.uuid).toHaveLength(36);
+        });
+    });
+
+    describe('getCreditStatements', () => {
+        beforeEach(async () => {
+            const mockDb = ds.db;
+            const tx = mockDb.transaction('credit_statements', 'readwrite');
+            await tx.store.add({
+                id: 1, accountId: 1, period: '2024-06', amount: 1000,
+                status: 'unpaid', createdAt: Date.now(), ledgerId: 1
+            });
+            await tx.store.add({
+                id: 2, accountId: 1, period: '2024-05', amount: 500,
+                status: 'paid', createdAt: Date.now(), ledgerId: 1
+            });
+            await tx.store.add({
+                id: 3, accountId: 2, period: '2024-06', amount: 2000,
+                status: 'unpaid', createdAt: Date.now(), ledgerId: 1
+            });
+            await tx.done;
+            // Set activeLedgerId so the ledger filter works
+            ds.activeLedgerId = 1;
+        });
+
+        it('回傳所有帳單 (allLedgers)', async () => {
+            const statements = await ds.getCreditStatements({ allLedgers: true });
+            expect(statements).toHaveLength(3);
+        });
+
+        it('可過濾 accountId', async () => {
+            const statements = await ds.getCreditStatements({ accountId: 2, allLedgers: true });
+            expect(statements).toHaveLength(1);
+            expect(statements[0].accountId).toBe(2);
+        });
+
+        it('可過濾 status', async () => {
+            const unpaid = await ds.getCreditStatements({ status: 'unpaid', allLedgers: true });
+            expect(unpaid).toHaveLength(2);
+            unpaid.forEach(s => expect(s.status).toBe('unpaid'));
+        });
+
+        it('可過濾 period', async () => {
+            const june = await ds.getCreditStatements({ period: '2024-06', allLedgers: true });
+            expect(june).toHaveLength(2);
+            june.forEach(s => expect(s.period).toBe('2024-06'));
+        });
+
+        it('多條件過濾', async () => {
+            const filtered = await ds.getCreditStatements({
+                accountId: 1,
+                status: 'unpaid',
+                allLedgers: true
+            });
+            expect(filtered).toHaveLength(1);
+            expect(filtered[0].amount).toBe(1000);
+        });
+
+        it('不使用 allLedgers 時只回傳當前帳本', async () => {
+            // Add a statement for a different ledger
+            const mockDb = ds.db;
+            const tx = mockDb.transaction('credit_statements', 'readwrite');
+            await tx.store.add({
+                id: 4, accountId: 1, period: '2024-07', amount: 3000,
+                status: 'unpaid', createdAt: Date.now(), ledgerId: 99
+            });
+            await tx.done;
+
+            // Without allLedgers, only activeLedgerId (1) should be returned
+            const statements = await ds.getCreditStatements({});
+            expect(statements).toHaveLength(3); // only ledgerId 1
+        });
+    });
+
+    describe('updateCreditStatement', () => {
+        it('更新帳單狀態為已繳', async () => {
+            const id = await ds.addCreditStatement({
+                accountId: 1, period: '2024-06', amount: 1000,
+                status: 'unpaid', createdAt: Date.now()
+            });
+
+            const updated = await ds.updateCreditStatement(id, { status: 'paid' });
+            expect(updated.status).toBe('paid');
+
+            const fetched = await ds.getCreditStatement(id);
+            expect(fetched.status).toBe('paid');
+        });
+
+        it('更新不存在的帳單拋出錯誤', async () => {
+            await expect(ds.updateCreditStatement(9999, { status: 'paid' }))
+                .rejects.toThrow('Credit statement not found');
+        });
+    });
+
+    describe('deleteCreditStatement', () => {
+        it('刪除帳單', async () => {
+            const id = await ds.addCreditStatement({
+                accountId: 1, period: '2024-06', amount: 1000,
+                status: 'unpaid', createdAt: Date.now()
+            });
+
+            const result = await ds.deleteCreditStatement(id);
+            expect(result).toBe(true);
+
+            const stmt = await ds.getCreditStatement(id);
+            expect(stmt).toBeNull();
+        });
+    });
+
+    describe('clearAllCreditStatements', () => {
+        it('清除所有信用卡帳單', async () => {
+            await ds.addCreditStatement({
+                accountId: 1, period: '2024-06', amount: 1000,
+                status: 'unpaid', createdAt: Date.now()
+            });
+            await ds.addCreditStatement({
+                accountId: 1, period: '2024-05', amount: 500,
+                status: 'paid', createdAt: Date.now()
+            });
+
+            const result = await ds.clearAllCreditStatements();
+            expect(result).toBe(true);
+
+            const statements = await ds.getCreditStatements({ allLedgers: true });
+            expect(statements).toHaveLength(0);
+        });
+    });
+
+    describe('getStatementPeriod', () => {
+        it('計算正確的帳單週期', () => {
+            const account = { statementDay: 25 };
+            const { startDate, endDate } = ds.getStatementPeriod(account, '2024-06');
+
+            // 6/26 ~ 7/25
+            expect(startDate.getFullYear()).toBe(2024);
+            expect(startDate.getMonth()).toBe(5); // June (0-indexed)
+            expect(startDate.getDate()).toBe(26);
+
+            expect(endDate.getFullYear()).toBe(2024);
+            expect(endDate.getMonth()).toBe(6); // July
+            expect(endDate.getDate()).toBe(25);
+        });
+
+        it('使用預設帳單日 (25)', () => {
+            const account = {};
+            const { startDate, endDate } = ds.getStatementPeriod(account, '2024-01');
+
+            // 1/26 ~ 2/25
+            expect(startDate.getDate()).toBe(26);
+            expect(endDate.getMonth()).toBe(1); // February
+        });
+
+        it('跨年帳單週期', () => {
+            const account = { statementDay: 25 };
+            const { startDate, endDate } = ds.getStatementPeriod(account, '2024-12');
+
+            expect(startDate.getFullYear()).toBe(2024);
+            expect(endDate.getFullYear()).toBe(2025);
+        });
+    });
+});

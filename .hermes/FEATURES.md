@@ -5,7 +5,7 @@
 - **當前版本**: v2.1.5.6
 - **技術棧**: Vanilla JS + IndexedDB (idb) + Vite + Vitest + Playwright + Capacitor Android
 - **CSS**: Tailwind CDN + FontAwesome + Chart.js
-- **Schema**: IndexedDB v12 (多帳本 + 攤提/分期)
+- **Schema**: IndexedDB v13 (信用卡支援)
 
 ---
 
@@ -50,6 +50,7 @@
 
 ### 中優先級 (P2)
 - [ ] **#U04 信用卡特別帳戶** — 信用卡帳單日、循環信用、分期還款等信用卡專屬功能
+- ✅ **信用卡基礎資料層 (Schema v13)** — dataService.js 已實作 credit_statements store、信用卡帳戶欄位、帳單計算與自動產生 (2026-06-11)
 - [ ] **#14-2 分期付款整合攤提/折舊** — 專案已有 amortizations 功能，需確認是否已完整涵蓋 Issue #14 的分期付款需求
 - [ ] **#14-3 信用卡帳戶** — 信用卡專屬帳戶類型 (帳單日、免息期、循環利率)
 - [ ] **#9 UI 改動建議** — 包含：分類介面優化、鍵盤摺疊、貓咪主題等 (需逐項確認)
@@ -59,6 +60,13 @@
 - [ ] **#8 疑問與建議** — 包含：匯出 PDF 報表、遊戲化存錢、AI 預測性理財、AI 掃描發票、Edge/Capacitor Widget 等 (需逐項確認)
 
 ---
+
+## Issue #46 追蹤
+- **標題**: 收入項目裡的 [欠款回收]
+- **回報者**: yabo-tw (2026-06-11)
+- **問題**: 使用 [收入][欠款回收] 紀錄還款時，首頁本月統計不更新
+- **owner 回應**: 此為特別設計，欠款回收不會被計入統計中
+- **使用者 workaround**: 新增 [收入][欠款回收2] 來用於需要列入統計的場景
 
 ## 網路調研收集的功能
 
@@ -78,6 +86,7 @@
 - Local-First 架構強化 — 離線優先、資料主權
 - BeeCount (2026-06-08 調研) — 自建雲端 + iCloud/WebDAV/S3 同步、AI 記帳 (MCP)、Flutter 跨端
 - 存錢罐/目標儲蓄視覺化 — Daak 記帳等 App 內建「許願」功能，讓存錢有目標感
+- MOZE 4.0 (2026/5/25 更新) — 捷徑記帳增加幣種選項、通知中心支援多筆完成提醒入帳、比較報表功能
 
 ---
 
@@ -99,7 +108,8 @@
 
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
-| #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡 ✅ 已排程 #U04/#14-3 |
+| #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Open | 特別設計非 bug，使用者已找到 workaround |
+| #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
 | #8 | 疑問與建議 (Maiagaru) | Open | 分類預算 ✅ 已實作、手機鍵盤 UX ⏳ 排程 #U01、PDF/AI 等功能 💡 已列入調研 |
 
@@ -107,6 +117,7 @@
 
 ## 更新歷史
 
+- **2026-06-11**: 提交信用卡基礎資料層 (Schema v13, commit 2afbe51)；新增信用卡資料層單元測試 (30 tests)；網路調研：GitHub 新 issue #46 (欠款回收統計問題)、MOZE 4.0 新功能 (捷徑幣種/通知中心批量/比較報表)、GitHub Stars: 56
 - **2026-06-10**: 新增 utils.js 單元測試 (47 tests: formatDate, getDateRange, getMonthRange, calculateNextDueDate, shouldSkipDate, calculateAmortizationDetails，總計 480)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、2 open PRs、Pursenal 跨平台記帳 (Flutter+複式記帳)、Daak/Ahorro/Percento 等 2026 熱門記帳 App 趨勢
 - **2026-06-09**: 新增 SyncService 單元測試 (34 tests, 總計 433)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、ezBookkeeping/Firefly III/Actual Budget 功能對比調研、市場趨勢：個人理財 App 持續成長
 - **2026-06-08**: 新增 QuickSelectManager 單元測試 (52 tests, 總計 399)；網路調研：GitHub 無新 issue (仍為 #14, #9, #8)、發現 BeeCount 開源記帳 (自建云+WebDAV/S3 同步+AI 記帳+MCP)、Moneybook 全面收費趨勢、開源記帳生態持續成長
