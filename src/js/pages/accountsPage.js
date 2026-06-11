@@ -30,6 +30,12 @@ export class AccountsPage {
                     <p id="total-assets" class="text-wabi-primary text-4xl font-bold tracking-tight mt-1">$0</p>
                 </div>
 
+                <!-- Credit Card Debt Summary -->
+                <div id="credit-debt-section" class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-6 mb-8 text-center hidden">
+                    <p class="text-wabi-text-secondary text-base font-medium">信用卡總欠款</p>
+                    <p id="credit-debt-total" class="text-wabi-expense text-4xl font-bold tracking-tight mt-1">$0</p>
+                </div>
+
                 <!-- Account List -->
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-wabi-primary">帳戶列表</h3>
@@ -55,6 +61,8 @@ export class AccountsPage {
         const totalAssetsEl = document.getElementById('total-assets');
 
         let totalAssets = 0;
+        let totalCreditDebt = 0;
+        let hasCreditCard = false;
         container.innerHTML = '';
 
         if (accounts.length === 0) {
@@ -67,7 +75,13 @@ export class AccountsPage {
                 return balance + (record.type === 'income' ? record.amount : -record.amount);
             }, account.balance); // Start with initial balance
 
-            totalAssets += currentBalance;
+            // 信用卡不計入總資產，而是計入總欠款
+            if (account.type === 'credit_card') {
+                hasCreditCard = true;
+                totalCreditDebt += currentBalance;
+            } else {
+                totalAssets += currentBalance;
+            }
 
             const accountEl = document.createElement('div');
             accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
@@ -91,6 +105,16 @@ export class AccountsPage {
         }
 
         totalAssetsEl.textContent = formatCurrency(totalAssets);
+
+        // 信用卡總欠款區塊顯示邏輯
+        const creditDebtSection = document.getElementById('credit-debt-section');
+        const creditDebtTotalEl = document.getElementById('credit-debt-total');
+        if (hasCreditCard) {
+            creditDebtSection.classList.remove('hidden');
+            creditDebtTotalEl.textContent = formatCurrency(totalCreditDebt);
+        } else {
+            creditDebtSection.classList.add('hidden');
+        }
 
         document.getElementById('add-account-btn').addEventListener('click', () => {
             this.showAccountModal();

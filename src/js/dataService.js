@@ -7,7 +7,7 @@ const openDB = window.idb?.openDB || (() => {
 class DataService {
   constructor() {
     this.dbName = 'EasyAccountingDB'
-    this.dbVersion = 12 // Schema version 12: Add amortizationId index to records
+    this.dbVersion = 13 // Schema version 13: Credit card support (type, creditLimit, statementDay, dueDay)
     this.db = null
     this.useLocalStorage = false
     this.hookProvider = null; // Function to trigger hooks
@@ -235,6 +235,41 @@ class DataService {
                     if (!recordStore.indexNames.contains('amortizationId')) {
                         recordStore.createIndex('amortizationId', 'amortizationId', { unique: false });
                     }
+                }
+            }
+            // Schema version 13: Credit card support
+            if (oldVersion < 13) {
+                if (db.objectStoreNames.contains('accounts')) {
+                    const store = transaction.objectStore('accounts');
+                    // 為舊資料補上 type = 'wallet'
+                    let cursor = await store.openCursor();
+                    while (cursor) {
+                        const data = cursor.value;
+                        if (!data.type) {
+                            data.type = 'wallet';
+                            data.creditLimit = 0;
+                            data.statementDay = 25;
+                            data.dueDay = 15;
+                            await cursor.update(data);
+                        }
+                        cursor = await cursor.continue();
+                    }
+                    // 新增 type index
+                    if (!store.indexNames.contains('type')) {
+                        store.createIndex('type', 'type', { unique: false });
+                    }
+                }
+                // 新增信用卡帳單 store
+                if (!db.objectStoreNames.contains('credit_statements')) {
+                    const stmtStore = db.createObjectStore('credit_statements', {
+                        keyPath: 'id',
+                        autoIncrement: true
+                    });
+                    stmtStore.createIndex('uuid', 'uuid', { unique: true });
+                    stmtStore.createIndex('accountId', 'accountId');
+                    stmtStore.createIndex('ledgerId', 'ledgerId');
+                    stmtStore.createIndex('period', 'period');
+                    stmtStore.createIndex('status', 'status');
                 }
             }
           }
@@ -1847,6 +1882,13 @@ class DataService {
       const { id: _rid, ...accountWithoutId } = account;
       const dataToAdd = skipLog ? accountWithoutId : account;
       dataToAdd.ledgerId = dataToAdd.ledgerId ?? this.activeLedgerId;
+      // 信用卡欄位預設值
+      if (!dataToAdd.type) dataToAdd.type = 'wallet';
+      if (dataToAdd.type === 'credit_card') {
+        if (dataToAdd.creditLimit === undefined) dataToAdd.creditLimit = 0;
+        if (dataToAdd.statementDay === undefined) dataToAdd.statementDay = 25;
+        if (dataToAdd.dueDay === undefined) dataToAdd.dueDay = 15;
+      }
       const tx = this.db.transaction('accounts', 'readwrite');
       const id = await tx.store.add(dataToAdd);
       await tx.done;
@@ -1914,6 +1956,210 @@ class DataService {
     await tx.done;
     if (!skipLog && itemData) await this.logChange('delete', 'accounts', id, { uuid: itemData.uuid, ledgerId: itemData.ledgerId });
     return true;
+  }
+
+  // 清除所有信用卡帳單
+  async clearAllCreditStatements() {
+    try {
+      const tx = this.db.transaction('credit_statements', 'readwrite');
+      await tx.store.clear();
+      await tx.done;
+      return true;
+    } catch (error) {
+      console.error('Failed to clear credit statements:', error);
+      throw error;
+    }
+  }
+
+  // --- Credit Card Statement Methods ---
+  async addCreditStatement(stmt) {
+    try {
+      if (!stmt.uuid) stmt.uuid = this.generateUUID();
+      stmt.ledgerId = stmt.ledgerId ?? this.activeLedgerId;
+      const tx = this.db.transaction('credit_statements', 'readwrite');
+      const id = await tx.store.add(stmt);
+      await tx.done;
+      await this.logChange('add', 'credit_statements', id, { ...stmt, id });
+      return id;
+    } catch (error) {
+      console.error('Failed to add credit statement:', error);
+      throw error;
+    }
+  }
+
+  async getCreditStatement(id) {
+    try {
+      return await this.db.get('credit_statements', id);
+    } catch (error) {
+      console.error(`Failed to get credit statement ${id}:`, error);
+      return null;
+    }
+  }
+
+  async getCreditStatements(filters = {}) {
+    try {
+      let statements = await this.db.getAll('credit_statements');
+      if (!filters.allLedgers) {
+        const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+        statements = statements.filter(s => s.ledgerId === targetLedgerId);
+      }
+      if (filters.accountId) {
+        statements = statements.filter(s => s.accountId === filters.accountId);
+      }
+      if (filters.status) {
+        statements = statements.filter(s => s.status === filters.status);
+      }
+      if (filters.period) {
+        statements = statements.filter(s => s.period === filters.period);
+      }
+      return statements;
+    } catch (error) {
+      console.error('Failed to get credit statements:', error);
+      return [];
+    }
+  }
+
+  async updateCreditStatement(id, updates) {
+    try {
+      const tx = this.db.transaction('credit_statements', 'readwrite');
+      const stmt = await tx.store.get(id);
+      if (stmt) {
+        const updated = { ...stmt, ...updates };
+        await tx.store.put(updated);
+        await tx.done;
+        await this.logChange('update', 'credit_statements', id, updated);
+        return updated;
+      }
+      throw new Error('Credit statement not found');
+    } catch (error) {
+      console.error(`Failed to update credit statement ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteCreditStatement(id) {
+    try {
+      const tx = this.db.transaction('credit_statements', 'readwrite');
+      const stmt = await tx.store.get(id);
+      await tx.store.delete(id);
+      await tx.done;
+      if (stmt) await this.logChange('delete', 'credit_statements', id, { uuid: stmt.uuid, ledgerId: stmt.ledgerId });
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete credit statement ${id}:`, error);
+      throw error;
+    }
+  }
+
+  // --- Credit Card Balance Calculation ---
+  /**
+   * 計算信用卡本期欠款
+   * @param {number} accountId - 信用卡帳戶 ID
+   * @param {Date} startDate - 帳單週期開始日
+   * @param {Date} endDate - 帳單週期結束日
+   * @returns {Promise<{ totalExpense: number, totalRepayment: number, currentBalance: number, availableCredit: number, creditLimit: number }>}
+   */
+  async calculateCreditCardBalance(accountId, startDate, endDate) {
+    const account = await this.getAccount(accountId);
+    if (!account || account.type !== 'credit_card') {
+      return { totalExpense: 0, totalRepayment: 0, currentBalance: 0, availableCredit: 0, creditLimit: 0 };
+    }
+
+    const records = await this.getRecords({ allLedgers: true });
+    const accountRecords = records.filter(r => r.accountId === accountId);
+    const periodRecords = accountRecords.filter(r => {
+      const recordDate = new Date(r.date);
+      return recordDate >= startDate && recordDate <= endDate;
+    });
+
+    let totalExpense = 0;
+    let totalRepayment = 0;
+
+    for (const record of periodRecords) {
+      if (record.type === 'expense') {
+        // 還款分類不算作消費
+        if (record.category !== 'repay_credit') {
+          totalExpense += record.amount;
+        }
+      } else if (record.type === 'expense' && record.category === 'repay_credit') {
+        totalRepayment += record.amount;
+      }
+    }
+
+    const currentBalance = totalExpense - totalRepayment;
+    const creditLimit = account.creditLimit || 0;
+    const availableCredit = Math.max(0, creditLimit - currentBalance);
+
+    return {
+      totalExpense,
+      totalRepayment,
+      currentBalance: Math.max(0, currentBalance),
+      availableCredit,
+      creditLimit,
+    };
+  }
+
+  /**
+   * 取得信用卡帳單週期的開始和結束日期
+   * @param {object} account - 信用卡帳戶物件
+   * @param {string} period - 帳單期間 (格式: 'YYYY-MM')
+   * @returns {{ startDate: Date, endDate: Date }}
+   */
+  getStatementPeriod(account, period) {
+    const [year, month] = period.split('-').map(Number);
+    const statementDay = account.statementDay || 25;
+
+    // 帳單日當月
+    const startDate = new Date(year, month - 1, statementDay + 1);
+    // 到下個月的帳單日
+    const endDate = new Date(year, month, statementDay);
+
+    return { startDate, endDate };
+  }
+
+  /**
+   * 自動產生信用卡帳單（每月執行）
+   */
+  async autoGenerateCreditStatements() {
+    const accounts = await this.getAccounts({ allLedgers: true });
+    const creditCards = accounts.filter(a => a.type === 'credit_card');
+
+    for (const card of creditCards) {
+      const now = new Date();
+      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      // 檢查該期間是否已有帳單
+      const existing = await this.getCreditStatements({
+        accountId: card.id,
+        period,
+        allLedgers: true
+      });
+
+      if (existing.length > 0) continue;
+
+      // 計算本期消費
+      const { startDate, endDate } = this.getStatementPeriod(card, period);
+      const balance = await this.calculateCreditCardBalance(card.id, startDate, endDate);
+
+      // 繳款日計算
+      const dueDay = card.dueDay || 15;
+      let dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
+      if (dueDate <= now) {
+        dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
+      }
+
+      await this.addCreditStatement({
+        accountId: card.id,
+        period,
+        statementDate: now.getTime(),
+        dueDate: dueDate.getTime(),
+        amount: balance.currentBalance,
+        status: balance.currentBalance > 0 ? 'unpaid' : 'zero',
+        recordCount: 0,
+        ledgerId: card.ledgerId,
+        createdAt: Date.now(),
+      });
+    }
   }
 
   // 清除所有帳戶
