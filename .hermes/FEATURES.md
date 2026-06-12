@@ -119,6 +119,7 @@
 
 ## 更新歷史
 
+- **2026-06-12**: Code Review 信用卡功能 (Schema v13) — 發現 12 項問題 (3 高/4 中/5 低)、ESLint 確認死碼錯誤 (no-dupe-else-if)；重點：calculateCreditCardBalance 效能問題 (全量載入 records)、exportData/exportDataForSync 缺少 credit_statements (資料遺失)、信用卡還款計算永遠錯誤 (M1 死碼)、信用卡餘額計算語義反轉；新增 code-review-credit-card-2026-06-12.md
 - **2026-06-11**: 提交信用卡基礎資料層 (Schema v13, commit 2afbe51)；新增信用卡資料層單元測試 (30 tests)；網路調研：GitHub 新 issue #46 (欠款回收統計問題)、MOZE 4.0 新功能 (捷徑幣種/通知中心批量/比較報表)、GitHub Stars: 56
 - **2026-06-10**: 新增 utils.js 單元測試 (47 tests: formatDate, getDateRange, getMonthRange, calculateNextDueDate, shouldSkipDate, calculateAmortizationDetails，總計 480)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、2 open PRs、Pursenal 跨平台記帳 (Flutter+複式記帳)、Daak/Ahorro/Percento 等 2026 熱門記帳 App 趨勢
 - **2026-06-09**: 新增 SyncService 單元測試 (34 tests, 總計 433)；網路調研：GitHub 仍為 3 open issues (#14, #9, #8)、ezBookkeeping/Firefly III/Actual Budget 功能對比調研、市場趨勢：個人理財 App 持續成長
