@@ -1011,6 +1011,10 @@ class DataService {
       try {
           amortizations = await this.getAmortizations({ allLedgers: true });
       } catch (e) {console.warn('Silenced error:', e);}
+      let credit_statements = [];
+      try {
+          credit_statements = await this.getCreditStatements({ allLedgers: true });
+      } catch (e) {console.warn('Silenced error:', e);}
 
       const exportData = {
         version: '2.3.0',
@@ -1027,6 +1031,7 @@ class DataService {
         debts: debts,
         recurring_transactions: recurring_transactions,
         amortizations: amortizations,
+        credit_statements: credit_statements,
         customCategories: customCategoriesMap,
         categoryOrder: categoryOrderMap,
         hiddenCategories: hiddenCategoriesMap,
@@ -1091,6 +1096,7 @@ class DataService {
           await this.clearAllAccounts();
           await this.clearAllContacts();
           await this.clearAllDebts();
+          await this.clearAllCreditStatements();
           if (!this.useLocalStorage) {
             try {
               const txR = this.db.transaction('recurring_transactions', 'readwrite');
@@ -1377,6 +1383,23 @@ class DataService {
               } catch (e) { console.warn('匯入攤提資料時發生錯誤:', e); }
           }
 
+          // 11. 匯入 Credit Statements (信用卡帳單)
+          if (data.credit_statements && Array.isArray(data.credit_statements)) {
+              try {
+                  const txStmt = this.db.transaction('credit_statements', 'readwrite');
+                  for (const stmt of data.credit_statements) {
+                      const { id, ...stmtData } = stmt;
+                      if (!stmtData.uuid) stmtData.uuid = this.generateUUID();
+                      stmtData.ledgerId = getMappedLedgerId(stmtData.ledgerId);
+                      if (stmtData.accountId !== undefined && oldAccountIdToNewIdMap.has(stmtData.accountId)) {
+                          stmtData.accountId = oldAccountIdToNewIdMap.get(stmtData.accountId);
+                      }
+                      await txStmt.store.add(stmtData);
+                  }
+                  await txStmt.done;
+              } catch (e) { console.warn('匯入信用卡帳單資料時發生錯誤:', e); }
+          }
+
           resolve({ 
             success: true, 
             message: `成功匯入 ${validRecords.length} 筆記錄`,
@@ -1412,10 +1435,10 @@ class DataService {
   /** 將所有 store 資料序列化為 JSON 物件 */
   async _exportFullBackup() {
     if (this.useLocalStorage) {
-      return { localStorage: { ...localStorage }, ledgers: [], records: [], accounts: [], contacts: [], debts: [], recurring_transactions: [], amortizations: [] };
+      return { localStorage: { ...localStorage }, ledgers: [], records: [], accounts: [], contacts: [], debts: [], recurring_transactions: [], amortizations: [], credit_statements: [] };
     }
     const backup = {};
-    const stores = ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations'];
+    const stores = ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'credit_statements'];
     for (const storeName of stores) {
       try {
         const tx = this.db.transaction(storeName, 'readonly');
@@ -1457,7 +1480,7 @@ class DataService {
       return;
     }
 
-    const stores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'ledgers'];
+    const stores = ['records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'credit_statements', 'ledgers'];
     for (const storeName of stores) {
       try {
         // Clear existing data
@@ -1704,6 +1727,8 @@ class DataService {
     const rawContacts = (await this.getContacts({ allLedgers: true })).filter(c => validLedgerIds.has(c.ledgerId));
     const rawDebts = (await this.getDebts({ allLedgers: true })).filter(d => validLedgerIds.has(d.ledgerId));
     const recurring_transactions = (await this.getRecurringTransactions({ allLedgers: true })).filter(r => validLedgerIds.has(r.ledgerId));
+    const amortizations = (await this.getAmortizations({ allLedgers: true })).filter(a => validLedgerIds.has(a.ledgerId));
+    const credit_statements = (await this.getCreditStatements({ allLedgers: true })).filter(s => validLedgerIds.has(s.ledgerId));
 
     // 建立帳戶/聯絡人/欠款 UUID 查找表
     const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]));
@@ -1756,6 +1781,8 @@ class DataService {
       contacts,
       debts,
       recurring_transactions,
+      amortizations,
+      credit_statements,
       ...(isSharedSync ? {} : {
         customCategories,
         categoryOrder,
@@ -2053,7 +2080,7 @@ class DataService {
 
   // --- Credit Card Balance Calculation ---
   /**
-   * 計算信用卡本期欠款
+   * 計算信用卡本期欠款（效能優化版：只查詢相關帳戶的記錄）
    * @param {number} accountId - 信用卡帳戶 ID
    * @param {Date} startDate - 帳單週期開始日
    * @param {Date} endDate - 帳單週期結束日
@@ -2065,9 +2092,9 @@ class DataService {
       return { totalExpense: 0, totalRepayment: 0, currentBalance: 0, availableCredit: 0, creditLimit: 0 };
     }
 
-    const records = await this.getRecords({ allLedgers: true });
-    const accountRecords = records.filter(r => r.accountId === accountId);
-    const periodRecords = accountRecords.filter(r => {
+    // 只查詢該帳戶的記錄，避免載入全部 records
+    const records = await this.db.getAllFromIndex('records', 'accountId', accountId);
+    const periodRecords = records.filter(r => {
       const recordDate = new Date(r.date);
       return recordDate >= startDate && recordDate <= endDate;
     });
@@ -2076,12 +2103,12 @@ class DataService {
     let totalRepayment = 0;
 
     for (const record of periodRecords) {
+      // 信用卡消費：type='expense' 且 account 為該信用卡
       if (record.type === 'expense') {
-        // 還款分類不算作消費
-        if (record.category !== 'repay_credit') {
-          totalExpense += record.amount;
-        }
-      } else if (record.type === 'expense' && record.category === 'repay_credit') {
+        totalExpense += record.amount;
+      }
+      // 信用卡還款：type='income' 且 account 為該信用卡 (還款是收入項目)
+      else if (record.type === 'income') {
         totalRepayment += record.amount;
       }
     }

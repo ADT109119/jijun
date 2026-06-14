@@ -89,6 +89,10 @@
 - BeeCount (2026-06-08 調研) — 自建雲端 + iCloud/WebDAV/S3 同步、AI 記帳 (MCP)、Flutter 跨端
 - 存錢罐/目標儲蓄視覺化 — Daak 記帳等 App 內建「許願」功能，讓存錢有目標感
 - MOZE 4.0 (2026/5/25 更新) — 捷徑記帳增加幣種選項、通知中心支援多筆完成提醒入帳、比較報表功能
+- Akaunting (2026-06-14 調研) — 開源帳務軟體，支援發票、多帳本、雲端同步
+- Percento (2026-06-14 調研) — Apple 原生極簡風格、多貨幣、股價自動追蹤
+- 日常記帳 (2026-06-14 調研) — 個人+企業雙模式、固定支出自動記帳、多帳本
+- Akaunting/Wave/Xero (2026-06-14 調研) — 中小企業帳務 SaaS，自動發票、即時現金流追蹤、複式記帳
 
 ---
 
@@ -118,6 +122,8 @@
 ---
 
 ## 更新歷史
+
+- **2026-06-14**: 信用卡功能修補 (Schema v13) — 修復 calculateCreditCardBalance 死碼 (else-if 永不會執行) + 效能優化 (改用 index 查詢替代全量載入)；修復 exportData/exportDataForSync/_exportFullBackup/importData 遺失 credit_statements (匯出/同步/備份/匯入資料遺失)；新增 importData 清除 credit_statements
 
 - **2026-06-12**: Code Review 信用卡功能 (Schema v13) — 發現 12 項問題 (3 高/4 中/5 低)、ESLint 確認死碼錯誤 (no-dupe-else-if)；重點：calculateCreditCardBalance 效能問題 (全量載入 records)、exportData/exportDataForSync 缺少 credit_statements (資料遺失)、信用卡還款計算永遠錯誤 (M1 死碼)、信用卡餘額計算語義反轉；新增 code-review-credit-card-2026-06-12.md
 - **2026-06-11**: 提交信用卡基礎資料層 (Schema v13, commit 2afbe51)；新增信用卡資料層單元測試 (30 tests)；網路調研：GitHub 新 issue #46 (欠款回收統計問題)、MOZE 4.0 新功能 (捷徑幣種/通知中心批量/比較報表)、GitHub Stars: 56
