@@ -93,6 +93,7 @@
 - Percento (2026-06-14 調研) — Apple 原生極簡風格、多貨幣、股價自動追蹤
 - 日常記帳 (2026-06-14 調研) — 個人+企業雙模式、固定支出自動記帳、多帳本
 - Akaunting/Wave/Xero (2026-06-14 調研) — 中小企業帳務 SaaS，自動發票、即時現金流追蹤、複式記帳
+- ezBookkeeping (2026-06-15 調研) — 開源自架記帳，Vue3 + Node.js，對比 Firefly III / Actual Budget，支援多帳本、預算追蹤、CSV 匯入
 
 ---
 
@@ -123,6 +124,7 @@
 
 ## 更新歷史
 
+- **2026-06-16**: 新增 datePickerModal.js 單元測試 (27 tests, 總計 560) — 覆蓋 DOM 結構/ARIA/快速日期按鈕/確定與取消按鈕/背景點擊關閉/CSS class；網路調研：GitHub 仍 3 open issues (#14, #9, #8)、2 open PRs (Weekly code quality + Sentinel XSS)；市場趨勢：CopilotKit × AG-UI × Next.js AI 記帳 App 開發範例、Percento 專注大額金額變動記帳
 - **2026-06-14**: 信用卡功能修補 (Schema v13) — 修復 calculateCreditCardBalance 死碼 (else-if 永不會執行) + 效能優化 (改用 index 查詢替代全量載入)；修復 exportData/exportDataForSync/_exportFullBackup/importData 遺失 credit_statements (匯出/同步/備份/匯入資料遺失)；新增 importData 清除 credit_statements
 
 - **2026-06-12**: Code Review 信用卡功能 (Schema v13) — 發現 12 項問題 (3 高/4 中/5 低)、ESLint 確認死碼錯誤 (no-dupe-else-if)；重點：calculateCreditCardBalance 效能問題 (全量載入 records)、exportData/exportDataForSync 缺少 credit_statements (資料遺失)、信用卡還款計算永遠錯誤 (M1 死碼)、信用卡餘額計算語義反轉；新增 code-review-credit-card-2026-06-12.md
