@@ -1,4 +1,5 @@
 import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML, calculateAmortizationDetails, customConfirm } from '../utils.js';
+import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js';
 
 export class AddPage {
     constructor(app) {
@@ -196,6 +197,10 @@ export class AddPage {
         let selectedAccountId = null; // New state for multi-account mode
         let currentDate = formatDateToString(new Date());
         let keypadGridOpen = false;
+
+        // Virtual keyboard state tracking
+        let vkForcedHide = false;
+        let vkDetector = null;
 
         // Debt panel state
         let debtEnabled = false;
@@ -452,6 +457,20 @@ export class AddPage {
         };
 
         keypadContainer.classList.remove('translate-y-full');
+
+        // Initialize virtual keyboard detector
+        vkDetector = new VirtualKeyboardDetector({
+            onShow: () => {
+                vkForcedHide = true;
+                toggleKeypadGrid(false); // 強制隱藏 keypad
+            },
+            onHide: () => {
+                vkForcedHide = false;
+                toggleKeypadGrid(true); // 恢復顯示 keypad
+            },
+            threshold: 150
+        });
+        vkDetector.start();
 
         const updateTypeUI = () => {
             if (currentType === 'expense') {
@@ -993,8 +1012,8 @@ export class AddPage {
 
         updateTypeUI();
         updateAccountSelectorUI();
-        // Initialize keypad state: hidden by default, expanded in edit mode
-        toggleKeypadGrid(isEditMode);
+        // Initialize keypad state: visible by default, auto-hide when virtual keyboard appears
+        toggleKeypadGrid(true);
     }
 
     createKeypadButton(key, isEditMode = false, calculatorModeEnabled = false) {
