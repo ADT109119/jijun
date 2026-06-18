@@ -23,6 +23,7 @@ import { SyncSettingsPage } from './pages/syncSettingsPage.js';
 import { PluginsPage } from './pages/pluginsPage.js';
 import { RecordsPage } from './pages/recordsPage.js';
 import { StatsPage } from './pages/statsPage.js';
+import { ComparisonPage } from './pages/comparisonPage.js';
 import { DebtsPage } from './pages/debtsPage.js';
 import { ContactsPage } from './pages/contactsPage.js';
 import { LedgersPage } from './pages/ledgersPage.js';
@@ -149,6 +150,7 @@ class EasyAccountingApp {
         this.router.register('sync-settings', new SyncSettingsPage(this));
         this.router.register('privacy', new PrivacyPage(this));
         this.router.register('license', new LicensePage(this));
+        this.router.register('comparison', new ComparisonPage(this));
 
         // Start Router
         this.router.init();

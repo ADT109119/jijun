@@ -4,6 +4,7 @@
  */
 
 import { ComparisonReport } from '../comparisonReport.js';
+import { formatCurrency } from '../utils.js';
 
 export class ComparisonPage {
     constructor(app) {
@@ -15,7 +16,12 @@ export class ComparisonPage {
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
-                    <h1 class="text-lg font-bold text-wabi-primary flex-1 text-center">跨月比較</h1>
+                    <a href="#stats" class="flex items-center gap-1 text-wabi-text-secondary hover:text-wabi-primary transition-colors">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <span class="text-sm">返回</span>
+                    </a>
+                    <h1 class="text-lg font-bold text-wabi-primary flex-1 text-center">跨月比較報表</h1>
+                    <div class="w-8"></div>
                 </header>
                 <main class="flex-1 p-4 pb-24">
                     <div id="comparison-container"></div>
@@ -36,6 +42,12 @@ export class ComparisonPage {
         const defaultMonths = months.length >= 2 ? months.slice(-2) : months;
 
         container.innerHTML = `
+            <!-- 使用說明 -->
+            <div class="p-4 rounded-xl bg-wabi-accent/10 border border-wabi-accent/30 mb-6">
+                <p class="text-sm text-wabi-text-primary font-bold mb-1"><i class="fa-solid fa-lightbulb text-yellow-500 mr-1"></i>使用說明</p>
+                <p class="text-xs text-wabi-text-secondary">選擇 2-4 個月或年度，系統會自動計算各期間的收支、分類對比以及同比/環比變化。</p>
+            </div>
+
             <!-- Period type selector -->
             <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-4">
                 <button id="comp-period-month" class="period-type-btn flex-1 h-full rounded-md px-2 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">按月</button>
@@ -44,14 +56,14 @@ export class ComparisonPage {
 
             <!-- Period selection (checkboxes) -->
             <div id="comp-period-selection" class="mb-6">
-                <p class="text-sm text-wabi-text-secondary mb-2">選擇 2-4 個期間</p>
+                <p class="text-sm text-wabi-text-secondary mb-2">選擇 2-4 個期間（已選 <span id="comp-selected-count">0</span>/4）</p>
                 <div id="comp-checkboxes" class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 </div>
             </div>
 
             <!-- Compare button -->
-            <button id="comp-run-btn" class="w-full py-3 rounded-xl bg-wabi-accent text-white font-bold mb-6">
-                比較
+            <button id="comp-run-btn" class="w-full py-3 rounded-xl bg-wabi-accent text-white font-bold mb-6 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-code-compare mr-1"></i> 開始比較
             </button>
 
             <!-- Results -->
@@ -62,13 +74,18 @@ export class ComparisonPage {
         let currentPeriodType = 'month';
         let selectedPeriods = new Set(defaultMonths);
 
+        const updateSelectedCount = () => {
+            const countEl = container.querySelector('#comp-selected-count');
+            if (countEl) countEl.textContent = selectedPeriods.size;
+        };
+
         const renderCheckboxes = () => {
             const periods = currentPeriodType === 'month' ? months : years;
             const checkboxesEl = container.querySelector('#comp-checkboxes');
             checkboxesEl.innerHTML = periods.map(p => {
                 const checked = selectedPeriods.has(p) ? 'checked' : '';
-                return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer">
-                    <input type="checkbox" value="${p}" ${checked} class="comp-checkbox" disabled>
+                return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer hover:border-wabi-accent/50 transition-colors">
+                    <input type="checkbox" value="${p}" ${checked} class="comp-checkbox rounded" disabled>
                     <span class="text-sm">${p}</span>
                 </label>`;
             }).join('');
@@ -86,8 +103,10 @@ export class ComparisonPage {
                     } else {
                         selectedPeriods.delete(cb.value);
                     }
+                    updateSelectedCount();
                 });
             });
+            updateSelectedCount();
         };
 
         periodTypeBtns.forEach(btn => {
@@ -119,7 +138,7 @@ export class ComparisonPage {
             const selectedArr = Array.from(selectedPeriods).sort();
             if (selectedArr.length < 2) {
                 container.querySelector('#comp-results').innerHTML =
-                    '<p class="text-center text-wabi-expense py-4">請至少選擇 2 個期間</p>';
+                    '<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-circle mr-1"></i>請至少選擇 2 個期間</p>';
                 return;
             }
 
@@ -128,7 +147,7 @@ export class ComparisonPage {
                 this.renderResults(container, comp, data);
             } catch (err) {
                 container.querySelector('#comp-results').innerHTML =
-                    `<p class="text-center text-wabi-expense py-4">計算失敗: ${err.message}</p>`;
+                    `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${err.message}</p>`;
             }
         });
     }
@@ -144,21 +163,20 @@ export class ComparisonPage {
         resultsEl.appendChild(summaryDiv);
 
         // Chart (bar chart for income/expense comparison)
-        this.renderComparisonChart(data);
+        this.renderComparisonChart(container, data);
 
         // Category table
         const tableDiv = document.createElement('div');
         tableDiv.id = 'comp-category-table';
         tableDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-        tableDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary">分類支出比較</h2>';
+        tableDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-table-list mr-2"></i>分類支出比較</h2>';
         const tableInner = document.createElement('div');
         comp.renderCategoryTable(tableInner, data.periodLabels, data.categoryComparisons);
         tableDiv.appendChild(tableInner);
         resultsEl.appendChild(tableDiv);
     }
 
-    renderComparisonChart(data) {
-        // We'll use Chart.js directly - import dynamically to avoid circular deps
+    renderComparisonChart(container, data) {
         const Chart = window.Chart;
         if (!Chart) return;
 
@@ -167,18 +185,18 @@ export class ComparisonPage {
         if (oldCanvas) oldCanvas.remove();
         if (this.charts.comparison) this.charts.comparison.destroy();
 
-        const container = document.getElementById('comp-results');
-        if (!container) return;
+        const resultsEl = container.querySelector('#comp-results');
+        if (!resultsEl) return;
 
         const chartWrapper = document.createElement('div');
         chartWrapper.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
         chartWrapper.innerHTML = `
-            <h2 class="text-base font-bold mb-4 text-wabi-primary">收支對比圖</h2>
+            <h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-chart-bar mr-2"></i>收支對比圖</h2>
             <div class="relative h-48 w-full">
                 <canvas id="comp-bar-chart"></canvas>
             </div>
         `;
-        container.appendChild(chartWrapper);
+        resultsEl.appendChild(chartWrapper);
 
         const ctx = document.getElementById('comp-bar-chart').getContext('2d');
         this.charts.comparison = new Chart(ctx, {
@@ -210,19 +228,27 @@ export class ComparisonPage {
                     },
                     tooltip: {
                         callbacks: {
-                            label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`,
+                            label: ctx => `${ctx.dataset.label}: $${formatCurrency(ctx.parsed.y, 0)}`,
                         },
                     },
                 },
                 scales: {
                     x: { ticks: { color: '#718096' }, grid: { display: false } },
                     y: {
-                        ticks: { color: '#718096' },
+                        ticks: {
+                            color: '#718096',
+                            callback: value => formatCurrency(value, 0),
+                        },
                         grid: { color: '#E2E8F0' },
                         beginAtZero: true,
                     },
                 },
             },
         });
+    }
+
+    destroy() {
+        Object.values(this.charts).forEach(chart => chart?.destroy());
+        this.charts = {};
     }
 }

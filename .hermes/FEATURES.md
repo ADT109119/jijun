@@ -45,7 +45,7 @@
 
 ### 高優先級 (P1)
 - [x] ~~#U01 小鍵盤自動縮起~~ — ✅ 已實作 (2026-06-05)：小鍵盤預設隱藏、點擊金額 $0 展開、圖示切換（鍵盤 ↔ 向上箭頭）
-- [ ] **#U07 比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) **← 下一步實作**
+- [ ] **#U07 比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 第一階段已完成 (2026-06-18)
 - [ ] **#U02 純自架後端雲端備份** — 不依賴 Google Drive，提供自架後端作為備份/同步目標
 - [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示
 - [ ] **#P01 週期性交易跨裝置同步問題** — 多裝置修改/刪除週期性交易時會互相覆蓋設定，導致重複紀錄和大量自動記帳記錄（需調查 recurring_transactions 的 UUID 同步機制與衝突處理）
@@ -124,6 +124,8 @@
 
 ## 更新歷史
 
+- **2026-06-18**: #U07 跨月比較報表第一階段 — 整合_comparisonReport.js + comparisonPage.js_ 到路由系統 (#comparison)，統計頁新增入口按鈕；強化 UI（返回導航、使用說明、已選數量提示、FontAwesome 圖示、環比變化 badge）；Chart.js 圖表改用 formatCurrency 統一格式；comparisonReport.js 移除 accountId 參數、改由 DataService 自動帳本過濾；ESLint + 560 tests 全過
+- **2026-06-17**: 小鍵盤虛擬鍵盤自動隱藏 (#U01 修正) — 新增 VirtualKeyboardDetector (3 層 fallback: VirtualKeyboard API → Visual Viewport API → Focus/Blur delegation)；進入新增紀錄頁時 keypad 預設顯示；手機虛擬鍵盤彈出時自動隱藏 keypad grid；虛擬鍵盤收起後自動恢復顯示；閾值 150px；iOS Safari blur 延遲 300ms 補償；orientationchange 時重置 baseline
 - **2026-06-16**: 新增 datePickerModal.js 單元測試 (27 tests, 總計 560) — 覆蓋 DOM 結構/ARIA/快速日期按鈕/確定與取消按鈕/背景點擊關閉/CSS class；網路調研：GitHub 仍 3 open issues (#14, #9, #8)、2 open PRs (Weekly code quality + Sentinel XSS)；市場趨勢：CopilotKit × AG-UI × Next.js AI 記帳 App 開發範例、Percento 專注大額金額變動記帳
 - **2026-06-14**: 信用卡功能修補 (Schema v13) — 修復 calculateCreditCardBalance 死碼 (else-if 永不會執行) + 效能優化 (改用 index 查詢替代全量載入)；修復 exportData/exportDataForSync/_exportFullBackup/importData 遺失 credit_statements (匯出/同步/備份/匯入資料遺失)；新增 importData 清除 credit_statements
 

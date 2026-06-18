@@ -2,14 +2,14 @@
  * comparisonReport.js — Cross-month/year comparison report module
  *
  * Provides data aggregation for comparing income/expense across multiple
- * months or years.  Reuses the existing StatisticsManager chart rendering
- * style so that the comparison report feels consistent with the app.
+ * months or years.  Supports per-ledger filtering and MoZE 4.0-style
+ * comparison with summary cards, bar charts, and category tables.
  *
  * Public API:
- *   ComparisonReport.calculatePeriods(periodType, periods)
+ *   ComparisonReport.calculateComparison(periodType, periods)
  *     periodType: 'month' | 'year'
  *     periods:    2-4 period labels (e.g. ['2026-05', '2026-06'])
- *   Returns: { periodLabels, incomeTotals, expenseTotals, categoryComparisons }
+ *   Returns: { periodLabels, periodData, categoryComparisons }
  */
 
 import { formatCurrency, escapeHTML } from './utils.js';
@@ -51,10 +51,9 @@ export class ComparisonReport {
      * Core comparison computation.
      * @param {'month'|'year'} periodType
      * @param {string[]} periods  e.g. ['2026-05','2026-06']  (2-4 items)
-     * @param {number|null} [accountId]
      * @returns {Promise<Object>} comparison data
      */
-    async calculateComparison(periodType, periods, accountId = null) {
+    async calculateComparison(periodType, periods) {
         if (periods.length < 2) {
             throw new Error('Comparison requires at least 2 periods');
         }
@@ -62,9 +61,8 @@ export class ComparisonReport {
             periods = periods.slice(0, 4);
         }
 
-        const records = accountId
-            ? await this.dataService.getRecords({ accountId })
-            : await this.dataService.getRecords();
+        // Fetch records (auto-filtered by activeLedgerId via DataService)
+        const records = await this.dataService.getRecords();
 
         // Pre-filter debt-collection / debt-repayment (same as getStatistics)
         const filtered = records.filter(
@@ -108,7 +106,7 @@ export class ComparisonReport {
             }
         }
 
-        /* Build a unified category set (only categories that appear in >=2 periods) */
+        /* Build a unified category set — only categories that appear in ≥2 periods */
         const allCats = new Set();
         for (const pd of periodData) {
             for (const c of Object.keys(pd.categories)) {
@@ -160,9 +158,23 @@ export class ComparisonReport {
         let html = '<div class="grid gap-4 mb-6">';
         for (const pd of periodData) {
             const net = pd.income - pd.expense;
+            // Calculate change vs previous period
+            const currentIndex = periodData.indexOf(pd);
+            const prevData = currentIndex > 0 ? periodData[currentIndex - 1] : null;
+            let changeBadge = '';
+            if (prevData) {
+                const prevNet = prevData.income - prevData.expense;
+                if (prevNet !== 0) {
+                    const change = ((net - prevNet) / Math.abs(prevNet) * 100).toFixed(1);
+                    const sign = change >= 0 ? '+' : '';
+                    const cls = change >= 0 ? 'text-wabi-income' : 'text-wabi-expense';
+                    const arrow = change >= 0 ? '↑' : '↓';
+                    changeBadge = `<span class="text-xs ${cls} ml-2">${arrow} ${sign}${change}% vs 上一期間</span>`;
+                }
+            }
             html += `
                 <div class="rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
-                    <p class="text-sm font-bold text-wabi-primary mb-2">${pd.label}</p>
+                    <p class="text-sm font-bold text-wabi-primary mb-2">${pd.label} ${changeBadge}</p>
                     <div class="flex justify-between text-sm">
                         <span class="text-wabi-income">收入 ${formatCurrency(pd.income)}</span>
                         <span class="text-wabi-expense">支出 ${formatCurrency(pd.expense)}</span>
