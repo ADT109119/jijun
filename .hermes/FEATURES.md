@@ -124,6 +124,7 @@
 
 ## 更新歷史
 
+- **2026-06-19**: #U07 跨月比較報表第二階段 — 收支類型過濾（全部/僅收入/僅支出）、與去年同月比較快捷按鈕、匯出 CSV 功能（含 UTF-8 BOM Excel 相容）；comparisonReport.js 新增 typeFilter 參數、getLastYearPeriods static method、exportToCSV method；comparisonPage.js 新增 type filter toggle、last-year button、CSV download；新增 comparisonReport.test.js (12 tests, 總計 572 tests)
 - **2026-06-18**: #U07 跨月比較報表第一階段 — 整合_comparisonReport.js + comparisonPage.js_ 到路由系統 (#comparison)，統計頁新增入口按鈕；強化 UI（返回導航、使用說明、已選數量提示、FontAwesome 圖示、環比變化 badge）；Chart.js 圖表改用 formatCurrency 統一格式；comparisonReport.js 移除 accountId 參數、改由 DataService 自動帳本過濾；ESLint + 560 tests 全過
 - **2026-06-17**: 小鍵盤虛擬鍵盤自動隱藏 (#U01 修正) — 新增 VirtualKeyboardDetector (3 層 fallback: VirtualKeyboard API → Visual Viewport API → Focus/Blur delegation)；進入新增紀錄頁時 keypad 預設顯示；手機虛擬鍵盤彈出時自動隱藏 keypad grid；虛擬鍵盤收起後自動恢復顯示；閾值 150px；iOS Safari blur 延遲 300ms 補償；orientationchange 時重置 baseline
 - **2026-06-16**: 新增 datePickerModal.js 單元測試 (27 tests, 總計 560) — 覆蓋 DOM 結構/ARIA/快速日期按鈕/確定與取消按鈕/背景點擊關閉/CSS class；網路調研：GitHub 仍 3 open issues (#14, #9, #8)、2 open PRs (Weekly code quality + Sentinel XSS)；市場趨勢：CopilotKit × AG-UI × Next.js AI 記帳 App 開發範例、Percento 專注大額金額變動記帳

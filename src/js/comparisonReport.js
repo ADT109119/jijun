@@ -51,15 +51,19 @@ export class ComparisonReport {
      * Core comparison computation.
      * @param {'month'|'year'} periodType
      * @param {string[]} periods  e.g. ['2026-05','2026-06']  (2-4 items)
+     * @param {Object} [options]  optional filters
+     * @param {'all'|'income'|'expense'} [options.typeFilter='all']  filter by record type
      * @returns {Promise<Object>} comparison data
      */
-    async calculateComparison(periodType, periods) {
+    async calculateComparison(periodType, periods, options = {}) {
         if (periods.length < 2) {
             throw new Error('Comparison requires at least 2 periods');
         }
         if (periods.length > 4) {
             periods = periods.slice(0, 4);
         }
+
+        const typeFilter = options.typeFilter || 'all';
 
         // Fetch records (auto-filtered by activeLedgerId via DataService)
         const records = await this.dataService.getRecords();
@@ -78,6 +82,11 @@ export class ComparisonReport {
 
         for (const r of filtered) {
             if (!r.date) continue;
+
+            // Apply type filter
+            if (typeFilter === 'income' && r.type !== 'income') continue;
+            if (typeFilter === 'expense' && r.type !== 'expense') continue;
+
             let matchIndex = -1;
 
             if (periodType === 'month') {
@@ -144,7 +153,71 @@ export class ComparisonReport {
                 expense: pd.expense,
             })),
             categoryComparisons,
+            typeFilter,
         };
+    }
+
+    /**
+     * Generate periods for same-month-last-year comparison.
+     * Given the user's selected periods, return parallel periods from one year ago.
+     * @param {string[]} periods  e.g. ['2026-05', '2026-06']
+     * @returns {string[]}  e.g. ['2025-05', '2025-06']
+     */
+    static getLastYearPeriods(periods) {
+        return periods.map(p => {
+            const year = parseInt(p.substring(0, 4), 10);
+            return String(year - 1) + p.substring(4);
+        });
+    }
+
+    /**
+     * Export comparison data as CSV.
+     * @param {Object} data  — result from calculateComparison
+     * @returns {string} CSV text
+     */
+    exportToCSV(data) {
+        const { periodLabels, periodData, categoryComparisons, typeFilter } = data;
+
+        const lines = [];
+
+        // Header metadata
+        lines.push(`比較類型,${periodLabels.join(', ')}`);
+        lines.push(`篩選類型,${typeFilter}`);
+        lines.push('');
+
+        // Summary section
+        lines.push('期間,收入,支出,結餘');
+        for (const pd of periodData) {
+            const net = pd.income - pd.expense;
+            lines.push(`${pd.label},${pd.income.toFixed(2)},${pd.expense.toFixed(2)},${net.toFixed(2)}`);
+        }
+        lines.push('');
+
+        // Category comparison section
+        lines.push('分類');
+        for (const lbl of periodLabels) {
+            lines[lines.length - 1] += `,${lbl}`;
+        }
+        lines[lines.length - 1] += ',變化率';
+
+        for (const row of categoryComparisons) {
+            let csvLine = `"${row.category}"`;
+            for (let i = 0; i < periodLabels.length; i++) {
+                csvLine += `,${(row[`period${i}`] || 0).toFixed(2)}`;
+            }
+            // Change rate (last vs first)
+            const first = row.period0 || 0;
+            const last = row[`period${periodLabels.length - 1}`] || 0;
+            if (first > 0) {
+                const pct = ((last - first) / first * 100).toFixed(1);
+                csvLine += `,${pct}%`;
+            } else {
+                csvLine += ',—';
+            }
+            lines.push(csvLine);
+        }
+
+        return lines.join('\n');
     }
 
     /* ------------------------------------------------------------------ */

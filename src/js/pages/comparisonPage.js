@@ -61,6 +61,18 @@ export class ComparisonPage {
                 </div>
             </div>
 
+            <!-- 快捷按鈕：與去年同月比較 -->
+            <button id="comp-lastyear-btn" class="w-full py-2 rounded-xl bg-wabi-surface border border-wabi-border text-sm font-medium mb-3 hover:bg-wabi-accent/10 transition-colors">
+                <i class="fa-solid fa-calendar-days mr-1"></i> 與去年同月比較
+            </button>
+
+            <!-- Type filter toggle -->
+            <div class="flex h-10 w-full items-center justify-center rounded-lg bg-gray-200/50 p-1 mb-4">
+                <button id="comp-filter-all" class="type-filter-btn flex-1 h-full rounded-md px-2 text-sm font-medium bg-wabi-surface text-wabi-primary shadow-sm">全部</button>
+                <button id="comp-filter-income" class="type-filter-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">僅收入</button>
+                <button id="comp-filter-expense" class="type-filter-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">僅支出</button>
+            </div>
+
             <!-- Compare button -->
             <button id="comp-run-btn" class="w-full py-3 rounded-xl bg-wabi-accent text-white font-bold mb-6 disabled:opacity-50 disabled:cursor-not-allowed">
                 <i class="fa-solid fa-code-compare mr-1"></i> 開始比較
@@ -71,7 +83,9 @@ export class ComparisonPage {
         `;
 
         const periodTypeBtns = container.querySelectorAll('.period-type-btn');
+        const typeFilterBtns = container.querySelectorAll('.type-filter-btn');
         let currentPeriodType = 'month';
+        let currentTypeFilter = 'all';
         let selectedPeriods = new Set(defaultMonths);
 
         const updateSelectedCount = () => {
@@ -109,6 +123,7 @@ export class ComparisonPage {
             updateSelectedCount();
         };
 
+        // Period type toggle
         periodTypeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 currentPeriodType = btn.id === 'comp-period-month' ? 'month' : 'year';
@@ -132,6 +147,38 @@ export class ComparisonPage {
             });
         });
 
+        // Type filter toggle
+        typeFilterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentTypeFilter = btn.id === 'comp-filter-all' ? 'all' :
+                                     btn.id === 'comp-filter-income' ? 'income' : 'expense';
+                typeFilterBtns.forEach(b => {
+                    if (b === btn) {
+                        b.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
+                        b.classList.remove('text-wabi-text-secondary');
+                    } else {
+                        b.classList.remove('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
+                        b.classList.add('text-wabi-text-secondary');
+                    }
+                });
+            });
+        });
+
+        // Last year comparison shortcut
+        container.querySelector('#comp-lastyear-btn').addEventListener('click', () => {
+            const selectedArr = Array.from(selectedPeriods).sort();
+            if (selectedArr.length < 2) {
+                return; // Not enough periods selected
+            }
+            // If current periods are month-type, generate last-year equivalents
+            if (currentPeriodType === 'month') {
+                const lastYearPeriods = ComparisonReport.getLastYearPeriods(selectedArr);
+                // Clear current selection and select last year periods
+                selectedPeriods = new Set(lastYearPeriods);
+                renderCheckboxes();
+            }
+        });
+
         renderCheckboxes();
 
         container.querySelector('#comp-run-btn').addEventListener('click', async () => {
@@ -143,7 +190,9 @@ export class ComparisonPage {
             }
 
             try {
-                const data = await comp.calculateComparison(currentPeriodType, selectedArr);
+                const data = await comp.calculateComparison(currentPeriodType, selectedArr, {
+                    typeFilter: currentTypeFilter,
+                });
                 this.renderResults(container, comp, data);
             } catch (err) {
                 container.querySelector('#comp-results').innerHTML =
@@ -169,11 +218,43 @@ export class ComparisonPage {
         const tableDiv = document.createElement('div');
         tableDiv.id = 'comp-category-table';
         tableDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-        tableDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-table-list mr-2"></i>分類支出比較</h2>';
+        // Update title based on type filter
+        const filterLabel = data.typeFilter === 'income' ? '收入' :
+                           data.typeFilter === 'expense' ? '支出' : '收支';
+        tableDiv.innerHTML = `<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-table-list mr-2"></i>分類${filterLabel}比較</h2>`;
         const tableInner = document.createElement('div');
         comp.renderCategoryTable(tableInner, data.periodLabels, data.categoryComparisons);
         tableDiv.appendChild(tableInner);
         resultsEl.appendChild(tableDiv);
+
+        // Export CSV button
+        const exportDiv = document.createElement('div');
+        exportDiv.className = 'mt-6';
+        exportDiv.innerHTML = `
+            <button id="comp-export-csv" class="w-full py-3 rounded-xl bg-wabi-surface border border-wabi-border font-medium hover:bg-wabi-accent/10 transition-colors">
+                <i class="fa-solid fa-file-export mr-1"></i> 匯出 CSV
+            </button>
+        `;
+        exportDiv.querySelector('#comp-export-csv').addEventListener('click', () => {
+            this.downloadCSV(comp, data);
+        });
+        resultsEl.appendChild(exportDiv);
+    }
+
+    /**
+     * Download comparison data as CSV file.
+     */
+    downloadCSV(comp, data) {
+        const csv = comp.exportToCSV(data);
+        const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+        const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const fileName = `比較報表_${data.periodLabels.join('vs')}.csv`;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
     renderComparisonChart(container, data) {
