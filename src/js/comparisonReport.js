@@ -171,6 +171,67 @@ export class ComparisonReport {
     }
 
     /**
+     * Calculate percentage breakdown per period for a given category set.
+     * Useful for rendering stacked-bar or percentage-comparison charts.
+     * @param {Object[]} periodData — from calculateComparison result
+     * @param {Object[]} categoryComparisons — from calculateComparison result
+     * @returns {Object[]}  each item: { category, percentages: number[] }
+     *   percentages[i] = category amount / total expense for period i (as 0-100)
+     */
+    static calculatePercentageBreakdown(periodData, categoryComparisons) {
+        // Group by category, using absolute values (expense)
+        const result = categoryComparisons.map(row => {
+            const percentages = [];
+            for (let i = 0; i < periodData.length; i++) {
+                const val = Math.abs(row[`period${i}Signed`] || 0);
+                const total = periodData[i].expense;
+                percentages.push(total > 0 ? (val / total * 100) : 0);
+            }
+            return {
+                category: row.category,
+                percentages,
+            };
+        });
+        return result;
+    }
+
+    /**
+     * Calculate savings rate for each period.
+     * @param {Object[]} periodData — from calculateComparison result
+     * @returns {number[]}  savings rates as percentages (0-100)
+     */
+    static calculateSavingsRates(periodData) {
+        return periodData.map(pd => {
+            if (pd.income <= 0) return 0;
+            return ((pd.income - pd.expense) / pd.income * 100);
+        });
+    }
+
+    /**
+     * Generate trend indicators between adjacent periods.
+     * @param {number[]} values — numeric values per period
+     * @returns {string[]}  trend symbols: '↑' (increase), '↓' (decrease), '—' (flat/no prev), 'N/A' (prev is zero)
+     *   index 0 is always '—' (no previous period to compare)
+     */
+    static calculateTrends(values) {
+        if (values.length === 0) return [];
+        const trends = ['—']; // first period has no predecessor
+        for (let i = 1; i < values.length; i++) {
+            const prev = values[i - 1];
+            const curr = values[i];
+            if (prev === 0) {
+                trends.push(curr > 0 ? '↑' : '—');
+            } else {
+                const change = ((curr - prev) / Math.abs(prev) * 100);
+                if (change > 0.5) trends.push('↑');
+                else if (change < -0.5) trends.push('↓');
+                else trends.push('—');
+            }
+        }
+        return trends;
+    }
+
+    /**
      * Export comparison data as CSV.
      * @param {Object} data  — result from calculateComparison
      * @returns {string} CSV text
@@ -310,6 +371,91 @@ export class ComparisonReport {
                 html += `<td class="text-right py-2 px-1 text-wabi-text-secondary">—</td>`;
             }
 
+            html += '</tr>';
+        }
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * Render savings rate cards with trend indicators.
+     * Shows savings rate per period with period-over-period trend arrows.
+     */
+    renderSavingsRates(container, periodData, periodLabels) {
+        const rates = ComparisonReport.calculateSavingsRates(periodData);
+        const trends = ComparisonReport.calculateTrends(rates.map(Math.abs));
+
+        let html = '<div class="grid gap-3 mb-4">';
+        for (let i = 0; i < periodData.length; i++) {
+            const rate = rates[i];
+            const trend = trends[i];
+            const net = periodData[i].income - periodData[i].expense;
+            const isPositive = rate >= 0;
+            const trendColor = trend === '↑' ? 'text-wabi-income' :
+                               trend === '↓' ? 'text-wabi-expense' : 'text-wabi-text-secondary';
+            html += `
+                <div class="rounded-xl bg-wabi-surface p-3 shadow-sm border border-wabi-border flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-bold text-wabi-primary">${periodLabels[i]}</p>
+                        <p class="text-xs text-wabi-text-secondary mt-1">結餘 ${formatCurrency(net)}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-lg font-bold ${isPositive ? 'text-wabi-income' : 'text-wabi-expense'}">
+                            ${isPositive ? '+' : ''}${rate.toFixed(1)}%
+                        </span>
+                        <p class="text-xs ${trendColor} mt-1">儲蓄率 ${trend}</p>
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * Render percentage breakdown comparison table.
+     * Shows what percentage each category represents of total expenses per period.
+     */
+    renderPercentageTable(container, periodLabels, periodData, categoryComparisons) {
+        const breakdown = ComparisonReport.calculatePercentageBreakdown(
+            periodData,
+            categoryComparisons
+        );
+
+        if (breakdown.length === 0) {
+            container.innerHTML =
+                '<p class="text-center text-wabi-text-secondary py-6">無百分比資料</p>';
+            return;
+        }
+
+        let html = `<div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-wabi-border">
+                        <th class="text-left py-2 px-1 text-wabi-text-secondary">分類</th>`;
+
+        for (const lbl of periodLabels) {
+            html += `<th class="text-right py-2 px-1 text-wabi-text-secondary">${escapeHTML(lbl)}</th>`;
+        }
+        html += '</tr></thead><tbody>';
+
+        for (const row of breakdown) {
+            const catObj = this.categoryManager.getCategoryById('expense', row.category) ||
+                           this.categoryManager.getCategoryById('income', row.category);
+            const catName = catObj ? catObj.name : row.category;
+            html += `<tr class="border-b border-wabi-border/50">`;
+            html += `<td class="py-2 px-1 font-medium">${escapeHTML(catName)}</td>`;
+            for (let i = 0; i < row.percentages.length; i++) {
+                const pct = row.percentages[i].toFixed(1);
+                // Visual bar proportional to percentage
+                html += `<td class="text-right py-2 px-1">
+                    <span class="text-xs">${pct}%</span>
+                    <div class="w-full h-1.5 bg-gray-200 rounded-full mt-1">
+                        <div class="h-1.5 bg-wabi-accent rounded-full" style="width:${Math.min(row.percentages[i], 100)}%"></div>
+                    </div>
+                </td>`;
+            }
             html += '</tr>';
         }
 

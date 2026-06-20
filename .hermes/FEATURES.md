@@ -44,8 +44,7 @@
 ## 待開發
 
 ### 高優先級 (P1)
-- [x] ~~#U01 小鍵盤自動縮起~~ — ✅ 已實作 (2026-06-05)：小鍵盤預設隱藏、點擊金額 $0 展開、圖示切換（鍵盤 ↔ 向上箭頭）
-- [ ] **#U07 比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 第一階段已完成 (2026-06-18)
+| [ ] **#U07 比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 第二階段已完成 (2026-06-19)
 - [ ] **#U02 純自架後端雲端備份** — 不依賴 Google Drive，提供自架後端作為備份/同步目標
 - [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示
 - [ ] **#P01 週期性交易跨裝置同步問題** — 多裝置修改/刪除週期性交易時會互相覆蓋設定，導致重複紀錄和大量自動記帳記錄（需調查 recurring_transactions 的 UUID 同步機制與衝突處理）
@@ -124,6 +123,7 @@
 
 ## 更新歷史
 
+- **2026-06-20**: #U07 跨月比較報表第三階段 — 儲蓄率比較卡片（含相鄰期間趨勢箭頭 ↑↓—）、支出比例比較表格（含視覺化比例條）、三項新 static method（calculateSavingsRates、calculateTrends、calculatePercentageBreakdown）；comparisonReport.js 新增 renderSavingsRates + renderPercentageTable；comparisonPage.js renderResults 整合新區塊；comparisonReport.test.js 新增 18 個測試（總計 30 tests, 全局 590 tests）；ESLint 乾淨
 - **2026-06-19**: #U07 跨月比較報表第二階段 — 收支類型過濾（全部/僅收入/僅支出）、與去年同月比較快捷按鈕、匯出 CSV 功能（含 UTF-8 BOM Excel 相容）；comparisonReport.js 新增 typeFilter 參數、getLastYearPeriods static method、exportToCSV method；comparisonPage.js 新增 type filter toggle、last-year button、CSV download；新增 comparisonReport.test.js (12 tests, 總計 572 tests)
 - **2026-06-18**: #U07 跨月比較報表第一階段 — 整合_comparisonReport.js + comparisonPage.js_ 到路由系統 (#comparison)，統計頁新增入口按鈕；強化 UI（返回導航、使用說明、已選數量提示、FontAwesome 圖示、環比變化 badge）；Chart.js 圖表改用 formatCurrency 統一格式；comparisonReport.js 移除 accountId 參數、改由 DataService 自動帳本過濾；ESLint + 560 tests 全過
 - **2026-06-17**: 小鍵盤虛擬鍵盤自動隱藏 (#U01 修正) — 新增 VirtualKeyboardDetector (3 層 fallback: VirtualKeyboard API → Visual Viewport API → Focus/Blur delegation)；進入新增紀錄頁時 keypad 預設顯示；手機虛擬鍵盤彈出時自動隱藏 keypad grid；虛擬鍵盤收起後自動恢復顯示；閾值 150px；iOS Safari blur 延遲 300ms 補償；orientationchange 時重置 baseline

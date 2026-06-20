@@ -211,8 +211,28 @@ export class ComparisonPage {
         resultsEl.innerHTML = '';
         resultsEl.appendChild(summaryDiv);
 
+        // Savings rate cards (new phase 3)
+        const savingsDiv = document.createElement('div');
+        savingsDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+        savingsDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-piggy-bank mr-2"></i>儲蓄率比較</h2>';
+        const savingsInner = document.createElement('div');
+        comp.renderSavingsRates(savingsInner, data.periodData, data.periodLabels);
+        savingsDiv.appendChild(savingsInner);
+        resultsEl.appendChild(savingsDiv);
+
         // Chart (bar chart for income/expense comparison)
         this.renderComparisonChart(container, data);
+
+        // Percentage breakdown table (new phase 3)
+        if (data.typeFilter !== 'income') {
+            const pctDiv = document.createElement('div');
+            pctDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+            pctDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-chart-pie mr-2"></i>支出比例比較</h2>';
+            const pctInner = document.createElement('div');
+            comp.renderPercentageTable(pctInner, data.periodLabels, data.periodData, data.categoryComparisons);
+            pctDiv.appendChild(pctInner);
+            resultsEl.appendChild(pctDiv);
+        }
 
         // Category table
         const tableDiv = document.createElement('div');
