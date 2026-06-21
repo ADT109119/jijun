@@ -123,7 +123,7 @@
 
 ## 更新歷史
 
-- **2026-06-20**: #U07 跨月比較報表第三階段 — 儲蓄率比較卡片（含相鄰期間趨勢箭頭 ↑↓—）、支出比例比較表格（含視覺化比例條）、三項新 static method（calculateSavingsRates、calculateTrends、calculatePercentageBreakdown）；comparisonReport.js 新增 renderSavingsRates + renderPercentageTable；comparisonPage.js renderResults 整合新區塊；comparisonReport.test.js 新增 18 個測試（總計 30 tests, 全局 590 tests）；ESLint 乾淨
+- **2026-06-21**: #U07 跨月比較報表第四階段 — 日均支出比較（含天數校正、閏年處理）、分類排名比較（Top 5 排名+變動指示器🥇🥈🥉+新分類標記）；comparisonReport.js 新增 getDaysInPeriod、calculateDailyAverages、renderDailyAverages、renderCategoryRankings；comparisonPage.js renderResults 整合日均支出卡片與分類排名區塊；comparisonReport.test.js 新增 11 個測試（總計 601 tests）；ESLint 乾淨
 - **2026-06-19**: #U07 跨月比較報表第二階段 — 收支類型過濾（全部/僅收入/僅支出）、與去年同月比較快捷按鈕、匯出 CSV 功能（含 UTF-8 BOM Excel 相容）；comparisonReport.js 新增 typeFilter 參數、getLastYearPeriods static method、exportToCSV method；comparisonPage.js 新增 type filter toggle、last-year button、CSV download；新增 comparisonReport.test.js (12 tests, 總計 572 tests)
 - **2026-06-18**: #U07 跨月比較報表第一階段 — 整合_comparisonReport.js + comparisonPage.js_ 到路由系統 (#comparison)，統計頁新增入口按鈕；強化 UI（返回導航、使用說明、已選數量提示、FontAwesome 圖示、環比變化 badge）；Chart.js 圖表改用 formatCurrency 統一格式；comparisonReport.js 移除 accountId 參數、改由 DataService 自動帳本過濾；ESLint + 560 tests 全過
 - **2026-06-17**: 小鍵盤虛擬鍵盤自動隱藏 (#U01 修正) — 新增 VirtualKeyboardDetector (3 層 fallback: VirtualKeyboard API → Visual Viewport API → Focus/Blur delegation)；進入新增紀錄頁時 keypad 預設顯示；手機虛擬鍵盤彈出時自動隱藏 keypad grid；虛擬鍵盤收起後自動恢復顯示；閾值 150px；iOS Safari blur 延遲 300ms 補償；orientationchange 時重置 baseline

@@ -247,3 +247,78 @@ describe('ComparisonReport.calculatePercentageBreakdown', () => {
         expect(Array.isArray(result[0].percentages)).toBe(true);
     });
 });
+
+// ==================== getDaysInPeriod (static) ====================
+
+describe('ComparisonReport.getDaysInPeriod', () => {
+    it('平年 2 月回傳 28', () => {
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-02')).toBe(28);
+    });
+
+    it('閏年 2 月回傳 29', () => {
+        expect(ComparisonReport.getDaysInPeriod('month', '2024-02')).toBe(29);
+    });
+
+    it('31 天之月回傳 31', () => {
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-01')).toBe(31);
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-03')).toBe(31);
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-12')).toBe(31);
+    });
+
+    it('30 天之月回傳 30', () => {
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-04')).toBe(30);
+        expect(ComparisonReport.getDaysInPeriod('month', '2026-06')).toBe(30);
+    });
+
+    it('平年回傳 365', () => {
+        expect(ComparisonReport.getDaysInPeriod('year', '2026')).toBe(365);
+    });
+
+    it('閏年回傳 366', () => {
+        expect(ComparisonReport.getDaysInPeriod('year', '2024')).toBe(366);
+    });
+});
+
+// ==================== calculateDailyAverages (static) ====================
+
+describe('ComparisonReport.calculateDailyAverages', () => {
+    it('計算正確的日均支出', () => {
+        const periodData = [
+            { label: '2026-01', income: 50000, expense: 31000 }, // 31 days
+            { label: '2026-02', income: 50000, expense: 28000 }, // 28 days
+        ];
+        const labels = ['2026-01', '2026-02'];
+        const result = ComparisonReport.calculateDailyAverages(periodData, 'month', labels);
+        expect(result[0]).toBeCloseTo(31000 / 31, 1);
+        expect(result[1]).toBeCloseTo(28000 / 28, 1);
+    });
+
+    it('零支出時回傳 0', () => {
+        const periodData = [{ label: '2026-01', income: 50000, expense: 0 }];
+        const result = ComparisonReport.calculateDailyAverages(periodData, 'month', ['2026-01']);
+        expect(result[0]).toBe(0);
+    });
+
+    it('年度期間也能計算', () => {
+        const periodData = [{ label: '2026', income: 600000, expense: 365000 }];
+        const result = ComparisonReport.calculateDailyAverages(periodData, 'year', ['2026']);
+        expect(result[0]).toBeCloseTo(365000 / 365, 1);
+    });
+
+    it('空陣列回傳空陣列', () => {
+        expect(ComparisonReport.calculateDailyAverages([], 'month', [])).toEqual([]);
+    });
+});
+
+// ==================== calculateComparison returns periodType ====================
+
+describe('ComparisonReport.calculateComparison periodType', () => {
+    it('回傳物件包含 periodType 欄位', async () => {
+        const mockDS = {
+            getRecords: async () => [],
+        };
+        const comp = new ComparisonReport(mockDS, null);
+        const result = await comp.calculateComparison('year', ['2025', '2026']);
+        expect(result.periodType).toBe('year');
+    });
+});

@@ -234,6 +234,28 @@ export class ComparisonPage {
             resultsEl.appendChild(pctDiv);
         }
 
+        // Daily average expense cards (new phase 4)
+        if (data.typeFilter !== 'income') {
+            const dailyDiv = document.createElement('div');
+            dailyDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+            dailyDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-calendar-day mr-2"></i>日均支出比較</h2>';
+            const dailyInner = document.createElement('div');
+            comp.renderDailyAverages(dailyInner, data.periodData, data.periodType, data.periodLabels);
+            dailyDiv.appendChild(dailyInner);
+            resultsEl.appendChild(dailyDiv);
+        }
+
+        // Category ranking comparison (new phase 4)
+        if (data.typeFilter !== 'income') {
+            const rankingDiv = document.createElement('div');
+            rankingDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+            rankingDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-trophy mr-2"></i>分類排名比較</h2>';
+            const rankingInner = document.createElement('div');
+            comp.renderCategoryRankings(rankingInner, data.periodLabels, data.categoryComparisons);
+            rankingDiv.appendChild(rankingInner);
+            resultsEl.appendChild(rankingDiv);
+        }
+
         // Category table
         const tableDiv = document.createElement('div');
         tableDiv.id = 'comp-category-table';

@@ -462,5 +462,163 @@ export class ComparisonReport {
         html += '</tbody></table></div>';
         container.innerHTML = html;
     }
+
+    /**
+     * Get the number of days in a given period.
+     * @param {'month'|'year'} periodType
+     * @param {string} period  e.g. '2026-02' or '2026'
+     * @returns {number}  number of days
+     */
+    static getDaysInPeriod(periodType, period) {
+        if (periodType === 'month') {
+            const [year, month] = period.split('-').map(Number);
+            return new Date(year, month, 0).getDate(); // days in month
+        }
+        // year
+        const year = parseInt(period, 10);
+        const feb29 = new Date(year, 1, 29).getDate() === 29 ? 1 : 0;
+        return 365 + feb29;
+    }
+
+    /**
+     * Calculate daily average expense for each period (accounts for month-length differences).
+     * @param {Object[]} periodData — from calculateComparison result
+     * @param {'month'|'year'} periodType
+     * @param {string[]} periodLabels
+     * @returns {number[]}  daily average expenses per period
+     */
+    static calculateDailyAverages(periodData, periodType, periodLabels) {
+        return periodData.map((pd, i) => {
+            const days = ComparisonReport.getDaysInPeriod(periodType, periodLabels[i]);
+            return days > 0 ? pd.expense / days : 0;
+        });
+    }
+
+    /**
+     * Render daily average expense cards.
+     */
+    renderDailyAverages(container, periodData, periodType, periodLabels) {
+        const dailyAvgs = ComparisonReport.calculateDailyAverages(periodData, periodType, periodLabels);
+        const trends = ComparisonReport.calculateTrends(dailyAvgs);
+
+        let html = '<div class="grid gap-3 mb-4">';
+        for (let i = 0; i < periodData.length; i++) {
+            const avg = dailyAvgs[i];
+            const days = ComparisonReport.getDaysInPeriod(periodType, periodLabels[i]);
+            const trend = trends[i];
+            const trendColor = trend === '↑' ? 'text-wabi-expense' :
+                               trend === '↓' ? 'text-wabi-income' : 'text-wabi-text-secondary';
+            html += `
+                <div class="rounded-xl bg-wabi-surface p-3 shadow-sm border border-wabi-border flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-bold text-wabi-primary">${periodLabels[i]}</p>
+                        <p class="text-xs text-wabi-text-secondary mt-1">${days} 天</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-lg font-bold text-wabi-expense">
+                            ${formatCurrency(avg)}
+                        </span>
+                        <p class="text-xs ${trendColor} mt-1">日均支出 ${trend}</p>
+                    </div>
+                </div>
+            `;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * Render category ranking comparison — shows top spending categories per period with rank change indicators.
+     * @param {HTMLElement} container
+     * @param {string[]} periodLabels
+     * @param {Object[]} categoryComparisons
+     * @param {number} [topN=5]  number of top categories to show per period
+     */
+    renderCategoryRankings(container, periodLabels, categoryComparisons, topN = 5) {
+        if (categoryComparisons.length === 0) {
+            container.innerHTML =
+                '<p class="text-center text-wabi-text-secondary py-6">無可比對的分類資料</p>';
+            return;
+        }
+
+        // Build ranked lists per period (expense categories only, sorted by absolute value desc)
+        const rankings = periodLabels.map((_, i) => {
+            const periodCats = categoryComparisons
+                .filter(row => (row[`period${i}Signed`] || 0) < 0) // expense only (negative)
+                .map(row => ({
+                    category: row.category,
+                    amount: Math.abs(row[`period${i}`] || 0),
+                }))
+                .sort((a, b) => b.amount - a.amount)
+                .slice(0, topN);
+            return periodCats;
+        });
+
+        // Build rank lookup: period -> category -> rank (1-based)
+        const rankLookup = rankings.map(periodCats => {
+            const lookup = {};
+            periodCats.forEach((cat, idx) => {
+                lookup[cat.category] = idx + 1;
+            });
+            return lookup;
+        });
+
+        let html = '<div class="space-y-4">';
+
+        // Render each period's ranking
+        for (let i = 0; i < periodLabels.length; i++) {
+            html += `<div class="rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
+                <h3 class="text-sm font-bold text-wabi-primary mb-3">${periodLabels[i]} Top ${Math.min(topN, rankings[i].length)} 支出分類</h3>`;
+
+            if (rankings[i].length === 0) {
+                html += '<p class="text-xs text-wabi-text-secondary py-2">無支出分類</p>';
+            } else {
+                html += '<div class="space-y-2">';
+                for (let r = 0; r < rankings[i].length; r++) {
+                    const cat = rankings[i][r];
+                    const rank = r + 1;
+                    const catObj = this.categoryManager.getCategoryById('expense', cat.category) ||
+                                   this.categoryManager.getCategoryById('income', cat.category);
+                    const catName = catObj ? catObj.name : cat.category;
+
+                    // Rank change indicator (compare with previous period)
+                    let rankChange = '';
+                    if (i > 0 && rankLookup[i - 1][cat.category]) {
+                        const prevRank = rankLookup[i - 1][cat.category];
+                        const diff = prevRank - rank; // positive = improved (lower rank number)
+                        if (diff > 0) {
+                            rankChange = `<span class="text-xs text-wabi-income ml-1">↑${diff}</span>`;
+                        } else if (diff < 0) {
+                            rankChange = `<span class="text-xs text-wabi-expense ml-1">↓${Math.abs(diff)}</span>`;
+                        } else {
+                            rankChange = `<span class="text-xs text-wabi-text-secondary ml-1">—</span>`;
+                        }
+                    } else if (i > 0 && !rankLookup[i - 1][cat.category]) {
+                        rankChange = `<span class="text-xs text-wabi-accent ml-1">新</span>`;
+                    }
+
+                    // Medal/number for top 3
+                    const rankDisplay = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+
+                    html += `
+                        <div class="flex items-center justify-between py-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm w-8 text-center">${rankDisplay}</span>
+                                <span class="text-sm font-medium">${escapeHTML(catName)}</span>
+                                ${rankChange}
+                            </div>
+                            <span class="text-sm text-wabi-expense">${formatCurrency(cat.amount)}</span>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
 }
 
