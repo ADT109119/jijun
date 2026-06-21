@@ -1,22 +1,22 @@
 export default {
-    meta: {
-        id: 'com.walkingfish.pet',
-        name: '桌面寵物',
-        version: '1.7',
-        description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
-        author: 'The walking fish 步行魚',
-        icon: 'fa-cat'
-    },
-    init(context) {
-        // Load position or default
-        const savedPos = context.storage.getJSON('pos');
-        
-        // Create Pet Element
-        const pet = document.createElement('div');
-        pet.id = 'screen-pet';
-        
-        // --- SVG Design (Kawaii Style) ---
-        pet.innerHTML = `
+  meta: {
+    id: 'com.walkingfish.pet',
+    name: '桌面寵物',
+    version: '1.7',
+    description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
+    author: 'The walking fish 步行魚',
+    icon: 'fa-cat',
+  },
+  init(context) {
+    // Load position or default
+    const savedPos = context.storage.getJSON('pos')
+
+    // Create Pet Element
+    const pet = document.createElement('div')
+    pet.id = 'screen-pet'
+
+    // --- SVG Design (Kawaii Style) ---
+    pet.innerHTML = `
             <svg viewBox="0 0 120 120" width="80" height="80" style="overflow: visible;">
                 <defs>
                     <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -137,10 +137,10 @@ export default {
                     </g>
                 </g>
             </svg>
-        `;
+        `
 
-        // Apply styles
-        pet.style.cssText = `
+    // Apply styles
+    pet.style.cssText = `
             position: fixed;
             width: 80px;
             height: 80px;
@@ -150,15 +150,15 @@ export default {
             touch-action: none;
             user-select: none;
             /* Default position if nothing saved */
-            left: ${savedPos ? savedPos.left : (window.innerWidth - 100) + 'px'};
-            top: ${savedPos ? savedPos.top : (window.innerHeight - 100) + 'px'};
+            left: ${savedPos ? savedPos.left : window.innerWidth - 100 + 'px'};
+            top: ${savedPos ? savedPos.top : window.innerHeight - 100 + 'px'};
             transition: transform 0.2s, left 0.5s ease-in-out, top 0.5s ease-in-out; 
             /* Note: We use ease-in-out for walking. For dragging we override this */
-        `;
+        `
 
-        // CSS Animations & States
-        const style = document.createElement('style');
-        style.textContent = `
+    // CSS Animations & States
+    const style = document.createElement('style')
+    style.textContent = `
             /* --- Animations --- */
             @keyframes floatUp {
                 0% { opacity: 1; transform: translateY(0) scale(1) rotate(-10deg); }
@@ -228,195 +228,206 @@ export default {
             .pet-flipped .cat-wrapper {
                 transform: scaleX(-1);
             }
-        `;
-        document.head.appendChild(style);
-        document.body.appendChild(pet);
+        `
+    document.head.appendChild(style)
+    document.body.appendChild(pet)
 
-        // --- Logic ---
-        
-        let currentState = 'idle'; // idle, walking, dragging
-        let wanderTimer = null;
-        let isFlipped = false;
+    // --- Logic ---
 
-        // --- Interaction: Dragging ---
-        let dragOffsetX = 0;
-        let dragOffsetY = 0;
-        let isDraggingMotion = false;
-        let dragStartTime = 0;
+    let currentState = 'idle' // idle, walking, dragging
+    let wanderTimer = null
+    let isFlipped = false
 
-        const startDrag = (e) => {
-            currentState = 'dragging';
-            isDraggingMotion = false;
-            dragStartTime = Date.now();
-            clearTimeout(wanderTimer); // Stop wandering
-            
-            pet.classList.add('pet-scruffed');
-            pet.classList.remove('pet-walking');
+    // --- Interaction: Dragging ---
+    let dragOffsetX = 0
+    let dragOffsetY = 0
+    let isDraggingMotion = false
+    let dragStartTime = 0
 
-            const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-            const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
-            
-            // Get precise offset from the top-left of the element
-            const rect = pet.getBoundingClientRect();
-            dragOffsetX = clientX - rect.left;
-            dragOffsetY = clientY - rect.top;
-        };
+    const startDrag = e => {
+      currentState = 'dragging'
+      isDraggingMotion = false
+      dragStartTime = Date.now()
+      clearTimeout(wanderTimer) // Stop wandering
 
-        const onDrag = (e) => {
-            if (currentState !== 'dragging') return;
-            e.preventDefault(); // Prevent scrolling while dragging
-            isDraggingMotion = true;
+      pet.classList.add('pet-scruffed')
+      pet.classList.remove('pet-walking')
 
-            const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-            const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+      const clientX = e.type.includes('mouse')
+        ? e.clientX
+        : e.touches[0].clientX
+      const clientY = e.type.includes('mouse')
+        ? e.clientY
+        : e.touches[0].clientY
 
-            // Raw position update (no strict boundary check during drag for smoothness)
-            pet.style.left = `${clientX - dragOffsetX}px`;
-            pet.style.top = `${clientY - dragOffsetY}px`;
-        };
+      // Get precise offset from the top-left of the element
+      const rect = pet.getBoundingClientRect()
+      dragOffsetX = clientX - rect.left
+      dragOffsetY = clientY - rect.top
+    }
 
-        const endDrag = (e) => {
-            if (currentState !== 'dragging') return;
-            
-            currentState = 'idle';
-            pet.classList.remove('pet-scruffed');
+    const onDrag = e => {
+      if (currentState !== 'dragging') return
+      e.preventDefault() // Prevent scrolling while dragging
+      isDraggingMotion = true
 
-            // Final Boundary Check and Save
-            const rect = pet.getBoundingClientRect();
-            let newX = rect.left;
-            let newY = rect.top;
+      const clientX = e.type.includes('mouse')
+        ? e.clientX
+        : e.touches[0].clientX
+      const clientY = e.type.includes('mouse')
+        ? e.clientY
+        : e.touches[0].clientY
 
-            // Keep fully on screen
-            if (newX < 0) newX = 0;
-            if (newY < 0) newY = 0;
-            if (newX + rect.width > window.innerWidth) newX = window.innerWidth - rect.width;
-            if (newY + rect.height > window.innerHeight) newY = window.innerHeight - rect.height;
+      // Raw position update (no strict boundary check during drag for smoothness)
+      pet.style.left = `${clientX - dragOffsetX}px`
+      pet.style.top = `${clientY - dragOffsetY}px`
+    }
 
-            pet.style.left = `${newX}px`;
-            pet.style.top = `${newY}px`;
+    const endDrag = e => {
+      if (currentState !== 'dragging') return
 
-            savePosition(newX, newY);
-            
-            if (!isDraggingMotion && (Date.now() - dragStartTime < 400)) {
-                // Ignore native click later, trigger interaction now
-                triggerInteraction();
-            }
+      currentState = 'idle'
+      pet.classList.remove('pet-scruffed')
 
-            // Resume wandering after a delay
-            scheduleWander();
-        };
+      // Final Boundary Check and Save
+      const rect = pet.getBoundingClientRect()
+      let newX = rect.left
+      let newY = rect.top
 
-        const savePosition = (x, y) => {
-            context.storage.setJSON('pos', { left: `${x}px`, top: `${y}px` });
-        };
+      // Keep fully on screen
+      if (newX < 0) newX = 0
+      if (newY < 0) newY = 0
+      if (newX + rect.width > window.innerWidth)
+        newX = window.innerWidth - rect.width
+      if (newY + rect.height > window.innerHeight)
+        newY = window.innerHeight - rect.height
 
-        // --- Logic: Wandering ---
-        const wander = () => {
-            if (currentState === 'dragging') return;
+      pet.style.left = `${newX}px`
+      pet.style.top = `${newY}px`
 
-            // Decide: Walk or Stay? (60% stay, 40% walk)
-            if (Math.random() > 0.4) {
-                currentState = 'idle';
-                pet.classList.remove('pet-walking');
-                scheduleWander();
-                return;
-            }
+      savePosition(newX, newY)
 
-            // Pick a destination
-            currentState = 'walking';
-            pet.classList.add('pet-walking');
+      if (!isDraggingMotion && Date.now() - dragStartTime < 400) {
+        // Ignore native click later, trigger interaction now
+        triggerInteraction()
+      }
 
-            const rect = pet.getBoundingClientRect();
-            const currentX = rect.left;
-            const currentY = rect.top;
+      // Resume wandering after a delay
+      scheduleWander()
+    }
 
-            // Move within reason (max 200px away) but stay on screen
-            const moveDist = 100 + Math.random() * 150;
-            const angle = Math.random() * Math.PI * 2;
-            
-            let targetX = currentX + Math.cos(angle) * moveDist;
-            let targetY = currentY + Math.sin(angle) * moveDist;
+    const savePosition = (x, y) => {
+      context.storage.setJSON('pos', { left: `${x}px`, top: `${y}px` })
+    }
 
-            // Clamp to screen
-            targetX = Math.max(0, Math.min(window.innerWidth - 80, targetX));
-            targetY = Math.max(0, Math.min(window.innerHeight - 80, targetY));
+    // --- Logic: Wandering ---
+    const wander = () => {
+      if (currentState === 'dragging') return
 
-            // Face direction
-            if (targetX < currentX) {
-                pet.classList.add('pet-flipped');
-                isFlipped = true;
-            } else {
-                pet.classList.remove('pet-flipped');
-                isFlipped = false;
-            }
+      // Decide: Walk or Stay? (60% stay, 40% walk)
+      if (Math.random() > 0.4) {
+        currentState = 'idle'
+        pet.classList.remove('pet-walking')
+        scheduleWander()
+        return
+      }
 
-            // Calculate duration based on distance (speed ~ 50px/s)
-            const dist = Math.sqrt(Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2));
-            const duration = dist / 50; 
+      // Pick a destination
+      currentState = 'walking'
+      pet.classList.add('pet-walking')
 
-            // Apply transition just for this move
-            pet.style.transition = `left ${duration}s linear, top ${duration}s linear`;
-            pet.style.left = `${targetX}px`;
-            pet.style.top = `${targetY}px`;
+      const rect = pet.getBoundingClientRect()
+      const currentX = rect.left
+      const currentY = rect.top
 
-            // Wait for arrival
-            wanderTimer = setTimeout(() => {
-                if (currentState === 'dragging') return;
-                
-                // Arrived
-                currentState = 'idle';
-                pet.classList.remove('pet-walking');
-                
-                // Reset transition for drag responsiveness
-                pet.style.transition = 'transform 0.2s';
-                
-                savePosition(targetX, targetY);
-                scheduleWander();
+      // Move within reason (max 200px away) but stay on screen
+      const moveDist = 100 + Math.random() * 150
+      const angle = Math.random() * Math.PI * 2
 
-            }, duration * 1000);
-        };
+      let targetX = currentX + Math.cos(angle) * moveDist
+      let targetY = currentY + Math.sin(angle) * moveDist
 
-        const scheduleWander = () => {
-            // Random delay between 5s and 15s
-            const delay = 5000 + Math.random() * 10000;
-            wanderTimer = setTimeout(wander, delay);
-        };
+      // Clamp to screen
+      targetX = Math.max(0, Math.min(window.innerWidth - 80, targetX))
+      targetY = Math.max(0, Math.min(window.innerHeight - 80, targetY))
 
-        // --- Events ---
-        pet.addEventListener('mousedown', startDrag);
-        document.addEventListener('mousemove', onDrag);
-        document.addEventListener('mouseup', endDrag);
-        
-        pet.addEventListener('touchstart', startDrag, { passive: false });
-        document.addEventListener('touchmove', onDrag, { passive: false });
-        document.addEventListener('touchend', endDrag);
+      // Face direction
+      if (targetX < currentX) {
+        pet.classList.add('pet-flipped')
+        isFlipped = true
+      } else {
+        pet.classList.remove('pet-flipped')
+        isFlipped = false
+      }
 
-        // Interaction Messages
-        const messages = [
-            '今天記帳了嗎？',
-            '錢包還好嗎？',
-            '喵～ 記得存錢喔！',
-            '我在這裡陪你～',
-            '加油！再堅持一下！',
-            '要不要吃魚？🐟',
-            '呼嚕呼嚕...💤',
-            '蹭蹭你～ ❤️',
-            '打起精神來喵！✨',
-            '理財就是理生活喵！'
-        ];
+      // Calculate duration based on distance (speed ~ 50px/s)
+      const dist = Math.sqrt(
+        Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2)
+      )
+      const duration = dist / 50
 
-        const triggerInteraction = () => {
-            const msg = messages[Math.floor(Math.random() * messages.length)];
-            context.ui.showToast(msg, 'info');
-            
-            // Force animation reset
-            pet.style.transition = 'none';
-            pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
-            
-            // Add a lovely visual effect
-            const heart = document.createElement('div');
-            heart.textContent = '❤️';
-            heart.style.cssText = `
+      // Apply transition just for this move
+      pet.style.transition = `left ${duration}s linear, top ${duration}s linear`
+      pet.style.left = `${targetX}px`
+      pet.style.top = `${targetY}px`
+
+      // Wait for arrival
+      wanderTimer = setTimeout(() => {
+        if (currentState === 'dragging') return
+
+        // Arrived
+        currentState = 'idle'
+        pet.classList.remove('pet-walking')
+
+        // Reset transition for drag responsiveness
+        pet.style.transition = 'transform 0.2s'
+
+        savePosition(targetX, targetY)
+        scheduleWander()
+      }, duration * 1000)
+    }
+
+    const scheduleWander = () => {
+      // Random delay between 5s and 15s
+      const delay = 5000 + Math.random() * 10000
+      wanderTimer = setTimeout(wander, delay)
+    }
+
+    // --- Events ---
+    pet.addEventListener('mousedown', startDrag)
+    document.addEventListener('mousemove', onDrag)
+    document.addEventListener('mouseup', endDrag)
+
+    pet.addEventListener('touchstart', startDrag, { passive: false })
+    document.addEventListener('touchmove', onDrag, { passive: false })
+    document.addEventListener('touchend', endDrag)
+
+    // Interaction Messages
+    const messages = [
+      '今天記帳了嗎？',
+      '錢包還好嗎？',
+      '喵～ 記得存錢喔！',
+      '我在這裡陪你～',
+      '加油！再堅持一下！',
+      '要不要吃魚？🐟',
+      '呼嚕呼嚕...💤',
+      '蹭蹭你～ ❤️',
+      '打起精神來喵！✨',
+      '理財就是理生活喵！',
+    ]
+
+    const triggerInteraction = () => {
+      const msg = messages[Math.floor(Math.random() * messages.length)]
+      context.ui.showToast(msg, 'info')
+
+      // Force animation reset
+      pet.style.transition = 'none'
+      pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none'
+
+      // Add a lovely visual effect
+      const heart = document.createElement('div')
+      heart.textContent = '❤️'
+      heart.style.cssText = `
                 position: absolute;
                 left: 30px;
                 top: -10px;
@@ -425,28 +436,31 @@ export default {
                 animation: floatUp 1s ease-out forwards;
                 z-index: 10001;
                 filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
-            `;
-            pet.appendChild(heart);
-            setTimeout(() => heart.remove(), 1000);
+            `
+      pet.appendChild(heart)
+      setTimeout(() => heart.remove(), 1000)
 
-            // Trigger jump
-            requestAnimationFrame(() => {
-                pet.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
-                pet.style.transform = isFlipped ? 'scaleX(-1) translateY(-20px)' : 'translateY(-20px)';
-            });
+      // Trigger jump
+      requestAnimationFrame(() => {
+        pet.style.transition =
+          'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+        pet.style.transform = isFlipped
+          ? 'scaleX(-1) translateY(-20px)'
+          : 'translateY(-20px)'
+      })
 
-            setTimeout(() => {
-                pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none';
-            }, 300);
-        };
-
-        // Prevent double trigger from native click
-        pet.addEventListener('click', (e) => {
-            e.preventDefault();
-        });
-
-        // Initialize Loop
-        scheduleWander();
-        console.log('Smart Pet initialized');
+      setTimeout(() => {
+        pet.style.transform = isFlipped ? 'scaleX(-1)' : 'none'
+      }, 300)
     }
-};
+
+    // Prevent double trigger from native click
+    pet.addEventListener('click', e => {
+      e.preventDefault()
+    })
+
+    // Initialize Loop
+    scheduleWander()
+    console.log('Smart Pet initialized')
+  },
+}

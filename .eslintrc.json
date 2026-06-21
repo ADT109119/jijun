@@ -22,9 +22,7 @@
     "vi": "readonly",
     "google": "readonly"
   },
-  "extends": [
-    "eslint:recommended"
-  ],
+  "extends": ["eslint:recommended"],
   "parserOptions": {
     "ecmaVersion": "latest",
     "sourceType": "module"
@@ -37,9 +35,6 @@
     "no-dupe-keys": "error",
     "no-duplicate-case": "error",
     "no-fallthrough": "error",
-    "eqeqeq": [
-      "error",
-      "always"
-    ]
+    "eqeqeq": ["error", "always"]
   }
 }

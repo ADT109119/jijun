@@ -1,10 +1,10 @@
 export class PrivacyPage {
-    constructor(app) {
-        this.app = app;
-    }
+  constructor(app) {
+    this.app = app
+  }
 
-    async render() {
-        this.app.appContainer.innerHTML = `
+  async render() {
+    this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <div class="flex items-center justify-between mb-6">
                     <a href="#settings" class="text-wabi-text-secondary hover:text-wabi-primary">
@@ -34,6 +34,6 @@ export class PrivacyPage {
                     <p>我們保留隨時修改本隱私權政策的權利，更新後將不會另行發布通知。您繼續使用本應用程式即表示您同意修改後的隱私權政策。</p>
                 </div>
             </div>
-        `;
-    }
+        `
+  }
 }
