@@ -86,7 +86,7 @@ export class PluginManager {
     const uiApi = has('ui') ? {
       showToast: (msg, type) => showToast(msg, type),
       registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
-      registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn, pluginData.id),
+      registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn, pluginId),
       navigateTo: (hash) => { window.location.hash = hash; },
       openAddPage: (data) => {
            if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));

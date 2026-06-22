@@ -88,6 +88,11 @@
 - BeeCount (2026-06-08 調研) — 自建雲端 + iCloud/WebDAV/S3 同步、AI 記帳 (MCP)、Flutter 跨端
 - 存錢罐/目標儲蓄視覺化 — Daak 記帳等 App 內建「許願」功能，讓存錢有目標感
 - MOZE 4.0 (2026/5/25 更新) — 捷徑記帳增加幣種選項、通知中心支援多筆完成提醒入帳、比較報表功能
+- MOZE v4.1.25 (2026/6/15 更新) — iOS 26.0/26.0.1 相容性修補；比較報表變化率顯示優化
+- MOZE 比較報表詳情 — 多維度表格分析，可交叉比對分類×時間段，支援變化率顯示
+- MOZE iPad 版 — 大螢幕重新設計，跨裝置即時同步
+- Actual Budget (2026-06-22 調研) — 2026 Roadmap: OIDC/multi-user、多新報表類型、schedules 可調時框、NPM sync package、年度預算差異報表
+- MOZE 定價趨勢 — 2026/1/1 起專業版訂閱價格上調，4.0 功能期免費延長至 2025/12/31
 - Akaunting (2026-06-14 調研) — 開源帳務軟體，支援發票、多帳本、雲端同步
 - Percento (2026-06-14 調研) — Apple 原生極簡風格、多貨幣、股價自動追蹤
 - 日常記帳 (2026-06-14 調研) — 個人+企業雙模式、固定支出自動記帳、多帳本
@@ -114,7 +119,7 @@
 
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
-| #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Open | 特別設計非 bug，使用者已找到 workaround |
+| #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
 | #8 | 疑問與建議 (Maiagaru) | Open | 分類預算 ✅ 已實作、手機鍵盤 UX ⏳ 排程 #U01、PDF/AI 等功能 💡 已列入調研 |
@@ -123,6 +128,7 @@
 
 ## 更新歷史
 
+- **2026-06-22**: ESLint 錯誤修復 — 修復 pluginManager.js `pluginData` 未定義錯誤（改用 `pluginId`）、bill_splitter.plugin.js `splitContacts` let→const；更新 FEATURES.md：MOZE v4.1.25 調研、Actual Budget 2026 Roadmap 調研；#46 狀態更新為 Closed；#U07 功能完整性確認（四個階段全部完成，601 tests 全過）
 - **2026-06-21**: #U07 跨月比較報表第四階段 — 日均支出比較（含天數校正、閏年處理）、分類排名比較（Top 5 排名+變動指示器🥇🥈🥉+新分類標記）；comparisonReport.js 新增 getDaysInPeriod、calculateDailyAverages、renderDailyAverages、renderCategoryRankings；comparisonPage.js renderResults 整合日均支出卡片與分類排名區塊；comparisonReport.test.js 新增 11 個測試（總計 601 tests）；ESLint 乾淨
 - **2026-06-19**: #U07 跨月比較報表第二階段 — 收支類型過濾（全部/僅收入/僅支出）、與去年同月比較快捷按鈕、匯出 CSV 功能（含 UTF-8 BOM Excel 相容）；comparisonReport.js 新增 typeFilter 參數、getLastYearPeriods static method、exportToCSV method；comparisonPage.js 新增 type filter toggle、last-year button、CSV download；新增 comparisonReport.test.js (12 tests, 總計 572 tests)
 - **2026-06-18**: #U07 跨月比較報表第一階段 — 整合_comparisonReport.js + comparisonPage.js_ 到路由系統 (#comparison)，統計頁新增入口按鈕；強化 UI（返回導航、使用說明、已選數量提示、FontAwesome 圖示、環比變化 badge）；Chart.js 圖表改用 formatCurrency 統一格式；comparisonReport.js 移除 accountId 參數、改由 DataService 自動帳本過濾；ESLint + 560 tests 全過

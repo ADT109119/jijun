@@ -404,7 +404,7 @@ export default {
         const includeMe = document.getElementById('include-me').checked;
         const mode = document.getElementById('mode-i-paid').classList.contains('bg-white') ? 'i-paid' : 'friend-paid';
 
-        let splitContacts = [];
+        const splitContacts = [];
         checked.forEach(cb => {
             const c = contacts.find(x => x.id === cb.value);
             if (c) splitContacts.push(c);
