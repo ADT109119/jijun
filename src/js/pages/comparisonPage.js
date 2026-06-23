@@ -13,6 +13,8 @@ export class ComparisonPage {
     }
 
     async render() {
+        // Destroy old charts before re-rendering to prevent memory leaks
+        this.destroy();
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
@@ -63,7 +65,7 @@ export class ComparisonPage {
 
             <!-- 快捷按鈕：與去年同月比較 -->
             <button id="comp-lastyear-btn" class="w-full py-2 rounded-xl bg-wabi-surface border border-wabi-border text-sm font-medium mb-3 hover:bg-wabi-accent/10 transition-colors">
-                <i class="fa-solid fa-calendar-days mr-1"></i> 與去年同月比較
+                <i class="fa-solid fa-calendar-days mr-1"></i> 一鍵比較去年同月（今年 + 去年）
             </button>
 
             <!-- Type filter toggle -->
@@ -164,17 +166,23 @@ export class ComparisonPage {
             });
         });
 
-        // Last year comparison shortcut
+        // Last year comparison shortcut — merge current selection with last-year equivalents
         container.querySelector('#comp-lastyear-btn').addEventListener('click', () => {
             const selectedArr = Array.from(selectedPeriods).sort();
-            if (selectedArr.length < 2) {
-                return; // Not enough periods selected
+            if (selectedArr.length < 1) {
+                return; // No periods selected
             }
-            // If current periods are month-type, generate last-year equivalents
             if (currentPeriodType === 'month') {
                 const lastYearPeriods = ComparisonReport.getLastYearPeriods(selectedArr);
-                // Clear current selection and select last year periods
-                selectedPeriods = new Set(lastYearPeriods);
+                // Merge current + last-year, respecting the 4-period limit
+                const merged = new Set([...selectedArr, ...lastYearPeriods]);
+                // If still exceeds 4, keep oldest periods
+                if (merged.size > 4) {
+                    const sorted = Array.from(merged).sort();
+                    selectedPeriods = new Set(sorted.slice(0, 4));
+                } else {
+                    selectedPeriods = merged;
+                }
                 renderCheckboxes();
             }
         });
@@ -189,6 +197,12 @@ export class ComparisonPage {
                 return;
             }
 
+            // Show loading state
+            const runBtn = container.querySelector('#comp-run-btn');
+            const originalBtnText = runBtn.innerHTML;
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 計算中...';
+
             try {
                 const data = await comp.calculateComparison(currentPeriodType, selectedArr, {
                     typeFilter: currentTypeFilter,
@@ -197,6 +211,10 @@ export class ComparisonPage {
             } catch (err) {
                 container.querySelector('#comp-results').innerHTML =
                     `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${err.message}</p>`;
+            } finally {
+                // Restore button state
+                runBtn.disabled = false;
+                runBtn.innerHTML = originalBtnText;
             }
         });
     }

@@ -14,6 +14,9 @@
 
 import { formatCurrency, escapeHTML } from './utils.js';
 
+// Trend indicator threshold: percentage change must exceed this to show ↑/↓
+const TREND_THRESHOLD = 0.5;
+
 export class ComparisonReport {
     /** @param {DataService} dataService */
     constructor(dataService, categoryManager) {
@@ -223,8 +226,8 @@ export class ComparisonReport {
                 trends.push(curr > 0 ? '↑' : '—');
             } else {
                 const change = ((curr - prev) / Math.abs(prev) * 100);
-                if (change > 0.5) trends.push('↑');
-                else if (change < -0.5) trends.push('↓');
+                if (change > TREND_THRESHOLD) trends.push('↑');
+                else if (change < -TREND_THRESHOLD) trends.push('↓');
                 else trends.push('—');
             }
         }
@@ -237,11 +240,12 @@ export class ComparisonReport {
      * @returns {string} CSV text
      */
     exportToCSV(data) {
-        const { periodLabels, periodData, categoryComparisons, typeFilter } = data;
+        const { periodLabels, periodType, periodData, categoryComparisons, typeFilter } = data;
 
         const lines = [];
 
         // Header metadata
+        lines.push(`期間類型,${periodType === 'month' ? '月' : '年'}`);
         lines.push(`比較類型,${periodLabels.join(', ')}`);
         lines.push(`篩選類型,${typeFilter}`);
         lines.push('');

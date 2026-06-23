@@ -128,6 +128,7 @@
 
 ## 更新歷史
 
+- **2026-06-23**: Code Review + 改善 #U07 跨月比較報表 — 圖表記憶體洩修復 (MR-03)、去年比較按鈕改為合併模式 (MR-04)、新增 loading 狀態指示 (LR-04)、提取 TREND_THRESHOLD 常數 (LR-01)、CSV 匯出新增 periodType (LR-05)；產出 code-review-comparison-report-2026-06-23.md；601 tests 全過、ESLint 乾淨
 - **2026-06-22**: ESLint 錯誤修復 — 修復 pluginManager.js `pluginData` 未定義錯誤（改用 `pluginId`）、bill_splitter.plugin.js `splitContacts` let→const；更新 FEATURES.md：MOZE v4.1.25 調研、Actual Budget 2026 Roadmap 調研；#46 狀態更新為 Closed；#U07 功能完整性確認（四個階段全部完成，601 tests 全過）
 - **2026-06-21**: #U07 跨月比較報表第四階段 — 日均支出比較（含天數校正、閏年處理）、分類排名比較（Top 5 排名+變動指示器🥇🥈🥉+新分類標記）；comparisonReport.js 新增 getDaysInPeriod、calculateDailyAverages、renderDailyAverages、renderCategoryRankings；comparisonPage.js renderResults 整合日均支出卡片與分類排名區塊；comparisonReport.test.js 新增 11 個測試（總計 601 tests）；ESLint 乾淨
 - **2026-06-19**: #U07 跨月比較報表第二階段 — 收支類型過濾（全部/僅收入/僅支出）、與去年同月比較快捷按鈕、匯出 CSV 功能（含 UTF-8 BOM Excel 相容）；comparisonReport.js 新增 typeFilter 參數、getLastYearPeriods static method、exportToCSV method；comparisonPage.js 新增 type filter toggle、last-year button、CSV download；新增 comparisonReport.test.js (12 tests, 總計 572 tests)
