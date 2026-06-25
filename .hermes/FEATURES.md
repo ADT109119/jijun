@@ -77,6 +77,9 @@
 - **AI 預測性理財** — 使用者自行填入 OpenAI/Gemini API Key，基於歷史消費預測未來支出、預警超支風險 (Issue #8)
 - **AI 掃描發票** — 使用者自行填入 OpenAI/Gemini API Key，拍照/上傳發票自動解析並記帳 (Issue #8)
 - **Edge 桌面 Widget + Capacitor Widget** — Edge Web Widget (Web Application Manifest + Web Widget API)，並確保 Capacitor 打包時可被 Android 原生 Widget 橋接 (Issue #8)
+- **行事曆檢視功能** — 將記帳日期與行事曆介面結合，每日記帳紀錄直接呈現在行事曆上 (Issue #48)
+- **金額輸入小算盤** — 整合簡易運算功能，多筆消費可直接在輸入框內運算 (Issue #48)
+- **大眾運輸票價與里程試算** — 台鐵/高鐵起訖地點自動帶入票價、自行開車里程計算 (Issue #48)
 
 ### 來自競爭對手與開源專案的靈感
 - AI 消費模式分析與建議 (Ignidash 方向)
@@ -98,6 +101,8 @@
 - 日常記帳 (2026-06-14 調研) — 個人+企業雙模式、固定支出自動記帳、多帳本
 - Akaunting/Wave/Xero (2026-06-14 調研) — 中小企業帳務 SaaS，自動發票、即時現金流追蹤、複式記帳
 - ezBookkeeping (2026-06-15 調研) — 開源自架記帳，Vue3 + Node.js，對比 Firefly III / Actual Budget，支援多帳本、預算追蹤、CSV 匯入
+- Actual Budget 26.2.0/26.3.0 (2026-06-25 調研) — 多 dashboard 頁面、自訂主題穩定版、Budget Analysis 報表、主題圖表樣式化、高對比亮色主題
+- Firefly III v6.6.2 (2026-06-25 調研) — 最新穩定版，OAuth 2FA 修復、webhook 支援、交易 ID 搜尋、LDAP OAuth 設定
 
 ---
 
@@ -120,6 +125,7 @@
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
+| #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
 | #8 | 疑問與建議 (Maiagaru) | Open | 分類預算 ✅ 已實作、手機鍵盤 UX ⏳ 排程 #U01、PDF/AI 等功能 💡 已列入調研 |
@@ -128,6 +134,7 @@
 
 ## 更新歷史
 
+- **2026-06-25**: 網路調研 — 新 Issue #48 (Lucas-Weii: 行事曆檢視/小算盤/交通票價試算)、GitHub Stars 76、Firefly III v6.6.2、Actual Budget 26.3.0； FEATURES.md 新增 #48 功能收集、Open Issues 表格新增 #48；產出 code-review-comparison-report-2026-06-25.md；601 tests 全過、ESLint 乾淨
 - **2026-06-23**: Code Review + 改善 #U07 跨月比較報表 — 圖表記憶體洩修復 (MR-03)、去年比較按鈕改為合併模式 (MR-04)、新增 loading 狀態指示 (LR-04)、提取 TREND_THRESHOLD 常數 (LR-01)、CSV 匯出新增 periodType (LR-05)；產出 code-review-comparison-report-2026-06-23.md；601 tests 全過、ESLint 乾淨
 - **2026-06-22**: ESLint 錯誤修復 — 修復 pluginManager.js `pluginData` 未定義錯誤（改用 `pluginId`）、bill_splitter.plugin.js `splitContacts` let→const；更新 FEATURES.md：MOZE v4.1.25 調研、Actual Budget 2026 Roadmap 調研；#46 狀態更新為 Closed；#U07 功能完整性確認（四個階段全部完成，601 tests 全過）
 - **2026-06-21**: #U07 跨月比較報表第四階段 — 日均支出比較（含天數校正、閏年處理）、分類排名比較（Top 5 排名+變動指示器🥇🥈🥉+新分類標記）；comparisonReport.js 新增 getDaysInPeriod、calculateDailyAverages、renderDailyAverages、renderCategoryRankings；comparisonPage.js renderResults 整合日均支出卡片與分類排名區塊；comparisonReport.test.js 新增 11 個測試（總計 601 tests）；ESLint 乾淨

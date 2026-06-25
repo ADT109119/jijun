@@ -98,6 +98,12 @@ export class ComparisonPage {
         const renderCheckboxes = () => {
             const periods = currentPeriodType === 'month' ? months : years;
             const checkboxesEl = container.querySelector('#comp-checkboxes');
+            if (periods.length === 0) {
+                checkboxesEl.innerHTML = `<div class="col-span-2 sm:col-span-3 text-center py-6 text-wabi-text-secondary">
+                    <i class="fa-solid fa-inbox mr-2"></i>暫無歷史數據可比較
+                </div>`;
+                return;
+            }
             checkboxesEl.innerHTML = periods.map(p => {
                 const checked = selectedPeriods.has(p) ? 'checked' : '';
                 return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer hover:border-wabi-accent/50 transition-colors">
