@@ -134,6 +134,7 @@
 
 ## 更新歷史
 
+- **2026-06-26**: Code Review #U07 狀態確認 — 上次5項改善(MR-03/MR-04/LR-04/LR-01/LR-05)全部已修復；產出code-review-status-check-2026-06-26.md；更新FEATURES.md標記#U07四階段完成；601 tests全過、ESLint乾淨；剩2中風險(效能/測試)+3低風險建議可排入未來迭代
 - **2026-06-25**: 網路調研 — 新 Issue #48 (Lucas-Weii: 行事曆檢視/小算盤/交通票價試算)、GitHub Stars 76、Firefly III v6.6.2、Actual Budget 26.3.0； FEATURES.md 新增 #48 功能收集、Open Issues 表格新增 #48；產出 code-review-comparison-report-2026-06-25.md；601 tests 全過、ESLint 乾淨
 - **2026-06-23**: Code Review + 改善 #U07 跨月比較報表 — 圖表記憶體洩修復 (MR-03)、去年比較按鈕改為合併模式 (MR-04)、新增 loading 狀態指示 (LR-04)、提取 TREND_THRESHOLD 常數 (LR-01)、CSV 匯出新增 periodType (LR-05)；產出 code-review-comparison-report-2026-06-23.md；601 tests 全過、ESLint 乾淨
 - **2026-06-22**: ESLint 錯誤修復 — 修復 pluginManager.js `pluginData` 未定義錯誤（改用 `pluginId`）、bill_splitter.plugin.js `splitContacts` let→const；更新 FEATURES.md：MOZE v4.1.25 調研、Actual Budget 2026 Roadmap 調研；#46 狀態更新為 Closed；#U07 功能完整性確認（四個階段全部完成，601 tests 全過）
