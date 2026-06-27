@@ -103,6 +103,7 @@
 - ezBookkeeping (2026-06-15 調研) — 開源自架記帳，Vue3 + Node.js，對比 Firefly III / Actual Budget，支援多帳本、預算追蹤、CSV 匯入
 - Actual Budget 26.2.0/26.3.0 (2026-06-25 調研) — 多 dashboard 頁面、自訂主題穩定版、Budget Analysis 報表、主題圖表樣式化、高對比亮色主題
 - Firefly III v6.6.2 (2026-06-25 調研) — 最新穩定版，OAuth 2FA 修復、webhook 支援、交易 ID 搜尋、LDAP OAuth 設定
+- Issue #49 功能收集 (yanggu0413, 2026-06-27) — PWA 載入骨架畫面、計算機式鍵盤
 
 ---
 
@@ -126,6 +127,7 @@
 |-------|------|------|------|
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
 | #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
+| #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | PWA 載入 2-5 秒空白等待、骨架畫面、計算機式鍵盤 |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
 | #8 | 疑問與建議 (Maiagaru) | Open | 分類預算 ✅ 已實作、手機鍵盤 UX ⏳ 排程 #U01、PDF/AI 等功能 💡 已列入調研 |
@@ -134,6 +136,7 @@
 
 ## 更新歷史
 
+- **2026-06-27**: 網路調研 — 新 Issue #49 (yanggu0413: 手機 PWA 載入速度優化，含 2-5 秒空白等待與骨架畫面建議、計算機式鍵盤)、GitHub Stars: 76、Issues: 5 open (#49/#48/#14/#9/#8)；產出 Code Review 報告；601 tests 全過、ESLint 乾淨
 - **2026-06-26**: Code Review #U07 狀態確認 — 上次5項改善(MR-03/MR-04/LR-04/LR-01/LR-05)全部已修復；產出code-review-status-check-2026-06-26.md；更新FEATURES.md標記#U07四階段完成；601 tests全過、ESLint乾淨；剩2中風險(效能/測試)+3低風險建議可排入未來迭代
 - **2026-06-25**: 網路調研 — 新 Issue #48 (Lucas-Weii: 行事曆檢視/小算盤/交通票價試算)、GitHub Stars 76、Firefly III v6.6.2、Actual Budget 26.3.0； FEATURES.md 新增 #48 功能收集、Open Issues 表格新增 #48；產出 code-review-comparison-report-2026-06-25.md；601 tests 全過、ESLint 乾淨
 - **2026-06-23**: Code Review + 改善 #U07 跨月比較報表 — 圖表記憶體洩修復 (MR-03)、去年比較按鈕改為合併模式 (MR-04)、新增 loading 狀態指示 (LR-04)、提取 TREND_THRESHOLD 常數 (LR-01)、CSV 匯出新增 periodType (LR-05)；產出 code-review-comparison-report-2026-06-23.md；601 tests 全過、ESLint 乾淨
