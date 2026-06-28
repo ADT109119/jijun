@@ -151,6 +151,27 @@ export class SettingsPage {
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
 
+                        <!-- Calculator Mode Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-calculator"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">關閉計算機功能</p>
+                                    <p class="text-xs text-wabi-text-secondary">開啟後記帳小鍵盤將不顯示加減乘除與等於鍵</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="calculator-mode-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="calculator-mode-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
+                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>啟用此選項後，記帳小鍵盤將隱藏 ＋、−、×、÷ 與 ＝ 按鈕，僅作為標準數字輸入鍵盤使用。</p>
+                        </div>
+
                         <!-- Default Records Period -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
                             <div class="flex items-center gap-4">
@@ -493,6 +514,30 @@ export class SettingsPage {
         if (manageDebtsBtn) {
             manageDebtsBtn.addEventListener('click', () => {
                 window.location.hash = '#debts';
+            });
+        }
+
+        // Calculator Mode Toggle
+        const calculatorModeToggle = document.getElementById('calculator-mode-toggle');
+        if (calculatorModeToggle) {
+            this.app.dataService.getSetting('calculatorModeEnabled').then(setting => {
+                const isEnabled = setting ? !!setting.value : true; // 預設為 true (開啟)
+                calculatorModeToggle.checked = !isEnabled; // 關閉按鈕勾選代表 disabled (!isEnabled)
+                if (!isEnabled) {
+                    document.getElementById('calculator-mode-info')?.classList.remove('hidden');
+                }
+            });
+
+            calculatorModeToggle.addEventListener('change', async (e) => {
+                const isDisabled = e.target.checked; // 勾選 = 關閉
+                const isEnabled = !isDisabled;
+                await this.app.dataService.saveSetting({ key: 'calculatorModeEnabled', value: isEnabled });
+                if (isDisabled) {
+                    document.getElementById('calculator-mode-info')?.classList.remove('hidden');
+                } else {
+                    document.getElementById('calculator-mode-info')?.classList.add('hidden');
+                }
+                showToast(`小鍵盤計算機模式已${isEnabled ? '啟用' : '停用'}`);
             });
         }
 

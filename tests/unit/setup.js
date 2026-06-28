@@ -19,24 +19,89 @@ const mockDb = {
         return this._storeData[name];
     },
 
-    // 支援 DataService.logChange() 需要的 db.get() API
-    async get(keyPath, key) {
-        const storeName = typeof keyPath === 'string' ? keyPath : 'records';
-        const data = this.initStore(storeName);
-        return Promise.resolve(data.find(item => item.id === key) || null);
-    },
-
-    transaction(stores, mode) {
-        const storeNames = typeof stores === 'string' ? [stores] : stores;
-        const storeName = storeNames[0];
-        const data = this.initStore(storeName);
-
-        // 每個 store name 只建立一次 sharedStore，確保所有 transaction 共用同一份資料
+    // 每個 store name 只建立一次 sharedStore，確保所有 transaction 共用同一份資料
+    initSharedStore(storeName) {
         if (!this._sharedStores) {
             this._sharedStores = {};
         }
         if (!this._sharedStores[storeName]) {
+            const data = this.initStore(storeName);
             this._sharedStores[storeName] = {
+                indexNames: {
+                    contains: (name) => {
+                        const indexes = {
+                            records: ['date', 'amortizationId'],
+                            accounts: ['type'],
+                            credit_statements: ['accountId', 'ledgerId', 'period', 'status'],
+                            amortizations: ['uuid', 'ledgerId', 'status']
+                        };
+                        return (indexes[storeName] || []).includes(name);
+                    }
+                },
+                index: (name) => {
+                    return {
+                        getAll: async (query) => {
+                            let filterFn;
+                            if (query && typeof query === 'object' && (query.lower !== undefined || query.upper !== undefined)) {
+                                filterFn = (item) => {
+                                    const val = item[name];
+                                    if (query.lower !== undefined && query.upper !== undefined) {
+                                        return val >= query.lower && val <= query.upper;
+                                    } else if (query.lower !== undefined) {
+                                        return val >= query.lower;
+                                    } else {
+                                        return val <= query.upper;
+                                    }
+                                };
+                            } else {
+                                filterFn = (item) => item[name] === query;
+                            }
+                            return Promise.resolve(data.filter(filterFn));
+                        },
+                        openCursor: async (keyRange) => {
+                            let filterFn;
+                            if (keyRange && typeof keyRange === 'object' && (keyRange.lower !== undefined || keyRange.upper !== undefined)) {
+                                filterFn = (item) => {
+                                    const val = item[name];
+                                    if (keyRange.lower !== undefined && keyRange.upper !== undefined) {
+                                        return val >= keyRange.lower && val <= keyRange.upper;
+                                    } else if (keyRange.lower !== undefined) {
+                                        return val >= keyRange.lower;
+                                    } else {
+                                        return val <= keyRange.upper;
+                                    }
+                                };
+                            } else if (keyRange && keyRange._only !== undefined) {
+                                filterFn = (item) => item[name] === keyRange._only;
+                            } else {
+                                filterFn = (item) => item[name] === keyRange;
+                            }
+
+                            const filtered = data.filter(filterFn);
+                            let cursorIdx = 0;
+
+                            const getCursor = () => {
+                                if (cursorIdx >= filtered.length) return null;
+                                const item = filtered[cursorIdx];
+                                return {
+                                    value: item,
+                                    delete: async () => {
+                                        const idx = data.findIndex(i => i.id === item.id);
+                                        if (idx >= 0) {
+                                            data.splice(idx, 1);
+                                        }
+                                        return Promise.resolve();
+                                    },
+                                    continue: async () => {
+                                        cursorIdx++;
+                                        return Promise.resolve(getCursor());
+                                    }
+                                };
+                            };
+                            return Promise.resolve(getCursor());
+                        }
+                    };
+                },
                 add: (itemData) => {
                     const id = nextId++;
                     data.push({ ...itemData, id });
@@ -75,13 +140,39 @@ const mockDb = {
                 }
             };
         }
+        return this._sharedStores[storeName];
+    },
 
-        const sharedStore = this._sharedStores[storeName];
+    // 支援 DataService.logChange() 需要的 db.get() API
+    async get(keyPath, key) {
+        const storeName = typeof keyPath === 'string' ? keyPath : 'records';
+        const data = this.initStore(storeName);
+        return Promise.resolve(data.find(item => item.id === key) || null);
+    },
+
+    // 支援 DataService 的 db.getAll('storeName') API
+    async getAll(storeName) {
+        const data = this.initStore(storeName);
+        return Promise.resolve([...data]);
+    },
+
+    // 支援 db.getAllFromIndex('storeName', 'indexName', query)
+    async getAllFromIndex(storeName, indexName, query) {
+        const data = this.initStore(storeName);
+        return Promise.resolve(data.filter(item => item[indexName] === query));
+    },
+
+    transaction(stores, mode) {
+        const storeNames = typeof stores === 'string' ? [stores] : stores;
+        const objectStores = {};
+        for (const name of storeNames) {
+            objectStores[name] = this.initSharedStore(name);
+        }
 
         return {
-            store: sharedStore, // 支援 tx.store API
+            store: objectStores[storeNames[0]], // 支援 tx.store API
             objectStore(name) {
-                return sharedStore; // 支援 tx.objectStore('records') API
+                return objectStores[name] || mockDb.initSharedStore(name); // 支援 tx.objectStore('records') API
             },
             done: Promise.resolve(),
             onerror: null,
@@ -92,7 +183,7 @@ const mockDb = {
 };
 
 // 初始化所有 store
-for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'plugins']) {
+for (const name of ['ledgers', 'records', 'accounts', 'contacts', 'debts', 'recurring_transactions', 'amortizations', 'plugins', 'credit_statements']) {
     mockDb.initStore(name);
 }
 
@@ -101,6 +192,12 @@ globalThis.window = globalThis;
 if (!globalThis.idb) {
     globalThis.idb = { openDB: () => Promise.resolve(mockDb) };
 }
+globalThis.IDBKeyRange = {
+    only: (value) => ({ _only: value }),
+    bound: (lower, upper) => ({ lower, upper }),
+    lowerBound: (lower) => ({ lower }),
+    upperBound: (upper) => ({ upper })
+};
 
 // ── GPT / googletag Mock ───────────────────────────────
 const gptListeners = [];

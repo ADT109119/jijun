@@ -393,7 +393,6 @@ export class StatisticsManager {
             const match = colorClass.match(/bg-(.*)-(\d+)/);
             if (match) {
                 const colorName = match[1];
-                const colorValue = match[2];
                 // This is a very simplified mapping and will not work for all tailwind colors.
                 const colorMap = {
                     slate: '#64748b',

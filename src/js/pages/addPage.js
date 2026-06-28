@@ -1,4 +1,5 @@
 import { formatDate, formatDateToString, formatCurrency, showToast, escapeHTML, calculateAmortizationDetails, customConfirm } from '../utils.js';
+import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js';
 
 export class AddPage {
     constructor(app) {
@@ -13,6 +14,18 @@ export class AddPage {
         const showDebtBtn = !!debtEnabled?.value;
         const amortizationEnabled = await this.app.dataService.getSetting('amortizationEnabled');
         const showInstallmentBtn = !!amortizationEnabled?.value;
+
+        // 計算機模式設定（預設為啟用）
+        const calculatorModeSetting = await this.app.dataService.getSetting('calculatorModeEnabled');
+        const calculatorModeEnabled = calculatorModeSetting ? !!calculatorModeSetting.value : true;
+
+        // 根據計算機模式產生不同的鍵盤佈局
+        // 計算機模式: 5欄 (數字3欄 + 運算符1欄 + 功能鍵1欄)
+        // 運算符排列: +, -, ×, ÷ (從上到下，符合標準計算機習慣)
+        const keypadGridCols = calculatorModeEnabled ? 'grid-cols-5' : 'grid-cols-4';
+        const keypadKeys = calculatorModeEnabled
+            ? ['1', '2', '3', '+', 'backspace', '4', '5', '6', '-', 'ac', '7', '8', '9', '×', 'save', '00', '0', '.', '÷']
+            : ['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''];
 
         // Use a fixed container to ensure perfect pinning to the viewport (considering bottom nav on mobile)
         this.app.appContainer.innerHTML = `
@@ -160,8 +173,8 @@ export class AddPage {
                             <i class="fa-solid fa-keyboard"></i>
                         </button>
                     </div>
-                    <div id="keypad-grid" class="grid grid-cols-4 gap-px bg-wabi-keypad/80">
-                        ${['1', '2', '3', 'backspace', '4', '5', '6', 'ac', '7', '8', '9', 'save', '00', '0', '.', ''].map(k => this.createKeypadButton(k, isEditMode)).join('')}
+                    <div id="keypad-grid" class="${keypadGridCols} gap-px bg-wabi-keypad/80">
+                        ${keypadKeys.map(k => this.createKeypadButton(k, isEditMode, calculatorModeEnabled)).join('')}
                     </div>
                 </div>
             </div>
@@ -176,13 +189,21 @@ export class AddPage {
         const advancedMode = await this.app.dataService.getSetting('advancedAccountModeEnabled');
         const advancedModeEnabled = !!advancedMode?.value;
 
+        // 計算機模式設定（需在此處讀取以用於 handleKeypad，預設為啟用）
+        const calculatorModeSetting = await this.app.dataService.getSetting('calculatorModeEnabled');
+        const calculatorModeEnabled = calculatorModeSetting ? !!calculatorModeSetting.value : true;
+
 
         let currentType = 'expense';
         let currentAmount = '0';
         let selectedCategory = null;
         let selectedAccountId = null; // New state for multi-account mode
         let currentDate = formatDateToString(new Date());
-        let keypadGridOpen = true;
+        let keypadGridOpen = false;
+
+        // Virtual keyboard state tracking
+        let vkForcedHide = false;
+        let vkDetector = null;
 
         // Debt panel state
         let debtEnabled = false;
@@ -352,6 +373,48 @@ export class AddPage {
             amountObserver.observe(amountDisplay, { childList: true, characterData: true, subtree: true });
         }
 
+        // --- 計算機狀態（整合於小鍵盤）---
+        let calcPrev = null;     // 運算前值
+        let calcOp = null;       // 當前運算子
+        let calcNew = true;      // 是否剛開始輸入新數字
+
+        const calculate = (a, op, b) => {
+            const numA = parseFloat(a);
+            const numB = parseFloat(b);
+            switch (op) {
+                case '+': return numA + numB;
+                case '-': return numA - numB;
+                case '×': return numA * numB;
+                case '÷': return numB !== 0 ? numA / numB : NaN;
+                default: return numB;
+            }
+        };
+
+        const formatCalcResult = (num) => {
+            if (isNaN(num) || !isFinite(num)) return '0';
+            // 處理浮點數精度問題
+            const result = parseFloat(num.toPrecision(12));
+            // 限制小數點後 2 位
+            return parseFloat(result.toFixed(2)).toString();
+        };
+
+        // 儲存按鈕動態切換：計算中顯示「＝」，否則顯示「儲存」
+        const updateSaveButtonUI = () => {
+            const saveBtn = document.querySelector('.keypad-btn[data-key="save"]');
+            if (!saveBtn || !calculatorModeEnabled) return;
+            if (calcOp !== null) {
+                // 計算中：變成等號樣式
+                saveBtn.innerHTML = '<span class="font-bold text-2xl">＝</span>';
+                saveBtn.classList.remove('bg-wabi-accent', 'text-wabi-primary');
+                saveBtn.classList.add('bg-amber-500', 'text-white');
+            } else {
+                // 正常狀態：顯示儲存
+                saveBtn.innerHTML = '<span class="font-bold">儲存</span>';
+                saveBtn.classList.remove('bg-amber-500', 'text-white');
+                saveBtn.classList.add('bg-wabi-accent', 'text-wabi-primary');
+            }
+        };
+
         // --- Account Selector Logic ---
         const accountSelectorContainer = document.getElementById('account-selector-container');
         let accounts = [];
@@ -394,17 +457,40 @@ export class AddPage {
 
         const toggleKeypadGrid = (force) => {
             const shouldOpen = force === undefined ? !keypadGridOpen : force;
+            const icon = keypadToggleBtn.querySelector('i');
             if (shouldOpen) {
                 keypadGrid.style.display = 'grid';
                 keypadToggleBtn.classList.add('bg-wabi-accent', 'text-wabi-primary');
+                if (icon) {
+                    icon.classList.remove('fa-keyboard');
+                    icon.classList.add('fa-chevron-up');
+                }
             } else {
                 keypadGrid.style.display = 'none';
                 keypadToggleBtn.classList.remove('bg-wabi-accent', 'text-wabi-primary');
+                if (icon) {
+                    icon.classList.remove('fa-chevron-up');
+                    icon.classList.add('fa-keyboard');
+                }
             }
             keypadGridOpen = shouldOpen;
         };
 
         keypadContainer.classList.remove('translate-y-full');
+
+        // Initialize virtual keyboard detector
+        vkDetector = new VirtualKeyboardDetector({
+            onShow: () => {
+                vkForcedHide = true;
+                toggleKeypadGrid(false); // 強制隱藏 keypad
+            },
+            onHide: () => {
+                vkForcedHide = false;
+                toggleKeypadGrid(true); // 恢復顯示 keypad
+            },
+            threshold: 150
+        });
+        vkDetector.start();
 
         const updateTypeUI = () => {
             if (currentType === 'expense') {
@@ -583,18 +669,58 @@ export class AddPage {
         };
 
         const handleKeypad = async (key) => {
+            // 計算機運算符處理
+            if (['+', '-', '×', '÷'].includes(key)) {
+                if (currentAmount !== '0') {
+                    if (calcPrev !== null && !calcNew) {
+                        // 連續運算：先計算上一筆
+                        currentAmount = formatCalcResult(calculate(calcPrev, calcOp, currentAmount));
+                    }
+                    calcPrev = currentAmount;
+                    calcOp = key;
+                    calcNew = true;
+                }
+                updateSaveButtonUI();
+                amountDisplay.textContent = formatCurrency(currentAmount);
+                return;
+            }
+
             if (key >= '0' && key <= '9' || key === '00') {
-                if (currentAmount === '0') currentAmount = '';
-                if (currentAmount.replace('.', '').length < 9) currentAmount += key;
+                if (calcNew && (calcPrev !== null)) {
+                    // 運算後輸入新數字，重置
+                    currentAmount = key;
+                    calcNew = false;
+                } else if (currentAmount === '0') {
+                    currentAmount = key === '00' ? '0' : key;
+                } else {
+                    if (currentAmount.replace('.', '').length < 9) currentAmount += key;
+                }
             } else if (key === '.') {
-                if (!currentAmount.includes('.')) currentAmount += '.';
+                if (calcNew && (calcPrev !== null)) {
+                    currentAmount = '0.';
+                    calcNew = false;
+                } else if (!currentAmount.includes('.')) currentAmount += '.';
             } else if (key === 'backspace') {
                 currentAmount = currentAmount.slice(0, -1) || '0';
             } else if (key === 'ac') {
                 currentAmount = '0';
+                calcPrev = null;
+                calcOp = null;
+                calcNew = true;
+                updateSaveButtonUI();
             } else if (key === 'done') {
                 toggleKeypadGrid(false);
             } else if (key === 'save') {
+                // 計算機模式下，如果正在計算中，按下 save 先執行等於
+                if (calculatorModeEnabled && calcOp !== null) {
+                    currentAmount = formatCalcResult(calculate(calcPrev, calcOp, currentAmount));
+                    calcPrev = null;
+                    calcOp = null;
+                    calcNew = true;
+                    updateSaveButtonUI();
+                    amountDisplay.textContent = formatCurrency(currentAmount);
+                    return;
+                }
                 const amount = parseFloat(currentAmount);
                 if (advancedModeEnabled && !selectedAccountId) {
                     showToast('請先建立一個帳戶', 'error');
@@ -839,6 +965,12 @@ export class AddPage {
         }
 
         keypadToggleBtn.addEventListener('click', () => toggleKeypadGrid());
+
+        // Clicking amount display opens the keypad for quick input
+        amountDisplay.style.cursor = 'pointer';
+        amountDisplay.title = '點擊輸入金額';
+        amountDisplay.addEventListener('click', () => toggleKeypadGrid(true));
+
         dateInput.addEventListener('change', (e) => {
             currentDate = e.target.value;
             dateDisplay.textContent = formatDate(currentDate, 'short');
@@ -902,21 +1034,36 @@ export class AddPage {
 
         updateTypeUI();
         updateAccountSelectorUI();
+        // Initialize keypad state: visible by default, auto-hide when virtual keyboard appears
         toggleKeypadGrid(true);
+        // 初始化儲存按鈕 UI 狀態
+        updateSaveButtonUI();
     }
 
-    createKeypadButton(key, isEditMode = false) {
+    createKeypadButton(key, isEditMode = false, calculatorModeEnabled = false) {
         let content = key;
         if (key === 'ac') content = 'AC';
         if (key === 'backspace') content = '<i class="fa-solid fa-delete-left"></i>';
-        if (key === 'save') content = isEditMode ? '<span class="font-bold">更新</span>' : '<span class="font-bold">儲存</span>';
+        if (key === 'save') {
+            // 計算機模式：save 按鈕會根據 calcOp 狀態切換顯示「儲存」或「＝」
+            content = isEditMode ? '<span class="font-bold">更新</span>' : '<span class="font-bold">儲存</span>';
+        }
 
-        const specialClasses = {
-            'save': 'row-span-2 bg-wabi-accent text-wabi-primary',
-            'ac': 'bg-wabi-border text-wabi-text-primary',
-            'backspace': 'text-wabi-text-primary',
-            '': 'bg-transparent'
-        }[key] || 'text-wabi-text-primary';
+        let specialClasses;
+        if (key === 'save') {
+            // save 按鈕跨 2 行；計算機模式下會有動態樣式切換
+            specialClasses = 'row-span-2 bg-wabi-accent text-wabi-primary flex items-center justify-center text-lg';
+        } else if (calculatorModeEnabled && ['+', '-', '×', '÷'].includes(key)) {
+            specialClasses = 'bg-amber-500/20 text-amber-600 font-medium';
+        } else if (key === 'ac') {
+            specialClasses = 'bg-wabi-border text-wabi-text-primary';
+        } else if (key === 'backspace') {
+            specialClasses = 'text-wabi-text-primary';
+        } else if (key === '') {
+            specialClasses = 'bg-transparent';
+        } else {
+            specialClasses = 'text-wabi-text-primary';
+        }
 
         if (key === '') return `<div class="${specialClasses}"></div>`;
 

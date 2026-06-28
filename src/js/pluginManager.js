@@ -9,6 +9,7 @@ export class PluginManager {
     this.plugins = new Map(); // id -> pluginModule
     this.customPages = new Map(); // routeId -> { title, renderFn }
     this.homeWidgets = new Map(); // id -> renderFn
+    this.widgetToPlugin = new Map(); // widgetId -> pluginId (for name lookup)
     this.widgetOrder = []; 
     this.hiddenWidgets = [];
     this.hooks = new Map(); // hookName -> Set<callback>
@@ -85,7 +86,7 @@ export class PluginManager {
     const uiApi = has('ui') ? {
       showToast: (msg, type) => showToast(msg, type),
       registerPage: (routeId, title, renderFn) => this.registerPage(routeId, title, renderFn),
-      registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn),
+      registerHomeWidget: (id, renderFn) => this.registerHomeWidget(id, renderFn, pluginId),
       navigateTo: (hash) => { window.location.hash = hash; },
       openAddPage: (data) => {
            if (data) sessionStorage.setItem('temp_add_data', JSON.stringify(data));
@@ -423,6 +424,14 @@ export class PluginManager {
       await tx.store.delete(id);
       await tx.done;
       this.plugins.delete(id);
+      
+      // 清除該插件的所有 widget-to-plugin 對應
+      for (const [widgetId, pluginId] of this.widgetToPlugin.entries()) {
+          if (pluginId === id) {
+              this.widgetToPlugin.delete(widgetId);
+          }
+      }
+      
       showToast('插件已移除，請重新整理頁面');
   }
     
@@ -439,12 +448,17 @@ export class PluginManager {
       console.log(`Registered custom page: #${routeId}`);
   }
 
-  registerHomeWidget(id, renderFn) {
+  registerHomeWidget(id, renderFn, pluginId) {
       if (typeof id !== 'string') {
           console.warn('registerHomeWidget now expects (id, renderFn). Ignoring registration.');
           return;
       }
       this.homeWidgets.set(id, renderFn);
+      
+      // 記錄 widget-to-plugin 對應關係，讓 getPluginName 可以正確查詢
+      if (pluginId) {
+          this.widgetToPlugin.set(id, pluginId);
+      }
       
       // If not in order list, append
       if (!this.widgetOrder.includes(id)) {
@@ -512,8 +526,18 @@ export class PluginManager {
   }
 
   getPluginName(id) {
+      // 1. 直接由 pluginId 查找
       const plugin = this.plugins.get(id);
-      return plugin ? plugin.meta.name : null;
+      if (plugin) return plugin.meta.name;
+      
+      // 2. 如果是 widgetId，透過 widgetToPlugin 對應找到 pluginId 再查找
+      const pluginId = this.widgetToPlugin.get(id);
+      if (pluginId) {
+          const mappedPlugin = this.plugins.get(pluginId);
+          if (mappedPlugin) return mappedPlugin.meta.name;
+      }
+      
+      return null;
   }
 
   registerHook(hookName, callback) {

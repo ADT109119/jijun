@@ -19,9 +19,19 @@ export class RecordsListManager {
             customEndDate: null,
             searchQuery: '',
         };
+
+        // Bind save method to call on page leave
+        this._saveSessionFilters = this._saveSessionFilters.bind(this);
+        window.addEventListener('beforeunload', this._saveSessionFilters);
     }
 
     async init() {
+        // Restore session filters before setting up defaults
+        const sessionFilters = this._loadSessionFilters();
+        if (sessionFilters) {
+            this.filters = sessionFilters;
+        }
+
         const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
         this.advancedModeEnabled = !!advancedMode?.value;
 
@@ -30,43 +40,63 @@ export class RecordsListManager {
             this.container.querySelector('#records-account-filter-btn').classList.remove('hidden');
         }
 
-        // Load default period setting
-        const defaultPeriodSetting = await this.dataService.getSetting('defaultRecordsPeriod');
-        const defaultPeriod = defaultPeriodSetting?.value || 'month';
-
-        if (defaultPeriod === 'last') {
-            // Restore last used period and dates
-            const savedLast = await this.dataService.getSetting('lastRecordsPeriodState');
-            const stateData = savedLast?.value || savedLast;
-            if (stateData?.period && stateData?.customStartDate && stateData?.customEndDate) {
-                this.filters.period = stateData.period;
-                this.filters.customStartDate = stateData.customStartDate;
-                this.filters.customEndDate = stateData.customEndDate;
-            } else {
-                const initialRange = getDateRange('month');
-                this.filters.period = 'month';
-                this.filters.customStartDate = initialRange.startDate;
-                this.filters.customEndDate = initialRange.endDate;
-            }
-        } else if (defaultPeriod === 'today' || defaultPeriod === 'last7days') {
-            const initialRange = getDateRange(defaultPeriod);
-            this.filters.period = 'custom';
-            this.filters.customStartDate = initialRange.startDate;
-            this.filters.customEndDate = initialRange.endDate;
-        } else {
-            this.filters.period = defaultPeriod;
-            const initialRange = getDateRange(defaultPeriod);
-            this.filters.customStartDate = initialRange.startDate;
-            this.filters.customEndDate = initialRange.endDate;
-        }
-
         this.modalsContainer = this.container.querySelector('#records-modals-container');
         this.setupEventListeners();
-        this.updatePeriodButtons();
+        this._restoreFilterUI();
         await this.loadAndRenderRecords();
 
         // Save initial state so "last" option works on next visit
         await this._saveLastPeriodState();
+    }
+
+    /** Save current filters to sessionStorage (persists across navigation within same tab) */
+    _saveSessionFilters() {
+        try {
+            sessionStorage.setItem('jijun_records_filters', JSON.stringify({
+                period: this.filters.period,
+                type: this.filters.type,
+                categories: Array.from(this.filters.categories),
+                accounts: Array.from(this.filters.accounts),
+                customStartDate: this.filters.customStartDate,
+                customEndDate: this.filters.customEndDate,
+                searchQuery: this.filters.searchQuery,
+            }));
+        } catch (error) {
+            console.error('Failed to save session filters:', error);
+        }
+    }
+
+    /** Restore filters from sessionStorage, or null if none */
+    _loadSessionFilters() {
+        try {
+            const raw = sessionStorage.getItem('jijun_records_filters');
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            return {
+                period: data.period || 'month',
+                type: data.type || 'all',
+                categories: new Set(data.categories || []),
+                accounts: new Set(data.accounts || []),
+                customStartDate: data.customStartDate || null,
+                customEndDate: data.customEndDate || null,
+                searchQuery: data.searchQuery || '',
+            };
+        } catch (error) {
+            console.error('Failed to load session filters:', error);
+            return null;
+        }
+    }
+
+    /** Restore UI state from current filters */
+    _restoreFilterUI() {
+        this.updatePeriodButtons();
+        this.updateTypeButtons();
+        this.updateHeaderTitle();
+        // Restore search input
+        const searchInput = this.container.querySelector('#records-search-input');
+        if (searchInput && this.filters.searchQuery) {
+            searchInput.value = this.filters.searchQuery;
+        }
     }
 
     async _saveLastPeriodState() {
@@ -82,6 +112,10 @@ export class RecordsListManager {
     }
 
     setupEventListeners() {
+        // Listen for hash changes to save filters when navigating away
+        this._hashChangeHandler = () => this._saveSessionFilters();
+        window.addEventListener('hashchange', this._hashChangeHandler);
+
         this.container.querySelector('#records-period-filter').addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const period = e.target.dataset.period;
@@ -94,6 +128,7 @@ export class RecordsListManager {
                     this.filters.customEndDate = newRange.endDate;
                     this._saveLastPeriodState();
                     this.updatePeriodButtons();
+                    this._saveSessionFilters();
                     this.loadAndRenderRecords();
                 }
             }
@@ -111,6 +146,7 @@ export class RecordsListManager {
             if (e.target.tagName === 'BUTTON') {
                 this.filters.type = e.target.dataset.type;
                 this.updateTypeButtons();
+                this._saveSessionFilters();
                 this.applyFiltersAndRender(); // Re-apply filters on existing data
             }        });
 
@@ -128,6 +164,7 @@ export class RecordsListManager {
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
                 this.filters.searchQuery = e.target.value.trim().toLowerCase();
+                this._saveSessionFilters();
                 this.applyFiltersAndRender();
             });
         }
@@ -641,6 +678,7 @@ export class RecordsListManager {
             const selected = new Set();
             this.modalsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(el => selected.add(el.dataset.catId));
             this.filters.categories = selected;
+            this._saveSessionFilters();
             this.applyFiltersAndRender();
             this.modalsContainer.innerHTML = '';
         });
@@ -685,6 +723,7 @@ export class RecordsListManager {
             const selected = new Set();
             this.modalsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(el => selected.add(el.dataset.accId));
             this.filters.accounts = selected;
+            this._saveSessionFilters();
             this.applyFiltersAndRender();
             this.modalsContainer.innerHTML = '';
         });
@@ -707,6 +746,7 @@ export class RecordsListManager {
                 this.filters.customStartDate = start;
                 this.filters.customEndDate = end;
                 this._saveLastPeriodState();
+                this._saveSessionFilters();
                 this.updatePeriodButtons();
                 this.loadAndRenderRecords();
             }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { escapeHTML, formatDateToString, formatCurrency, isValidDate, debounce, throttle, deepClone, generateId } from '../../src/js/utils.js';
+import { escapeHTML, formatDateToString, formatCurrency, isValidDate, debounce, throttle, deepClone, generateId, formatDate, getDateRange, getMonthRange, calculateNextDueDate, shouldSkipDate, calculateAmortizationDetails } from '../../src/js/utils.js';
 
 describe('escapeHTML', () => {
     it('null / undefined 回傳空字串', () => {
@@ -372,5 +372,293 @@ describe('generateId', () => {
         } finally {
             globalThis.crypto = originalCrypto;
         }
+    });
+});
+
+describe('formatDate', () => {
+    it('short 格式：MM/DD', () => {
+        const result = formatDate('2024-03-15', 'short');
+        expect(result).toMatch(/\d{2}\/\d{2}/);
+    });
+
+    it('long 格式：YYYY/MM/DD', () => {
+        const result = formatDate('2024-03-15', 'long');
+        expect(result).toMatch(/\d{4}\/\d{2}\/\d{2}/);
+    });
+
+    it('month-day 格式：3月 15', () => {
+        const result = formatDate('2024-03-15', 'month-day');
+        expect(result).toContain('3月');
+        expect(result).toMatch(/\d{1,2}/);
+    });
+
+    it('預設格式回傳本地化日期', () => {
+        const result = formatDate('2024-03-15');
+        expect(typeof result).toBe('string');
+        expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('接收 Date 物件', () => {
+        const date = new Date(2024, 2, 15);
+        const result = formatDate(date, 'long');
+        expect(result).toMatch(/\d{4}\/\d{2}\/\d{2}/);
+    });
+
+    it('無效日期不拋錯', () => {
+        expect(() => formatDate('invalid', 'long')).not.toThrow();
+    });
+});
+
+describe('getDateRange', () => {
+    it('today 回傳今日範圍', () => {
+        const today = new Date();
+        const expected = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const result = getDateRange('today');
+        expect(result.startDate).toBe(expected);
+        expect(result.endDate).toBe(expected);
+    });
+
+    it('week 回傳本週範圍（週日到週六）', () => {
+        const result = getDateRange('week');
+        expect(result).toHaveProperty('startDate');
+        expect(result).toHaveProperty('endDate');
+        expect(isValidDate(result.startDate)).toBe(true);
+        expect(isValidDate(result.endDate)).toBe(true);
+    });
+
+    it('month 回傳本月範圍', () => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const result = getDateRange('month');
+        expect(result.startDate).toBe(`${year}-${month}-01`);
+        // 驗證 endDate 是本月最後一天
+        const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+        expect(result.endDate).toBe(`${year}-${month}-${String(lastDay).padStart(2, '0')}`);
+    });
+
+    it('year 回傳今年範圍', () => {
+        const today = new Date();
+        const result = getDateRange('year');
+        expect(result.startDate).toBe(`${today.getFullYear()}-01-01`);
+        expect(result.endDate).toBe(`${today.getFullYear()}-12-31`);
+    });
+
+    it('last7days 回傳近七日範圍', () => {
+        const result = getDateRange('last7days');
+        expect(result).toHaveProperty('startDate');
+        expect(result).toHaveProperty('endDate');
+        // 驗證範圍是 7 天
+        const start = new Date(result.startDate);
+        const end = new Date(result.endDate);
+        const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24));
+        expect(diffDays).toBe(6); // 包含今天 = 7 天，差 6 天
+    });
+
+    it('lastmonth 回傳上月範圍', () => {
+        const today = new Date();
+        const result = getDateRange('lastmonth');
+        const lastMonth = today.getMonth() === 0 ? 12 : today.getMonth();
+        const lastMonthYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+        expect(result.startDate).toBe(`${lastMonthYear}-${String(lastMonth).padStart(2, '0')}-01`);
+    });
+
+    it('預設 period 回傳今日', () => {
+        const result = getDateRange('unknown_period');
+        const today = new Date();
+        const expected = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        expect(result.startDate).toBe(expected);
+        expect(result.endDate).toBe(expected);
+    });
+});
+
+describe('getMonthRange', () => {
+    it('回傳正確月份範圍', () => {
+        const result = getMonthRange(2024, 1); // February 2024
+        expect(result.startDate).toBe('2024-02-01');
+        expect(result.endDate).toBe('2024-02-29'); // 2024 is leap year
+    });
+
+    it('非閏年二月', () => {
+        const result = getMonthRange(2023, 1); // February 2023
+        expect(result.startDate).toBe('2023-02-01');
+        expect(result.endDate).toBe('2023-02-28');
+    });
+
+    it('跨年 12 月', () => {
+        const result = getMonthRange(2024, 11); // December 2024
+        expect(result.startDate).toBe('2024-12-01');
+        expect(result.endDate).toBe('2024-12-31');
+    });
+
+    it('跨年 1 月', () => {
+        const result = getMonthRange(2025, 0); // January 2025
+        expect(result.startDate).toBe('2025-01-01');
+        expect(result.endDate).toBe('2025-01-31');
+    });
+});
+
+describe('calculateNextDueDate', () => {
+    it('daily + interval=1 加一天', () => {
+        expect(calculateNextDueDate('2024-01-15', 'daily', 1)).toBe('2024-01-16');
+    });
+
+    it('daily + interval=7 加七天', () => {
+        expect(calculateNextDueDate('2024-01-15', 'daily', 7)).toBe('2024-01-22');
+    });
+
+    it('weekly + interval=1 加七天', () => {
+        expect(calculateNextDueDate('2024-01-15', 'weekly', 1)).toBe('2024-01-22');
+    });
+
+    it('weekly + interval=2 加十四天', () => {
+        expect(calculateNextDueDate('2024-01-15', 'weekly', 2)).toBe('2024-01-29');
+    });
+
+    it('monthly + interval=1 加一個月', () => {
+        expect(calculateNextDueDate('2024-01-15', 'monthly', 1)).toBe('2024-02-15');
+    });
+
+    it('monthly 跨月邊界 (1月31日 → JS setMonth 溢出 → 3月2日)', () => {
+        // JS setMonth 不會自動調整到月末：Jan 31 + 1 month → Mar 2
+        expect(calculateNextDueDate('2024-01-31', 'monthly', 1)).toBe('2024-03-02');
+    });
+
+    it('yearly + interval=1 加一年', () => {
+        expect(calculateNextDueDate('2024-01-15', 'yearly', 1)).toBe('2025-01-15');
+    });
+
+    it('yearly 閏年 → 非閏年 (2024-02-29 → 2025-03-01)', () => {
+        expect(calculateNextDueDate('2024-02-29', 'yearly', 1)).toBe('2025-03-01');
+    });
+
+    it('無效頻率拋錯', () => {
+        expect(() => calculateNextDueDate('2024-01-15', 'biweekly', 1)).toThrow('Invalid frequency');
+    });
+});
+
+describe('shouldSkipDate', () => {
+    it('無 skipRules 回傳 false', () => {
+        const date = new Date(2024, 0, 15);
+        expect(shouldSkipDate(date, null)).toBe(false);
+        expect(shouldSkipDate(date, [])).toBe(false);
+        expect(shouldSkipDate(date, undefined)).toBe(false);
+    });
+
+    it('dayOfWeek 規則：週日（0）跳過', () => {
+        const date = new Date(2024, 0, 14); // 2024-01-14 is Sunday
+        const rules = [{ type: 'dayOfWeek', values: [0] }];
+        expect(shouldSkipDate(date, rules)).toBe(true);
+    });
+
+    it('dayOfWeek 規則：週一不跳過', () => {
+        const date = new Date(2024, 0, 15); // 2024-01-15 is Monday
+        const rules = [{ type: 'dayOfWeek', values: [0] }];
+        expect(shouldSkipDate(date, rules)).toBe(false);
+    });
+
+    it('dayOfMonth 規則：每月 1 號跳過', () => {
+        const date = new Date(2024, 5, 1); // June 1, 2024
+        const rules = [{ type: 'dayOfMonth', values: [1] }];
+        expect(shouldSkipDate(date, rules)).toBe(true);
+    });
+
+    it('dayOfMonth 規則：每月 15 號不跳過', () => {
+        const date = new Date(2024, 5, 15);
+        const rules = [{ type: 'dayOfMonth', values: [1] }];
+        expect(shouldSkipDate(date, rules)).toBe(false);
+    });
+
+    it('monthOfYear 規則：三月（index=2）跳過', () => {
+        const date = new Date(2024, 2, 15); // March 2024
+        const rules = [{ type: 'monthOfYear', values: [2] }];
+        expect(shouldSkipDate(date, rules)).toBe(true);
+    });
+
+    it('多個 skipRules：OR 邏輯（任一匹配就跳過）', () => {
+        const date = new Date(2024, 5, 15); // June 15, 2024 (Saturday)
+        const rules = [
+            { type: 'dayOfWeek', values: [0] },    // Sunday
+            { type: 'dayOfMonth', values: [15] },  // 15th
+        ];
+        expect(shouldSkipDate(date, rules)).toBe(true);
+    });
+
+    it('rule 無 values 跳過該 rule', () => {
+        const date = new Date(2024, 0, 15);
+        const rules = [{ type: 'dayOfWeek', values: [] }];
+        expect(shouldSkipDate(date, rules)).toBe(false);
+    });
+
+    it('unknown type 不匹配', () => {
+        const date = new Date(2024, 0, 15);
+        const rules = [{ type: 'unknownType', values: [0] }];
+        expect(shouldSkipDate(date, rules)).toBe(false);
+    });
+});
+
+describe('calculateAmortizationDetails', () => {
+    it('本金為 0 回傳零值', () => {
+        const result = calculateAmortizationDetails(0, 12, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(0);
+        expect(result.exactTotalToPay).toBe(0);
+    });
+
+    it('期數為 0 回傳零值', () => {
+        const result = calculateAmortizationDetails(10000, 0, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(0);
+        expect(result.exactTotalToPay).toBe(0);
+    });
+
+    it('無利率：每期金額 = 本金 / 期數', () => {
+        const result = calculateAmortizationDetails(12000, 12, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(1000);
+        expect(result.exactTotalToPay).toBe(12000);
+    });
+
+    it('非整除 round 策略', () => {
+        const result = calculateAmortizationDetails(1000, 3, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(333); // Math.round(333.33)
+    });
+
+    it('有利率（月付）：正確計算年金', () => {
+        const result = calculateAmortizationDetails(10000, 12, 5, 'monthly');
+        expect(result.amountPerPeriod).toBeGreaterThan(800);
+        expect(result.amountPerPeriod).toBeLessThan(900);
+    });
+
+    it('有利率（週付）：periodRate = annualRate / 100 / 52', () => {
+        const result = calculateAmortizationDetails(10000, 52, 5, 'weekly');
+        expect(result.amountPerPeriod).toBeGreaterThan(0);
+    });
+
+    it('有利率（年付）：periodRate = annualRate / 100', () => {
+        const result = calculateAmortizationDetails(10000, 5, 5, 'yearly');
+        expect(result.amountPerPeriod).toBeGreaterThan(0);
+    });
+
+    it('decimalStrategy: ceil', () => {
+        const result = calculateAmortizationDetails(1000, 3, 0, 'monthly', 'ceil');
+        expect(result.amountPerPeriod).toBe(334); // Math.ceil(333.33)
+    });
+
+    it('decimalStrategy: floor', () => {
+        const result = calculateAmortizationDetails(1000, 3, 0, 'monthly', 'floor');
+        expect(result.amountPerPeriod).toBe(333); // Math.floor(333.33)
+    });
+
+    it('decimalStrategy: keep（保留兩位小數）', () => {
+        const result = calculateAmortizationDetails(1000, 3, 0, 'monthly', 'keep');
+        expect(result.amountPerPeriod).toBe(333.33);
+    });
+
+    it('負本金回傳零值', () => {
+        const result = calculateAmortizationDetails(-100, 12, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(0);
+    });
+
+    it('負期數回傳零值', () => {
+        const result = calculateAmortizationDetails(10000, -5, 0, 'monthly');
+        expect(result.amountPerPeriod).toBe(0);
     });
 });
