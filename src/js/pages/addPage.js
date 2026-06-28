@@ -665,7 +665,12 @@ export class AddPage {
                                 <span class="font-medium text-wabi-primary">
                                     <i class="fa-solid fa-handshake mr-2"></i>關聯欠款
                                 </span>
-                                ${debt.settled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-2 py-1 rounded">已還清</span>' : ''}
+                                <div class="flex items-center gap-2">
+                                    <button id="view-associated-debt-btn" class="text-xs text-wabi-primary hover:underline flex items-center gap-1 font-medium bg-transparent border-0 cursor-pointer">
+                                        <i class="fa-solid fa-eye"></i>查看欠款
+                                    </button>
+                                    ${debt.settled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-2 py-1 rounded">已還清</span>' : ''}
+                                </div>
                             </div>
                             ${!debt.settled ? `
                                 <!-- Editable debt info -->
@@ -729,6 +734,12 @@ export class AddPage {
                             if(recordId) params.append('id', recordId);
                             await this.render(params);
                         };
+
+                        // Bind view associated debt button
+                        document.getElementById('view-associated-debt-btn')?.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            window.location.hash = `#debts?debtId=${debt.id}`;
+                        });
 
                         // Bind debt type edit buttons
                         document.getElementById('debt-type-receivable-edit')?.addEventListener('click', async () => {
@@ -969,8 +980,26 @@ export class AddPage {
         });
     }
 
-    showPaymentModal(debt, recordId, remainingAmount) {
+    async showPaymentModal(debt, recordId, remainingAmount) {
         const isReceivable = debt.type === 'receivable';
+
+        const advancedModeSetting = await this.app.dataService.getSetting('advancedAccountModeEnabled');
+        const isAdvancedMode = !!advancedModeSetting?.value;
+        let accounts = [];
+        let defaultAccountId = null;
+
+        if (isAdvancedMode) {
+            accounts = await this.app.dataService.getAccounts();
+            if (debt.recordId) {
+                const mainRecord = await this.app.dataService.getRecord(debt.recordId);
+                if (mainRecord && mainRecord.accountId) {
+                    defaultAccountId = mainRecord.accountId;
+                }
+            }
+            if (!defaultAccountId && accounts.length > 0) {
+                defaultAccountId = accounts[0].id;
+            }
+        }
 
         const modal = document.createElement('div');
         modal.id = 'payment-modal';
@@ -990,6 +1019,15 @@ export class AddPage {
                     <input type="number" id="payment-amount-input" value="" min="1" max="${remainingAmount}" step="1" placeholder="輸入金額"
                            class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary text-lg">
                 </div>
+
+                ${isAdvancedMode ? `
+                <div class="mb-4">
+                    <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${isReceivable ? '入帳' : '出帳'}帳戶</label>
+                    <select id="payment-account-select" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+                        ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
+                    </select>
+                </div>
+                ` : ''}
 
                 <div class="flex gap-2 mb-4">
                     <button id="pay-full-btn" class="flex-1 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg bg-wabi-primary/10">
@@ -1040,7 +1078,10 @@ export class AddPage {
                 return;
             }
 
-            await this.app.dataService.settleDebt(debt.id, amount);
+            const accountSelect = modal.querySelector('#payment-account-select');
+            const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
+
+            await this.app.dataService.settleDebt(debt.id, amount, selectedAccountId);
             closeModal();
             showToast('還款成功！');
             // Re-render

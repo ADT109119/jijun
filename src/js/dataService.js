@@ -1,8 +1,7 @@
 import { customConfirm } from './utils.js';
 const openDB = window.idb?.openDB || (() => {
-  console.warn('IndexedDB 不可用，將使用 localStorage')
-  return null
-})
+  throw new Error('IndexedDB library not loaded');
+});
 
 class DataService {
   constructor() {
@@ -846,6 +845,53 @@ class DataService {
     const filteredRecords = records.filter(r => r.id !== id)
     localStorage.setItem('records', JSON.stringify(filteredRecords))
     return true
+  }
+
+  _getFromLocalStorage(storeName, filters = {}) {
+    const raw = localStorage.getItem(storeName);
+    let items = raw ? JSON.parse(raw) : [];
+    if (!filters.allLedgers) {
+      const targetLedgerId = filters.ledgerId ?? this.activeLedgerId;
+      items = items.filter(item => item.ledgerId === targetLedgerId);
+    }
+    return items;
+  }
+
+  _getByIdFromLocalStorage(storeName, id) {
+    const items = this._getFromLocalStorage(storeName, { allLedgers: true });
+    return items.find(item => item.id === id) || null;
+  }
+
+  _addToLocalStorage(storeName, item) {
+    const items = this._getFromLocalStorage(storeName, { allLedgers: true });
+    const maxId = items.reduce((max, i) => i.id > max ? i.id : max, 0);
+    const newItem = {
+      ...item,
+      id: maxId + 1,
+      uuid: item.uuid || this.generateUUID(),
+      ledgerId: item.ledgerId ?? this.activeLedgerId
+    };
+    items.push(newItem);
+    localStorage.setItem(storeName, JSON.stringify(items));
+    return newItem.id;
+  }
+
+  _updateInLocalStorage(storeName, id, updates) {
+    const items = this._getFromLocalStorage(storeName, { allLedgers: true });
+    const idx = items.findIndex(item => item.id === id);
+    if (idx !== -1) {
+      items[idx] = { ...items[idx], ...updates };
+      localStorage.setItem(storeName, JSON.stringify(items));
+      return items[idx];
+    }
+    throw new Error(`${storeName} item not found`);
+  }
+
+  _deleteFromLocalStorage(storeName, id) {
+    let items = this._getFromLocalStorage(storeName, { allLedgers: true });
+    items = items.filter(item => item.id !== id);
+    localStorage.setItem(storeName, JSON.stringify(items));
+    return true;
   }
 
   // 獲取統計資料
@@ -1841,6 +1887,9 @@ class DataService {
 
   // --- Account Methods ---
   async addAccount(account, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._addToLocalStorage('accounts', account);
+    }
     try {
       if (!account.uuid) account.uuid = this.generateUUID();
       // 同步接收路徑：移除來源裝置的 integer id，讓 IndexedDB 自動產生新 id
@@ -1859,6 +1908,9 @@ class DataService {
   }
 
   async getAccount(id) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getByIdFromLocalStorage('accounts', id);
+    }
     try {
       return await this.db.get('accounts', id);
     } catch (error) {
@@ -1868,6 +1920,9 @@ class DataService {
   }
 
   async getAccounts(filters = {}) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getFromLocalStorage('accounts', filters);
+    }
     try {
       let accounts = await this.db.getAll('accounts');
       if (!filters.allLedgers) {
@@ -1882,6 +1937,9 @@ class DataService {
   }
 
   async updateAccount(id, updates, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._updateInLocalStorage('accounts', id, updates);
+    }
     try {
       const tx = this.db.transaction('accounts', 'readwrite');
       const account = await tx.store.get(id);
@@ -1905,6 +1963,9 @@ class DataService {
   }
 
   async deleteAccount(id, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._deleteFromLocalStorage('accounts', id);
+    }
     const tx = this.db.transaction('accounts', 'readwrite');
     let itemData = null;
     if (!skipLog) {
@@ -1997,6 +2058,9 @@ class DataService {
 
   // --- Contact Methods ---
   async addContact(contact, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._addToLocalStorage('contacts', contact);
+    }
     try {
       let contactData;
       if (skipLog) {
@@ -2025,6 +2089,9 @@ class DataService {
   }
 
   async getContact(id) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getByIdFromLocalStorage('contacts', id);
+    }
     try {
       return await this.db.get('contacts', id);
     } catch (error) {
@@ -2034,6 +2101,9 @@ class DataService {
   }
 
   async getContacts(filters = {}) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getFromLocalStorage('contacts', filters);
+    }
     try {
       let contacts = await this.db.getAll('contacts');
       if (!filters.allLedgers) {
@@ -2048,6 +2118,9 @@ class DataService {
   }
 
   async updateContact(id, updates, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._updateInLocalStorage('contacts', id, updates);
+    }
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
       const contact = await tx.store.get(id);
@@ -2071,6 +2144,9 @@ class DataService {
   }
 
   async deleteContact(id, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._deleteFromLocalStorage('contacts', id);
+    }
     try {
       const tx = this.db.transaction('contacts', 'readwrite');
       let itemData = null;
@@ -2094,7 +2170,7 @@ class DataService {
       let contactUuid = debt.contactUuid || null;
       if (debt.contactId && !contactUuid) {
         try {
-          const contact = await this.db.get('contacts', debt.contactId);
+          const contact = await this.getContact(debt.contactId);
           if (contact?.uuid) contactUuid = contact.uuid;
         } catch (_) { /* 查不到聯絡人不影響儲存 */ }
       }
@@ -2102,7 +2178,7 @@ class DataService {
       let recordUuid = debt.recordUuid || null;
       if (debt.recordId && !recordUuid) {
         try {
-          const rec = await this.db.get('records', debt.recordId);
+          const rec = await this.getRecord(debt.recordId);
           if (rec?.uuid) recordUuid = rec.uuid;
         } catch (_) { /* 查不到紀錄不影響儲存 */ }
       }
@@ -2145,6 +2221,10 @@ class DataService {
       // 移除 id（讓 IndexedDB 自動產生），避免 key 衝突
       delete debtData.id;
 
+      if (this.useLocalStorage || !this.db) {
+        return this._addToLocalStorage('debts', debtData);
+      }
+
       const tx = this.db.transaction('debts', 'readwrite');
       const id = await tx.store.add(debtData);
       await tx.done;
@@ -2157,6 +2237,9 @@ class DataService {
   }
 
   async getDebt(id) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getByIdFromLocalStorage('debts', id);
+    }
     try {
       return await this.db.get('debts', id);
     } catch (error) {
@@ -2166,6 +2249,9 @@ class DataService {
   }
 
   async getDebts(filters = {}) {
+    if (this.useLocalStorage || !this.db) {
+      return this._getFromLocalStorage('debts', filters);
+    }
     try {
       let debts = await this.db.getAll('debts');
 
@@ -2199,7 +2285,7 @@ class DataService {
       if (updates.contactId !== undefined) {
         if (updates.contactId) {
           try {
-            const contact = await this.db.get('contacts', updates.contactId);
+            const contact = await this.getContact(updates.contactId);
             if (contact?.uuid) extraUpdates.contactUuid = contact.uuid;
           } catch (_) { /* 查不到聯絡人不影響更新 */ }
         } else {
@@ -2209,12 +2295,16 @@ class DataService {
       if (updates.recordId !== undefined) {
         if (updates.recordId) {
           try {
-            const record = await this.db.get('records', updates.recordId);
+            const record = await this.getRecord(updates.recordId);
             if (record?.uuid) extraUpdates.recordUuid = record.uuid;
           } catch (_) { /* 查不到紀錄不影響更新 */ }
         } else {
           extraUpdates.recordUuid = null;
         }
+      }
+
+      if (this.useLocalStorage || !this.db) {
+        return this._updateInLocalStorage('debts', id, { ...updates, ...extraUpdates });
       }
 
       const tx = this.db.transaction('debts', 'readwrite');
@@ -2247,6 +2337,9 @@ class DataService {
   }
 
   async deleteDebt(id, skipLog = false) {
+    if (this.useLocalStorage || !this.db) {
+      return this._deleteFromLocalStorage('debts', id);
+    }
     try {
       const tx = this.db.transaction('debts', 'readwrite');
       let itemData = null;
@@ -2263,7 +2356,7 @@ class DataService {
     }
   }
 
-  async settleDebt(id, paymentAmount = null) {
+  async settleDebt(id, paymentAmount = null, accountId = null) {
     try {
       const debt = await this.getDebt(id);
       if (!debt) throw new Error('Debt not found');
@@ -2285,9 +2378,37 @@ class DataService {
       // If it was linked (recordId exists), the cash flow was already recorded at creation
       // Creating another record would cause double-counting in statistics
       let newRecordId = null;
-      if (!debt.recordId) {
+      const showLinkedRepaymentsSetting = await this.getSetting('showLinkedRepayments');
+      const showLinkedRepayments = !!showLinkedRepaymentsSetting?.value;
+
+      if (!debt.recordId || showLinkedRepayments) {
         const contact = await this.getContact(debt.contactId);
         const contactName = contact?.name || '未知聯絡人';
+
+        // Resolve accountId in advanced mode
+        let recordAccountId = accountId;
+        const advancedModeSetting = await this.getSetting('advancedAccountModeEnabled');
+        const isAdvancedMode = !!advancedModeSetting?.value;
+
+        if (isAdvancedMode) {
+          if (!recordAccountId) {
+            // Attempt to get accountId from the original transaction
+            if (debt.recordId) {
+              const mainRecord = await this.getRecord(debt.recordId);
+              if (mainRecord && mainRecord.accountId) {
+                recordAccountId = mainRecord.accountId;
+              }
+            }
+          }
+
+          if (!recordAccountId) {
+            // Fallback to the first account available
+            const accounts = await this.getAccounts();
+            if (accounts && accounts.length > 0) {
+              recordAccountId = accounts[0].id;
+            }
+          }
+        }
         
         const record = {
           type: debt.type === 'receivable' ? 'income' : 'expense',
@@ -2298,7 +2419,8 @@ class DataService {
             ? `收回欠款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`
             : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
           ledgerId: debt.ledgerId,
-          debtId: id
+          debtId: id,
+          ...(recordAccountId ? { accountId: recordAccountId } : {})
         };
         
         newRecordId = await this.addRecord(record);
@@ -2337,8 +2459,8 @@ class DataService {
   }
 
   // Add partial payment to a debt
-  async addPartialPayment(debtId, amount) {
-    return this.settleDebt(debtId, amount);
+  async addPartialPayment(debtId, amount, accountId = null) {
+    return this.settleDebt(debtId, amount, accountId);
   }
 
   // Get debt summary by contact

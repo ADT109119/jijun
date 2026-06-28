@@ -12,13 +12,35 @@ export class DebtManager {
   }
 
   // 渲染欠款管理頁面
-  async renderDebtsPage(container) {
+  async renderDebtsPage(container, params = null) {
     this.container = container;
     
     // Reset filters on page load
     this.currentContactFilter = null;
     this.currentFilter = 'unsettled';
     this.currentPage = 1;
+    this.highlightDebtId = null;
+
+    if (params) {
+      const contactIdParam = params.get('contactId');
+      if (contactIdParam) {
+        this.currentContactFilter = parseInt(contactIdParam);
+      }
+      const filterParam = params.get('filter');
+      if (filterParam) {
+        this.currentFilter = filterParam;
+      }
+      const debtIdParam = params.get('debtId');
+      if (debtIdParam) {
+        const debtId = parseInt(debtIdParam);
+        const debt = await this.dataService.getDebt(debtId);
+        if (debt) {
+          this.currentFilter = debt.settled ? 'settled' : 'unsettled';
+          this.currentContactFilter = debt.contactId;
+          this.highlightDebtId = debt.id;
+        }
+      }
+    }
     
     const contacts = await this.dataService.getContacts();
 
@@ -60,7 +82,7 @@ export class DebtManager {
         <div class="mb-4">
           <select id="contact-filter-select" class="w-full p-3 bg-wabi-surface rounded-lg border border-wabi-border text-wabi-text-primary">
             <option value="">👤 所有聯絡人</option>
-            ${contacts.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')}
+            ${contacts.map(c => `<option value="${c.id}" ${this.currentContactFilter === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`).join('')}
           </select>
         </div>
 
@@ -277,6 +299,12 @@ export class DebtManager {
     }
 
     // Pagination
+    if (this.highlightDebtId) {
+      const debtIndex = allDebts.findIndex(d => d.id === this.highlightDebtId);
+      if (debtIndex !== -1) {
+        this.currentPage = Math.floor(debtIndex / this.pageSize) + 1;
+      }
+    }
     const totalDebts = allDebts.length;
     const totalPages = Math.ceil(totalDebts / this.pageSize);
     const startIndex = (this.currentPage - 1) * this.pageSize;
@@ -303,9 +331,10 @@ export class DebtManager {
       const progressPercent = originalAmount > 0 ? ((paidAmount / originalAmount) * 100).toFixed(0) : 0;
       const hasPartialPayments = paidAmount > 0 && remainingAmount > 0;
       const hasPaymentHistory = debt.payments && debt.payments.length > 0;
+      const isHighlighted = this.highlightDebtId === debt.id;
       
       return `
-        <div class="bg-wabi-surface rounded-lg border border-wabi-border p-4 ${debt.settled ? 'opacity-60' : ''}" data-debt-id="${debt.id}">
+        <div id="debt-item-${debt.id}" class="bg-wabi-surface rounded-lg border ${isHighlighted ? 'border-wabi-primary ring-2 ring-wabi-primary/20' : 'border-wabi-border'} p-4 ${debt.settled ? 'opacity-60' : ''}" data-debt-id="${debt.id}">
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center rounded-full ${isReceivable ? 'bg-wabi-income/20 text-wabi-income' : 'bg-wabi-expense/20 text-wabi-expense'} size-10">
@@ -398,12 +427,31 @@ export class DebtManager {
     listContainer.querySelectorAll('.settle-debt-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const debtId = parseInt(btn.dataset.id);
-        if (await customConfirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
-          await this.dataService.settleDebt(debtId);
-          showToast('已結清欠款並產生記帳紀錄', 'success');
-          // Maintain current filter state instead of full re-render
-          await this.updateSummaryCards();
-          await this.loadDebtList();
+        const debt = await this.dataService.getDebt(debtId);
+        if (!debt) return;
+
+        const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
+        const isAdvancedMode = !!advancedModeSetting?.value;
+
+        let hasAssociatedAccount = false;
+        if (debt.recordId) {
+          const mainRecord = await this.dataService.getRecord(debt.recordId);
+          if (mainRecord && mainRecord.accountId) {
+            hasAssociatedAccount = true;
+          }
+        }
+
+        if (isAdvancedMode && !hasAssociatedAccount) {
+          // Guide user to select account
+          await this.showSettleDebtModal(debtId);
+        } else {
+          // Standard confirmation
+          if (await customConfirm('確定要標記此欠款為全額結清嗎？系統將自動產生對應的收支記錄。')) {
+            await this.dataService.settleDebt(debtId);
+            showToast('已結清欠款並產生記帳紀錄', 'success');
+            await this.updateSummaryCards();
+            await this.loadDebtList();
+          }
         }
       });
     });
@@ -493,6 +541,17 @@ export class DebtManager {
         }
       });
     }
+
+    if (this.highlightDebtId) {
+      const targetId = this.highlightDebtId;
+      setTimeout(() => {
+        const el = this.container.querySelector(`#debt-item-${targetId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+      this.highlightDebtId = null; // Clear to prevent repeated scrolls
+    }
   }
 
   async showPartialPaymentModal(debtId) {
@@ -501,6 +560,24 @@ export class DebtManager {
     const contactName = contact?.name || '未知聯絡人';
     const remainingAmount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
     const isReceivable = debt.type === 'receivable';
+
+    const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
+    const isAdvancedMode = !!advancedModeSetting?.value;
+    let accounts = [];
+    let defaultAccountId = null;
+
+    if (isAdvancedMode) {
+      accounts = await this.dataService.getAccounts();
+      if (debt.recordId) {
+        const mainRecord = await this.dataService.getRecord(debt.recordId);
+        if (mainRecord && mainRecord.accountId) {
+          defaultAccountId = mainRecord.accountId;
+        }
+      }
+      if (!defaultAccountId && accounts.length > 0) {
+        defaultAccountId = accounts[0].id;
+      }
+    }
 
     const modal = document.createElement('div');
     modal.id = 'partial-payment-modal';
@@ -512,11 +589,20 @@ export class DebtManager {
         <p class="text-sm text-wabi-text-secondary mb-4">${contactName} - ${debt.description || '無備註'}</p>
         <p class="text-sm text-wabi-text-secondary mb-2">剩餘金額：<span class="font-bold ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">${formatCurrency(remainingAmount)}</span></p>
         
-        <div class="mb-6">
+        <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${isReceivable ? '收款' : '還款'}金額</label>
           <input type="number" id="partial-amount" value="" min="1" max="${remainingAmount}" step="1" placeholder="輸入金額"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
+
+        ${isAdvancedMode ? `
+        <div class="mb-6">
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${isReceivable ? '入帳' : '出帳'}帳戶</label>
+          <select id="partial-account-select" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+            ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
 
         <div class="flex space-x-3">
           <button id="confirm-partial-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
@@ -556,9 +642,76 @@ export class DebtManager {
         return;
       }
 
-      await this.dataService.addPartialPayment(debtId, amount);
+      const accountSelect = modal.querySelector('#partial-account-select');
+      const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
+
+      await this.dataService.addPartialPayment(debtId, amount, selectedAccountId);
       closeModal();
       // Maintain current filter state instead of full re-render
+      await this.updateSummaryCards();
+      await this.loadDebtList();
+    });
+  }
+
+  async showSettleDebtModal(debtId) {
+    const debt = await this.dataService.getDebt(debtId);
+    if (!debt) return;
+    const contact = await this.dataService.getContact(debt.contactId);
+    const contactName = contact?.name || '未知聯絡人';
+    const remainingAmount = debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0;
+    const isReceivable = debt.type === 'receivable';
+
+    const accounts = await this.dataService.getAccounts();
+    const defaultAccountId = accounts.length > 0 ? accounts[0].id : null;
+
+    const modal = document.createElement('div');
+    modal.id = 'settle-debt-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+    modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
+        <h3 class="text-lg font-semibold mb-4 text-wabi-primary">
+          <i class="fa-solid fa-handshake mr-2"></i>全額結清
+        </h3>
+        <p class="text-sm text-wabi-text-secondary mb-2">${contactName} - ${debt.description || '無備註'}</p>
+        <p class="text-sm text-wabi-text-secondary mb-4">
+          結清金額：<span class="font-bold ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">${formatCurrency(remainingAmount)}</span>
+        </p>
+
+        <div class="mb-6">
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${isReceivable ? '入帳' : '出帳'}帳戶</label>
+          <select id="settle-account-select" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+            ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="flex space-x-3">
+          <button id="confirm-settle-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
+            確認
+          </button>
+          <button id="cancel-settle-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
+            取消
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+
+    modal.querySelector('#cancel-settle-btn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    modal.querySelector('#confirm-settle-btn').addEventListener('click', async () => {
+      const accountSelect = modal.querySelector('#settle-account-select');
+      const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
+
+      await this.dataService.settleDebt(debtId, null, selectedAccountId);
+      closeModal();
+      showToast('已結清欠款並產生記帳紀錄', 'success');
       await this.updateSummaryCards();
       await this.loadDebtList();
     });

@@ -507,8 +507,12 @@ export class RecordsListManager {
                             <div class="flex items-center gap-2">
                                 <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
                                 ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-sm cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
-                                ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
-                                ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
+                                ${hasDebt ? `
+                                    <button class="debt-link-btn inline-flex items-center gap-1 text-xs ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
+                                        <i class="fa-solid fa-handshake"></i>
+                                        <span>${statusLabel || '欠款'}</span>
+                                    </button>
+                                ` : ''}
                             </div>
                             <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${record.description || '無備註'}</p>
                         </div>
@@ -528,7 +532,7 @@ export class RecordsListManager {
                             `}
                             ${this.advancedModeEnabled ? `<p class="text-xs text-wabi-text-secondary">${accountName}</p>` : `<p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>`}
                         </div>
-                    </a>
+                    </div>
                 `;
             }).join('');
             return dateHeader + recordsHtml;
@@ -540,6 +544,16 @@ export class RecordsListManager {
                 e.preventDefault();
                 e.stopPropagation();
                 window.location.hash = '#amortizations';
+            });
+        });
+
+        // 欠款按鈕點擊跳轉
+        listContainer.querySelectorAll('.debt-link-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const debtId = btn.dataset.debtId;
+                window.location.hash = `#debts?debtId=${debtId}`;
             });
         });
     }
