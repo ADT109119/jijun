@@ -22,6 +22,8 @@ export class VirtualKeyboardDetector {
   }
 
   start() {
+    const cleanups = [];
+
     // Layer 1: VirtualKeyboard API (Chrome Android 118+)
     if ('virtualKeyboard' in navigator) {
       const vk = navigator.virtualKeyboard;
@@ -30,8 +32,7 @@ export class VirtualKeyboardDetector {
         this._setState(!!geom && geom.height > 0);
       };
       vk.addEventListener('geometrychange', handler);
-      this._cleanup = () => vk.removeEventListener('geometrychange', handler);
-      return;
+      cleanups.push(() => vk.removeEventListener('geometrychange', handler));
     }
 
     // Layer 2: Visual Viewport API (Chrome 60+, iOS Safari, Firefox)
@@ -39,15 +40,27 @@ export class VirtualKeyboardDetector {
       this.initialHeight = window.visualViewport.height;
       window.visualViewport.addEventListener('resize', this._bindedResize);
       window.addEventListener('orientationchange', this._bindedOrientationChange);
-      this._cleanup = () => {
+      cleanups.push(() => {
         window.visualViewport.removeEventListener('resize', this._bindedResize);
         window.removeEventListener('orientationchange', this._bindedOrientationChange);
-      };
-      return;
+      });
     }
 
     // Layer 3: Focus/Blur event delegation (universal fallback)
     this._attachFocusBlur();
+    if (this._cleanup) {
+      cleanups.push(this._cleanup);
+    }
+
+    this._cleanup = () => {
+      cleanups.forEach(fn => {
+        try {
+          fn();
+        } catch (e) {
+          console.error('Failed to cleanup keyboard detector:', e);
+        }
+      });
+    };
   }
 
   /**

@@ -74,10 +74,17 @@ class EasyAccountingApp {
 
     async init() {
         await this.dataService.init();
-        await this.themeManager.init(); // Initialize themes early
-        await this.categoryManager.init();
-        await this.budgetManager.loadBudget();
-        await this.ledgerManager.init();
+
+        // 並行初始化無相依關係的核心模組與服務
+        await Promise.all([
+            this.themeManager.init(),
+            this.categoryManager.init(),
+            this.budgetManager.loadBudget(),
+            this.ledgerManager.init(),
+            this.pluginManager.init(),
+            this.syncService.init(),
+            this.notificationService.init()
+        ]);
 
         const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
         this.advancedModeEnabled = !!advancedModeSetting?.value;
@@ -99,9 +106,7 @@ class EasyAccountingApp {
 
         this.processRecurringTransactions();
         this.processAmortizations();
-        
-        // Initialize plugins
-        await this.pluginManager.init();
+        this.processCreditCardStatements();
 
         // Connect DataService hooks to PluginManager & NotificationService
         this.dataService.setHookProvider(async (hookName, payload) => {
@@ -110,12 +115,6 @@ class EasyAccountingApp {
              }
              return await this.pluginManager.triggerHook(hookName, payload);
         });
-        
-        // Initialize sync service (restore saved tokens/settings)
-        await this.syncService.init();
-
-        // Initialize notification service
-        await this.notificationService.init();
 
         // Setup sidebar ledger switcher
         this.updateSidebarLedger();
@@ -281,6 +280,20 @@ class EasyAccountingApp {
             } catch (error) {
                 console.error(`處理攤提「${item.name || '(無名稱)'}」失敗，跳過並繼續:`, error);
             }
+        }
+    }
+
+    // ==================== 信用卡自動出帳 ====================
+    async processCreditCardStatements() {
+        try {
+            // 1. 自動產生到期信用卡的本期帳單
+            await this.dataService.autoGenerateCreditStatements();
+            // 2. 執行信用卡自動扣款繳卡費（於繳款日當天或之後自動轉帳還款）
+            await this.dataService.autoPayCreditStatements();
+            // 3. 自動更新所有帳單的繳款狀態 (先進先出 FIFO 沖銷)
+            await this.dataService.updateCreditStatementsStatus();
+        } catch (error) {
+            console.error('處理信用卡自動出帳與銷帳失敗:', error);
         }
     }
 

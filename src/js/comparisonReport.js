@@ -68,8 +68,26 @@ export class ComparisonReport {
 
         const typeFilter = options.typeFilter || 'all';
 
-        // Fetch records (auto-filtered by activeLedgerId via DataService)
-        const records = await this.dataService.getRecords();
+        const sortedPeriods = [...periods].sort();
+        const minPeriod = sortedPeriods[0];
+        const maxPeriod = sortedPeriods[sortedPeriods.length - 1];
+
+        let startDate = null;
+        let endDate = null;
+
+        if (periodType === 'month') {
+            startDate = `${minPeriod}-01`;
+            const [year, month] = maxPeriod.split('-').map(Number);
+            const lastDay = new Date(year, month, 0).getDate();
+            const formattedMonth = String(month).padStart(2, '0');
+            endDate = `${year}-${formattedMonth}-${String(lastDay).padStart(2, '0')}`;
+        } else {
+            startDate = `${minPeriod}-01-01`;
+            endDate = `${maxPeriod}-12-31`;
+        }
+
+        // Fetch records (auto-filtered by activeLedgerId via DataService, optimized range query)
+        const records = await this.dataService.getRecords({ startDate, endDate });
 
         // Pre-filter debt-collection / debt-repayment (same as getStatistics)
         const filtered = records.filter(
@@ -223,7 +241,7 @@ export class ComparisonReport {
             const prev = values[i - 1];
             const curr = values[i];
             if (prev === 0) {
-                trends.push(curr > 0 ? '↑' : '—');
+                trends.push(curr > 0 ? '↑' : (curr < 0 ? '↓' : '—'));
             } else {
                 const change = ((curr - prev) / Math.abs(prev) * 100);
                 if (change > TREND_THRESHOLD) trends.push('↑');
@@ -264,9 +282,9 @@ export class ComparisonReport {
             lines[lines.length - 1] += `,${lbl}`;
         }
         lines[lines.length - 1] += ',變化率';
-
         for (const row of categoryComparisons) {
-            let csvLine = `"${row.category}"`;
+            const escapedCategory = String(row.category).replace(/"/g, '""');
+            let csvLine = `"${escapedCategory}"`;
             for (let i = 0; i < periodLabels.length; i++) {
                 csvLine += `,${(row[`period${i}`] || 0).toFixed(2)}`;
             }

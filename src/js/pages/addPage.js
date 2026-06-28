@@ -15,9 +15,9 @@ export class AddPage {
         const amortizationEnabled = await this.app.dataService.getSetting('amortizationEnabled');
         const showInstallmentBtn = !!amortizationEnabled?.value;
 
-        // 計算機模式設定
+        // 計算機模式設定（預設為啟用）
         const calculatorModeSetting = await this.app.dataService.getSetting('calculatorModeEnabled');
-        const calculatorModeEnabled = !!calculatorModeSetting?.value;
+        const calculatorModeEnabled = calculatorModeSetting ? !!calculatorModeSetting.value : true;
 
         // 根據計算機模式產生不同的鍵盤佈局
         // 計算機模式: 5欄 (數字3欄 + 運算符1欄 + 功能鍵1欄)
@@ -189,9 +189,9 @@ export class AddPage {
         const advancedMode = await this.app.dataService.getSetting('advancedAccountModeEnabled');
         const advancedModeEnabled = !!advancedMode?.value;
 
-        // 計算機模式設定（需在此處讀取以用於 handleKeypad）
+        // 計算機模式設定（需在此處讀取以用於 handleKeypad，預設為啟用）
         const calculatorModeSetting = await this.app.dataService.getSetting('calculatorModeEnabled');
-        const calculatorModeEnabled = !!calculatorModeSetting?.value;
+        const calculatorModeEnabled = calculatorModeSetting ? !!calculatorModeSetting.value : true;
 
 
         let currentType = 'expense';

@@ -158,8 +158,8 @@ export class SettingsPage {
                                     <i class="fa-solid fa-calculator"></i>
                                 </div>
                                 <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">小鍵盤計算機模式</p>
-                                    <p class="text-xs text-wabi-text-secondary">開啟後小鍵盤將顯示加減乘除與等於鍵</p>
+                                    <p class="text-wabi-text-primary text-base font-normal">關閉計算機功能</p>
+                                    <p class="text-xs text-wabi-text-secondary">開啟後記帳小鍵盤將不顯示加減乘除與等於鍵</p>
                                 </div>
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
@@ -169,7 +169,7 @@ export class SettingsPage {
                             </label>
                         </div>
                         <div id="calculator-mode-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>啟用後，小鍵盤將顯示 ＋、−、×、÷ 與 ＝ 按鈕，可直接進行簡單計算。</p>
+                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>啟用此選項後，記帳小鍵盤將隱藏 ＋、−、×、÷ 與 ＝ 按鈕，僅作為標準數字輸入鍵盤使用。</p>
                         </div>
 
                         <!-- Default Records Period -->
@@ -521,17 +521,18 @@ export class SettingsPage {
         const calculatorModeToggle = document.getElementById('calculator-mode-toggle');
         if (calculatorModeToggle) {
             this.app.dataService.getSetting('calculatorModeEnabled').then(setting => {
-                const isEnabled = !!setting?.value;
-                calculatorModeToggle.checked = isEnabled;
-                if (isEnabled) {
+                const isEnabled = setting ? !!setting.value : true; // 預設為 true (開啟)
+                calculatorModeToggle.checked = !isEnabled; // 關閉按鈕勾選代表 disabled (!isEnabled)
+                if (!isEnabled) {
                     document.getElementById('calculator-mode-info')?.classList.remove('hidden');
                 }
             });
 
             calculatorModeToggle.addEventListener('change', async (e) => {
-                const isEnabled = e.target.checked;
+                const isDisabled = e.target.checked; // 勾選 = 關閉
+                const isEnabled = !isDisabled;
                 await this.app.dataService.saveSetting({ key: 'calculatorModeEnabled', value: isEnabled });
-                if (isEnabled) {
+                if (isDisabled) {
                     document.getElementById('calculator-mode-info')?.classList.remove('hidden');
                 } else {
                     document.getElementById('calculator-mode-info')?.classList.add('hidden');

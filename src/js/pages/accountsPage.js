@@ -270,9 +270,14 @@ export class AccountsPage {
         });
     }
 
-    showAccountModal(accountToEdit = null) {
+    async showAccountModal(accountToEdit = null) {
         const isEdit = !!accountToEdit;
         const accountType = accountToEdit?.type || 'wallet';
+        
+        // 取得所有其他的一般帳戶 (用於自動扣款設定，排除信用卡，且排除目前編輯的這個帳戶)
+        const allAccounts = await this.app.dataService.getAccounts();
+        const debitAccounts = allAccounts.filter(a => a.type !== 'credit_card' && (!accountToEdit || a.id !== accountToEdit.id));
+
         const modal = document.createElement('div');
         modal.id = 'account-form-modal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
@@ -326,6 +331,24 @@ export class AccountsPage {
                                 <label class="text-sm font-medium text-wabi-text-secondary">繳款日</label>
                                 <input type="number" id="due-day-input" min="1" max="31" value="${accountToEdit?.dueDay || 15}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                             </div>
+                        </div>
+                        <!-- 自動繳款與扣款帳戶設定 -->
+                        <div class="flex items-center justify-between border-t border-wabi-border/30 pt-3">
+                            <label class="text-sm font-medium text-wabi-text-secondary">啟用自動扣繳卡費</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="auto-pay-toggle" ${accountToEdit?.autoPayEnabled ? 'checked' : ''} class="sr-only peer">
+                                <div class="w-9 h-5 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-2 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="auto-pay-account-container" class="${accountToEdit?.autoPayEnabled ? '' : 'hidden'}">
+                            <label class="text-sm font-medium text-wabi-text-secondary">自動扣款帳戶</label>
+                            <select id="auto-pay-account-select" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                                <option value="">-- 選擇扣款帳戶 --</option>
+                                ${debitAccounts.map(a => `
+                                    <option value="${a.id}" ${accountToEdit?.autoPayAccountId === a.id ? 'selected' : ''}>${escapeHTML(a.name)}</option>
+                                `).join('')}
+                            </select>
                         </div>
                     </div>
                     
@@ -420,6 +443,18 @@ export class AccountsPage {
                 balanceLabel.textContent = '初始餘額';
             }
         };
+
+        const autoPayToggle = modal.querySelector('#auto-pay-toggle');
+        const autoPayAccountContainer = modal.querySelector('#auto-pay-account-container');
+        if (autoPayToggle && autoPayAccountContainer) {
+            autoPayToggle.addEventListener('change', () => {
+                if (autoPayToggle.checked) {
+                    autoPayAccountContainer.classList.remove('hidden');
+                } else {
+                    autoPayAccountContainer.classList.add('hidden');
+                }
+            });
+        }
 
         typeRadios.forEach(radio => {
             radio.addEventListener('change', () => {
@@ -559,6 +594,15 @@ export class AccountsPage {
                 accountData.creditLimit = parseFloat(document.getElementById('credit-limit-input').value) || 0;
                 accountData.statementDay = parseInt(document.getElementById('statement-day-input').value, 10) || 25;
                 accountData.dueDay = parseInt(document.getElementById('due-day-input').value, 10) || 15;
+                
+                const autoPayEnabled = document.getElementById('auto-pay-toggle').checked;
+                accountData.autoPayEnabled = autoPayEnabled;
+                if (autoPayEnabled) {
+                    const autoPayAccountId = parseInt(document.getElementById('auto-pay-account-select').value, 10);
+                    accountData.autoPayAccountId = autoPayAccountId || null;
+                } else {
+                    accountData.autoPayAccountId = null;
+                }
             }
 
             if (isEdit) {
