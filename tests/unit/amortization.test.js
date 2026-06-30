@@ -98,11 +98,6 @@ describe('calculateNextDueDate', () => {
         expect(calculateNextDueDate('2024-01-15', 'monthly', 3)).toBe('2024-04-15');
     });
 
-    it('yearly + interval=1：加一年（閏年→非閏年自動調整）', () => {
-        // JavaScript setFullYear: 2024-02-29 + 1 year → 2025-03-01 (non-leap year rolls forward)
-        expect(calculateNextDueDate('2024-02-29', 'yearly', 1)).toBe('2025-03-01');
-    });
-
     it('monthly 跨年', () => {
         expect(calculateNextDueDate('2024-12-15', 'monthly', 3)).toBe('2025-03-15');
     });

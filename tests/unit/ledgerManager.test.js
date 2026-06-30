@@ -12,6 +12,7 @@ describe('LedgerManager', () => {
             getLedgers: vi.fn().mockResolvedValue([]),
             getLedger: vi.fn(),
             addLedger: vi.fn(),
+            addAccount: vi.fn().mockResolvedValue(1),
             updateLedger: vi.fn(),
             deleteLedger: vi.fn(),
             setActiveLedger: vi.fn(),
@@ -125,34 +126,26 @@ describe('LedgerManager', () => {
                 .toThrow('已存在同名帳本');
         });
 
-        it('新增帳本時呼叫 dataService.addLedger', async () => {
-            const mockLedgers = [];
-            ledgerManager.ledgers = mockLedgers;
-            
+        it('新增帳本時呼叫 dataService.addLedger 與 addAccount', async () => {
+            ledgerManager.ledgers = [];
             mockDataService.addLedger.mockResolvedValue(2);
 
-            try {
-                await ledgerManager.createLedger({ name: '新帳本' });
-            } catch (e) {
-                // ignore 其他錯誤，我們只測試名稱檢查邏輯
-            }
+            await ledgerManager.createLedger({ name: '新帳本' });
 
             expect(mockDataService.addLedger).toHaveBeenCalledWith(
                 expect.objectContaining({ name: '新帳本' })
             );
+            // createLedger 應同時為新帳本建立預設現金帳戶
+            expect(mockDataService.addAccount).toHaveBeenCalledWith(
+                expect.objectContaining({ name: '現金', type: 'cash', ledgerId: 2 })
+            );
         });
 
         it('新增帳本時使用預設圖示', async () => {
-            const mockLedgers = [];
-            ledgerManager.ledgers = mockLedgers;
-            
+            ledgerManager.ledgers = [];
             mockDataService.addLedger.mockResolvedValue(2);
 
-            try {
-                await ledgerManager.createLedger({ name: '新帳本' });
-            } catch (e) {
-                // ignore
-            }
+            await ledgerManager.createLedger({ name: '新帳本' });
 
             expect(mockDataService.addLedger).toHaveBeenCalledWith(
                 expect.objectContaining({ icon: 'fa-solid fa-book' })
@@ -192,16 +185,21 @@ describe('LedgerManager', () => {
     });
 
     describe('deleteLedger', () => {
-        it('刪除帳本時呼叫 dataService.deleteLedger', async () => {
+        it('刪除帳本時呼叫 dataService.deleteLedger 並重載清單', async () => {
             const mockLedgers = [
                 { id: 1, name: '個人帳本' },
                 { id: 2, name: '公司帳本' }
             ];
             ledgerManager.ledgers = mockLedgers;
+            // deleteLedger 後會呼叫 init()，init() 呼叫 getLedgers()，回傳只剩 id=2 的帳本
+            mockDataService.getLedgers.mockResolvedValue([{ id: 2, name: '公司帳本' }]);
 
             await ledgerManager.deleteLedger(1);
 
             expect(mockDataService.deleteLedger).toHaveBeenCalledWith(1);
+            // 驗證 init() 已被觸發：ledgers 已更新
+            expect(mockDataService.getLedgers).toHaveBeenCalled();
+            expect(ledgerManager.ledgers).toEqual([{ id: 2, name: '公司帳本' }]);
         });
     });
 });

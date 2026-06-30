@@ -200,6 +200,7 @@ describe('BudgetManager', () => {
         it('零預算回傳正確狀態', async () => {
             const status = await bm.getBudgetStatus();
             expect(status.budget).toBe(0);
+            expect(status.spent).toBe(0);
             expect(status.remaining).toBe(0);
             expect(status.percentage).toBe(0);
             expect(status.isOverBudget).toBe(false);
@@ -241,6 +242,8 @@ describe('BudgetManager', () => {
 
             const status = await bm.getBudgetStatus();
 
+            expect(status.budget).toBe(5000);
+            expect(status.spent).toBe(7000);
             expect(status.isOverBudget).toBe(true);
             expect(status.remaining).toBe(0);
             expect(status.percentage).toBe(100);

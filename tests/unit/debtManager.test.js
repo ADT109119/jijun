@@ -32,6 +32,9 @@ function createMockDataService() {
             if (filters && filters.settled !== undefined) {
                 result = result.filter(d => d.settled === filters.settled);
             }
+            if (filters && filters.contactId !== undefined) {
+                result = result.filter(d => d.contactId === filters.contactId);
+            }
             return result;
         }),
         getDebtsByUUID: vi.fn(async (uuid) => debts.find(d => d.uuid === uuid) || null),
@@ -42,9 +45,9 @@ function createMockDataService() {
             debts.push(newDebt);
             return newDebt;
         }),
-        updateDebt: vi.fn(async (debt) => {
-            const idx = debts.findIndex(d => d.id === debt.id);
-            if (idx >= 0) debts[idx] = { ...debts[idx], ...debt };
+        updateDebt: vi.fn(async (id, updates) => {
+            const idx = debts.findIndex(d => d.id === id);
+            if (idx >= 0) debts[idx] = { ...debts[idx], ...updates };
             return debts[idx];
         }),
         deleteDebt: vi.fn(async (id) => {

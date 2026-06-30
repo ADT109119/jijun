@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PluginStorage } from '../../src/js/pluginStorage.js';
 
 describe('PluginStorage', () => {
@@ -192,10 +192,11 @@ describe('PluginStorage', () => {
         });
 
         it('多次快速寫入只觸發一次 DB 儲存', async () => {
-            // Mock the entire transaction to track calls
+            // 讓 get 回傳已有的 pluginData，這樣 put 才會被呼叫
+            const existingPluginData = { id: 'test-plugin', storage: {} };
             const txMock = {
                 store: {
-                    get: vi.fn().mockResolvedValue(null), // Return null so we check transaction calls
+                    get: vi.fn().mockResolvedValue(existingPluginData),
                     put: vi.fn().mockResolvedValue(undefined),
                 },
                 done: Promise.resolve(),
@@ -212,11 +213,13 @@ describe('PluginStorage', () => {
             expect(txMock.store.put).not.toHaveBeenCalled();
             expect(mockDataService.db.transaction).not.toHaveBeenCalled();
 
-            // 推進時間超過 debounce delay (50ms) - use runAllTimersAsync for async callbacks
+            // 推進時間超過 debounce delay
             await vi.runAllTimersAsync();
 
-            // transaction() 應該只被呼叫一次（batched）
+            // transaction() 應只被呼叫一次（批次合併）
             expect(mockDataService.db.transaction).toHaveBeenCalledTimes(1);
+            // put 也應被呼叫一次（寫入 cache 到 DB）
+            expect(txMock.store.put).toHaveBeenCalledTimes(1);
         });
 
         it('_saveToDB 回傳的 Promise 在 delay 後 resolve', async () => {

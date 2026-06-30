@@ -2251,13 +2251,8 @@ class DataService {
 
       // 繳款日計算：結帳日 (endDate) 往後推到下個月的 dueDay
       const dueDay = card.dueDay || 15;
-      let dueYear = endDate.getFullYear();
-      let dueMonth = endDate.getMonth() + 1; // 下個月
-      if (dueMonth > 11) {
-        dueMonth = 0;
-        dueYear += 1;
-      }
-      const dueDate = new Date(dueYear, dueMonth, dueDay);
+      // JS Date 的 month 是 0-11，但若傳入 12 會自動進位至明年 1 月
+      const dueDate = new Date(endDate.getFullYear(), endDate.getMonth() + 1, dueDay);
 
       await this.addCreditStatement({
         accountId: card.id,
