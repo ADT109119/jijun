@@ -79,12 +79,16 @@ describe('QuickSelectManager', () => {
             expect(qsm.loadRecords()).toEqual([]);
         });
 
-        it('非陣列的 JSON（物件）也能解析但不會出錯', () => {
+        it('非陣列的 JSON（物件）應回傳空陣列，防止後續操作崩潰', () => {
             localStorage.setItem('quickSelectRecords', '{"foo":"bar"}');
 
             const qsm = new QuickSelectManager();
-            // JSON.parse 成功，回傳物件而非陣列 — 這是 loadRecords 的行為
-            expect(qsm.loadRecords()).toEqual({ foo: 'bar' });
+            expect(qsm.records).toEqual([]);
+            expect(qsm.loadRecords()).toEqual([]);
+            
+            // 驗證呼叫 addRecord 不會崩潰
+            expect(() => qsm.addRecord('expense', 'food', '午餐', null)).not.toThrow();
+            expect(qsm.records).toHaveLength(1);
         });
     });
 

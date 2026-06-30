@@ -310,9 +310,9 @@ describe('ComparisonReport.calculateDailyAverages', () => {
     });
 });
 
-// ==================== calculateComparison returns periodType ====================
+// ==================== calculateComparison returns periodType & typeFilter ====================
 
-describe('ComparisonReport.calculateComparison periodType', () => {
+describe('ComparisonReport.calculateComparison', () => {
     it('回傳物件包含 periodType 欄位', async () => {
         const mockDS = {
             getRecords: async () => [],
@@ -320,5 +320,62 @@ describe('ComparisonReport.calculateComparison periodType', () => {
         const comp = new ComparisonReport(mockDS, null);
         const result = await comp.calculateComparison('year', ['2025', '2026']);
         expect(result.periodType).toBe('year');
+    });
+
+    it('當 typeFilter=expense 時，只應包含支出紀錄', async () => {
+        const mockDS = {
+            getRecords: async () => [
+                { type: 'income', amount: 1000, category: 'salary', date: '2026-05-15' },
+                { type: 'expense', amount: 200, category: 'food', date: '2026-05-16' },
+                { type: 'income', amount: 2000, category: 'salary', date: '2026-06-15' },
+                { type: 'expense', amount: 300, category: 'food', date: '2026-06-17' },
+            ],
+        };
+        const comp = new ComparisonReport(mockDS, null);
+        const result = await comp.calculateComparison('month', ['2026-05', '2026-06'], { typeFilter: 'expense' });
+
+        expect(result.periodData[0].income).toBe(0);
+        expect(result.periodData[0].expense).toBe(200);
+        expect(result.periodData[1].income).toBe(0);
+        expect(result.periodData[1].expense).toBe(300);
+        expect(result.typeFilter).toBe('expense');
+    });
+
+    it('當 typeFilter=income 時，只應包含收入紀錄', async () => {
+        const mockDS = {
+            getRecords: async () => [
+                { type: 'income', amount: 1000, category: 'salary', date: '2026-05-15' },
+                { type: 'expense', amount: 200, category: 'food', date: '2026-05-16' },
+                { type: 'income', amount: 2000, category: 'salary', date: '2026-06-15' },
+                { type: 'expense', amount: 300, category: 'food', date: '2026-06-17' },
+            ],
+        };
+        const comp = new ComparisonReport(mockDS, null);
+        const result = await comp.calculateComparison('month', ['2026-05', '2026-06'], { typeFilter: 'income' });
+
+        expect(result.periodData[0].income).toBe(1000);
+        expect(result.periodData[0].expense).toBe(0);
+        expect(result.periodData[1].income).toBe(2000);
+        expect(result.periodData[1].expense).toBe(0);
+        expect(result.typeFilter).toBe('income');
+    });
+
+    it('當 typeFilter=all 時，應同時包含收入與支出紀錄', async () => {
+        const mockDS = {
+            getRecords: async () => [
+                { type: 'income', amount: 1000, category: 'salary', date: '2026-05-15' },
+                { type: 'expense', amount: 200, category: 'food', date: '2026-05-16' },
+                { type: 'income', amount: 2000, category: 'salary', date: '2026-06-15' },
+                { type: 'expense', amount: 300, category: 'food', date: '2026-06-17' },
+            ],
+        };
+        const comp = new ComparisonReport(mockDS, null);
+        const result = await comp.calculateComparison('month', ['2026-05', '2026-06'], { typeFilter: 'all' });
+
+        expect(result.periodData[0].income).toBe(1000);
+        expect(result.periodData[0].expense).toBe(200);
+        expect(result.periodData[1].income).toBe(2000);
+        expect(result.periodData[1].expense).toBe(300);
+        expect(result.typeFilter).toBe('all');
     });
 });

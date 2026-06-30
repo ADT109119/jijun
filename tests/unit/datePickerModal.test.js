@@ -373,16 +373,14 @@ describe('createDateRangeModal', () => {
             });
             document.body.appendChild(modal);
 
-            // Click on an inner element — the event target is the inner element, not the modal
+            // Click on an inner element — dispatch event on inner element so it bubbles up to modal
             const innerEl = modal.querySelector('.quick-date-btn');
             const clickEvent = new MouseEvent('click', {
                 bubbles: true,
                 cancelable: true,
             });
 
-            // We need to make sure the event target is the inner element
-            Object.defineProperty(clickEvent, 'target', { value: innerEl, writable: false });
-            modal.dispatchEvent(clickEvent);
+            innerEl.dispatchEvent(clickEvent);
 
             // Modal should still exist because the click was on an inner element
             expect(document.getElementById('date-range-modal')).not.toBeNull();

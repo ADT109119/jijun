@@ -284,12 +284,18 @@ describe('stopIconObserver', () => {
 // ── startIconObserver ──────────────────────────────────────────────
 describe('startIconObserver', () => {
     let tm;
+    let originalMutationObserver;
 
     beforeEach(() => {
         const old = document.getElementById('dynamic-theme-styles');
         if (old) old.remove();
         document.body.innerHTML = '';
         tm = new ThemeManager(createMockDataService());
+        originalMutationObserver = globalThis.MutationObserver;
+    });
+
+    afterEach(() => {
+        globalThis.MutationObserver = originalMutationObserver;
     });
 
     it('creates a MutationObserver on document.body', () => {
