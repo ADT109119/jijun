@@ -464,7 +464,7 @@ export default {
         }
 
         this.ctx.ui.showToast('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
+        this.ctx.ui.navigateTo('#home');
     },
 
     async handleCustomSplit(totalAmount, note, categoryId, ledgerId) {
@@ -484,13 +484,11 @@ export default {
 
         // Create expense record
         const expense = {
-            id: 'exp-' + Date.now(),
-            ledgerId,
-            date: new Date().toISOString().split('T')[0],
+            type: 'expense',
+            category: categoryId,
             amount: totalAmount,
-            note: note || '聚餐分帳',
-            categoryId,
-            type: 'expense'
+            description: note || '聚餐分帳',
+            date: new Date().toISOString().split('T')[0]
         };
         await this.ctx.data.addRecord(expense);
 
@@ -537,6 +535,6 @@ export default {
         }
 
         this.ctx.ui.showToast('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
+        this.ctx.ui.navigateTo('#home');
     },
 };

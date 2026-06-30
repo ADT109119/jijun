@@ -44,12 +44,14 @@ export class StorePage {
                 });
             }
         } catch(e) {
-             document.getElementById('full-store-list').innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
+             const container = document.getElementById('full-store-list');
+             if (container) container.innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
         }
     }
 
     renderStoreList(list, installedPlugins) {
         const container = document.getElementById('full-store-list');
+        if (!container) return;
         if (list.length === 0) {
             container.innerHTML = `<div class="text-center py-12 text-gray-400">沒有找到相關插件</div>`;
             return;

@@ -30,6 +30,28 @@ export class RecordsListManager {
         const sessionFilters = this._loadSessionFilters();
         if (sessionFilters) {
             this.filters = sessionFilters;
+        } else {
+            // Apply default records period setting
+            try {
+                const defaultPeriodSetting = await this.dataService.getSetting('defaultRecordsPeriod');
+                const defaultPeriod = defaultPeriodSetting?.value || 'month';
+                
+                if (defaultPeriod === 'last') {
+                    const lastStateSetting = await this.dataService.getSetting('lastRecordsPeriodState');
+                    if (lastStateSetting?.value) {
+                        this.filters.period = lastStateSetting.value.period || 'month';
+                        this.filters.customStartDate = lastStateSetting.value.customStartDate || null;
+                        this.filters.customEndDate = lastStateSetting.value.customEndDate || null;
+                    }
+                } else {
+                    this.filters.period = defaultPeriod;
+                    const range = getDateRange(defaultPeriod);
+                    this.filters.customStartDate = range.startDate;
+                    this.filters.customEndDate = range.endDate;
+                }
+            } catch (err) {
+                console.error('Failed to load default records period setting:', err);
+            }
         }
 
         const advancedMode = await this.dataService.getSetting('advancedAccountModeEnabled');
@@ -172,7 +194,9 @@ export class RecordsListManager {
 
     updatePeriodButtons() {
         this.container.querySelectorAll('.period-btn').forEach(btn => {
-            if (btn.dataset.period === this.filters.period) {
+            const isMatch = btn.dataset.period === this.filters.period || 
+                            (btn.dataset.period === 'custom' && !['week', 'month', 'year'].includes(this.filters.period));
+            if (isMatch) {
                 btn.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
                 btn.classList.remove('text-wabi-text-secondary');
             } else {
