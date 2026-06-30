@@ -5,7 +5,12 @@ export default {
         version: '1.6',
         description: '讓記帳變好玩！解鎖徽章與成就。',
         author: 'The walking fish 步行魚',
-        icon: 'fa-trophy'
+        icon: 'fa-trophy',
+        permissions: [
+            'storage',
+            'data:read',
+            'ui'
+        ]
     },
     init(context) {
         this.context = context;

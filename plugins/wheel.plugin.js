@@ -4,7 +4,11 @@ export default {
         name: '命運大轉盤',
         version: '1.3',
         description: '做不出決定嗎？讓轉盤來幫你！支援自訂多個轉盤。',
-        author: 'The walking fish 步行魚'
+        author: 'The walking fish 步行魚',
+        permissions: [
+            'storage',
+            'ui'
+        ]
     },
     escapeHTML(str) {
         if (typeof str !== 'string') return str;
