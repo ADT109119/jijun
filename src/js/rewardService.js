@@ -9,7 +9,7 @@ import { showToast } from './utils.js';
 
 // ── 常數設定 ──────────────────────────────────────────
 const AD_FREE_KEY = 'adFreeUntil';
-const AD_FREE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 小時
+const AD_FREE_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 
 // Web 廣告設定值（來源：package.json → adConfig，由 Vite 編譯時注入）
 const ADSENSE_CLIENT_ID = __AD_ADSENSE_CLIENT_ID__;
@@ -197,6 +197,15 @@ export class RewardService {
         try {
             const until = Date.now() + AD_FREE_DURATION_MS;
             localStorage.setItem(AD_FREE_KEY, until.toString());
+            
+            if (!isNative && typeof window !== 'undefined') {
+                // 若為 Web 版，為了徹底清除已載入的 AdSense 自動廣告腳本且符合 Google 政策，
+                // 必須重新載入頁面，讓下一次載入時完全不渲染廣告代碼。
+                showToast('已啟用無廣告模式，即將為您重新載入頁面套用設定...', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
         } catch (e) {
             console.warn('無法儲存無廣告狀態:', e);
         }
