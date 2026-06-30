@@ -13,6 +13,20 @@ export default {
         ]
     },
 
+    escapeHTML(str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/[&<>"']/g, function(match) {
+            const escapeMap = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return escapeMap[match];
+        });
+    },
+
     init(context) {
         this.ctx = context;
         this.ctx.ui.registerPage('split-bill', '分帳神器', (container) => this.render(container));
@@ -71,7 +85,7 @@ export default {
                         <div>
                              <label class="block text-sm font-medium text-gray-700 mb-1">記帳分類</label>
                              <select id="split-category" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 outline-none">
-                                ${expenseCategories.map(c => `<option value="${c.id}" ${c.id === defaultCategoryId ? 'selected' : ''}>${c.name}</option>`).join('')}
+                                ${expenseCategories.map(c => `<option value="${c.id}" ${c.id === defaultCategoryId ? 'selected' : ''}>${this.escapeHTML(c.name)}</option>`).join('')}
                              </select>
                         </div>
 
@@ -91,7 +105,7 @@ export default {
                                 ${contacts.length > 0 ? contacts.map(c => `
                                     <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
                                         <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
-                                        <span class="ml-3 font-medium text-gray-700">${c.name}</span>
+                                        <span class="ml-3 font-medium text-gray-700">${this.escapeHTML(c.name)}</span>
                                     </label>
                                 `).join('') : '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'}
                             </div>
@@ -128,7 +142,7 @@ export default {
                         <div id="payer-section" class="hidden">
                             <label class="block text-sm font-medium text-gray-700 mb-2">誰付的錢？</label>
                             <select id="payer-select" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800">
-                                 ${contacts.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                                 ${contacts.map(c => `<option value="${c.id}">${this.escapeHTML(c.name)}</option>`).join('')}
                             </select>
                         </div>
 
@@ -252,7 +266,7 @@ export default {
             container.innerHTML = contacts.map(c => `
                 <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
                     <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
-                    <span class="ml-3 font-medium text-gray-700">${c.name}</span>
+                    <span class="ml-3 font-medium text-gray-700">${this.escapeHTML(c.name)}</span>
                 </label>
             `).join('');
             container.querySelectorAll('input[name="split-contact"]').forEach(cb => {
@@ -284,7 +298,7 @@ export default {
                 <div class="flex items-center gap-2">
                     <select class="custom-person-name flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" data-idx="${idx}">
                         <option value="__me__" ${entry.id === '__me__' ? 'selected' : ''}>我</option>
-                        ${contacts.map(c => `<option value="${c.id}" ${c.id === entry.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                        ${contacts.map(c => `<option value="${c.id}" ${c.id === entry.id ? 'selected' : ''}>${this.escapeHTML(c.name)}</option>`).join('')}
                     </select>
                     <div class="relative flex-1">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
