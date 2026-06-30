@@ -79,12 +79,12 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
         it('還原 records store 資料', async () => {
             const mockDb = ds.db;
             
-            // 先寫入新資料（模擬匯入後）
+            // 先寫入不同資料（模擬匯入前的 DB 狀態）
             const tx1 = mockDb.transaction('records', 'readwrite');
             await tx1.store.add({ type: 'expense', amount: 999 });
             await tx1.done;
 
-            // 建立備份快照（舊資料）
+            // 建立備份快照（還原目標資料）
             const backup = {
                 records: [{ type: 'income', amount: 500, date: '2024-06-01' }],
                 ledgers: [], accounts: [], contacts: [], debts: [],
@@ -93,9 +93,14 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
 
             await ds._restoreFromBackup(backup);
 
-            const records = backup.records; // 備份的資料
-            expect(records).toHaveLength(1);
-            expect(records[0].amount).toBe(500);
+            // 從 DB 重新讀出，驗證 DB 狀態確實已被還原
+            const tx2 = mockDb.transaction('records', 'readonly');
+            const allRecords = await tx2.store.toArray();
+            await tx2.done;
+
+            expect(allRecords).toHaveLength(1);
+            expect(allRecords[0].amount).toBe(500);
+            expect(allRecords[0].type).toBe('income');
         });
 
         it('還原 localStorage settings', async () => {
@@ -627,6 +632,50 @@ describe('DataService — Credit Card (Schema v13)', () => {
                 const due = new originalDate(stmt05.dueDate);
                 expect(due.getFullYear()).toBe(2026);
                 expect(due.getMonth()).toBe(6); // 7月 (0-indexed)
+                expect(due.getDate()).toBe(15);
+            } finally {
+                globalThis.Date = originalDate;
+            }
+        });
+        it('12 月結帳應正確進位至隔年 1 月的繳款日', async () => {
+            const cardId = await ds.addAccount({
+                name: '跨年測試卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                creditLimit: 50000,
+                color: '#ff0000',
+                ledgerId: 1
+            });
+            ds.activeLedgerId = 1;
+
+            const originalDate = globalThis.Date;
+            
+            // 模擬現在是 2026-12-28 (大於 25 日，此時 12 月結帳的帳單應出帳，結束日是 12/25)
+            globalThis.Date = class extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-12-28T12:00:00');
+                    }
+                    return new originalDate(...args);
+                }
+                static now() {
+                    return new originalDate('2026-12-28T12:00:00').getTime();
+                }
+            };
+
+            try {
+                await ds.autoGenerateCreditStatements();
+
+                const statements = await ds.getCreditStatements({ accountId: cardId, allLedgers: true });
+                // 應包含 11 月期 (11/26 ~ 12/25 結帳)
+                expect(statements.map(s => s.period)).toContain('2026-11');
+                
+                const stmt11 = statements.find(s => s.period === '2026-11');
+                // 繳款截止日應是結帳日 12/25 的下個月 15 日，即 2027 年 1 月 15 日
+                const due = new originalDate(stmt11.dueDate);
+                expect(due.getFullYear()).toBe(2027); // 正確跨年
+                expect(due.getMonth()).toBe(0); // 1月 (0-indexed)
                 expect(due.getDate()).toBe(15);
             } finally {
                 globalThis.Date = originalDate;
