@@ -14,7 +14,8 @@ export class QuickSelectManager {
     loadRecords() {
         try {
             const storedData = localStorage.getItem(QUICK_SELECT_STORAGE_KEY);
-            return storedData ? JSON.parse(storedData) : [];
+            const parsed = storedData ? JSON.parse(storedData) : [];
+            return Array.isArray(parsed) ? parsed : [];
         } catch (error) {
             console.error('Failed to load quick select records:', error);
             return [];

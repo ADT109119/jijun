@@ -72,6 +72,7 @@ export class PluginsPage {
             if (res.ok) {
                 const storePlugins = await res.json();
                 const storeContainer = document.getElementById('store-list-container');
+                if (!storeContainer) return;
 
                 storeContainer.innerHTML = storePlugins.map(p => {
                     const installed = plugins.find(i => i.id === p.id);

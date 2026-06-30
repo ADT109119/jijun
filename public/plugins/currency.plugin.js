@@ -5,7 +5,11 @@ export default {
         version: '1.4',
         description: '在記帳頁面新增換算按鈕，開啟視窗後即時計算各國匯率。',
         author: 'The walking fish 步行魚',
-        icon: 'fa-sack-dollar'
+        icon: 'fa-sack-dollar',
+        permissions: [
+            'network',
+            'ui'
+        ]
     },
     init(context) {
         this.context = context;

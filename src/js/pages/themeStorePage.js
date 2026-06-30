@@ -33,12 +33,14 @@ export class ThemeStorePage {
             }
         } catch(e) {
              console.error(e);
-             document.getElementById('theme-store-list').innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
+             const container = document.getElementById('theme-store-list');
+             if (container) container.innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
         }
     }
 
     renderStoreList(list, installedThemes) {
         const container = document.getElementById('theme-store-list');
+        if (!container) return;
         if (list.length === 0) {
             container.innerHTML = `<div class="text-center py-12 text-wabi-text-secondary">目前沒有可用的主題</div>`;
             return;

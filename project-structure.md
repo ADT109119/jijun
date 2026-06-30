@@ -49,3 +49,14 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
 - `syncService.js` → `dataService.js`
 - `pluginManager.js` → `dataService.js`, `pluginStorage.js`
+
+## 測試結構
+
+所有的單元測試位於 `tests/unit/` 目錄下：
+- `recordsList.test.js` # 測試明細紀錄列表與預設時間範圍設定
+- `amortization.test.js` # 測試折舊攤提分期邏輯
+- `budgetManager.test.js` # 測試預算管理邏輯
+- `categoryManager.test.js` # 測試分類管理邏輯
+- ...等等（共有 19 個測試檔案，對應各主要模組的單元驗證）
+- 透過 `npx vitest run` 執行所有單元測試
+

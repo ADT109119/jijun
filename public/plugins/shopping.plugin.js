@@ -5,7 +5,12 @@ export default {
         version: '1.4',
         description: '在首頁顯示購物清單，買完直接記帳！',
         author: 'The walking fish 步行魚',
-        icon: 'fa-list-check'
+        icon: 'fa-list-check',
+        permissions: [
+            'storage',
+            'data:write',
+            'ui'
+        ]
     },
     escapeHTML(str) {
         if (typeof str !== 'string') return str;

@@ -5,7 +5,11 @@ export default {
         version: '1.7',
         description: '一隻可愛的貓咪陪伴你記帳！(可拖曳移動、點擊互動)',
         author: 'The walking fish 步行魚',
-        icon: 'fa-cat'
+        icon: 'fa-cat',
+        permissions: [
+            'storage',
+            'ui'
+        ]
     },
     init(context) {
         // Load position or default

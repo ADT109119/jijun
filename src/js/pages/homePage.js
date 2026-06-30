@@ -147,11 +147,16 @@ export class HomePage {
             balanceCardTitle.textContent = `${selectedMonth.replace('-', ' / ')} 結餘`;
         }
 
-        document.getElementById('home-balance').textContent = formatCurrency(stats.totalIncome - stats.totalExpense);
+        const balanceEl = document.getElementById('home-balance');
+        if (!balanceEl) return;
+
+        balanceEl.textContent = formatCurrency(stats.totalIncome - stats.totalExpense);
         document.getElementById('home-income').textContent = formatCurrency(stats.totalIncome);
         document.getElementById('home-expense').textContent = formatCurrency(stats.totalExpense);
 
         const container = document.getElementById('recent-records-container');
+        if (!container) return;
+
         if (recentRecords.length === 0) {
             container.innerHTML = `<p class="text-center text-wabi-text-secondary py-4">還沒有任何紀錄喔！</p>`;
         } else {

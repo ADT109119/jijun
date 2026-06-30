@@ -2,10 +2,15 @@ export default {
     meta: {
         id: 'com.walkingfish.bill_splitter',
         name: '分帳神器',
-        version: '1.2',
+        version: '1.3',
         description: '聚餐旅遊分帳助手，支援非平分模式，即時顯示剩餘金額。',
         author: 'The walking fish 步行魚',
-        icon: 'fa-file-invoice-dollar'
+        icon: 'fa-file-invoice-dollar',
+        permissions: [
+            'data:read',
+            'data:write',
+            'ui'
+        ]
     },
 
     init(context) {
@@ -458,8 +463,8 @@ export default {
             }
         }
 
-        this.ctx.toast.show('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
+        this.ctx.ui.showToast('分帳成功！', 'success');
+        this.ctx.ui.navigateTo('#home');
     },
 
     async handleCustomSplit(totalAmount, note, categoryId, ledgerId) {
@@ -479,13 +484,11 @@ export default {
 
         // Create expense record
         const expense = {
-            id: 'exp-' + Date.now(),
-            ledgerId,
-            date: new Date().toISOString().split('T')[0],
+            type: 'expense',
+            category: categoryId,
             amount: totalAmount,
-            note: note || '聚餐分帳',
-            categoryId,
-            type: 'expense'
+            description: note || '聚餐分帳',
+            date: new Date().toISOString().split('T')[0]
         };
         await this.ctx.data.addRecord(expense);
 
@@ -531,7 +534,7 @@ export default {
             }
         }
 
-        this.ctx.toast.show('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
+        this.ctx.ui.showToast('分帳成功！', 'success');
+        this.ctx.ui.navigateTo('#home');
     },
 };

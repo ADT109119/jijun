@@ -5,7 +5,13 @@ export default {
         version: '1.3',
         description: '設定單筆支出上限，防止衝動消費！',
         author: 'The walking fish 步行魚',
-        icon: 'fa-shield-halved'
+        icon: 'fa-shield-halved',
+        permissions: [
+            'storage',
+            'data:read',
+            'data:write',
+            'ui'
+        ]
     },
     init(context) {
         this.context = context;

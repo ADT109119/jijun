@@ -1,5 +1,18 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.5.8": {
+    date: "2026-06-30",
+    title: "修復路由過渡競態崩潰與分帳自訂欄位錯誤，修正明細預設時間範圍失效問題",
+    features: [],
+    bugfixes: [
+      "修復明細預設時間範圍功能失效：修正進入明細頁面時未能讀取與套用「預設時間範圍（本週、本月、今天、近 7 天、上次時間範圍）」設定的錯誤，並補強自訂時間的 UI 按鈕高亮邏輯。",
+      "修復分帳神器（Bill Splitter）自訂分帳失敗：修正寫入記帳紀錄時的欄位名稱不符 Schema 的錯誤（note 改為 description，categoryId 改為 category），並將完成後的路由導航指向正確的首頁 #home。",
+      "修復非同步頁面載入時的競態崩潰問題：為 PluginsPage、StorePage、ThemeStorePage 與 HomePage 加上防禦性 null 檢查，避免在載入中快速切換路由導致 innerHTML 或 textContent 的 null 物件錯誤。"
+    ],
+    improvements: [
+      "新增明細列表單元測試：加入 tests/unit/recordsList.test.js，全面覆蓋預設時間加載與 UI 選項高亮的各種邊界情況。"
+    ]
+  },
   "2.1.5.7": {
     date: "2026-06-28",
     title: "新增信用卡帳戶智慧管理與小鍵盤計算機模式",

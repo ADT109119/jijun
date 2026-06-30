@@ -5,7 +5,11 @@ export default {
         version: '1.1',
         description: '新增資產趨勢與分類比較圖表。',
         author: 'The walking fish 步行魚',
-        icon: 'fa-chart-line'
+        icon: 'fa-chart-line',
+        permissions: [
+            'data:read',
+            'ui'
+        ]
     },
     
     init(context) {
