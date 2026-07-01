@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+  "2.1.5.9": {
+    date: "2026-07-01",
+    title: "開放擴充功能修改 API，相容聯絡人 ID 混合型別比對",
+    features: [
+      "開放擴充功能更新 API：於沙箱環境（pluginManager.js）中，對獲得 data:write 權限的插件開放 updateRecord 與 updateDebt API，支援更進階的資料庫實體雙向關聯功能。"
+    ],
+    bugfixes: [
+      "修復聯絡人 ID 混合型別比對漏洞：修正 dataService.js 與 debtManager.js 裡多處嚴格等值（===）比對，統一轉化為 String 相容比對，解決資料庫內 string 與 number ID 混合導致欠款名單搜尋不到或顯示未知聯絡人的 Bug。"
+    ],
+    improvements: []
+  },
   "2.1.5.8": {
     date: "2026-06-30",
     title: "修復路由過渡競態崩潰與分帳自訂欄位錯誤，修正明細預設時間範圍失效問題",

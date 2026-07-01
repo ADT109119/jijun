@@ -2634,7 +2634,7 @@ class DataService {
       }
 
       if (filters.contactId !== undefined) {
-        debts = debts.filter(d => d.contactId === filters.contactId);
+        debts = debts.filter(d => String(d.contactId) === String(filters.contactId));
       }
       if (filters.type) {
         debts = debts.filter(d => d.type === filters.type);
@@ -2820,7 +2820,7 @@ class DataService {
         }
         
         if (!byContact[debt.contactId]) {
-          const contact = contacts.find(c => c.id === debt.contactId);
+          const contact = contacts.find(c => String(c.id) === String(debt.contactId));
           byContact[debt.contactId] = {
             contact: contact || { id: debt.contactId, name: '未知聯絡人' },
             receivable: 0,

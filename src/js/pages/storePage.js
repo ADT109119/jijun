@@ -97,7 +97,7 @@ export class StorePage {
                     btn.textContent = '下載中...';
 
                     try {
-                        const response = await fetch(btn.dataset.url);
+                        const response = await fetch(`${btn.dataset.url}?t=${Date.now()}`);
                         const script = await response.text();
                         const file = new File([script], 'plugin.js', { type: 'text/javascript' });
                         // 找到對應的商店插件資訊，傳入權限與 icon
