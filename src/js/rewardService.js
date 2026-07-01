@@ -2,7 +2,7 @@
 // 雙平台設計：
 //   原生環境 (Capacitor Android) → 使用 @capacitor-community/admob 原生 SDK
 //   瀏覽器環境 (Web PWA)        → 使用 AdSense 橫幅 + GPT 獎勵廣告
-// 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 24 小時
+// 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 7 天
 // 設計原則：Adblocker 友善 — 所有廣告載入失敗時靜默降級，不影響主程式
 
 import { showToast } from './utils.js';
@@ -158,7 +158,7 @@ export class RewardService {
         }
     }
 
-    // ── 24 小時無廣告狀態 ────────────────────────────
+    // ── 7 天無廣告狀態 ────────────────────────────
 
     /** 檢查是否處於無廣告期間 */
     isAdFree() {
@@ -380,7 +380,7 @@ export class RewardService {
                     clearTimeout(timeout);
                     if (rewarded) {
                         this._grantAdFree();
-                        showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
+                        showToast('感謝觀看！已啟用 7 天無廣告模式 🎉', 'success');
                         safeResolve(true);
                     } else {
                         showToast('未完成觀看，無法獲得獎勵', 'error');
@@ -513,7 +513,7 @@ export class RewardService {
 
                         if (this._rewardPayload) {
                             this._grantAdFree();
-                            showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
+                            showToast('感謝觀看！已啟用 7 天無廣告模式 🎉', 'success');
                             this._resolveWithCleanup(true);
                         } else {
                             showToast('未完成觀看，無法獲得獎勵', 'error');
@@ -547,7 +547,7 @@ export class RewardService {
 
     /**
      * 顯示內建推廣廣告作為獎勵廣告備案
-     * 觀看 5 秒後可領取 24 小時無廣告獎勵
+     * 觀看 5 秒後可領取 7 天無廣告獎勵
      * @returns {Promise<boolean>} 是否成功獲得獎勵
      */
     async _showInternalAd() {
@@ -623,7 +623,7 @@ export class RewardService {
                 clearInterval(timer);
                 modal.remove();
                 this._grantAdFree();
-                showToast('感謝支持！已啟用 24 小時無廣告模式 🎉', 'success');
+                showToast('感謝支持！已啟用 7 天無廣告模式 🎉', 'success');
                 resolve(true);
             });
 
@@ -650,7 +650,7 @@ export class RewardService {
                 </div>
                 <h3 class="text-xl font-bold text-wabi-text-primary mb-2">觀看廣告獲得獎勵</h3>
                 <p class="text-wabi-text-secondary text-sm mb-6">
-                    觀看一則短影片廣告，即可享受 <strong>24 小時無廣告</strong>體驗！
+                    觀看一則短影片廣告，即可享受 <strong>7 天無廣告</strong>體驗！
                 </p>
                 <div class="flex gap-3">
                     <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">

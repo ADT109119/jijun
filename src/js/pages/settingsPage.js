@@ -228,7 +228,7 @@ export class SettingsPage {
                             </div>
                         </div>
 
-                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 24 小時', 'sponsor-reward-ad-btn')}
+                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 7 天', 'sponsor-reward-ad-btn')}
 
                     </div>
 
@@ -268,7 +268,7 @@ export class SettingsPage {
                 window.location.hash = '#sync-settings';
             });
         }
-        // 贊助 - 觀看獎勵廣告以移除廣告 24 小時
+        // 贊助 - 觀看獎勵廣告以移除廣告 7 天
         const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn');
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
