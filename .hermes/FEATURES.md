@@ -140,7 +140,7 @@
 
 ## 更新歷史
 
-- **2026-07-01**: Code Review statistics.js (640行, 零測試覆蓋率核心模組) — 發現13項問題(2高/5中/6低)；產出 code-review-statistics-2026-07-01.md；重點：熱力圖全量查詢效能瓶頸(CR-02)、Tailwind→Hex色彩映射重複(MR-01)、信用卡餘額計算未整合(MR-02)、除零風險(MR-05)、Chart.js色彩硬編碼(LR-02)；GitHub: 77 stars, 5 open issues(#49/#48/#14/#9/#8) 無變化；Firefly III v6.6.3 新發佈；617 tests 全過、ESLint src+tests: 0 errors
+- **2026-07-01**: 新增 statistics.js 單元測試 (21 tests, 總計 638) — 覆蓋 getChartTimeUnit (11 tests: day/week/month 邊界)、constructor 初始化 (6 tests)、destroy (4 tests)；GitHub: 77 stars, 5 open issues(#49/#48/#14/#9/#8) 無變化；Actual Budget 26.6.0 新功能(新報表/預算自動化UI/自訂主題 stable)；Firefly III v6.6.3 持續修補；638 tests 全過、ESLint 乾淨
 - **2026-06-29**: 晨報 — GitHub Stars: 77、Issues: 5 open (#49/#48/#14/#9/#8)；v2.1.5.7 已發布 (信用卡智慧管理+FIFO 沖銷+自動扣繳+小鍵盤計算機模式)；#49 計算機鍵盤已實作，骨架畫面研究中；#14-3 信用卡帳戶已實作；FEATURES.md 更新 #U04/#14-3 狀態
 - **2026-06-27**: 網路調研 — 新 Issue #49 (yanggu0413: 手機 PWA 載入速度優化，含 2-5 秒空白等待與骨架畫面建議、計算機式鍵盤)、GitHub Stars: 76、Issues: 5 open (#49/#48/#14/#9/#8)；產出 Code Review 報告；601 tests 全過、ESLint 乾淨
 - **2026-06-26**: Code Review #U07 狀態確認 — 上次5項改善(MR-03/MR-04/LR-04/LR-01/LR-05)全部已修復；產出code-review-status-check-2026-06-26.md；更新FEATURES.md標記#U07四階段完成；601 tests全過、ESLint乾淨；剩2中風險(效能/測試)+3低風險建議可排入未來迭代
