@@ -144,11 +144,11 @@ describe('RewardService', () => {
     });
 
     describe('_grantAdFree', () => {
-        it('設定 adFreeUntil 為現在 + 24 小時', () => {
+        it('設定 adFreeUntil 為現在 + 7 天', () => {
             service._grantAdFree();
             const until = Number(localStorage.getItem('adFreeUntil'));
             expect(until).toBeGreaterThan(Date.now());
-            expect(until - Date.now()).toBeCloseTo(24 * 60 * 60 * 1000, -3);
+            expect(until - Date.now()).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
         });
 
         it('_grantAdFree 後 isAdFree 回傳 true', () => {

@@ -92,7 +92,7 @@ export class DebtManager {
     
     let filteredDebts = allDebts;
     if (this.currentContactFilter) {
-      filteredDebts = allDebts.filter(d => d.contactId === this.currentContactFilter);
+      filteredDebts = allDebts.filter(d => String(d.contactId) === String(this.currentContactFilter));
     }
     
     let totalReceivable = 0;
@@ -109,7 +109,7 @@ export class DebtManager {
     
     const contacts = await this.dataService.getContacts();
     const selectedContact = this.currentContactFilter 
-      ? contacts.find(c => c.id === this.currentContactFilter)?.name || '聯絡人' 
+      ? contacts.find(c => String(c.id) === String(this.currentContactFilter))?.name || '聯絡人' 
       : null;
     
     container.innerHTML = `
@@ -273,7 +273,7 @@ export class DebtManager {
 
     // Apply contact filter
     if (this.currentContactFilter) {
-      allDebts = allDebts.filter(d => d.contactId === this.currentContactFilter);
+      allDebts = allDebts.filter(d => String(d.contactId) === String(this.currentContactFilter));
     }
 
     // Pagination
@@ -293,7 +293,7 @@ export class DebtManager {
     }
 
     let html = debts.map(debt => {
-      const contact = contacts.find(c => c.id === debt.contactId);
+      const contact = contacts.find(c => String(c.id) === String(debt.contactId));
       const contactName = contact?.name || '未知聯絡人';
       const isReceivable = debt.type === 'receivable';
       // Use remainingAmount for display, fallback for backward compatibility
@@ -648,7 +648,7 @@ export class DebtManager {
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
 
     const contactOptions = contacts.map(c => 
-      `<option value="${c.id}" ${debtToEdit?.contactId === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
+      `<option value="${c.id}" ${String(debtToEdit?.contactId) === String(c.id) ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
     ).join('');
 
     modal.innerHTML = `

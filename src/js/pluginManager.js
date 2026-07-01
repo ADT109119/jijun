@@ -58,6 +58,8 @@ export class PluginManager {
       addRecord: (record) => this.dataService.addRecord(record),
       addDebt: (debt) => this.dataService.addDebt(debt),
       addContact: (contact) => this.dataService.addContact(contact),
+      updateRecord: (id, updates) => this.dataService.updateRecord(id, updates),
+      updateDebt: (id, updates) => this.dataService.updateDebt(id, updates)
     } : {};
 
     // 合併讀寫，未授權的方法以 Proxy 攔截
@@ -71,6 +73,8 @@ export class PluginManager {
       dataApi.addRecord = writeDenied.addRecord;
       dataApi.addDebt = writeDenied.addDebt;
       dataApi.addContact = writeDenied.addContact;
+      dataApi.updateRecord = writeDenied.updateRecord;
+      dataApi.updateDebt = writeDenied.updateDebt;
     }
     if (has('data:write') && !has('data:read')) {
       const readDenied = this._denied('data', 'data:read');

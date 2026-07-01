@@ -2,14 +2,14 @@
 // 雙平台設計：
 //   原生環境 (Capacitor Android) → 使用 @capacitor-community/admob 原生 SDK
 //   瀏覽器環境 (Web PWA)        → 使用 AdSense 橫幅 + GPT 獎勵廣告
-// 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 24 小時
+// 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 7 天
 // 設計原則：Adblocker 友善 — 所有廣告載入失敗時靜默降級，不影響主程式
 
 import { showToast } from './utils.js';
 
 // ── 常數設定 ──────────────────────────────────────────
 const AD_FREE_KEY = 'adFreeUntil';
-const AD_FREE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 小時
+const AD_FREE_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 
 // Web 廣告設定值（來源：package.json → adConfig，由 Vite 編譯時注入）
 const ADSENSE_CLIENT_ID = __AD_ADSENSE_CLIENT_ID__;
@@ -158,7 +158,7 @@ export class RewardService {
         }
     }
 
-    // ── 24 小時無廣告狀態 ────────────────────────────
+    // ── 7 天無廣告狀態 ────────────────────────────
 
     /** 檢查是否處於無廣告期間 */
     isAdFree() {
@@ -197,6 +197,15 @@ export class RewardService {
         try {
             const until = Date.now() + AD_FREE_DURATION_MS;
             localStorage.setItem(AD_FREE_KEY, until.toString());
+            
+            if (!isNative && typeof window !== 'undefined') {
+                // 若為 Web 版，為了徹底清除已載入的 AdSense 自動廣告腳本且符合 Google 政策，
+                // 必須重新載入頁面，讓下一次載入時完全不渲染廣告代碼。
+                showToast('已啟用無廣告模式，即將為您重新載入頁面套用設定...', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
         } catch (e) {
             console.warn('無法儲存無廣告狀態:', e);
         }
@@ -371,7 +380,7 @@ export class RewardService {
                     clearTimeout(timeout);
                     if (rewarded) {
                         this._grantAdFree();
-                        showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
+                        showToast('感謝觀看！已啟用 7 天無廣告模式 🎉', 'success');
                         safeResolve(true);
                     } else {
                         showToast('未完成觀看，無法獲得獎勵', 'error');
@@ -504,7 +513,7 @@ export class RewardService {
 
                         if (this._rewardPayload) {
                             this._grantAdFree();
-                            showToast('感謝觀看！已啟用 24 小時無廣告模式 🎉', 'success');
+                            showToast('感謝觀看！已啟用 7 天無廣告模式 🎉', 'success');
                             this._resolveWithCleanup(true);
                         } else {
                             showToast('未完成觀看，無法獲得獎勵', 'error');
@@ -538,7 +547,7 @@ export class RewardService {
 
     /**
      * 顯示內建推廣廣告作為獎勵廣告備案
-     * 觀看 5 秒後可領取 24 小時無廣告獎勵
+     * 觀看 5 秒後可領取 7 天無廣告獎勵
      * @returns {Promise<boolean>} 是否成功獲得獎勵
      */
     async _showInternalAd() {
@@ -614,7 +623,7 @@ export class RewardService {
                 clearInterval(timer);
                 modal.remove();
                 this._grantAdFree();
-                showToast('感謝支持！已啟用 24 小時無廣告模式 🎉', 'success');
+                showToast('感謝支持！已啟用 7 天無廣告模式 🎉', 'success');
                 resolve(true);
             });
 
@@ -641,7 +650,7 @@ export class RewardService {
                 </div>
                 <h3 class="text-xl font-bold text-wabi-text-primary mb-2">觀看廣告獲得獎勵</h3>
                 <p class="text-wabi-text-secondary text-sm mb-6">
-                    觀看一則短影片廣告，即可享受 <strong>24 小時無廣告</strong>體驗！
+                    觀看一則短影片廣告，即可享受 <strong>7 天無廣告</strong>體驗！
                 </p>
                 <div class="flex gap-3">
                     <button id="reward-cancel-btn" class="flex-1 py-2.5 border border-wabi-border rounded-lg text-wabi-text-secondary font-medium hover:bg-wabi-bg transition-colors">

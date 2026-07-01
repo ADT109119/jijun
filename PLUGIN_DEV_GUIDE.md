@@ -48,7 +48,7 @@ export default {
 
 - **`storage`**：允許呼叫 `context.storage.*` 方法，在插件專屬層級讀取與寫入本機資料。
 - **`data:read`**：允許呼叫 `context.data` 內的各種讀取 API，如 `getRecords()`, `getDebts()`, `getAccounts()`, `getCategories()`, `getContacts()`。
-- **`data:write`**：允許呼叫 `context.data` 內的各種寫入 API，如 `addRecord()`, `addDebt()`, `addContact()`。
+- **`data:write`**：允許呼叫 `context.data` 內的各種寫入與修改 API，如 `addRecord()`, `addDebt()`, `addContact()`, `updateRecord()`, `updateDebt()`。
 - **`ui`**：允許與介面相關的操作，如 `context.ui.registerPage()`, `showToast()`, `showConfirm()`, `registerHomeWidget()`。
 - **`network`**：允許插件呼叫外部網路 API，如 `fetch()`, `XMLHttpRequest`, `WebSocket`, `EventSource`（未聲明此權限將在沙盒內直接被覆蓋攔截）。
 
@@ -74,9 +74,11 @@ export default {
 ### `context.data`
 - `getRecords()`: 取得所有記帳紀錄。
 - `addRecord(record)`: 新增一筆記帳紀錄。
+- `updateRecord(id, updates)`: 更新指定 ID 的記帳紀錄。
 - `getAccounts()`: 取得所有帳戶資訊。
 - `getDebts()`: 取得所有欠款紀錄。
 - `addDebt(debt)`: 新增一筆欠款紀錄。
+- `updateDebt(id, updates)`: 更新指定 ID 的欠款紀錄。
 - `getContacts()`: 取得所有聯絡人。
 - `addContact(contact)`: 新增一位聯絡人。
 - `getCategories(type)`: 取得分類列表 (`'expense'` 或 `'income'`)。
