@@ -97,7 +97,7 @@
     "id": "com.walkingfish.bill_splitter",
     "name": "分帳神器",
     "description": "聚餐旅遊分帳助手，支援非平分模式，即時顯示剩餘金額。",
-    "version": "1.4",
+    "version": "1.8",
     "author": "The walking fish 步行魚",
     "file": "plugins/bill_splitter.plugin.js",
     "icon": "fa-file-invoice-dollar",
