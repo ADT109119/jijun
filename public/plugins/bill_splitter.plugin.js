@@ -2,7 +2,7 @@ export default {
     meta: {
         id: 'com.walkingfish.bill_splitter',
         name: '分帳神器',
-        version: '1.3',
+        version: '1.4',
         description: '聚餐旅遊分帳助手，支援非平分模式，即時顯示剩餘金額。',
         author: 'The walking fish 步行魚',
         icon: 'fa-file-invoice-dollar',
@@ -236,15 +236,18 @@ export default {
         });
 
         // Add contact
-        addContactBtn.addEventListener('click', () => {
+        addContactBtn.addEventListener('click', async () => {
             const name = newContactInput.value.trim();
             if (!name) return;
-            const id = 'c-' + Date.now();
-            contacts.push({ id, name });
-            this.ctx.data.addContact({ id, name });
-            // Re-render contact list
-            renderContacts();
-            newContactInput.value = '';
+            try {
+                const id = await this.ctx.data.addContact({ name });
+                contacts.push({ id, name });
+                // Re-render contact list
+                renderContacts();
+                newContactInput.value = '';
+            } catch (err) {
+                this.ctx.ui.showToast('新增聯絡人失敗', 'error');
+            }
         });
 
         const renderContacts = () => {
@@ -258,6 +261,12 @@ export default {
             container.querySelectorAll('input[name="split-contact"]').forEach(cb => {
                 cb.addEventListener('change', calculateResult);
             });
+
+            // Update payer select dropdown options as well
+            if (payerSelect) {
+                const currentPayerVal = payerSelect.value;
+                payerSelect.innerHTML = contacts.map(c => `<option value="${c.id}" ${String(c.id) === String(currentPayerVal) ? 'selected' : ''}>${c.name}</option>`).join('');
+            }
         };
 
         // Custom split: init list
@@ -267,7 +276,7 @@ export default {
             customEntries = [];
             // Pre-populate from checked contacts
             document.querySelectorAll('input[name="split-contact"]:checked').forEach(cb => {
-                const contact = contacts.find(c => c.id === cb.value);
+                const contact = contacts.find(c => String(c.id) === String(cb.value));
                 if (contact) {
                     customEntries.push({ id: contact.id, name: contact.name, amount: '' });
                 }
@@ -284,7 +293,7 @@ export default {
                 <div class="flex items-center gap-2">
                     <select class="custom-person-name flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" data-idx="${idx}">
                         <option value="__me__" ${entry.id === '__me__' ? 'selected' : ''}>我</option>
-                        ${contacts.map(c => `<option value="${c.id}" ${c.id === entry.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                        ${contacts.map(c => `<option value="${c.id}" ${String(c.id) === String(entry.id) ? 'selected' : ''}>${c.name}</option>`).join('')}
                     </select>
                     <div class="relative flex-1">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
@@ -411,12 +420,16 @@ export default {
 
         const splitContacts = [];
         checked.forEach(cb => {
-            const c = contacts.find(x => x.id === cb.value);
+            const c = contacts.find(x => String(x.id) === String(cb.value));
             if (c) splitContacts.push(c);
         });
         if (includeMe) splitContacts.push({ id: '__me__', name: '我' });
 
         const count = splitContacts.length;
+        if (count === 0) {
+            this.ctx.ui.showToast('請選擇分攤對象', 'error');
+            return;
+        }
         const perPerson = Math.round(totalAmount / count);
 
         // Create expense record
@@ -431,8 +444,9 @@ export default {
 
         // Create debts
         if (mode === 'i-paid') {
-            for (const contact of splitContacts.filter(c => c.id !== '__me__')) {
+            for (const contact of splitContacts.filter(c => String(c.id) !== '__me__')) {
                 await this.ctx.data.addDebt({
+                    ledgerId,
                     type: 'receivable',
                     contactId: contact.id,
                     amount: perPerson,
@@ -442,8 +456,9 @@ export default {
             }
         } else {
             const payerId = document.getElementById('payer-select').value;
-            for (const contact of splitContacts.filter(c => c.id !== '__me__' && c.id !== payerId)) {
+            for (const contact of splitContacts.filter(c => String(c.id) !== '__me__' && String(c.id) !== String(payerId))) {
                 await this.ctx.data.addDebt({
+                    ledgerId,
                     type: 'payable',
                     contactId: contact.id,
                     amount: perPerson,
@@ -454,6 +469,7 @@ export default {
             const totalOwed = (count - (includeMe ? 1 : 0)) * perPerson;
             if (totalOwed !== 0) {
                 await this.ctx.data.addDebt({
+                    ledgerId,
                     type: 'receivable',
                     contactId: payerId,
                     amount: totalOwed,
@@ -495,7 +511,7 @@ export default {
         // Create debts based on custom split
         if (mode === 'i-paid') {
             for (const entry of entries) {
-                if (entry.contactId === '__me__' || entry.amount === 0) continue;
+                if (String(entry.contactId) === '__me__' || entry.amount === 0) continue;
                 await this.ctx.data.addDebt({
                     ledgerId,
                     contactId: entry.contactId,
@@ -509,7 +525,7 @@ export default {
             const payerId = document.getElementById('payer-select').value;
             for (const entry of entries) {
                 if (entry.amount === 0) continue;
-                if (entry.contactId === payerId) continue;
+                if (String(entry.contactId) === String(payerId)) continue;
                 await this.ctx.data.addDebt({
                     ledgerId,
                     contactId: entry.contactId,
@@ -519,7 +535,7 @@ export default {
                     type: 'payable'
                 });
             }
-            const payerEntry = entries.find(e => e.contactId === payerId);
+            const payerEntry = entries.find(e => String(e.contactId) === String(payerId));
             const payerShare = payerEntry ? payerEntry.amount : 0;
             const owedToPayer = totalAmount - payerShare;
             if (owedToPayer > 0) {
