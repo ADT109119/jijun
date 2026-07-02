@@ -108,6 +108,8 @@
 - Issue #49 功能收集 (yanggu0413, 2026-06-27) — PWA 載入骨架畫面、計算機式鍵盤
 - Firefly III v6.6.3 (2026-07-01 調研) — 最新穩定版，持續的翻譯和修補更新
 - AI 理財趨勢 (2026-07-01 調研) — 2026 年記帳App趨勢：AI 自動化同步銀行、電子發票、預測性理財功能成熟化
+- Finch AI Bookkeeping (2026-07-02 調研) — 結合 AI 記帳、多帳本支援、智能支出分析，主打 AI-powered bookkeeping 自動化
+- 說說記帳 (2026-07-02 調研) — AI 語音記帳 App，支援自訂分類管理，AI 自動分類優先、隱藏分類忽略，語音互動式記帳
 
 ---
 
@@ -140,7 +142,7 @@
 
 ## 更新歷史
 
-- **2026-07-01**: 新增 statistics.js 單元測試 (21 tests, 總計 638) — 覆蓋 getChartTimeUnit (11 tests: day/week/month 邊界)、constructor 初始化 (6 tests)、destroy (4 tests)；GitHub: 77 stars, 5 open issues(#49/#48/#14/#9/#8) 無變化；Actual Budget 26.6.0 新功能(新報表/預算自動化UI/自訂主題 stable)；Firefly III v6.6.3 持續修補；638 tests 全過、ESLint 乾淨
+- **2026-07-02**: Code Review syncService.js + #P01 週期性交易同步調查 — 發現 1 HIGH (add 操作 UUID 碰撞可能產生重複)、3 MEDIUM (update/delete UUID fallback、init 順序、共用帳本推送)、2 LOW；產出 code-review-sync-service-2026-07-02.md；638 tests 全過、ESLint 乾淨；網路調研：2026 記帳App趨勢 AI 語音記帳成熟化(Finch/說說記帳)、Actual Budget/Firefly III 持續更新
 - **2026-06-29**: 晨報 — GitHub Stars: 77、Issues: 5 open (#49/#48/#14/#9/#8)；v2.1.5.7 已發布 (信用卡智慧管理+FIFO 沖銷+自動扣繳+小鍵盤計算機模式)；#49 計算機鍵盤已實作，骨架畫面研究中；#14-3 信用卡帳戶已實作；FEATURES.md 更新 #U04/#14-3 狀態
 - **2026-06-27**: 網路調研 — 新 Issue #49 (yanggu0413: 手機 PWA 載入速度優化，含 2-5 秒空白等待與骨架畫面建議、計算機式鍵盤)、GitHub Stars: 76、Issues: 5 open (#49/#48/#14/#9/#8)；產出 Code Review 報告；601 tests 全過、ESLint 乾淨
 - **2026-06-26**: Code Review #U07 狀態確認 — 上次5項改善(MR-03/MR-04/LR-04/LR-01/LR-05)全部已修復；產出code-review-status-check-2026-06-26.md；更新FEATURES.md標記#U07四階段完成；601 tests全過、ESLint乾淨；剩2中風險(效能/測試)+3低風險建議可排入未來迭代
