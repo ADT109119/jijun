@@ -2,7 +2,7 @@
 
 ## 專案資訊
 - **GitHub**: https://github.com/ADT109119/jijun
-- **當前版本**: v2.1.5.6
+- **當前版本**: v2.1.5.9
 - **技術棧**: Vanilla JS + IndexedDB (idb) + Vite + Vitest + Playwright + Capacitor Android
 - **CSS**: Tailwind CDN + FontAwesome + Chart.js
 - **Schema**: IndexedDB v13 (信用卡支援)
@@ -142,6 +142,7 @@
 
 ## 更新歷史
 
+- **2026-07-03**: Code Review notificationService.js + virtualKeyboardDetector.js + themeManager.js — 發現 2 HIGH (notification ID 硬編碼、MutationObserver 效能)、5 MEDIUM (SW 就緒檢查、orientation null guard、SVG sanitizer、dark.json schema、schedule 重覆排程)、8 LOW；產出 code-review-notification-virtualKeyboard-theme-2026-07-03.md；638 tests 全過、ESLint 乾淨；關鍵發現：virtualKeyboardDetector 未支援 input[type="number"] 可能影響金額輸入偵測；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-02**: Code Review syncService.js + #P01 週期性交易同步調查 — 發現 1 HIGH (add 操作 UUID 碰撞可能產生重複)、3 MEDIUM (update/delete UUID fallback、init 順序、共用帳本推送)、2 LOW；產出 code-review-sync-service-2026-07-02.md；638 tests 全過、ESLint 乾淨；網路調研：2026 記帳App趨勢 AI 語音記帳成熟化(Finch/說說記帳)、Actual Budget/Firefly III 持續更新
 - **2026-06-29**: 晨報 — GitHub Stars: 77、Issues: 5 open (#49/#48/#14/#9/#8)；v2.1.5.7 已發布 (信用卡智慧管理+FIFO 沖銷+自動扣繳+小鍵盤計算機模式)；#49 計算機鍵盤已實作，骨架畫面研究中；#14-3 信用卡帳戶已實作；FEATURES.md 更新 #U04/#14-3 狀態
 - **2026-06-27**: 網路調研 — 新 Issue #49 (yanggu0413: 手機 PWA 載入速度優化，含 2-5 秒空白等待與骨架畫面建議、計算機式鍵盤)、GitHub Stars: 76、Issues: 5 open (#49/#48/#14/#9/#8)；產出 Code Review 報告；601 tests 全過、ESLint 乾淨
