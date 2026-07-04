@@ -142,6 +142,7 @@
 
 ## 更新歷史
 
+- **2026-07-04**: 新增 virtualKeyboardDetector.js 單元測試 (38 tests, 總計 676) — 涵蓋 constructor 設定、_setState 去重、Layer 2 Visual Viewport resize/orientation、Layer 3 Focus/Blur selector matching、destroy/cleanup；確認 code review 發現的 input[type="number"] 未支援問題；MOZE 最新版本 v4.1.27 (2026/6/30)、Actual Budget 26.7.0 (2026-07-01)、Firefly III v6.6.3；GitHub 77 stars, 5 open issues 無變化
 - **2026-07-03**: Code Review notificationService.js + virtualKeyboardDetector.js + themeManager.js — 發現 2 HIGH (notification ID 硬編碼、MutationObserver 效能)、5 MEDIUM (SW 就緒檢查、orientation null guard、SVG sanitizer、dark.json schema、schedule 重覆排程)、8 LOW；產出 code-review-notification-virtualKeyboard-theme-2026-07-03.md；638 tests 全過、ESLint 乾淨；關鍵發現：virtualKeyboardDetector 未支援 input[type="number"] 可能影響金額輸入偵測；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-02**: Code Review syncService.js + #P01 週期性交易同步調查 — 發現 1 HIGH (add 操作 UUID 碰撞可能產生重複)、3 MEDIUM (update/delete UUID fallback、init 順序、共用帳本推送)、2 LOW；產出 code-review-sync-service-2026-07-02.md；638 tests 全過、ESLint 乾淨；網路調研：2026 記帳App趨勢 AI 語音記帳成熟化(Finch/說說記帳)、Actual Budget/Firefly III 持續更新
 - **2026-06-29**: 晨報 — GitHub Stars: 77、Issues: 5 open (#49/#48/#14/#9/#8)；v2.1.5.7 已發布 (信用卡智慧管理+FIFO 沖銷+自動扣繳+小鍵盤計算機模式)；#49 計算機鍵盤已實作，骨架畫面研究中；#14-3 信用卡帳戶已實作；FEATURES.md 更新 #U04/#14-3 狀態
