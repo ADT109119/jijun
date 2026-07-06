@@ -46,9 +46,12 @@ export class BudgetManager {
       const categoryBudgetOrderRaw = localStorage.getItem(`categoryBudgetOrder${ledgerSuffix}`) || localStorage.getItem('categoryBudgetOrder')
       this.categoryBudgetOrder = categoryBudgetOrderRaw ? JSON.parse(categoryBudgetOrderRaw) : Object.keys(this.categoryBudgets)
       
+      const excludedBudgetCategoriesRaw = localStorage.getItem(`excludedBudgetCategories${ledgerSuffix}`) || localStorage.getItem('excludedBudgetCategories')
+      this.excludedBudgetCategories = excludedBudgetCategoriesRaw ? JSON.parse(excludedBudgetCategoriesRaw) : []
+      
       // Migrate from local storage to IndexedDB
       if (this.dataService && (this.currentBudget > 0 || Object.keys(this.categoryBudgets).length > 0)) {
-        await this.saveBudget(this.currentBudget, this.categoryBudgets, this.categoryBudgetOrder);
+        await this.saveBudget(this.currentBudget, this.categoryBudgets, this.categoryBudgetOrder, this.excludedBudgetCategories);
       }
       
     } catch (error) {
@@ -56,6 +59,7 @@ export class BudgetManager {
       this.currentBudget = 0
       this.categoryBudgets = {}
       this.categoryBudgetOrder = []
+      this.excludedBudgetCategories = []
     }
   }
 

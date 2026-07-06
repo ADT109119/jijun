@@ -1553,13 +1553,23 @@ export class SyncService {
         if (window.app && window.app.budgetManager) {
             window.app.budgetManager.currentBudget = data.monthlyBudget || 0;
             window.app.budgetManager.categoryBudgets = data.categoryBudgets || {};
-            await window.app.budgetManager.saveBudget(window.app.budgetManager.currentBudget, window.app.budgetManager.categoryBudgets, true);
+            window.app.budgetManager.categoryBudgetOrder = data.categoryBudgetOrder || [];
+            window.app.budgetManager.excludedBudgetCategories = data.excludedBudgetCategories || [];
+            await window.app.budgetManager.saveBudget(
+                window.app.budgetManager.currentBudget,
+                window.app.budgetManager.categoryBudgets,
+                window.app.budgetManager.categoryBudgetOrder,
+                window.app.budgetManager.excludedBudgetCategories,
+                true
+            );
             if (window.app && window.app.router && window.app.router.routes['home'] && typeof window.app.router.routes['home'].loadBudgetWidget === 'function') {
                 window.app.router.routes['home'].loadBudgetWidget(); // Auto refresh if available
             }
         } else {
             localStorage.setItem('monthlyBudget', data.monthlyBudget || 0);
             localStorage.setItem('categoryBudgets', JSON.stringify(data.categoryBudgets || {}));
+            localStorage.setItem('categoryBudgetOrder', JSON.stringify(data.categoryBudgetOrder || []));
+            localStorage.setItem('excludedBudgetCategories', JSON.stringify(data.excludedBudgetCategories || []));
         }
         return;
     }
@@ -1682,18 +1692,28 @@ export class SyncService {
         if (window.app && window.app.budgetManager) {
             window.app.budgetManager.currentBudget = data.monthlyBudget || 0;
             window.app.budgetManager.categoryBudgets = data.categoryBudgets || {};
-            await window.app.budgetManager.saveBudget(window.app.budgetManager.currentBudget, window.app.budgetManager.categoryBudgets, true);
+            window.app.budgetManager.categoryBudgetOrder = data.categoryBudgetOrder || [];
+            window.app.budgetManager.excludedBudgetCategories = data.excludedBudgetCategories || [];
+            await window.app.budgetManager.saveBudget(
+                window.app.budgetManager.currentBudget,
+                window.app.budgetManager.categoryBudgets,
+                window.app.budgetManager.categoryBudgetOrder,
+                window.app.budgetManager.excludedBudgetCategories,
+                true
+            );
             if (window.app && window.app.router && window.app.router.routes['home'] && typeof window.app.router.routes['home'].loadBudgetWidget === 'function') {
                 window.app.router.routes['home'].loadBudgetWidget(); // Auto refresh if available
             }
         } else {
             localStorage.setItem('monthlyBudget', data.monthlyBudget || 0);
             localStorage.setItem('categoryBudgets', JSON.stringify(data.categoryBudgets || {}));
+            localStorage.setItem('categoryBudgetOrder', JSON.stringify(data.categoryBudgetOrder || []));
+            localStorage.setItem('excludedBudgetCategories', JSON.stringify(data.excludedBudgetCategories || []));
         }
         return;
     }
 
-    // Try to find by UUID first
+    // 如果 UUID 已存在則當新增處理，避免重複
     if (data.uuid) {
         const existing = await this.dataService.getByUUID(storeName, data.uuid);
         if (existing) {

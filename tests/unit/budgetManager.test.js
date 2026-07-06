@@ -338,6 +338,113 @@ describe('BudgetManager', () => {
             expect(status.categoryStatuses).toHaveLength(1);
             expect(status.categoryStatuses[0].categoryId).toBe('food');
         });
+
+        it('排除類別從總支出中扣除', async () => {
+            bm.currentBudget = 10000;
+            bm.excludedBudgetCategories = ['food'];
+            ds.getStatistics.mockResolvedValueOnce({
+                totalExpense: 8000,
+                expenseByCategory: { 'food': 3000, 'transport': 5000 },
+            });
+
+            const status = await bm.getBudgetStatus();
+            expect(status.spent).toBe(5000); // 8000 - 3000 (excluded food)
+            expect(status.remaining).toBe(5000);
+        });
+
+        it('排除類別的分類標記 isExcluded=true', async () => {
+            bm.currentBudget = 10000;
+            bm.categoryBudgets = { 'food': 3000, 'transport': 2000 };
+            bm.excludedBudgetCategories = ['food'];
+            ds.getStatistics.mockResolvedValueOnce({
+                totalExpense: 5000,
+                expenseByCategory: { 'food': 2500, 'transport': 2500 },
+            });
+
+            window.app = {
+                categoryManager: {
+                    getCategoryById: vi.fn((_, id) => ({ name: id, icon: '' })),
+                },
+            };
+
+            const status = await bm.getBudgetStatus();
+            const foodStatus = status.categoryStatuses.find(s => s.categoryId === 'food');
+            const transportStatus = status.categoryStatuses.find(s => s.categoryId === 'transport');
+            expect(foodStatus.isExcluded).toBe(true);
+            expect(transportStatus.isExcluded).toBe(false);
+        });
+
+        it('排除類別扣完後 spent 不低於 0', async () => {
+            bm.currentBudget = 10000;
+            bm.excludedBudgetCategories = ['food'];
+            ds.getStatistics.mockResolvedValueOnce({
+                totalExpense: 2000,
+                expenseByCategory: { 'food': 3000 },
+            });
+
+            const status = await bm.getBudgetStatus();
+            expect(status.spent).toBe(0); // Math.max(0, 2000 - 3000) = 0
+        });
+    });
+
+
+// ==================== Excluded Budget Categories ====================
+
+    describe('excludedBudgetCategories', () => {
+        it('loadBudget 從 IndexedDB 讀取排除類別', async () => {
+            ds.getSetting.mockResolvedValueOnce({
+                key: 'budget_settings_1',
+                value: {
+                    monthlyBudget: 10000,
+                    categoryBudgets: {},
+                    categoryBudgetOrder: [],
+                    excludedBudgetCategories: ['food', 'traffic'],
+                },
+            });
+
+            await bm.loadBudget();
+            expect(bm.excludedBudgetCategories).toEqual(['food', 'traffic']);
+        });
+
+        it('loadBudget 從 localStorage fallback 讀取排除類別', async () => {
+            ds.getSetting.mockResolvedValueOnce(null);
+            localStorage.setItem('monthlyBudget_1', '5000');
+            localStorage.setItem('categoryBudgets_1', '{}');
+            localStorage.setItem('categoryBudgetOrder_1', '[]');
+            localStorage.setItem('excludedBudgetCategories_1', JSON.stringify(['life']));
+
+            await bm.loadBudget();
+            expect(bm.excludedBudgetCategories).toEqual(['life']);
+        });
+
+        it('loadBudget catch 時重置 excludedBudgetCategories', async () => {
+            ds.getSetting.mockRejectedValueOnce(new Error('DB error'));
+            bm.excludedBudgetCategories = ['food'];
+
+            await bm.loadBudget();
+            expect(bm.excludedBudgetCategories).toEqual([]);
+        });
+
+        it('saveBudget 儲存排除類別', async () => {
+            await bm.saveBudget(10000, {}, [], ['food', 'traffic']);
+
+            expect(bm.excludedBudgetCategories).toEqual(['food', 'traffic']);
+            expect(localStorage.getItem('excludedBudgetCategories_1')).toBe(JSON.stringify(['food', 'traffic']));
+            expect(ds.saveSetting).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    value: expect.objectContaining({
+                        excludedBudgetCategories: ['food', 'traffic'],
+                    }),
+                })
+            );
+        });
+
+        it('saveBudget 不傳 excludedBudgetCategories 時不覆蓋', async () => {
+            bm.excludedBudgetCategories = ['food'];
+            await bm.saveBudget(10000);
+
+            expect(bm.excludedBudgetCategories).toEqual(['food']);
+        });
     });
 
 
