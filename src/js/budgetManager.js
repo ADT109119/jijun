@@ -8,6 +8,7 @@ export class BudgetManager {
     this.currentBudget = 0
     this.categoryBudgets = {}
     this.categoryBudgetOrder = []
+    this.excludedBudgetCategories = []
   }
 
   async loadBudget() {
@@ -26,10 +27,11 @@ export class BudgetManager {
         }
 
         if (budgetSettings && budgetSettings.value) {
-          const { monthlyBudget, categoryBudgets, categoryBudgetOrder } = budgetSettings.value;
+          const { monthlyBudget, categoryBudgets, categoryBudgetOrder, excludedBudgetCategories } = budgetSettings.value;
           this.currentBudget = monthlyBudget ? parseFloat(monthlyBudget) : 0;
           this.categoryBudgets = categoryBudgets || {};
           this.categoryBudgetOrder = categoryBudgetOrder || Object.keys(this.categoryBudgets);
+          this.excludedBudgetCategories = excludedBudgetCategories || [];
           return;
         }
       }
@@ -57,7 +59,7 @@ export class BudgetManager {
     }
   }
 
-  async saveBudget(amount, categoryBudgets = null, categoryBudgetOrder = null, skipLog = false) {
+  async saveBudget(amount, categoryBudgets = null, categoryBudgetOrder = null, excludedBudgetCategories = null, skipLog = false) {
     try {
       this.currentBudget = amount
       if (categoryBudgets !== null) {
@@ -65,6 +67,9 @@ export class BudgetManager {
       }
       if (categoryBudgetOrder !== null) {
         this.categoryBudgetOrder = categoryBudgetOrder;
+      }
+      if (excludedBudgetCategories !== null) {
+        this.excludedBudgetCategories = excludedBudgetCategories;
       }
       
       let ledgerSuffix = '';
@@ -76,9 +81,10 @@ export class BudgetManager {
       localStorage.setItem(`monthlyBudget${ledgerSuffix}`, this.currentBudget.toString())
       localStorage.setItem(`categoryBudgets${ledgerSuffix}`, JSON.stringify(this.categoryBudgets))
       localStorage.setItem(`categoryBudgetOrder${ledgerSuffix}`, JSON.stringify(this.categoryBudgetOrder))
+      localStorage.setItem(`excludedBudgetCategories${ledgerSuffix}`, JSON.stringify(this.excludedBudgetCategories))
 
       if (this.dataService) {
-        const payload = { monthlyBudget: this.currentBudget, categoryBudgets: this.categoryBudgets, categoryBudgetOrder: this.categoryBudgetOrder };
+        const payload = { monthlyBudget: this.currentBudget, categoryBudgets: this.categoryBudgets, categoryBudgetOrder: this.categoryBudgetOrder, excludedBudgetCategories: this.excludedBudgetCategories };
         await this.dataService.saveSetting({ key: `budget_settings${ledgerSuffix}`, value: payload });
         
         if (!skipLog) {
@@ -97,7 +103,12 @@ export class BudgetManager {
     // Budget should not include transfers, so offset them
     const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate, null, true);
     
-    const spent = stats.totalExpense
+    // Subtract excluded categories from total spent
+    let excludedAmount = 0;
+    for (const catId of this.excludedBudgetCategories) {
+      excludedAmount += stats.expenseByCategory[catId] || 0;
+    }
+    const spent = Math.max(0, stats.totalExpense - excludedAmount)
     const remaining = Math.max(0, this.currentBudget - spent)
     const percentage = this.currentBudget > 0 ? (spent / this.currentBudget) * 100 : 0
     
@@ -115,7 +126,8 @@ export class BudgetManager {
         spent: catSpent,
         remaining: catRemaining,
         percentage: Math.min(100, catPercentage),
-        isOverBudget: catSpent > budgetAmount
+        isOverBudget: catSpent > budgetAmount,
+        isExcluded: this.excludedBudgetCategories.includes(categoryId)
       });
     }
 
@@ -180,11 +192,11 @@ export class BudgetManager {
                 <div class="text-sm font-medium text-wabi-text-secondary mb-2">分類預算</div>
                 <div class="space-y-3">
                   ${status.categoryStatuses.map(catStat => `
-                    <div class="category-budget-item">
+                    <div class="category-budget-item ${catStat.isExcluded ? 'opacity-50' : ''}">
                       <div class="flex justify-between items-end mb-1">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i class="${catStat.icon} text-wabi-text-secondary"></i>
-                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}</span>
+                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}${catStat.isExcluded ? ' <span class="text-[0.65rem] text-wabi-text-secondary">(排除)</span>' : ''}</span>
                         </div>
                         <div class="text-right flex-shrink-0">
                           <div class="text-sm font-medium ${catStat.isOverBudget ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
@@ -254,6 +266,19 @@ export class BudgetManager {
             <!-- 分類預算列表會動態生成於此 -->
           </div>
         </div>
+
+        <div class="mb-6 pt-4 border-t border-wabi-border">
+          <div class="flex justify-between items-center mb-2">
+            <label class="block text-sm font-medium text-wabi-text-primary">
+              <i class="fas fa-eye-slash text-xs"></i> 預算排除類別
+            </label>
+            <span class="text-[0.65rem] text-wabi-text-secondary">不計入全局預算</span>
+          </div>
+          <p class="text-xs text-wabi-text-secondary mb-3">勾選要從全局預算統計中排除的支出分類</p>
+          <div id="exclude-categories-list" class="space-y-2">
+            <!-- 排除類別列表會動態生成於此 -->
+          </div>
+        </div>
         
         <div class="flex space-x-3 mt-6">
           <button id="save-budget-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
@@ -269,9 +294,53 @@ export class BudgetManager {
     document.body.appendChild(modal)
 
     const categoryBudgetsList = modal.querySelector('#category-budgets-list');
+    const excludeCategoriesList = modal.querySelector('#exclude-categories-list');
     const workingCategoryBudgets = { ...this.categoryBudgets };
     let workingCategoryBudgetOrder = [...(this.categoryBudgetOrder || Object.keys(this.categoryBudgets))];
+    let workingExcludedCategories = [...this.excludedBudgetCategories];
     let sortableInstance = null;
+
+    // Render exclude categories list
+    const renderExcludeCategoriesList = () => {
+      excludeCategoriesList.innerHTML = '';
+      if (window.app && window.app.categoryManager) {
+        const expenseCategories = window.app.categoryManager.getAllCategories('expense');
+        if (expenseCategories.length === 0) {
+          excludeCategoriesList.innerHTML = '<div class="text-center text-sm text-wabi-text-secondary py-2">無可用支出分類</div>';
+          return;
+        }
+        expenseCategories.forEach(cat => {
+          const isChecked = workingExcludedCategories.includes(cat.id);
+          const item = document.createElement('label');
+          item.className = `flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${isChecked ? 'bg-wabi-surface border-wabi-border' : 'border-wabi-border/30 hover:bg-wabi-surface'}`;
+          item.innerHTML = `
+            <input type="checkbox" value="${cat.id}" ${isChecked ? 'checked' : ''} class="exclude-cat-checkbox accent-wabi-accent w-4 h-4 cursor-pointer">
+            <div class="flex-shrink-0 w-5 text-center"><i class="${cat.icon} text-wabi-text-secondary"></i></div>
+            <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(cat.name)}</span>
+          `;
+          excludeCategoriesList.appendChild(item);
+        });
+
+        // Bind change events
+        excludeCategoriesList.querySelectorAll('.exclude-cat-checkbox').forEach(el => {
+          el.addEventListener('change', (e) => {
+            const catId = e.target.value;
+            if (e.target.checked) {
+              if (!workingExcludedCategories.includes(catId)) {
+                workingExcludedCategories.push(catId);
+              }
+            } else {
+              workingExcludedCategories = workingExcludedCategories.filter(id => id !== catId);
+            }
+            checkBudgetWarning();
+          });
+        });
+      } else {
+        excludeCategoriesList.innerHTML = '<div class="text-center text-sm text-wabi-text-secondary py-2">無法載入分類資料</div>';
+      }
+    };
+
+    renderExcludeCategoriesList();
 
     const renderCategoryBudgetList = () => {
       categoryBudgetsList.innerHTML = '';
@@ -435,13 +504,19 @@ export class BudgetManager {
           totalCategoryBudget += amnt;
         }
 
+        // Re-collect excluded categories from checkboxes
+        const finalExcludedCategories = [];
+        excludeCategoriesList.querySelectorAll('.exclude-cat-checkbox:checked').forEach(el => {
+          finalExcludedCategories.push(el.value);
+        });
+
         if (totalCategoryBudget > amount && amount > 0) {
           showToast('注意：分類預算總和已超過全局預算！', 'warning')
         } else {
           showToast('預算設定已儲存', 'success')
         }
 
-        await this.saveBudget(amount, workingCategoryBudgets, workingCategoryBudgetOrder)
+        await this.saveBudget(amount, workingCategoryBudgets, workingCategoryBudgetOrder, finalExcludedCategories)
         this.closeBudgetModal()
         if (window.app && window.app.router && window.app.router.routes['home']) {
             window.app.router.routes['home'].loadBudgetWidget();

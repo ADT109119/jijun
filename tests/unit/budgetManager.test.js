@@ -76,6 +76,7 @@ describe('BudgetManager', () => {
             expect(bm.currentBudget).toBe(0);
             expect(bm.categoryBudgets).toEqual({});
             expect(bm.categoryBudgetOrder).toEqual([]);
+            expect(bm.excludedBudgetCategories).toEqual([]);
         });
 
         it('持有 dataService 引用', () => {
@@ -175,7 +176,7 @@ describe('BudgetManager', () => {
         });
 
         it('skipLog=true 時不呼叫 logChange', async () => {
-            await bm.saveBudget(5000, {}, [], true);
+            await bm.saveBudget(5000, {}, [], [], true);
             expect(ds.logChange).not.toHaveBeenCalled();
         });
 
