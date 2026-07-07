@@ -1,6 +1,6 @@
 export class LicensePage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -76,6 +76,6 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
                     </ul>
                 </div>
             </div>
-        `;
+        `
     }
 }

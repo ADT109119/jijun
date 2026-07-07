@@ -3,18 +3,18 @@
  * Entry point for the #U07 comparison report feature.
  */
 
-import { ComparisonReport } from '../comparisonReport.js';
-import { formatCurrency } from '../utils.js';
+import { ComparisonReport } from '../comparisonReport.js'
+import { formatCurrency } from '../utils.js'
 
 export class ComparisonPage {
     constructor(app) {
-        this.app = app;
-        this.charts = {};
+        this.app = app
+        this.charts = {}
     }
 
     async render() {
         // Destroy old charts before re-rendering to prevent memory leaks
-        this.destroy();
+        this.destroy()
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
@@ -29,19 +29,24 @@ export class ComparisonPage {
                     <div id="comparison-container"></div>
                 </main>
             </div>
-        `;
+        `
 
-        const comp = new ComparisonReport(this.app.dataService, this.app.categoryManager);
-        const container = this.app.appContainer.querySelector('#comparison-container');
-        await this.renderComparisonUI(comp, container);
+        const comp = new ComparisonReport(
+            this.app.dataService,
+            this.app.categoryManager
+        )
+        const container = this.app.appContainer.querySelector(
+            '#comparison-container'
+        )
+        await this.renderComparisonUI(comp, container)
     }
 
     async renderComparisonUI(comp, container) {
-        const months = await comp.getAvailablePeriods('month');
-        const years = await comp.getAvailablePeriods('year');
+        const months = await comp.getAvailablePeriods('month')
+        const years = await comp.getAvailablePeriods('year')
 
         // Default: last 2 available months
-        const defaultMonths = months.length >= 2 ? months.slice(-2) : months;
+        const defaultMonths = months.length >= 2 ? months.slice(-2) : months
 
         container.innerHTML = `
             <!-- 使用說明 -->
@@ -82,270 +87,341 @@ export class ComparisonPage {
 
             <!-- Results -->
             <div id="comp-results"></div>
-        `;
+        `
 
-        const periodTypeBtns = container.querySelectorAll('.period-type-btn');
-        const typeFilterBtns = container.querySelectorAll('.type-filter-btn');
-        let currentPeriodType = 'month';
-        let currentTypeFilter = 'all';
-        let selectedPeriods = new Set(defaultMonths);
+        const periodTypeBtns = container.querySelectorAll('.period-type-btn')
+        const typeFilterBtns = container.querySelectorAll('.type-filter-btn')
+        let currentPeriodType = 'month'
+        let currentTypeFilter = 'all'
+        let selectedPeriods = new Set(defaultMonths)
 
         const updateSelectedCount = () => {
-            const countEl = container.querySelector('#comp-selected-count');
-            if (countEl) countEl.textContent = selectedPeriods.size;
-        };
+            const countEl = container.querySelector('#comp-selected-count')
+            if (countEl) countEl.textContent = selectedPeriods.size
+        }
 
         const renderCheckboxes = () => {
-            const periods = currentPeriodType === 'month' ? months : years;
-            const checkboxesEl = container.querySelector('#comp-checkboxes');
+            const periods = currentPeriodType === 'month' ? months : years
+            const checkboxesEl = container.querySelector('#comp-checkboxes')
             if (periods.length === 0) {
                 checkboxesEl.innerHTML = `<div class="col-span-2 sm:col-span-3 text-center py-6 text-wabi-text-secondary">
                     <i class="fa-solid fa-inbox mr-2"></i>暫無歷史數據可比較
-                </div>`;
-                return;
+                </div>`
+                return
             }
-            checkboxesEl.innerHTML = periods.map(p => {
-                const checked = selectedPeriods.has(p) ? 'checked' : '';
-                return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer hover:border-wabi-accent/50 transition-colors">
+            checkboxesEl.innerHTML = periods
+                .map(p => {
+                    const checked = selectedPeriods.has(p) ? 'checked' : ''
+                    return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer hover:border-wabi-accent/50 transition-colors">
                     <input type="checkbox" value="${p}" ${checked} class="comp-checkbox rounded" disabled>
                     <span class="text-sm">${p}</span>
-                </label>`;
-            }).join('');
+                </label>`
+                })
+                .join('')
 
             // Re-enable checkboxes after render
             checkboxesEl.querySelectorAll('.comp-checkbox').forEach(cb => {
-                cb.disabled = false;
+                cb.disabled = false
                 cb.addEventListener('change', () => {
                     if (cb.checked) {
                         if (selectedPeriods.size >= 4) {
-                            cb.checked = false;
-                            return;
+                            cb.checked = false
+                            return
                         }
-                        selectedPeriods.add(cb.value);
+                        selectedPeriods.add(cb.value)
                     } else {
-                        selectedPeriods.delete(cb.value);
+                        selectedPeriods.delete(cb.value)
                     }
-                    updateSelectedCount();
-                });
-            });
-            updateSelectedCount();
-        };
+                    updateSelectedCount()
+                })
+            })
+            updateSelectedCount()
+        }
 
         // Period type toggle
         periodTypeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                currentPeriodType = btn.id === 'comp-period-month' ? 'month' : 'year';
-                selectedPeriods = new Set();
-                const periods = currentPeriodType === 'month' ? months : years;
+                currentPeriodType =
+                    btn.id === 'comp-period-month' ? 'month' : 'year'
+                selectedPeriods = new Set()
+                const periods = currentPeriodType === 'month' ? months : years
                 if (periods.length >= 2) {
-                    selectedPeriods = new Set(periods.slice(-2));
+                    selectedPeriods = new Set(periods.slice(-2))
                 } else {
-                    selectedPeriods = new Set(periods);
+                    selectedPeriods = new Set(periods)
                 }
                 periodTypeBtns.forEach(b => {
                     if (b === btn) {
-                        b.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
-                        b.classList.remove('text-wabi-text-secondary');
+                        b.classList.add(
+                            'bg-wabi-surface',
+                            'text-wabi-primary',
+                            'shadow-sm'
+                        )
+                        b.classList.remove('text-wabi-text-secondary')
                     } else {
-                        b.classList.remove('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
-                        b.classList.add('text-wabi-text-secondary');
+                        b.classList.remove(
+                            'bg-wabi-surface',
+                            'text-wabi-primary',
+                            'shadow-sm'
+                        )
+                        b.classList.add('text-wabi-text-secondary')
                     }
-                });
-                renderCheckboxes();
-            });
-        });
+                })
+                renderCheckboxes()
+            })
+        })
 
         // Type filter toggle
         typeFilterBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                currentTypeFilter = btn.id === 'comp-filter-all' ? 'all' :
-                                     btn.id === 'comp-filter-income' ? 'income' : 'expense';
+                currentTypeFilter =
+                    btn.id === 'comp-filter-all'
+                        ? 'all'
+                        : btn.id === 'comp-filter-income'
+                          ? 'income'
+                          : 'expense'
                 typeFilterBtns.forEach(b => {
                     if (b === btn) {
-                        b.classList.add('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
-                        b.classList.remove('text-wabi-text-secondary');
+                        b.classList.add(
+                            'bg-wabi-surface',
+                            'text-wabi-primary',
+                            'shadow-sm'
+                        )
+                        b.classList.remove('text-wabi-text-secondary')
                     } else {
-                        b.classList.remove('bg-wabi-surface', 'text-wabi-primary', 'shadow-sm');
-                        b.classList.add('text-wabi-text-secondary');
+                        b.classList.remove(
+                            'bg-wabi-surface',
+                            'text-wabi-primary',
+                            'shadow-sm'
+                        )
+                        b.classList.add('text-wabi-text-secondary')
                     }
-                });
-            });
-        });
+                })
+            })
+        })
 
         // Last year comparison shortcut — merge current selection with last-year equivalents
-        container.querySelector('#comp-lastyear-btn').addEventListener('click', () => {
-            const selectedArr = Array.from(selectedPeriods).sort();
-            if (selectedArr.length < 1) {
-                return; // No periods selected
-            }
-            if (currentPeriodType === 'month') {
-                const lastYearPeriods = ComparisonReport.getLastYearPeriods(selectedArr);
-                // Merge current + last-year, respecting the 4-period limit
-                const merged = new Set([...selectedArr, ...lastYearPeriods]);
-                // If still exceeds 4, keep oldest periods
-                if (merged.size > 4) {
-                    const sorted = Array.from(merged).sort();
-                    selectedPeriods = new Set(sorted.slice(0, 4));
-                } else {
-                    selectedPeriods = merged;
+        container
+            .querySelector('#comp-lastyear-btn')
+            .addEventListener('click', () => {
+                const selectedArr = Array.from(selectedPeriods).sort()
+                if (selectedArr.length < 1) {
+                    return // No periods selected
                 }
-                renderCheckboxes();
-            }
-        });
+                if (currentPeriodType === 'month') {
+                    const lastYearPeriods =
+                        ComparisonReport.getLastYearPeriods(selectedArr)
+                    // Merge current + last-year, respecting the 4-period limit
+                    const merged = new Set([...selectedArr, ...lastYearPeriods])
+                    // If still exceeds 4, keep oldest periods
+                    if (merged.size > 4) {
+                        const sorted = Array.from(merged).sort()
+                        selectedPeriods = new Set(sorted.slice(0, 4))
+                    } else {
+                        selectedPeriods = merged
+                    }
+                    renderCheckboxes()
+                }
+            })
 
-        renderCheckboxes();
+        renderCheckboxes()
 
-        container.querySelector('#comp-run-btn').addEventListener('click', async () => {
-            const selectedArr = Array.from(selectedPeriods).sort();
-            if (selectedArr.length < 2) {
-                container.querySelector('#comp-results').innerHTML =
-                    '<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-circle mr-1"></i>請至少選擇 2 個期間</p>';
-                return;
-            }
+        container
+            .querySelector('#comp-run-btn')
+            .addEventListener('click', async () => {
+                const selectedArr = Array.from(selectedPeriods).sort()
+                if (selectedArr.length < 2) {
+                    container.querySelector('#comp-results').innerHTML =
+                        '<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-circle mr-1"></i>請至少選擇 2 個期間</p>'
+                    return
+                }
 
-            // Show loading state
-            const runBtn = container.querySelector('#comp-run-btn');
-            const originalBtnText = runBtn.innerHTML;
-            runBtn.disabled = true;
-            runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 計算中...';
+                // Show loading state
+                const runBtn = container.querySelector('#comp-run-btn')
+                const originalBtnText = runBtn.innerHTML
+                runBtn.disabled = true
+                runBtn.innerHTML =
+                    '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 計算中...'
 
-            try {
-                const data = await comp.calculateComparison(currentPeriodType, selectedArr, {
-                    typeFilter: currentTypeFilter,
-                });
-                this.renderResults(container, comp, data);
-            } catch (err) {
-                container.querySelector('#comp-results').innerHTML =
-                    `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${err.message}</p>`;
-            } finally {
-                // Restore button state
-                runBtn.disabled = false;
-                runBtn.innerHTML = originalBtnText;
-            }
-        });
+                try {
+                    const data = await comp.calculateComparison(
+                        currentPeriodType,
+                        selectedArr,
+                        {
+                            typeFilter: currentTypeFilter,
+                        }
+                    )
+                    this.renderResults(container, comp, data)
+                } catch (err) {
+                    container.querySelector('#comp-results').innerHTML =
+                        `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${err.message}</p>`
+                } finally {
+                    // Restore button state
+                    runBtn.disabled = false
+                    runBtn.innerHTML = originalBtnText
+                }
+            })
     }
 
     renderResults(container, comp, data) {
-        const resultsEl = container.querySelector('#comp-results');
+        const resultsEl = container.querySelector('#comp-results')
 
         // Summary cards
-        const summaryDiv = document.createElement('div');
-        summaryDiv.id = 'comp-summary';
-        comp.renderSummaryCards(summaryDiv, data.periodData);
-        resultsEl.innerHTML = '';
-        resultsEl.appendChild(summaryDiv);
+        const summaryDiv = document.createElement('div')
+        summaryDiv.id = 'comp-summary'
+        comp.renderSummaryCards(summaryDiv, data.periodData)
+        resultsEl.innerHTML = ''
+        resultsEl.appendChild(summaryDiv)
 
         // Savings rate cards (new phase 3)
-        const savingsDiv = document.createElement('div');
-        savingsDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-        savingsDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-piggy-bank mr-2"></i>儲蓄率比較</h2>';
-        const savingsInner = document.createElement('div');
-        comp.renderSavingsRates(savingsInner, data.periodData, data.periodLabels);
-        savingsDiv.appendChild(savingsInner);
-        resultsEl.appendChild(savingsDiv);
+        const savingsDiv = document.createElement('div')
+        savingsDiv.className =
+            'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
+        savingsDiv.innerHTML =
+            '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-piggy-bank mr-2"></i>儲蓄率比較</h2>'
+        const savingsInner = document.createElement('div')
+        comp.renderSavingsRates(
+            savingsInner,
+            data.periodData,
+            data.periodLabels
+        )
+        savingsDiv.appendChild(savingsInner)
+        resultsEl.appendChild(savingsDiv)
 
         // Chart (bar chart for income/expense comparison)
-        this.renderComparisonChart(container, data);
+        this.renderComparisonChart(container, data)
 
         // Percentage breakdown table (new phase 3)
         if (data.typeFilter !== 'income') {
-            const pctDiv = document.createElement('div');
-            pctDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-            pctDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-chart-pie mr-2"></i>支出比例比較</h2>';
-            const pctInner = document.createElement('div');
-            comp.renderPercentageTable(pctInner, data.periodLabels, data.periodData, data.categoryComparisons);
-            pctDiv.appendChild(pctInner);
-            resultsEl.appendChild(pctDiv);
+            const pctDiv = document.createElement('div')
+            pctDiv.className =
+                'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
+            pctDiv.innerHTML =
+                '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-chart-pie mr-2"></i>支出比例比較</h2>'
+            const pctInner = document.createElement('div')
+            comp.renderPercentageTable(
+                pctInner,
+                data.periodLabels,
+                data.periodData,
+                data.categoryComparisons
+            )
+            pctDiv.appendChild(pctInner)
+            resultsEl.appendChild(pctDiv)
         }
 
         // Daily average expense cards (new phase 4)
         if (data.typeFilter !== 'income') {
-            const dailyDiv = document.createElement('div');
-            dailyDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-            dailyDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-calendar-day mr-2"></i>日均支出比較</h2>';
-            const dailyInner = document.createElement('div');
-            comp.renderDailyAverages(dailyInner, data.periodData, data.periodType, data.periodLabels);
-            dailyDiv.appendChild(dailyInner);
-            resultsEl.appendChild(dailyDiv);
+            const dailyDiv = document.createElement('div')
+            dailyDiv.className =
+                'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
+            dailyDiv.innerHTML =
+                '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-calendar-day mr-2"></i>日均支出比較</h2>'
+            const dailyInner = document.createElement('div')
+            comp.renderDailyAverages(
+                dailyInner,
+                data.periodData,
+                data.periodType,
+                data.periodLabels
+            )
+            dailyDiv.appendChild(dailyInner)
+            resultsEl.appendChild(dailyDiv)
         }
 
         // Category ranking comparison (new phase 4)
         if (data.typeFilter !== 'income') {
-            const rankingDiv = document.createElement('div');
-            rankingDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
-            rankingDiv.innerHTML = '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-trophy mr-2"></i>分類排名比較</h2>';
-            const rankingInner = document.createElement('div');
-            comp.renderCategoryRankings(rankingInner, data.periodLabels, data.categoryComparisons);
-            rankingDiv.appendChild(rankingInner);
-            resultsEl.appendChild(rankingDiv);
+            const rankingDiv = document.createElement('div')
+            rankingDiv.className =
+                'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
+            rankingDiv.innerHTML =
+                '<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-trophy mr-2"></i>分類排名比較</h2>'
+            const rankingInner = document.createElement('div')
+            comp.renderCategoryRankings(
+                rankingInner,
+                data.periodLabels,
+                data.categoryComparisons
+            )
+            rankingDiv.appendChild(rankingInner)
+            resultsEl.appendChild(rankingDiv)
         }
 
         // Category table
-        const tableDiv = document.createElement('div');
-        tableDiv.id = 'comp-category-table';
-        tableDiv.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+        const tableDiv = document.createElement('div')
+        tableDiv.id = 'comp-category-table'
+        tableDiv.className =
+            'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
         // Update title based on type filter
-        const filterLabel = data.typeFilter === 'income' ? '收入' :
-                           data.typeFilter === 'expense' ? '支出' : '收支';
-        tableDiv.innerHTML = `<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-table-list mr-2"></i>分類${filterLabel}比較</h2>`;
-        const tableInner = document.createElement('div');
-        comp.renderCategoryTable(tableInner, data.periodLabels, data.categoryComparisons);
-        tableDiv.appendChild(tableInner);
-        resultsEl.appendChild(tableDiv);
+        const filterLabel =
+            data.typeFilter === 'income'
+                ? '收入'
+                : data.typeFilter === 'expense'
+                  ? '支出'
+                  : '收支'
+        tableDiv.innerHTML = `<h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-table-list mr-2"></i>分類${filterLabel}比較</h2>`
+        const tableInner = document.createElement('div')
+        comp.renderCategoryTable(
+            tableInner,
+            data.periodLabels,
+            data.categoryComparisons
+        )
+        tableDiv.appendChild(tableInner)
+        resultsEl.appendChild(tableDiv)
 
         // Export CSV button
-        const exportDiv = document.createElement('div');
-        exportDiv.className = 'mt-6';
+        const exportDiv = document.createElement('div')
+        exportDiv.className = 'mt-6'
         exportDiv.innerHTML = `
             <button id="comp-export-csv" class="w-full py-3 rounded-xl bg-wabi-surface border border-wabi-border font-medium hover:bg-wabi-accent/10 transition-colors">
                 <i class="fa-solid fa-file-export mr-1"></i> 匯出 CSV
             </button>
-        `;
-        exportDiv.querySelector('#comp-export-csv').addEventListener('click', () => {
-            this.downloadCSV(comp, data);
-        });
-        resultsEl.appendChild(exportDiv);
+        `
+        exportDiv
+            .querySelector('#comp-export-csv')
+            .addEventListener('click', () => {
+                this.downloadCSV(comp, data)
+            })
+        resultsEl.appendChild(exportDiv)
     }
 
     /**
      * Download comparison data as CSV file.
      */
     downloadCSV(comp, data) {
-        const csv = comp.exportToCSV(data);
-        const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
-        const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const fileName = `比較報表_${data.periodLabels.join('vs')}.csv`;
-        a.download = fileName;
-        a.click();
-        URL.revokeObjectURL(url);
+        const csv = comp.exportToCSV(data)
+        const BOM = '\uFEFF' // UTF-8 BOM for Excel compatibility
+        const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        const fileName = `比較報表_${data.periodLabels.join('vs')}.csv`
+        a.download = fileName
+        a.click()
+        URL.revokeObjectURL(url)
     }
 
     renderComparisonChart(container, data) {
-        const Chart = window.Chart;
-        if (!Chart) return;
+        const Chart = window.Chart
+        if (!Chart) return
 
         // Remove old chart container if exists
-        const oldCanvas = document.getElementById('comp-bar-chart');
-        if (oldCanvas) oldCanvas.remove();
-        if (this.charts.comparison) this.charts.comparison.destroy();
+        const oldCanvas = document.getElementById('comp-bar-chart')
+        if (oldCanvas) oldCanvas.remove()
+        if (this.charts.comparison) this.charts.comparison.destroy()
 
-        const resultsEl = container.querySelector('#comp-results');
-        if (!resultsEl) return;
+        const resultsEl = container.querySelector('#comp-results')
+        if (!resultsEl) return
 
-        const chartWrapper = document.createElement('div');
-        chartWrapper.className = 'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border';
+        const chartWrapper = document.createElement('div')
+        chartWrapper.className =
+            'mt-6 rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border'
         chartWrapper.innerHTML = `
             <h2 class="text-base font-bold mb-4 text-wabi-primary"><i class="fa-solid fa-chart-bar mr-2"></i>收支對比圖</h2>
             <div class="relative h-48 w-full">
                 <canvas id="comp-bar-chart"></canvas>
             </div>
-        `;
-        resultsEl.appendChild(chartWrapper);
+        `
+        resultsEl.appendChild(chartWrapper)
 
-        const ctx = document.getElementById('comp-bar-chart').getContext('2d');
+        const ctx = document.getElementById('comp-bar-chart').getContext('2d')
         this.charts.comparison = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -375,12 +451,16 @@ export class ComparisonPage {
                     },
                     tooltip: {
                         callbacks: {
-                            label: ctx => `${ctx.dataset.label}: $${formatCurrency(ctx.parsed.y, 0)}`,
+                            label: ctx =>
+                                `${ctx.dataset.label}: $${formatCurrency(ctx.parsed.y, 0)}`,
                         },
                     },
                 },
                 scales: {
-                    x: { ticks: { color: '#718096' }, grid: { display: false } },
+                    x: {
+                        ticks: { color: '#718096' },
+                        grid: { display: false },
+                    },
                     y: {
                         ticks: {
                             color: '#718096',
@@ -391,11 +471,11 @@ export class ComparisonPage {
                     },
                 },
             },
-        });
+        })
     }
 
     destroy() {
-        Object.values(this.charts).forEach(chart => chart?.destroy());
-        this.charts = {};
+        Object.values(this.charts).forEach(chart => chart?.destroy())
+        this.charts = {}
     }
 }

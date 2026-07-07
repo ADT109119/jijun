@@ -1,0 +1,55 @@
+{
+    "type": "AdaptiveCard",
+    "version": "1.5",
+    "body": [
+        {
+            "type": "TextBlock",
+            "text": "輕鬆記帳",
+            "weight": "Bolder",
+            "size": "Medium",
+            "color": "Accent"
+        },
+        {
+            "type": "TextBlock",
+            "text": "今日收支概覽",
+            "weight": "Lighter",
+            "spacing": "None"
+        },
+        {
+            "type": "FactSet",
+            "facts": [
+                {
+                    "title": "今日支出",
+                    "value": "$${expense}"
+                },
+                {
+                    "title": "今日收入",
+                    "value": "$${income}"
+                }
+            ],
+            "spacing": "Medium"
+        },
+        {
+            "type": "ActionSet",
+            "actions": [
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "開啟 App",
+                    "url": "https://jijun.the-walking-fish.com/"
+                },
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "快速記帳",
+                    "url": "https://jijun.the-walking-fish.com/#add"
+                },
+                {
+                    "type": "Action.Execute",
+                    "title": "重新整理",
+                    "verb": "refresh"
+                }
+            ],
+            "spacing": "Medium"
+        }
+    ],
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json"
+}

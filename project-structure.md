@@ -38,6 +38,13 @@ android/                 # Capacitor Android 原生專案
 │   └── AndroidManifest.xml  # 含 AdMob App ID
 └── variables.gradle     # SDK 版本設定 (minSdk=23, targetSdk=35)
 
+public/                  # 靜態資源目錄
+├── manifest.json        # PWA 設定檔 (包含唯一 id、主題顏色與應用資訊)
+├── serviceWorker.js     # 離線快取 Service Worker
+├── icon/                # 圖示目錄 (包含 icon.png 192px 與 icon-512.png 512px)
+├── screenshots/         # PWA 螢幕截圖目錄 (用於應用商店預覽)
+└── widgets/             # PWA 桌面小工具定義檔 (包含 template.json 與 data.json)
+
 capacitor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
 index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, IDB, GIS)
 ```
@@ -53,10 +60,10 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 ## 測試結構
 
 所有的單元測試位於 `tests/unit/` 目錄下：
+
 - `recordsList.test.js` # 測試明細紀錄列表與預設時間範圍設定
 - `amortization.test.js` # 測試折舊攤提分期邏輯
 - `budgetManager.test.js` # 測試預算管理邏輯
 - `categoryManager.test.js` # 測試分類管理邏輯
 - ...等等（共有 19 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試
-
