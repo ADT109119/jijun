@@ -1,8 +1,8 @@
-import { RecordsListManager } from '../recordsList.js';
+import { RecordsListManager } from '../recordsList.js'
 
 export class RecordsPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -72,9 +72,13 @@ export class RecordsPage {
                 <!-- Modals -->
                 <div id="records-modals-container"></div>
             </div>
-        `;
-        const pageElement = this.app.appContainer.querySelector('.page');
-        const recordsListManager = new RecordsListManager(this.app.dataService, this.app.categoryManager, pageElement);
-        recordsListManager.init();
+        `
+        const pageElement = this.app.appContainer.querySelector('.page')
+        const recordsListManager = new RecordsListManager(
+            this.app.dataService,
+            this.app.categoryManager,
+            pageElement
+        )
+        recordsListManager.init()
     }
 }

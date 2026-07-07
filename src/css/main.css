@@ -7,7 +7,7 @@ body {
     font-family: 'Inter', 'Noto Sans TC', sans-serif;
     padding-top: env(safe-area-inset-top, 0px); /* 避開系統狀態列 */
     padding-bottom: 80px; /* Space for bottom navigation */
-    background-color: #F5F5F3; /* wabi-bg */
+    background-color: #f5f5f3; /* wabi-bg */
 }
 
 @media (min-width: 768px) {
@@ -56,13 +56,13 @@ select option {
 
 /* Add Record Page - Category button active state */
 .category-button.active {
-    border-color: #B95A5A; /* wabi-expense */
-    background-color: #B95A5A1A; /* wabi-expense with opacity */
+    border-color: #b95a5a; /* wabi-expense */
+    background-color: #b95a5a1a; /* wabi-expense with opacity */
 }
 
 .category-button.active-income {
-    border-color: #6A9C89; /* wabi-income */
-    background-color: #6A9C891A; /* wabi-income with opacity */
+    border-color: #6a9c89; /* wabi-income */
+    background-color: #6a9c891a; /* wabi-income with opacity */
 }
 
 /* Toast animation */
@@ -125,12 +125,12 @@ select option {
 }
 
 @keyframes wave-scroll {
-  0% {
-    background-position-x: 0;
-  }
-  100% {
-    background-position-x: -1000px; /* A large prime number for smooth looping */
-  }
+    0% {
+        background-position-x: 0;
+    }
+    100% {
+        background-position-x: -1000px; /* A large prime number for smooth looping */
+    }
 }
 
 .budget-wave::before,
@@ -138,7 +138,9 @@ select option {
     content: '';
     position: absolute;
     left: 0;
-    bottom: calc(100% - 40px); /* Position waves at the top of the water level */
+    bottom: calc(
+        100% - 40px
+    ); /* Position waves at the top of the water level */
     right: 0;
     height: 40px; /* Height of the SVG wave */
     background-repeat: repeat-x;

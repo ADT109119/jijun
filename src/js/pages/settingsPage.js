@@ -1,9 +1,9 @@
-import { showToast } from '../utils.js';
-import { DARK_THEME_ID } from '../themeManager.js';
+import { showToast } from '../utils.js'
+import { DARK_THEME_ID } from '../themeManager.js'
 
 export class SettingsPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -238,58 +238,63 @@ export class SettingsPage {
                     <div class="pb-24"></div>
                 </div>
             </div>
-        `;
-        await this.setupSettingsPageListeners();
+        `
+        await this.setupSettingsPageListeners()
         // Add listener for plugin manager button
-        const managePluginsBtn = document.getElementById('manage-plugins-btn');
+        const managePluginsBtn = document.getElementById('manage-plugins-btn')
         if (managePluginsBtn) {
             managePluginsBtn.addEventListener('click', () => {
-                window.location.hash = '#plugins';
-            });
+                window.location.hash = '#plugins'
+            })
         }
         // Themes manager button
-        const manageThemesBtn = document.getElementById('manage-themes-btn');
+        const manageThemesBtn = document.getElementById('manage-themes-btn')
         if (manageThemesBtn) {
             manageThemesBtn.addEventListener('click', () => {
-                window.location.hash = '#themes';
-            });
+                window.location.hash = '#themes'
+            })
         }
         // Ledger management button
-        const manageLedgersBtn = document.getElementById('manage-ledgers-btn');
+        const manageLedgersBtn = document.getElementById('manage-ledgers-btn')
         if (manageLedgersBtn) {
             manageLedgersBtn.addEventListener('click', () => {
-                window.location.hash = '#ledgers';
-            });
+                window.location.hash = '#ledgers'
+            })
         }
         // Cloud sync button
-        const cloudSyncBtn = document.getElementById('cloud-sync-btn');
+        const cloudSyncBtn = document.getElementById('cloud-sync-btn')
         if (cloudSyncBtn) {
             cloudSyncBtn.addEventListener('click', () => {
-                window.location.hash = '#sync-settings';
-            });
+                window.location.hash = '#sync-settings'
+            })
         }
         // 贊助 - 觀看獎勵廣告以移除廣告 7 天
-        const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn');
+        const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn')
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
                 try {
-                    const granted = await this.app.rewardService.showRewardedAd();
+                    const granted =
+                        await this.app.rewardService.showRewardedAd()
                     if (granted) {
-                        this.render();
+                        this.render()
                     }
                 } catch (e) {
-                    console.warn('獎勵廣告流程失敗:', e);
+                    console.warn('獎勵廣告流程失敗:', e)
                 }
-            });
+            })
         }
         // 渲染底部橫幅廣告
-        this.app.rewardService.renderBannerAd(document.getElementById('settings-banner-ad')).catch(() => {});
+        this.app.rewardService
+            .renderBannerAd(document.getElementById('settings-banner-ad'))
+            .catch(() => {})
 
         // PWA install button visibility
         if (this.app.deferredInstallPrompt) {
-            const installBtnContainer = document.getElementById('install-pwa-btn-container');
+            const installBtnContainer = document.getElementById(
+                'install-pwa-btn-container'
+            )
             if (installBtnContainer) {
-                installBtnContainer.classList.remove('hidden');
+                installBtnContainer.classList.remove('hidden')
             }
         }
     }
@@ -308,321 +313,439 @@ export class SettingsPage {
                 </div>
             </button>
             <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
-        `.trim();
+        `.trim()
     }
 
     async setupSettingsPageListeners() {
-        document.getElementById('export-data-btn').addEventListener('click', async () => {
-            // Show export options dialog
-            await this.showExportOptionsModal();
-        });
+        document
+            .getElementById('export-data-btn')
+            .addEventListener('click', async () => {
+                // Show export options dialog
+                await this.showExportOptionsModal()
+            })
 
-        const importFileInput = document.getElementById('import-file-input');
-        document.getElementById('import-data-btn').addEventListener('click', () => {
-            importFileInput.click();
-        });
+        const importFileInput = document.getElementById('import-file-input')
+        document
+            .getElementById('import-data-btn')
+            .addEventListener('click', () => {
+                importFileInput.click()
+            })
 
-        importFileInput.addEventListener('change', async (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
+        importFileInput.addEventListener('change', async event => {
+            const file = event.target.files[0]
+            if (!file) return
 
-            this.showConfirmModal('匯入資料將會覆蓋所有現有紀錄，確定要繼續嗎？', async () => {
-                try {
-                    await this.app.dataService.importData(file);
-                    showToast('資料已成功匯入！正在重整...', 'success');
-                    setTimeout(() => window.location.reload(), 2000);
-                } catch (error) {
-                    console.error('匯入失敗:', error);
-                    showToast('資料匯入失敗', 'error');
+            this.showConfirmModal(
+                '匯入資料將會覆蓋所有現有紀錄，確定要繼續嗎？',
+                async () => {
+                    try {
+                        await this.app.dataService.importData(file)
+                        showToast('資料已成功匯入！正在重整...', 'success')
+                        setTimeout(() => window.location.reload(), 2000)
+                    } catch (error) {
+                        console.error('匯入失敗:', error)
+                        showToast('資料匯入失敗', 'error')
+                    }
                 }
-            });
-            importFileInput.value = ''; // Reset input
-        });
+            )
+            importFileInput.value = '' // Reset input
+        })
 
-        document.getElementById('check-update-btn').addEventListener('click', () => this.checkForUpdates());
-        document.getElementById('changelog-btn').addEventListener('click', () => this.app.changelogManager.showChangelogModal());
-        document.getElementById('privacy-btn').addEventListener('click', () => { window.location.hash = '#privacy'; });
-        document.getElementById('license-btn').addEventListener('click', () => { window.location.hash = '#license'; });
+        document
+            .getElementById('check-update-btn')
+            .addEventListener('click', () => this.checkForUpdates())
+        document
+            .getElementById('changelog-btn')
+            .addEventListener('click', () =>
+                this.app.changelogManager.showChangelogModal()
+            )
+        document.getElementById('privacy-btn').addEventListener('click', () => {
+            window.location.hash = '#privacy'
+        })
+        document.getElementById('license-btn').addEventListener('click', () => {
+            window.location.hash = '#license'
+        })
 
         // New Listeners
-        document.getElementById('force-update-btn').addEventListener('click', () => this.forceUpdate());
+        document
+            .getElementById('force-update-btn')
+            .addEventListener('click', () => this.forceUpdate())
 
-        const installBtn = document.getElementById('install-pwa-btn');
+        const installBtn = document.getElementById('install-pwa-btn')
         if (installBtn) {
             installBtn.addEventListener('click', async () => {
                 if (this.app.deferredInstallPrompt) {
-                    this.app.deferredInstallPrompt.prompt();
-                    const { outcome } = await this.app.deferredInstallPrompt.userChoice;
-                    console.log(`User response to the install prompt: ${outcome}`);
-                    this.app.deferredInstallPrompt = null;
-                    document.getElementById('install-pwa-btn-container').classList.add('hidden');
+                    this.app.deferredInstallPrompt.prompt()
+                    const { outcome } =
+                        await this.app.deferredInstallPrompt.userChoice
+                    console.log(
+                        `User response to the install prompt: ${outcome}`
+                    )
+                    this.app.deferredInstallPrompt = null
+                    document
+                        .getElementById('install-pwa-btn-container')
+                        .classList.add('hidden')
                 }
-            });
+            })
         }
 
-        const shareBtn = document.getElementById('share-app-btn');
+        const shareBtn = document.getElementById('share-app-btn')
         if (shareBtn) {
             shareBtn.addEventListener('click', () => {
                 if (navigator.share) {
-                    navigator.share({
-                        title: '輕鬆記帳',
-                        text: '快來試試這款簡單好用的記帳 App！',
-                        url: window.location.origin,
-                    })
-                    .then(() => console.log('Successful share'))
-                    .catch((error) => console.log('Error sharing', error));
+                    navigator
+                        .share({
+                            title: '輕鬆記帳',
+                            text: '快來試試這款簡單好用的記帳 App！',
+                            url: window.location.origin,
+                        })
+                        .then(() => console.log('Successful share'))
+                        .catch(error => console.log('Error sharing', error))
                 } else {
-                    showToast('您的瀏覽器不支援分享功能', 'warning');
+                    showToast('您的瀏覽器不支援分享功能', 'warning')
                 }
-            });
+            })
         }
 
-        const versionInfo = document.getElementById('version-info');
+        const versionInfo = document.getElementById('version-info')
         if (versionInfo) {
-            const latestVersion = this.app.changelogManager.getAllVersions()[0];
-            versionInfo.textContent = `版本 v${latestVersion.version}`;
+            const latestVersion = this.app.changelogManager.getAllVersions()[0]
+            versionInfo.textContent = `版本 v${latestVersion.version}`
         }
 
         // GitHub Star 數量 (透過 GitHub API 動態取得)
-        const starCount = document.getElementById('star-count');
+        const starCount = document.getElementById('star-count')
         if (starCount) {
             fetch('https://api.github.com/repos/ADT109119/jijun')
                 .then(res => res.json())
                 .then(data => {
-                    starCount.textContent = data.stargazers_count || 0;
+                    starCount.textContent = data.stargazers_count || 0
                 })
                 .catch(() => {
-                    starCount.textContent = '';
-                });
+                    starCount.textContent = ''
+                })
         }
 
         // 深色模式快速切換
-        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        const darkModeToggle = document.getElementById('dark-mode-toggle')
         if (darkModeToggle) {
             // 標記目前是否已是深色主題
-            const activeSetting = await this.app.dataService.getSetting('activeThemeId');
-            darkModeToggle.checked = activeSetting?.value === DARK_THEME_ID;
+            const activeSetting =
+                await this.app.dataService.getSetting('activeThemeId')
+            darkModeToggle.checked = activeSetting?.value === DARK_THEME_ID
 
-            darkModeToggle.addEventListener('change', async (e) => {
+            darkModeToggle.addEventListener('change', async e => {
                 if (e.target.checked) {
                     // 套用深色主題
-                    const darkTheme = await this.app.dataService.getTheme(DARK_THEME_ID);
+                    const darkTheme =
+                        await this.app.dataService.getTheme(DARK_THEME_ID)
                     if (darkTheme) {
-                        await this.app.themeManager.applyTheme(darkTheme);
-                        showToast('已切換為深色模式', 'success');
+                        await this.app.themeManager.applyTheme(darkTheme)
+                        showToast('已切換為深色模式', 'success')
                     } else {
-                        showToast('深色主題沒有安裝，請先從主題商店下載', 'error');
-                        e.target.checked = false;
+                        showToast(
+                            '深色主題沒有安裝，請先從主題商店下載',
+                            'error'
+                        )
+                        e.target.checked = false
                     }
                 } else {
                     // 切回預設亮色主題
-                    await this.app.themeManager.clearTheme();
-                    showToast('已切換為亮色模式', 'success');
+                    await this.app.themeManager.clearTheme()
+                    showToast('已切換為亮色模式', 'success')
                 }
-            });
+            })
         }
 
-        const advancedModeToggle = document.getElementById('advanced-account-mode-toggle');
+        const advancedModeToggle = document.getElementById(
+            'advanced-account-mode-toggle'
+        )
         if (advancedModeToggle) {
-            this.app.dataService.getSetting('advancedAccountModeEnabled').then(setting => {
-                const isEnabled = !!setting?.value;
-                advancedModeToggle.checked = isEnabled;
-                if (isEnabled) {
-                    document.getElementById('manage-accounts-link-container').classList.remove('hidden');
-                }
-            });
+            this.app.dataService
+                .getSetting('advancedAccountModeEnabled')
+                .then(setting => {
+                    const isEnabled = !!setting?.value
+                    advancedModeToggle.checked = isEnabled
+                    if (isEnabled) {
+                        document
+                            .getElementById('manage-accounts-link-container')
+                            .classList.remove('hidden')
+                    }
+                })
 
-            advancedModeToggle.addEventListener('change', async (e) => {
-                const isEnabled = e.target.checked;
-                await this.app.dataService.saveSetting({ key: 'advancedAccountModeEnabled', value: isEnabled });
+            advancedModeToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'advancedAccountModeEnabled',
+                    value: isEnabled,
+                })
                 if (isEnabled) {
-                    await this.handleAdvancedModeActivation();
+                    await this.handleAdvancedModeActivation()
                 }
-                showToast(`多帳戶模式已${isEnabled ? '啟用' : '停用'}，將重新載入...`);
-                setTimeout(() => window.location.reload(), 1500);
-            });
+                showToast(
+                    `多帳戶模式已${isEnabled ? '啟用' : '停用'}，將重新載入...`
+                )
+                setTimeout(() => window.location.reload(), 1500)
+            })
         }
 
-        const manageAccountsBtn = document.getElementById('manage-accounts-btn');
+        const manageAccountsBtn = document.getElementById('manage-accounts-btn')
         if (manageAccountsBtn) {
             manageAccountsBtn.addEventListener('click', () => {
-                window.location.hash = '#accounts';
-            });
+                window.location.hash = '#accounts'
+            })
         }
 
-        const manageRecurringBtn = document.getElementById('manage-recurring-btn');
+        const manageRecurringBtn = document.getElementById(
+            'manage-recurring-btn'
+        )
         if (manageRecurringBtn) {
             manageRecurringBtn.addEventListener('click', () => {
-                window.location.hash = '#recurring';
-            });
+                window.location.hash = '#recurring'
+            })
         }
 
         // Amortization Management Toggle
-        const amortizationManagementToggle = document.getElementById('amortization-management-toggle');
+        const amortizationManagementToggle = document.getElementById(
+            'amortization-management-toggle'
+        )
         if (amortizationManagementToggle) {
-            this.app.dataService.getSetting('amortizationEnabled').then(setting => {
-                const isEnabled = !!setting?.value;
-                amortizationManagementToggle.checked = isEnabled;
-                if (isEnabled) {
-                    document.getElementById('manage-amortizations-link-container').classList.remove('hidden');
-                }
-            });
+            this.app.dataService
+                .getSetting('amortizationEnabled')
+                .then(setting => {
+                    const isEnabled = !!setting?.value
+                    amortizationManagementToggle.checked = isEnabled
+                    if (isEnabled) {
+                        document
+                            .getElementById(
+                                'manage-amortizations-link-container'
+                            )
+                            .classList.remove('hidden')
+                    }
+                })
 
-            amortizationManagementToggle.addEventListener('change', async (e) => {
-                const isEnabled = e.target.checked;
-                await this.app.dataService.saveSetting({ key: 'amortizationEnabled', value: isEnabled });
+            amortizationManagementToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'amortizationEnabled',
+                    value: isEnabled,
+                })
                 if (isEnabled) {
-                    document.getElementById('manage-amortizations-link-container').classList.remove('hidden');
+                    document
+                        .getElementById('manage-amortizations-link-container')
+                        .classList.remove('hidden')
                 } else {
-                    document.getElementById('manage-amortizations-link-container').classList.add('hidden');
+                    document
+                        .getElementById('manage-amortizations-link-container')
+                        .classList.add('hidden')
                 }
-                showToast(`攤提/分期管理已${isEnabled ? '啟用' : '停用'}`);
-            });
+                showToast(`攤提/分期管理已${isEnabled ? '啟用' : '停用'}`)
+            })
         }
 
-        const manageAmortizationsBtn = document.getElementById('manage-amortizations-btn');
+        const manageAmortizationsBtn = document.getElementById(
+            'manage-amortizations-btn'
+        )
         if (manageAmortizationsBtn) {
             manageAmortizationsBtn.addEventListener('click', () => {
-                window.location.hash = '#amortizations';
-            });
+                window.location.hash = '#amortizations'
+            })
         }
 
         // Debt Management Toggle
-        const debtManagementToggle = document.getElementById('debt-management-toggle');
+        const debtManagementToggle = document.getElementById(
+            'debt-management-toggle'
+        )
         if (debtManagementToggle) {
-            this.app.dataService.getSetting('debtManagementEnabled').then(setting => {
-                const isEnabled = !!setting?.value;
-                debtManagementToggle.checked = isEnabled;
-                if (isEnabled) {
-                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
-                }
-            });
+            this.app.dataService
+                .getSetting('debtManagementEnabled')
+                .then(setting => {
+                    const isEnabled = !!setting?.value
+                    debtManagementToggle.checked = isEnabled
+                    if (isEnabled) {
+                        document
+                            .getElementById('manage-debts-link-container')
+                            .classList.remove('hidden')
+                    }
+                })
 
-            debtManagementToggle.addEventListener('change', async (e) => {
-                const isEnabled = e.target.checked;
-                await this.app.dataService.saveSetting({ key: 'debtManagementEnabled', value: isEnabled });
+            debtManagementToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'debtManagementEnabled',
+                    value: isEnabled,
+                })
                 if (isEnabled) {
-                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                    document
+                        .getElementById('manage-debts-link-container')
+                        .classList.remove('hidden')
                 } else {
-                    document.getElementById('manage-debts-link-container').classList.add('hidden');
+                    document
+                        .getElementById('manage-debts-link-container')
+                        .classList.add('hidden')
                 }
-                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`);
-            });
+                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`)
+            })
         }
 
-        const manageDebtsBtn = document.getElementById('manage-debts-btn');
+        const manageDebtsBtn = document.getElementById('manage-debts-btn')
         if (manageDebtsBtn) {
             manageDebtsBtn.addEventListener('click', () => {
-                window.location.hash = '#debts';
-            });
+                window.location.hash = '#debts'
+            })
         }
 
         // Calculator Mode Toggle
-        const calculatorModeToggle = document.getElementById('calculator-mode-toggle');
+        const calculatorModeToggle = document.getElementById(
+            'calculator-mode-toggle'
+        )
         if (calculatorModeToggle) {
-            this.app.dataService.getSetting('calculatorModeEnabled').then(setting => {
-                const isEnabled = setting ? !!setting.value : true; // 預設為 true (開啟)
-                calculatorModeToggle.checked = !isEnabled; // 關閉按鈕勾選代表 disabled (!isEnabled)
-                if (!isEnabled) {
-                    document.getElementById('calculator-mode-info')?.classList.remove('hidden');
-                }
-            });
+            this.app.dataService
+                .getSetting('calculatorModeEnabled')
+                .then(setting => {
+                    const isEnabled = setting ? !!setting.value : true // 預設為 true (開啟)
+                    calculatorModeToggle.checked = !isEnabled // 關閉按鈕勾選代表 disabled (!isEnabled)
+                    if (!isEnabled) {
+                        document
+                            .getElementById('calculator-mode-info')
+                            ?.classList.remove('hidden')
+                    }
+                })
 
-            calculatorModeToggle.addEventListener('change', async (e) => {
-                const isDisabled = e.target.checked; // 勾選 = 關閉
-                const isEnabled = !isDisabled;
-                await this.app.dataService.saveSetting({ key: 'calculatorModeEnabled', value: isEnabled });
+            calculatorModeToggle.addEventListener('change', async e => {
+                const isDisabled = e.target.checked // 勾選 = 關閉
+                const isEnabled = !isDisabled
+                await this.app.dataService.saveSetting({
+                    key: 'calculatorModeEnabled',
+                    value: isEnabled,
+                })
                 if (isDisabled) {
-                    document.getElementById('calculator-mode-info')?.classList.remove('hidden');
+                    document
+                        .getElementById('calculator-mode-info')
+                        ?.classList.remove('hidden')
                 } else {
-                    document.getElementById('calculator-mode-info')?.classList.add('hidden');
+                    document
+                        .getElementById('calculator-mode-info')
+                        ?.classList.add('hidden')
                 }
-                showToast(`小鍵盤計算機模式已${isEnabled ? '啟用' : '停用'}`);
-            });
+                showToast(`小鍵盤計算機模式已${isEnabled ? '啟用' : '停用'}`)
+            })
         }
 
         // Default Records Period Setting
-        const defaultPeriodSelect = document.getElementById('default-period-select');
+        const defaultPeriodSelect = document.getElementById(
+            'default-period-select'
+        )
         if (defaultPeriodSelect) {
-            this.app.dataService.getSetting('defaultRecordsPeriod').then(setting => {
-                const periodValue = setting?.value || 'month';
-                defaultPeriodSelect.value = periodValue;
-            });
+            this.app.dataService
+                .getSetting('defaultRecordsPeriod')
+                .then(setting => {
+                    const periodValue = setting?.value || 'month'
+                    defaultPeriodSelect.value = periodValue
+                })
 
-            defaultPeriodSelect.addEventListener('change', async (e) => {
-                await this.app.dataService.saveSetting({ key: 'defaultRecordsPeriod', value: e.target.value });
-                showToast('已設定明細預設時間範圍');
-            });
+            defaultPeriodSelect.addEventListener('change', async e => {
+                await this.app.dataService.saveSetting({
+                    key: 'defaultRecordsPeriod',
+                    value: e.target.value,
+                })
+                showToast('已設定明細預設時間範圍')
+            })
         }
 
         // Daily Reminder UI Setup
-        const reminderToggle = document.getElementById('reminder-toggle');
-        const reminderSettingsContainer = document.getElementById('reminder-settings-container');
-        const reminderTimeInput = document.getElementById('reminder-time');
-        const reminderConditionSelect = document.getElementById('reminder-condition');
+        const reminderToggle = document.getElementById('reminder-toggle')
+        const reminderSettingsContainer = document.getElementById(
+            'reminder-settings-container'
+        )
+        const reminderTimeInput = document.getElementById('reminder-time')
+        const reminderConditionSelect =
+            document.getElementById('reminder-condition')
 
         if (reminderToggle) {
             Promise.all([
                 this.app.dataService.getSetting('reminderEnabled'),
                 this.app.dataService.getSetting('reminderTime'),
-                this.app.dataService.getSetting('reminderCondition')
+                this.app.dataService.getSetting('reminderCondition'),
             ]).then(([enabledSetting, timeSetting, conditionSetting]) => {
-                const isEnabled = !!enabledSetting?.value;
-                reminderToggle.checked = isEnabled;
-                reminderTimeInput.value = timeSetting?.value || '20:00';
-                reminderConditionSelect.value = conditionSetting?.value || 'no_records';
-                
+                const isEnabled = !!enabledSetting?.value
+                reminderToggle.checked = isEnabled
+                reminderTimeInput.value = timeSetting?.value || '20:00'
+                reminderConditionSelect.value =
+                    conditionSetting?.value || 'no_records'
+
                 if (isEnabled) {
-                    reminderSettingsContainer.classList.remove('hidden');
+                    reminderSettingsContainer.classList.remove('hidden')
                 }
-            });
+            })
 
             const updateReminderLogic = async () => {
-                const isEnabled = reminderToggle.checked;
-                const timeStr = reminderTimeInput.value || '20:00';
-                const condition = reminderConditionSelect.value || 'always';
+                const isEnabled = reminderToggle.checked
+                const timeStr = reminderTimeInput.value || '20:00'
+                const condition = reminderConditionSelect.value || 'always'
 
-                await this.app.dataService.saveSetting({ key: 'reminderEnabled', value: isEnabled });
-                await this.app.dataService.saveSetting({ key: 'reminderTime', value: timeStr });
-                await this.app.dataService.saveSetting({ key: 'reminderCondition', value: condition });
+                await this.app.dataService.saveSetting({
+                    key: 'reminderEnabled',
+                    value: isEnabled,
+                })
+                await this.app.dataService.saveSetting({
+                    key: 'reminderTime',
+                    value: timeStr,
+                })
+                await this.app.dataService.saveSetting({
+                    key: 'reminderCondition',
+                    value: condition,
+                })
 
                 if (isEnabled) {
-                    const hasPerm = await this.app.notificationService.requestPermission();
+                    const hasPerm =
+                        await this.app.notificationService.requestPermission()
                     if (!hasPerm) {
-                        showToast('請允許通知權限以使用此功能', 'warning');
-                        reminderToggle.checked = false;
-                        reminderSettingsContainer.classList.add('hidden');
-                        await this.app.dataService.saveSetting({ key: 'reminderEnabled', value: false });
-                        return;
+                        showToast('請允許通知權限以使用此功能', 'warning')
+                        reminderToggle.checked = false
+                        reminderSettingsContainer.classList.add('hidden')
+                        await this.app.dataService.saveSetting({
+                            key: 'reminderEnabled',
+                            value: false,
+                        })
+                        return
                     }
                 }
-                
-                await this.app.notificationService.applyCurrentSettings();
-            };
 
-            reminderToggle.addEventListener('change', (e) => {
+                await this.app.notificationService.applyCurrentSettings()
+            }
+
+            reminderToggle.addEventListener('change', e => {
                 if (e.target.checked) {
-                    reminderSettingsContainer.classList.remove('hidden');
+                    reminderSettingsContainer.classList.remove('hidden')
                 } else {
-                    reminderSettingsContainer.classList.add('hidden');
+                    reminderSettingsContainer.classList.add('hidden')
                 }
-                updateReminderLogic();
-            });
+                updateReminderLogic()
+            })
 
-            reminderTimeInput.addEventListener('change', updateReminderLogic);
-            reminderConditionSelect.addEventListener('change', updateReminderLogic);
+            reminderTimeInput.addEventListener('change', updateReminderLogic)
+            reminderConditionSelect.addEventListener(
+                'change',
+                updateReminderLogic
+            )
         }
     }
 
     async showExportOptionsModal() {
-        const debtEnabled = await this.app.dataService.getSetting('debtManagementEnabled');
-        const showDebtOption = !!debtEnabled?.value;
-        const advancedModeEnabled = await this.app.dataService.getSetting('advancedAccountModeEnabled');
-        const showAccountOption = !!advancedModeEnabled?.value;
+        const debtEnabled = await this.app.dataService.getSetting(
+            'debtManagementEnabled'
+        )
+        const showDebtOption = !!debtEnabled?.value
+        const advancedModeEnabled = await this.app.dataService.getSetting(
+            'advancedAccountModeEnabled'
+        )
+        const showAccountOption = !!advancedModeEnabled?.value
 
-        const modal = document.createElement('div');
-        modal.id = 'export-options-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        const modal = document.createElement('div')
+        modal.id = 'export-options-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
                 <h3 class="text-lg font-bold text-wabi-primary mb-4">匯出資料選項</h3>
@@ -634,7 +757,9 @@ export class SettingsPage {
                             <p class="text-xs text-wabi-text-secondary">所有收支紀錄</p>
                         </div>
                     </label>
-                    ${showAccountOption ? `
+                    ${
+                        showAccountOption
+                            ? `
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
                         <input type="checkbox" id="export-accounts" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
@@ -642,8 +767,12 @@ export class SettingsPage {
                             <p class="text-xs text-wabi-text-secondary">多帳戶設定及餘額</p>
                         </div>
                     </label>
-                    ` : ''}
-                    ${showDebtOption ? `
+                    `
+                            : ''
+                    }
+                    ${
+                        showDebtOption
+                            ? `
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
                         <input type="checkbox" id="export-debts" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
@@ -651,7 +780,9 @@ export class SettingsPage {
                             <p class="text-xs text-wabi-text-secondary">聯絡人及欠款紀錄</p>
                         </div>
                     </label>
-                    ` : ''}
+                    `
+                            : ''
+                    }
                     <label class="flex items-center gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border cursor-pointer">
                         <input type="checkbox" id="export-categories" checked class="w-5 h-5 rounded border-wabi-border text-wabi-primary focus:ring-wabi-primary">
                         <div>
@@ -669,74 +800,88 @@ export class SettingsPage {
                     </button>
                 </div>
             </div>
-        `;
+        `
 
-        document.body.appendChild(modal);
+        document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove();
+        const closeModal = () => modal.remove()
 
-        modal.querySelector('#cancel-export-btn').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        modal
+            .querySelector('#cancel-export-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
 
-        modal.querySelector('#confirm-export-btn').addEventListener('click', async () => {
-            const options = {
-                includeRecords: modal.querySelector('#export-records')?.checked ?? true,
-                includeAccounts: modal.querySelector('#export-accounts')?.checked ?? true,
-                includeDebts: modal.querySelector('#export-debts')?.checked ?? true,
-                includeCategories: modal.querySelector('#export-categories')?.checked ?? true,
-            };
+        modal
+            .querySelector('#confirm-export-btn')
+            .addEventListener('click', async () => {
+                const options = {
+                    includeRecords:
+                        modal.querySelector('#export-records')?.checked ?? true,
+                    includeAccounts:
+                        modal.querySelector('#export-accounts')?.checked ??
+                        true,
+                    includeDebts:
+                        modal.querySelector('#export-debts')?.checked ?? true,
+                    includeCategories:
+                        modal.querySelector('#export-categories')?.checked ??
+                        true,
+                }
 
-            try {
-                await this.app.dataService.exportData(options);
-                showToast('資料已成功匯出！', 'success');
-                closeModal();
-            } catch (error) {
-                console.error('匯出失敗:', error);
-                showToast('資料匯出失敗', 'error');
-            }
-        });
+                try {
+                    await this.app.dataService.exportData(options)
+                    showToast('資料已成功匯出！', 'success')
+                    closeModal()
+                } catch (error) {
+                    console.error('匯出失敗:', error)
+                    showToast('資料匯出失敗', 'error')
+                }
+            })
     }
 
     async checkForUpdates() {
         if (!('serviceWorker' in navigator)) {
-            showToast('瀏覽器不支援自動更新', 'warning');
-            return;
+            showToast('瀏覽器不支援自動更新', 'warning')
+            return
         }
-        const registration = await navigator.serviceWorker.getRegistration();
+        const registration = await navigator.serviceWorker.getRegistration()
         if (!registration) {
-            showToast('Service Worker 未註冊', 'error');
-            return;
+            showToast('Service Worker 未註冊', 'error')
+            return
         }
 
-        showToast('正在檢查更新...');
-        await registration.update();
+        showToast('正在檢查更新...')
+        await registration.update()
 
         if (registration.waiting) {
-            this.showUpdateAvailable(registration);
+            this.showUpdateAvailable(registration)
         } else {
-            showToast('已是最新版本！', 'success');
+            showToast('已是最新版本！', 'success')
         }
     }
 
     async forceUpdate() {
-        this.showConfirmModal('確定要強制更新嗎？這將會清除所有快取資料並重新載入 App。', async () => {
-            showToast('強制更新中...');
-            try {
-                const keys = await caches.keys();
-                await Promise.all(keys.map(key => caches.delete(key)));
-                window.location.reload(true);
-            } catch (error) {
-                console.error('強制更新失敗:', error);
-                showToast('強制更新失敗', 'error');
+        this.showConfirmModal(
+            '確定要強制更新嗎？這將會清除所有快取資料並重新載入 App。',
+            async () => {
+                showToast('強制更新中...')
+                try {
+                    const keys = await caches.keys()
+                    await Promise.all(keys.map(key => caches.delete(key)))
+                    window.location.reload(true)
+                } catch (error) {
+                    console.error('強制更新失敗:', error)
+                    showToast('強制更新失敗', 'error')
+                }
             }
-        });
+        )
     }
 
     showConfirmModal(message, onConfirm) {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]';
+        const modal = document.createElement('div')
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
                 <div class="size-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -753,19 +898,29 @@ export class SettingsPage {
                     </button>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+        document.body.appendChild(modal)
 
-        modal.querySelector('#settings-confirm-cancel').addEventListener('click', () => modal.remove());
-        modal.querySelector('#settings-confirm-ok').addEventListener('click', () => {
-            modal.remove();
-            onConfirm();
-        });
+        modal
+            .querySelector('#settings-confirm-cancel')
+            .addEventListener('click', () => modal.remove())
+        modal
+            .querySelector('#settings-confirm-ok')
+            .addEventListener('click', () => {
+                modal.remove()
+                onConfirm()
+            })
     }
 
-    showAlertModal(title, message, icon = 'fa-solid fa-circle-info', iconColor = 'text-wabi-primary') {
-        const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]';
+    showAlertModal(
+        title,
+        message,
+        icon = 'fa-solid fa-circle-info',
+        iconColor = 'text-wabi-primary'
+    ) {
+        const modal = document.createElement('div')
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
                 <div class="size-12 bg-wabi-bg rounded-full flex items-center justify-center mx-auto mb-4">
@@ -777,68 +932,81 @@ export class SettingsPage {
                     我知道了
                 </button>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+        document.body.appendChild(modal)
 
-        modal.querySelector('#settings-alert-ok').addEventListener('click', () => modal.remove());
+        modal
+            .querySelector('#settings-alert-ok')
+            .addEventListener('click', () => modal.remove())
     }
 
     showUpdateAvailable(registration) {
-        const toast = document.getElementById('toast');
-        if (!toast) return;
+        const toast = document.getElementById('toast')
+        if (!toast) return
         toast.innerHTML = `
             <span>發現新版本！</span>
             <button id="update-now-btn" class="ml-4 font-bold underline">立即更新</button>
-        `;
-        toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-[100] text-wabi-surface bg-wabi-primary toast-show';
+        `
+        toast.className =
+            'fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg opacity-0 transition-opacity duration-300 z-[100] text-wabi-surface bg-wabi-primary toast-show'
 
-        document.getElementById('update-now-btn').addEventListener('click', () => {
-            if (registration.waiting) {
-                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
-            toast.classList.replace('toast-show', 'toast-hide');
-            // reset toast inner HTML for subsequent uses
-            setTimeout(() => {
-                toast.innerHTML = '<span id="toast-message"></span>';
-            }, 300);
-        });
+        document
+            .getElementById('update-now-btn')
+            .addEventListener('click', () => {
+                if (registration.waiting) {
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+                }
+                toast.classList.replace('toast-show', 'toast-hide')
+                // reset toast inner HTML for subsequent uses
+                setTimeout(() => {
+                    toast.innerHTML = '<span id="toast-message"></span>'
+                }, 300)
+            })
     }
 
     async handleAdvancedModeActivation() {
-        const accounts = await this.app.dataService.getAccounts();
-        let defaultAccount;
+        const accounts = await this.app.dataService.getAccounts()
+        let defaultAccount
 
         if (accounts.length === 0) {
-            console.log('No accounts found, creating a default account.');
+            console.log('No accounts found, creating a default account.')
             const newAccount = {
                 name: '現金',
                 balance: 0,
                 type: 'cash',
                 icon: 'fa-solid fa-money-bill-wave',
-                color: 'bg-green-500'
-            };
-            const newAccountId = await this.app.dataService.addAccount(newAccount);
-            defaultAccount = await this.app.dataService.getAccount(newAccountId);
-            showToast('已建立預設「現金」帳戶');
+                color: 'bg-green-500',
+            }
+            const newAccountId =
+                await this.app.dataService.addAccount(newAccount)
+            defaultAccount = await this.app.dataService.getAccount(newAccountId)
+            showToast('已建立預設「現金」帳戶')
         } else {
-            defaultAccount = accounts[0];
+            defaultAccount = accounts[0]
         }
 
         if (!defaultAccount) {
-            console.error('Failed to get or create a default account.');
-            return;
+            console.error('Failed to get or create a default account.')
+            return
         }
 
-        const allRecords = await this.app.dataService.getRecords();
-        const recordsToUpdate = allRecords.filter(r => r.accountId === undefined);
+        const allRecords = await this.app.dataService.getRecords()
+        const recordsToUpdate = allRecords.filter(
+            r => r.accountId === undefined
+        )
 
         if (recordsToUpdate.length > 0) {
-            console.log(`Migrating ${recordsToUpdate.length} records to default account...`);
+            console.log(
+                `Migrating ${recordsToUpdate.length} records to default account...`
+            )
             for (const record of recordsToUpdate) {
-                await this.app.dataService.updateRecord(record.id, { ...record, accountId: defaultAccount.id });
+                await this.app.dataService.updateRecord(record.id, {
+                    ...record,
+                    accountId: defaultAccount.id,
+                })
             }
-            console.log('Record migration complete.');
-            showToast(`${recordsToUpdate.length} 筆舊紀錄已歸入預設帳戶`);
+            console.log('Record migration complete.')
+            showToast(`${recordsToUpdate.length} 筆舊紀錄已歸入預設帳戶`)
         }
     }
 }

@@ -1,8 +1,8 @@
-import { StatisticsManager } from '../statistics.js';
+import { StatisticsManager } from '../statistics.js'
 
 export class StatsPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -24,8 +24,13 @@ export class StatsPage {
                     <div id="stats-container"></div>
                 </main>
             </div>
-        `;
-        const statisticsManager = new StatisticsManager(this.app.dataService, this.app.categoryManager);
-        statisticsManager.renderStatisticsPage(document.getElementById('stats-container'));
+        `
+        const statisticsManager = new StatisticsManager(
+            this.app.dataService,
+            this.app.categoryManager
+        )
+        statisticsManager.renderStatisticsPage(
+            document.getElementById('stats-container')
+        )
     }
 }

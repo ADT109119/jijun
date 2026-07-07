@@ -16,7 +16,7 @@ jobs:
 
         steps:
             - uses: actions/checkout@v4
-            
+
             # install node.js
             - uses: actions/setup-node@v4
 
@@ -28,14 +28,14 @@ jobs:
             - name: try to build the project
               run: npm run build
               env:
-                VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
-                VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
-                VITE_SYNC_SERVER_URL: ${{ secrets.VITE_SYNC_SERVER_URL }}
+                  VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+                  VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
+                  VITE_SYNC_SERVER_URL: ${{ secrets.VITE_SYNC_SERVER_URL }}
 
             # use actions-gh-pages to deploy dist to gh-pages
             - name: Deploy
               uses: peaceiris/actions-gh-pages@v4
               with:
-                # github will auto-generate a token for this job and use it 
-                github_token: ${{ secrets.GITHUB_TOKEN }}
-                publish_dir: ./dist
+                  # github will auto-generate a token for this job and use it
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./dist

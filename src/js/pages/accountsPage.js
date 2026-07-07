@@ -1,16 +1,25 @@
-import { formatCurrency, showToast, escapeHTML, formatDateToString, customAlert, customConfirm } from '../utils.js';
-import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js';
+import {
+    formatCurrency,
+    showToast,
+    escapeHTML,
+    formatDateToString,
+    customAlert,
+    customConfirm,
+} from '../utils.js'
+import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
 
 export class AccountsPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
-        const advancedMode = await this.app.dataService.getSetting('advancedAccountModeEnabled');
+        const advancedMode = await this.app.dataService.getSetting(
+            'advancedAccountModeEnabled'
+        )
         if (!advancedMode?.value) {
-            window.location.hash = '#settings';
-            return;
+            window.location.hash = '#settings'
+            return
         }
 
         this.app.appContainer.innerHTML = `
@@ -50,42 +59,53 @@ export class AccountsPage {
                 </div>
                 <div id="accounts-list-container" class="space-y-2"></div>
             </div>
-        `;
-        this.setupAccountsPageListeners();
+        `
+        this.setupAccountsPageListeners()
     }
 
     async setupAccountsPageListeners() {
-        const accounts = await this.app.dataService.getAccounts();
-        const allRecords = await this.app.dataService.getRecords(); // Get all records once
-        const container = document.getElementById('accounts-list-container');
-        const totalAssetsEl = document.getElementById('total-assets');
+        const accounts = await this.app.dataService.getAccounts()
+        const allRecords = await this.app.dataService.getRecords() // Get all records once
+        const container = document.getElementById('accounts-list-container')
+        const totalAssetsEl = document.getElementById('total-assets')
 
-        let totalAssets = 0;
-        let totalCreditDebt = 0;
-        let hasCreditCard = false;
-        container.innerHTML = '';
+        let totalAssets = 0
+        let totalCreditDebt = 0
+        let hasCreditCard = false
+        container.innerHTML = ''
 
         if (accounts.length === 0) {
-            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">尚未建立任何帳戶</p>`;
+            container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">尚未建立任何帳戶</p>`
         }
 
         for (const account of accounts) {
-            const recordsForAccount = allRecords.filter(r => r.accountId === account.id);
-            const currentBalance = recordsForAccount.reduce((balance, record) => {
-                return balance + (record.type === 'income' ? record.amount : -record.amount);
-            }, account.balance); // Start with initial balance
+            const recordsForAccount = allRecords.filter(
+                r => r.accountId === account.id
+            )
+            const currentBalance = recordsForAccount.reduce(
+                (balance, record) => {
+                    return (
+                        balance +
+                        (record.type === 'income'
+                            ? record.amount
+                            : -record.amount)
+                    )
+                },
+                account.balance
+            ) // Start with initial balance
 
             // 信用卡不計入總資產，而是計入總欠款
             if (account.type === 'credit_card') {
-                hasCreditCard = true;
-                totalCreditDebt += currentBalance;
+                hasCreditCard = true
+                totalCreditDebt += currentBalance
             } else {
-                totalAssets += currentBalance;
+                totalAssets += currentBalance
             }
 
-            const accountEl = document.createElement('div');
-            const isCreditCard = account.type === 'credit_card';
-            accountEl.className = 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border';
+            const accountEl = document.createElement('div')
+            const isCreditCard = account.type === 'credit_card'
+            accountEl.className =
+                'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border'
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
                     <div class="relative">
@@ -107,68 +127,77 @@ export class AccountsPage {
                     <button class="edit-account-btn" data-id="${account.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
                     <button class="delete-account-btn" data-id="${account.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
                 </div>
-            `;
-            container.appendChild(accountEl);
+            `
+            container.appendChild(accountEl)
         }
 
-        totalAssetsEl.textContent = formatCurrency(totalAssets);
+        totalAssetsEl.textContent = formatCurrency(totalAssets)
 
         // 信用卡總欠款區塊顯示邏輯
-        const creditDebtSection = document.getElementById('credit-debt-section');
-        const creditDebtTotalEl = document.getElementById('credit-debt-total');
+        const creditDebtSection = document.getElementById('credit-debt-section')
+        const creditDebtTotalEl = document.getElementById('credit-debt-total')
         if (hasCreditCard) {
-            creditDebtSection.classList.remove('hidden');
-            creditDebtTotalEl.textContent = formatCurrency(totalCreditDebt);
+            creditDebtSection.classList.remove('hidden')
+            creditDebtTotalEl.textContent = formatCurrency(totalCreditDebt)
         } else {
-            creditDebtSection.classList.add('hidden');
+            creditDebtSection.classList.add('hidden')
         }
 
-        document.getElementById('add-account-btn').addEventListener('click', () => {
-            this.showAccountModal();
-        });
+        document
+            .getElementById('add-account-btn')
+            .addEventListener('click', () => {
+                this.showAccountModal()
+            })
 
-        document.getElementById('transfer-btn').addEventListener('click', () => {
-            this.showTransferModal();
-        });
+        document
+            .getElementById('transfer-btn')
+            .addEventListener('click', () => {
+                this.showTransferModal()
+            })
 
         container.querySelectorAll('.adjust-balance-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const accountId = parseInt(e.currentTarget.dataset.id, 10);
-                const currentBalance = parseFloat(e.currentTarget.dataset.balance);
-                const account = await this.app.dataService.getAccount(accountId);
-                this.showAdjustBalanceModal(account, currentBalance);
-            });
-        });
+            btn.addEventListener('click', async e => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10)
+                const currentBalance = parseFloat(
+                    e.currentTarget.dataset.balance
+                )
+                const account = await this.app.dataService.getAccount(accountId)
+                this.showAdjustBalanceModal(account, currentBalance)
+            })
+        })
 
         container.querySelectorAll('.edit-account-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const accountId = parseInt(e.currentTarget.dataset.id, 10);
-                const account = await this.app.dataService.getAccount(accountId);
-                this.showAccountModal(account);
-            });
-        });
+            btn.addEventListener('click', async e => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10)
+                const account = await this.app.dataService.getAccount(accountId)
+                this.showAccountModal(account)
+            })
+        })
 
         container.querySelectorAll('.delete-account-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const accountId = parseInt(e.currentTarget.dataset.id, 10);
-                const records = await this.app.dataService.getRecords({ accountId });
+            btn.addEventListener('click', async e => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10)
+                const records = await this.app.dataService.getRecords({
+                    accountId,
+                })
                 if (records.length > 0) {
-                    customAlert('此帳戶尚有交易紀錄，無法刪除。');
-                    return;
+                    customAlert('此帳戶尚有交易紀錄，無法刪除。')
+                    return
                 }
                 if (await customConfirm('確定要刪除此帳戶嗎？')) {
-                    await this.app.dataService.deleteAccount(accountId);
-                    showToast('帳戶已刪除');
-                    this.render(); // Re-render the page
+                    await this.app.dataService.deleteAccount(accountId)
+                    showToast('帳戶已刪除')
+                    this.render() // Re-render the page
                 }
-            });
-        });
+            })
+        })
     }
 
     showAdjustBalanceModal(account, currentBalance) {
-        const modal = document.createElement('div');
-        modal.id = 'adjust-balance-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        const modal = document.createElement('div')
+        modal.id = 'adjust-balance-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
                 <h3 class="text-lg font-bold text-wabi-primary">餘額矯正</h3>
@@ -197,93 +226,109 @@ export class AccountsPage {
                     <button id="cancel-adjustment-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+        document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove();
-        const actualBalanceInput = modal.querySelector('#actual-balance-input');
-        const diffDisplay = modal.querySelector('#difference-display');
-        const diffAmountEl = modal.querySelector('#difference-amount');
+        const closeModal = () => modal.remove()
+        const actualBalanceInput = modal.querySelector('#actual-balance-input')
+        const diffDisplay = modal.querySelector('#difference-display')
+        const diffAmountEl = modal.querySelector('#difference-amount')
 
         const updateDifference = () => {
-            const actual = parseFloat(actualBalanceInput.value) || 0;
-            const diff = actual - currentBalance;
+            const actual = parseFloat(actualBalanceInput.value) || 0
+            const diff = actual - currentBalance
             if (diff === 0) {
-                diffDisplay.classList.add('hidden');
+                diffDisplay.classList.add('hidden')
             } else {
-                diffDisplay.classList.remove('hidden');
-                diffAmountEl.textContent = formatCurrency(Math.abs(diff));
+                diffDisplay.classList.remove('hidden')
+                diffAmountEl.textContent = formatCurrency(Math.abs(diff))
                 if (diff > 0) {
-                    diffAmountEl.className = 'text-lg font-bold mt-1 text-wabi-income';
-                    diffAmountEl.textContent = '+ ' + diffAmountEl.textContent;
+                    diffAmountEl.className =
+                        'text-lg font-bold mt-1 text-wabi-income'
+                    diffAmountEl.textContent = '+ ' + diffAmountEl.textContent
                 } else {
-                    diffAmountEl.className = 'text-lg font-bold mt-1 text-wabi-expense';
-                    diffAmountEl.textContent = '- ' + diffAmountEl.textContent;
+                    diffAmountEl.className =
+                        'text-lg font-bold mt-1 text-wabi-expense'
+                    diffAmountEl.textContent = '- ' + diffAmountEl.textContent
                 }
             }
-        };
+        }
 
-        actualBalanceInput.addEventListener('input', updateDifference);
-        modal.querySelector('#cancel-adjustment-btn').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        actualBalanceInput.addEventListener('input', updateDifference)
+        modal
+            .querySelector('#cancel-adjustment-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
 
-        modal.querySelector('#save-adjustment-btn').addEventListener('click', async () => {
-            const actual = parseFloat(actualBalanceInput.value);
-            if (isNaN(actual)) {
-                showToast('請輸入有效的金額', 'error');
-                return;
-            }
+        modal
+            .querySelector('#save-adjustment-btn')
+            .addEventListener('click', async () => {
+                const actual = parseFloat(actualBalanceInput.value)
+                if (isNaN(actual)) {
+                    showToast('請輸入有效的金額', 'error')
+                    return
+                }
 
-            const diff = actual - currentBalance;
-            if (diff === 0) {
-                showToast('餘額無變動');
-                closeModal();
-                return;
-            }
+                const diff = actual - currentBalance
+                if (diff === 0) {
+                    showToast('餘額無變動')
+                    closeModal()
+                    return
+                }
 
-            const createRecord = modal.querySelector('#add-adjustment-record').checked;
+                const createRecord = modal.querySelector(
+                    '#add-adjustment-record'
+                ).checked
 
-            if (createRecord) {
-                // Ensure the "adjustment" category exists or handle it gracefully.
-                // Since there is no built-in "adjustment" category we just set category to 'other' and note to '平帳'
-                const type = diff > 0 ? 'income' : 'expense';
-                const newRecord = {
-                    amount: Math.abs(diff),
-                    type: type,
-                    category: 'other',
-                    date: formatDateToString(new Date()),
-                    note: '平帳',
-                    accountId: account.id
-                };
-                await this.app.dataService.addRecord(newRecord);
-                showToast('已新增平帳紀錄');
-            } else {
-                account.balance += diff;
-                await this.app.dataService.updateAccount(account.id, account);
-                showToast('已更新帳戶初始餘額');
-            }
+                if (createRecord) {
+                    // Ensure the "adjustment" category exists or handle it gracefully.
+                    // Since there is no built-in "adjustment" category we just set category to 'other' and note to '平帳'
+                    const type = diff > 0 ? 'income' : 'expense'
+                    const newRecord = {
+                        amount: Math.abs(diff),
+                        type: type,
+                        category: 'other',
+                        date: formatDateToString(new Date()),
+                        note: '平帳',
+                        accountId: account.id,
+                    }
+                    await this.app.dataService.addRecord(newRecord)
+                    showToast('已新增平帳紀錄')
+                } else {
+                    account.balance += diff
+                    await this.app.dataService.updateAccount(
+                        account.id,
+                        account
+                    )
+                    showToast('已更新帳戶初始餘額')
+                }
 
-            this.render();
-            closeModal();
-        });
+                this.render()
+                closeModal()
+            })
     }
 
     async showAccountModal(accountToEdit = null) {
-        const isEdit = !!accountToEdit;
-        const accountType = accountToEdit?.type || 'wallet';
-        
-        // 取得所有其他的一般帳戶 (用於自動扣款設定，排除信用卡，且排除目前編輯的這個帳戶)
-        const allAccounts = await this.app.dataService.getAccounts();
-        const debitAccounts = allAccounts.filter(a => a.type !== 'credit_card' && (!accountToEdit || a.id !== accountToEdit.id));
+        const isEdit = !!accountToEdit
+        const accountType = accountToEdit?.type || 'wallet'
 
-        const modal = document.createElement('div');
-        modal.id = 'account-form-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
-        const defaultCreditIcon = 'fa-solid fa-credit-card';
-        const defaultWalletIcon = 'fa-solid fa-wallet';
-        const currentIcon = accountToEdit?.icon || defaultWalletIcon;
+        // 取得所有其他的一般帳戶 (用於自動扣款設定，排除信用卡，且排除目前編輯的這個帳戶)
+        const allAccounts = await this.app.dataService.getAccounts()
+        const debitAccounts = allAccounts.filter(
+            a =>
+                a.type !== 'credit_card' &&
+                (!accountToEdit || a.id !== accountToEdit.id)
+        )
+
+        const modal = document.createElement('div')
+        modal.id = 'account-form-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+        const defaultCreditIcon = 'fa-solid fa-credit-card'
+        const defaultWalletIcon = 'fa-solid fa-wallet'
+        const currentIcon = accountToEdit?.icon || defaultWalletIcon
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
@@ -345,9 +390,13 @@ export class AccountsPage {
                             <label class="text-sm font-medium text-wabi-text-secondary">自動扣款帳戶</label>
                             <select id="auto-pay-account-select" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                                 <option value="">-- 選擇扣款帳戶 --</option>
-                                ${debitAccounts.map(a => `
+                                ${debitAccounts
+                                    .map(
+                                        a => `
                                     <option value="${a.id}" ${accountToEdit?.autoPayAccountId === a.id ? 'selected' : ''}>${escapeHTML(a.name)}</option>
-                                `).join('')}
+                                `
+                                    )
+                                    .join('')}
                             </select>
                         </div>
                     </div>
@@ -378,10 +427,14 @@ export class AccountsPage {
                     <div>
                         <label class="block text-sm font-medium text-wabi-text-secondary mb-2">選擇顏色</label>
                         <div class="grid grid-cols-6 gap-3 p-3 border border-wabi-border rounded-lg bg-wabi-surface" id="color-selector">
-                          ${this.getAvailableColors().map(color => `
+                          ${this.getAvailableColors()
+                              .map(
+                                  color => `
                             <button type="button" class="color-option w-8 h-8 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
                             </button>
-                          `).join('')}
+                          `
+                              )
+                              .join('')}
                           <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-8 h-8 rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
                             <i class="fas fa-palette text-wabi-text-secondary text-sm"></i>
                             <input type="color" id="custom-color-picker-input" class="absolute w-0 h-0 opacity-0" value="#3B82F6">
@@ -395,241 +448,341 @@ export class AccountsPage {
                     <button id="cancel-account-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+        document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove();
+        const closeModal = () => modal.remove()
 
-        modal.querySelector('#cancel-account-btn').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        modal
+            .querySelector('#cancel-account-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
 
         // 帳戶類型切換邏輯
-        const creditCardFields = modal.querySelector('#credit-card-fields');
-        const balanceLabel = modal.querySelector('#account-balance-label');
-        const typeRadios = modal.querySelectorAll('input[name="account-type"]');
+        const creditCardFields = modal.querySelector('#credit-card-fields')
+        const balanceLabel = modal.querySelector('#account-balance-label')
+        const typeRadios = modal.querySelectorAll('input[name="account-type"]')
 
-        let selectedIcon = currentIcon;
-        let selectedColor = accountToEdit?.color || 'bg-blue-500';
+        let selectedIcon = currentIcon
+        let selectedColor = accountToEdit?.color || 'bg-blue-500'
 
         // 自訂圖標輸入
-        const customIconInput = document.getElementById('custom-icon-input');
-        const previewIconBtn = document.getElementById('preview-icon-btn');
-        const iconPreview = document.getElementById('icon-preview');
+        const customIconInput = document.getElementById('custom-icon-input')
+        const previewIconBtn = document.getElementById('preview-icon-btn')
+        const iconPreview = document.getElementById('icon-preview')
 
         // 圖標預覽功能
         const updateIconPreview = () => {
-          const iconClass = customIconInput.value.trim() || 'fa-solid fa-wallet';
-          iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
-          selectedIcon = iconClass;
-          document.querySelectorAll('.icon-option').forEach(b => {
-             b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10');
-             b.classList.add('border-wabi-border');
-          });
-        };
+            const iconClass =
+                customIconInput.value.trim() || 'fa-solid fa-wallet'
+            iconPreview.innerHTML = `<i class="${iconClass}"></i>`
+            selectedIcon = iconClass
+            document.querySelectorAll('.icon-option').forEach(b => {
+                b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10')
+                b.classList.add('border-wabi-border')
+            })
+        }
 
-        customIconInput.addEventListener('input', updateIconPreview);
-        customIconInput.addEventListener('keyup', updateIconPreview);
-        previewIconBtn.addEventListener('click', updateIconPreview);
+        customIconInput.addEventListener('input', updateIconPreview)
+        customIconInput.addEventListener('keyup', updateIconPreview)
+        previewIconBtn.addEventListener('click', updateIconPreview)
 
         const updateAccountTypeUI = () => {
-            const selectedType = modal.querySelector('input[name="account-type"]:checked').value;
+            const selectedType = modal.querySelector(
+                'input[name="account-type"]:checked'
+            ).value
             if (selectedType === 'credit_card') {
-                creditCardFields.classList.remove('hidden');
-                balanceLabel.textContent = '初始欠款';
+                creditCardFields.classList.remove('hidden')
+                balanceLabel.textContent = '初始欠款'
             } else {
-                creditCardFields.classList.add('hidden');
-                balanceLabel.textContent = '初始餘額';
+                creditCardFields.classList.add('hidden')
+                balanceLabel.textContent = '初始餘額'
             }
-        };
+        }
 
-        const autoPayToggle = modal.querySelector('#auto-pay-toggle');
-        const autoPayAccountContainer = modal.querySelector('#auto-pay-account-container');
+        const autoPayToggle = modal.querySelector('#auto-pay-toggle')
+        const autoPayAccountContainer = modal.querySelector(
+            '#auto-pay-account-container'
+        )
         if (autoPayToggle && autoPayAccountContainer) {
             autoPayToggle.addEventListener('change', () => {
                 if (autoPayToggle.checked) {
-                    autoPayAccountContainer.classList.remove('hidden');
+                    autoPayAccountContainer.classList.remove('hidden')
                 } else {
-                    autoPayAccountContainer.classList.add('hidden');
+                    autoPayAccountContainer.classList.add('hidden')
                 }
-            });
+            })
         }
 
         typeRadios.forEach(radio => {
             radio.addEventListener('change', () => {
-                const selectedType = radio.value;
+                const selectedType = radio.value
                 // 切換類型時更新預設圖示
                 if (selectedType === 'credit_card') {
-                    customIconInput.value = 'fa-solid fa-credit-card';
-                    selectedIcon = 'fa-solid fa-credit-card';
+                    customIconInput.value = 'fa-solid fa-credit-card'
+                    selectedIcon = 'fa-solid fa-credit-card'
                 } else {
-                    customIconInput.value = 'fa-solid fa-wallet';
-                    selectedIcon = 'fa-solid fa-wallet';
+                    customIconInput.value = 'fa-solid fa-wallet'
+                    selectedIcon = 'fa-solid fa-wallet'
                 }
-                updateIconPreview();
-                updateAccountTypeUI();
-            });
-        });
+                updateIconPreview()
+                updateAccountTypeUI()
+            })
+        })
 
         // 圖示渲染邏輯
-        const iconSelector = document.getElementById('icon-selector');
-        
-        const bindIconSelection = () => {
-          document.querySelectorAll('.icon-option').forEach(btn => {
-            btn.addEventListener('click', () => {
-              document.querySelectorAll('.icon-option').forEach(b => {
-                b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10');
-                b.classList.add('border-wabi-border');
-              });
-              btn.classList.remove('border-wabi-border');
-              btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10');
-              selectedIcon = btn.dataset.icon;
-              customIconInput.value = selectedIcon;
-              updateIconPreview();
-            });
-          });
-        };
+        const iconSelector = document.getElementById('icon-selector')
 
-        const renderIcons = (icons) => {
-          iconSelector.innerHTML = icons.map(icon => `
+        const bindIconSelection = () => {
+            document.querySelectorAll('.icon-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.icon-option').forEach(b => {
+                        b.classList.remove(
+                            'border-wabi-primary',
+                            'bg-wabi-primary/10'
+                        )
+                        b.classList.add('border-wabi-border')
+                    })
+                    btn.classList.remove('border-wabi-border')
+                    btn.classList.add(
+                        'border-wabi-primary',
+                        'bg-wabi-primary/10'
+                    )
+                    selectedIcon = btn.dataset.icon
+                    customIconInput.value = selectedIcon
+                    updateIconPreview()
+                })
+            })
+        }
+
+        const renderIcons = icons => {
+            iconSelector.innerHTML = icons
+                .map(
+                    icon => `
             <button type="button" class="icon-option p-2 border border-wabi-border rounded-lg hover:border-wabi-primary hover:bg-wabi-primary/10 transition-colors text-lg text-wabi-text-secondary flex justify-center items-center" data-icon="${icon}" title="${icon}">
               <i class="${icon}"></i>
             </button>
-          `).join('');
-          
-          if (selectedIcon) {
-             const btn = iconSelector.querySelector(`[data-icon="${selectedIcon}"]`);
-             if (btn) {
-                 btn.classList.remove('border-wabi-border');
-                 btn.classList.add('border-wabi-primary', 'bg-wabi-primary/10');
-             }
-          }
-          bindIconSelection();
-        };
+          `
+                )
+                .join('')
 
-        renderIcons(this.getAvailableIcons());
+            if (selectedIcon) {
+                const btn = iconSelector.querySelector(
+                    `[data-icon="${selectedIcon}"]`
+                )
+                if (btn) {
+                    btn.classList.remove('border-wabi-border')
+                    btn.classList.add(
+                        'border-wabi-primary',
+                        'bg-wabi-primary/10'
+                    )
+                }
+            }
+            bindIconSelection()
+        }
+
+        renderIcons(this.getAvailableIcons())
 
         // 搜尋功能
-        const iconSearchInput = document.getElementById('icon-search-input');
-        iconSearchInput.addEventListener('input', (e) => {
-          const query = e.target.value.trim().toLowerCase();
-          if (!query) {
-            renderIcons(this.getAvailableIcons());
-            return;
-          }
-          const filteredIcons = FONT_AWESOME_ICONS.filter(icon => icon.toLowerCase().includes(query)).slice(0, 100);
-          if (filteredIcons.length === 0) {
-              iconSelector.innerHTML = '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>';
-          } else {
-              renderIcons(filteredIcons);
-          }
-        });
+        const iconSearchInput = document.getElementById('icon-search-input')
+        iconSearchInput.addEventListener('input', e => {
+            const query = e.target.value.trim().toLowerCase()
+            if (!query) {
+                renderIcons(this.getAvailableIcons())
+                return
+            }
+            const filteredIcons = FONT_AWESOME_ICONS.filter(icon =>
+                icon.toLowerCase().includes(query)
+            ).slice(0, 100)
+            if (filteredIcons.length === 0) {
+                iconSelector.innerHTML =
+                    '<div class="col-span-6 text-center text-sm text-gray-500 py-4">找不到相關圖示</div>'
+            } else {
+                renderIcons(filteredIcons)
+            }
+        })
 
         // 顏色選擇
-        const colorOptions = document.querySelectorAll('.color-option');
-        const customColorPickerInput = document.getElementById('custom-color-picker-input');
-        const customColorPickerLabel = document.getElementById('custom-color-picker-label');
+        const colorOptions = document.querySelectorAll('.color-option')
+        const customColorPickerInput = document.getElementById(
+            'custom-color-picker-input'
+        )
+        const customColorPickerLabel = document.getElementById(
+            'custom-color-picker-label'
+        )
 
         const clearColorSelection = () => {
-          colorOptions.forEach(b => {
-            b.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
-            b.classList.add('border-transparent');
-          });
-          customColorPickerLabel.classList.remove('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-          customColorPickerLabel.classList.add('border-dashed', 'border-wabi-border');
-          customColorPickerLabel.style.backgroundColor = 'transparent';
-        };
+            colorOptions.forEach(b => {
+                b.classList.remove(
+                    'border-wabi-primary',
+                    'ring-2',
+                    'ring-wabi-accent'
+                )
+                b.classList.add('border-transparent')
+            })
+            customColorPickerLabel.classList.remove(
+                'border-wabi-primary',
+                'ring-2',
+                'ring-wabi-accent',
+                'border-solid'
+            )
+            customColorPickerLabel.classList.add(
+                'border-dashed',
+                'border-wabi-border'
+            )
+            customColorPickerLabel.style.backgroundColor = 'transparent'
+        }
 
         colorOptions.forEach(btn => {
-          btn.addEventListener('click', () => {
-            clearColorSelection();
-            btn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
-            selectedColor = btn.dataset.color;
-          });
-        });
+            btn.addEventListener('click', () => {
+                clearColorSelection()
+                btn.classList.add(
+                    'border-wabi-primary',
+                    'ring-2',
+                    'ring-wabi-accent'
+                )
+                selectedColor = btn.dataset.color
+            })
+        })
 
-        customColorPickerInput.addEventListener('input', (e) => {
-          clearColorSelection();
-          customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-          customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
-          customColorPickerLabel.style.backgroundColor = e.target.value;
-          selectedColor = e.target.value;
-        });
+        customColorPickerInput.addEventListener('input', e => {
+            clearColorSelection()
+            customColorPickerLabel.classList.add(
+                'border-wabi-primary',
+                'ring-2',
+                'ring-wabi-accent',
+                'border-solid'
+            )
+            customColorPickerLabel.classList.remove(
+                'border-dashed',
+                'border-wabi-border'
+            )
+            customColorPickerLabel.style.backgroundColor = e.target.value
+            selectedColor = e.target.value
+        })
 
         // 初始狀態
         if (selectedColor) {
-          if (selectedColor.startsWith('#')) {
-            customColorPickerInput.value = selectedColor;
-            customColorPickerLabel.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent', 'border-solid');
-            customColorPickerLabel.classList.remove('border-dashed', 'border-wabi-border');
-            customColorPickerLabel.style.backgroundColor = selectedColor;
-          } else {
-            const selectedBtn = document.querySelector(`.color-option[data-color="${selectedColor}"]`);
-            if (selectedBtn) {
-              selectedBtn.classList.add('border-wabi-primary', 'ring-2', 'ring-wabi-accent');
-            }
-          }
-        }
-
-        modal.querySelector('#save-account-btn').addEventListener('click', async () => {
-            const name = document.getElementById('account-name-input').value;
-            if (!name) {
-                showToast('請輸入帳戶名稱', 'error');
-                return;
-            }
-
-            const selectedType = modal.querySelector('input[name="account-type"]:checked').value;
-
-            const accountData = {
-                type: selectedType,
-                name: name,
-                balance: parseFloat(document.getElementById('account-balance-input').value) || 0,
-                icon: selectedIcon,
-                color: selectedColor,
-            };
-
-            // 信用卡額外欄位
-            if (selectedType === 'credit_card') {
-                accountData.creditLimit = parseFloat(document.getElementById('credit-limit-input').value) || 0;
-                accountData.statementDay = parseInt(document.getElementById('statement-day-input').value, 10) || 25;
-                accountData.dueDay = parseInt(document.getElementById('due-day-input').value, 10) || 15;
-                
-                const autoPayEnabled = document.getElementById('auto-pay-toggle').checked;
-                accountData.autoPayEnabled = autoPayEnabled;
-                if (autoPayEnabled) {
-                    const autoPayAccountId = parseInt(document.getElementById('auto-pay-account-select').value, 10);
-                    accountData.autoPayAccountId = autoPayAccountId || null;
-                } else {
-                    accountData.autoPayAccountId = null;
+            if (selectedColor.startsWith('#')) {
+                customColorPickerInput.value = selectedColor
+                customColorPickerLabel.classList.add(
+                    'border-wabi-primary',
+                    'ring-2',
+                    'ring-wabi-accent',
+                    'border-solid'
+                )
+                customColorPickerLabel.classList.remove(
+                    'border-dashed',
+                    'border-wabi-border'
+                )
+                customColorPickerLabel.style.backgroundColor = selectedColor
+            } else {
+                const selectedBtn = document.querySelector(
+                    `.color-option[data-color="${selectedColor}"]`
+                )
+                if (selectedBtn) {
+                    selectedBtn.classList.add(
+                        'border-wabi-primary',
+                        'ring-2',
+                        'ring-wabi-accent'
+                    )
                 }
             }
+        }
 
-            if (isEdit) {
-                await this.app.dataService.updateAccount(accountToEdit.id, { ...accountToEdit, ...accountData });
-                showToast('帳戶已更新');
-            } else {
-                await this.app.dataService.addAccount(accountData);
-                showToast('帳戶已新增');
-            }
-            this.render(); // Re-render the page
-            closeModal();
-        });
+        modal
+            .querySelector('#save-account-btn')
+            .addEventListener('click', async () => {
+                const name = document.getElementById('account-name-input').value
+                if (!name) {
+                    showToast('請輸入帳戶名稱', 'error')
+                    return
+                }
+
+                const selectedType = modal.querySelector(
+                    'input[name="account-type"]:checked'
+                ).value
+
+                const accountData = {
+                    type: selectedType,
+                    name: name,
+                    balance:
+                        parseFloat(
+                            document.getElementById('account-balance-input')
+                                .value
+                        ) || 0,
+                    icon: selectedIcon,
+                    color: selectedColor,
+                }
+
+                // 信用卡額外欄位
+                if (selectedType === 'credit_card') {
+                    accountData.creditLimit =
+                        parseFloat(
+                            document.getElementById('credit-limit-input').value
+                        ) || 0
+                    accountData.statementDay =
+                        parseInt(
+                            document.getElementById('statement-day-input')
+                                .value,
+                            10
+                        ) || 25
+                    accountData.dueDay =
+                        parseInt(
+                            document.getElementById('due-day-input').value,
+                            10
+                        ) || 15
+
+                    const autoPayEnabled =
+                        document.getElementById('auto-pay-toggle').checked
+                    accountData.autoPayEnabled = autoPayEnabled
+                    if (autoPayEnabled) {
+                        const autoPayAccountId = parseInt(
+                            document.getElementById('auto-pay-account-select')
+                                .value,
+                            10
+                        )
+                        accountData.autoPayAccountId = autoPayAccountId || null
+                    } else {
+                        accountData.autoPayAccountId = null
+                    }
+                }
+
+                if (isEdit) {
+                    await this.app.dataService.updateAccount(accountToEdit.id, {
+                        ...accountToEdit,
+                        ...accountData,
+                    })
+                    showToast('帳戶已更新')
+                } else {
+                    await this.app.dataService.addAccount(accountData)
+                    showToast('帳戶已新增')
+                }
+                this.render() // Re-render the page
+                closeModal()
+            })
     }
 
     async showTransferModal() {
-
-        const accounts = await this.app.dataService.getAccounts();
+        const accounts = await this.app.dataService.getAccounts()
         if (accounts.length < 2) {
-            showToast('你需要至少兩個帳戶才能轉帳', 'warning');
-            return;
+            showToast('你需要至少兩個帳戶才能轉帳', 'warning')
+            return
         }
 
-        const modal = document.createElement('div');
-        modal.id = 'transfer-form-modal';
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        const modal = document.createElement('div')
+        modal.id = 'transfer-form-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
 
-        const accountOptions = accounts.map(acc => `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`).join('');
+        const accountOptions = accounts
+            .map(
+                acc =>
+                    `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`
+            )
+            .join('')
 
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
@@ -659,81 +812,107 @@ export class AccountsPage {
                     <button id="cancel-transfer-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
                 </div>
             </div>
-        `;
-        document.body.appendChild(modal);
+        `
+        document.body.appendChild(modal)
 
         // Set default selection to different accounts
-        const fromSelect = modal.querySelector('#transfer-from-account');
-        const toSelect = modal.querySelector('#transfer-to-account');
+        const fromSelect = modal.querySelector('#transfer-from-account')
+        const toSelect = modal.querySelector('#transfer-to-account')
         if (accounts.length > 1) {
-            toSelect.value = accounts[1].id;
+            toSelect.value = accounts[1].id
         }
 
-        const closeModal = () => modal.remove();
+        const closeModal = () => modal.remove()
 
-        modal.querySelector('#cancel-transfer-btn').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
+        modal
+            .querySelector('#cancel-transfer-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
 
-        modal.querySelector('#save-transfer-btn').addEventListener('click', async () => {
-            const fromId = parseInt(fromSelect.value, 10);
-            const toId = parseInt(toSelect.value, 10);
-            const amount = parseFloat(document.getElementById('transfer-amount').value);
-            const date = document.getElementById('transfer-date').value;
-            const note = document.getElementById('transfer-note').value;
+        modal
+            .querySelector('#save-transfer-btn')
+            .addEventListener('click', async () => {
+                const fromId = parseInt(fromSelect.value, 10)
+                const toId = parseInt(toSelect.value, 10)
+                const amount = parseFloat(
+                    document.getElementById('transfer-amount').value
+                )
+                const date = document.getElementById('transfer-date').value
+                const note = document.getElementById('transfer-note').value
 
-            if (fromId === toId) {
-                showToast('不能在同一個帳戶內轉帳', 'error');
-                return;
-            }
-            if (!amount || amount <= 0) {
-                showToast('請輸入有效的金額', 'error');
-                return;
-            }
+                if (fromId === toId) {
+                    showToast('不能在同一個帳戶內轉帳', 'error')
+                    return
+                }
+                if (!amount || amount <= 0) {
+                    showToast('請輸入有效的金額', 'error')
+                    return
+                }
 
-            const fromAccount = accounts.find(a => a.id === fromId);
-            const toAccount = accounts.find(a => a.id === toId);
+                const fromAccount = accounts.find(a => a.id === fromId)
+                const toAccount = accounts.find(a => a.id === toId)
 
-            const expenseRecord = {
-                type: 'expense',
-                category: 'transfer', // Special category
-                amount: amount,
-                date: date,
-                description: `${note || ''} (轉出至 ${toAccount.name})`.trim(),
-                accountId: fromId,
-            };
+                const expenseRecord = {
+                    type: 'expense',
+                    category: 'transfer', // Special category
+                    amount: amount,
+                    date: date,
+                    description:
+                        `${note || ''} (轉出至 ${toAccount.name})`.trim(),
+                    accountId: fromId,
+                }
 
-            const incomeRecord = {
-                type: 'income',
-                category: 'transfer', // Special category
-                amount: amount,
-                date: date,
-                description: `${note || ''} (從 ${fromAccount.name} 轉入)`.trim(),
-                accountId: toId,
-            };
+                const incomeRecord = {
+                    type: 'income',
+                    category: 'transfer', // Special category
+                    amount: amount,
+                    date: date,
+                    description:
+                        `${note || ''} (從 ${fromAccount.name} 轉入)`.trim(),
+                    accountId: toId,
+                }
 
-            await this.app.dataService.addRecord(expenseRecord);
-            await this.app.dataService.addRecord(incomeRecord);
-            showToast('轉帳成功！');
-            this.render(); // Re-render to show updated balances
-            closeModal();
-        });
+                await this.app.dataService.addRecord(expenseRecord)
+                await this.app.dataService.addRecord(incomeRecord)
+                showToast('轉帳成功！')
+                this.render() // Re-render to show updated balances
+                closeModal()
+            })
     }
 
     getAvailableIcons() {
-      return [
-        'fas fa-wallet', 'fas fa-piggy-bank', 'fas fa-sack-dollar', 'fas fa-coins',
-        'fas fa-credit-card', 'fas fa-building-columns', 'fas fa-money-bill-wave', 'fas fa-vault'
-      ];
+        return [
+            'fas fa-wallet',
+            'fas fa-piggy-bank',
+            'fas fa-sack-dollar',
+            'fas fa-coins',
+            'fas fa-credit-card',
+            'fas fa-building-columns',
+            'fas fa-money-bill-wave',
+            'fas fa-vault',
+        ]
     }
 
     getAvailableColors() {
-      return [
-        'bg-slate-400', 'bg-stone-400', 'bg-red-400', 'bg-orange-400',
-        'bg-amber-400', 'bg-yellow-400', 'bg-lime-400', 'bg-green-400',
-        'bg-emerald-400', 'bg-teal-400', 'bg-cyan-400', 'bg-sky-400',
-        'bg-blue-400', 'bg-indigo-400', 'bg-violet-400', 'bg-purple-400'
-      ];
+        return [
+            'bg-slate-400',
+            'bg-stone-400',
+            'bg-red-400',
+            'bg-orange-400',
+            'bg-amber-400',
+            'bg-yellow-400',
+            'bg-lime-400',
+            'bg-green-400',
+            'bg-emerald-400',
+            'bg-teal-400',
+            'bg-cyan-400',
+            'bg-sky-400',
+            'bg-blue-400',
+            'bg-indigo-400',
+            'bg-violet-400',
+            'bg-purple-400',
+        ]
     }
 }
