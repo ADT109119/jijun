@@ -94,6 +94,7 @@
 - 存錢罐/目標儲蓄視覺化 — Daak 記帳等 App 內建「許願」功能，讓存錢有目標感
 - MOZE 4.0 (2026/5/25 更新) — 捷徑記帳增加幣種選項、通知中心支援多筆完成提醒入帳、比較報表功能
 - MOZE v4.1.25 (2026/6/15 更新) — iOS 26.0/26.0.1 相容性修補；比較報表變化率顯示優化
+- MOZE v4.1.27+ (2026/6/30+) — 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；交易明細預覽統計面板 (平均、中位數、最高/最低)；搜尋支援輸入幣種篩選
 - MOZE 比較報表詳情 — 多維度表格分析，可交叉比對分類×時間段，支援變化率顯示
 - MOZE iPad 版 — 大螢幕重新設計，跨裝置即時同步
 - Actual Budget (2026-06-22 調研) — 2026 Roadmap: OIDC/multi-user、多新報表類型、schedules 可調時框、NPM sync package、年度預算差異報表
@@ -107,6 +108,9 @@
 - Firefly III v6.6.2 (2026-06-25 調研) — 最新穩定版，OAuth 2FA 修復、webhook 支援、交易 ID 搜尋、LDAP OAuth 設定
 - Issue #49 功能收集 (yanggu0413, 2026-06-27) — PWA 載入骨架畫面、計算機式鍵盤
 - Firefly III v6.6.3 (2026-07-01 調研) — 最新穩定版，持續的翻譯和修補更新
+- 標準化 CSV 範本與轉換器 — 做一個簡單的工具，讓想從其他主流 App 跳槽過來的用戶，可以一鍵把舊資料匯入 jijun
+- Firefly III 規則引擎 (Rule Engine) — 允許使用者自訂自動化規則（例：交易名稱包含 "Uber" 自動歸類至「交通」並貼上「通勤」標籤）
+- Firefly III 多樣化圖表 — 除了基礎圓餅圖，提供資產淨值走勢圖、歷史消費預測、預算達成率追蹤等視覺化分析
 - AI 理財趨勢 (2026-07-01 調研) — 2026 年記帳App趨勢：AI 自動化同步銀行、電子發票、預測性理財功能成熟化
 - Finch AI Bookkeeping (2026-07-02 調研) — 結合 AI 記帳、多帳本支援、智能支出分析，主打 AI-powered bookkeeping 自動化
 - 說說記帳 (2026-07-02 調研) — AI 語音記帳 App，支援自訂分類管理，AI 自動分類優先、隱藏分類忽略，語音互動式記帳
@@ -142,6 +146,7 @@
 
 ## 更新歷史
 
+- **2026-07-07**: Code Review pluginManager.js — 發現 2 HIGH (importScripts 繞過沙盒、Blob URL 沙盒逃逸)、4 MEDIUM (腳本大小限制、getRecords 參數、Hook 數量限制、PluginStorage 清理)、4 LOW (版本比較 semver、權限邏輯簡化、屬性命名、z-index)；產出 code-review-pluginManager-2026-07-07.md；703 tests 全過、ESLint 乾淨；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；MOZE 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；網路調研無新 issue
 - **2026-07-06**: 新增 recordsList.js 單元測試 (19 tests, 總計 703) — 涵蓋轉帳抵消、搜尋/類型過濾、日期推移、標題顯示、session 過濾器、欠款狀態顯示、欠款類別排除摘要；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-04**: 新增 virtualKeyboardDetector.js 單元測試 (38 tests, 總計 676) — 涵蓋 constructor 設定、_setState 去重、Layer 2 Visual Viewport resize/orientation、Layer 3 Focus/Blur selector matching、destroy/cleanup；確認 code review 發現的 input[type="number"] 未支援問題；MOZE 最新版本 v4.1.27 (2026/6/30)、Actual Budget 26.7.0 (2026-07-01)、Firefly III v6.6.3；GitHub 77 stars, 5 open issues 無變化
 - **2026-07-03**: Code Review notificationService.js + virtualKeyboardDetector.js + themeManager.js — 發現 2 HIGH (notification ID 硬編碼、MutationObserver 效能)、5 MEDIUM (SW 就緒檢查、orientation null guard、SVG sanitizer、dark.json schema、schedule 重覆排程)、8 LOW；產出 code-review-notification-virtualKeyboard-theme-2026-07-03.md；638 tests 全過、ESLint 乾淨；關鍵發現：virtualKeyboardDetector 未支援 input[type="number"] 可能影響金額輸入偵測；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
