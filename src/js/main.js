@@ -171,6 +171,40 @@ class EasyAccountingApp {
         this.router.register('license', new LicensePage(this))
         this.router.register('comparison', new ComparisonPage(this))
 
+        // Check for PWA Share Target parameters
+        const urlParams = new URLSearchParams(window.location.search)
+        const shareTitle = urlParams.get('share_title')
+        const shareText = urlParams.get('share_text')
+        const shareUrl = urlParams.get('share_url')
+
+        if (shareTitle || shareText || shareUrl) {
+            const combinedText = [shareTitle, shareText, shareUrl]
+                .filter(Boolean)
+                .join('\n')
+
+            // Regex to extract amount from bank transaction alerts
+            let amount = ''
+            const amountRegex = /(?:消費|金額|NT\$|TWD|USD)?\s*([0-9,]+(?:\.[0-9]+)?)\s*(?:元|元整)?/i
+            const match = combinedText.match(amountRegex)
+            if (match) {
+                amount = match[1].replace(/,/g, '')
+            }
+
+            const redirectParams = new URLSearchParams()
+            if (amount) redirectParams.set('amount', amount)
+            redirectParams.set('note', combinedText)
+
+            // Clean up window history search parameters immediately to prevent refresh loop
+            window.history.replaceState(
+                {},
+                document.title,
+                window.location.pathname
+            )
+
+            // Redirect router to add page with parameters
+            window.location.hash = `add?${redirectParams.toString()}`
+        }
+
         // Start Router
         this.router.init()
     }

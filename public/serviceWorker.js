@@ -10,11 +10,10 @@ const urlsToCache = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/src/css/main.css',
-    '/src/js/main.js',
-    '/src/js/dataService.js',
-    '/src/js/utils.js',
-    '/src/js/categories.js',
+    '/icon/icon.png',
+    '/icon/icon-512.png',
+    '/widgets/template.json',
+    '/widgets/data.json',
 ]
 
 // 需要網路優先的檔案（經常變動）
@@ -308,3 +307,80 @@ self.addEventListener('notificationclick', event => {
 
     event.waitUntil(clients.openWindow('/'))
 })
+
+// === Microsoft Edge PWA Widget Background Handling ===
+
+// Helper to query IndexedDB for today's totals
+function getTodayTotal() {
+    return new Promise((resolve) => {
+        const request = indexedDB.open('EasyAccountingDB', 13);
+        request.onerror = () => resolve({ income: 0, expense: 0 });
+        request.onsuccess = event => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('records')) {
+                resolve({ income: 0, expense: 0 });
+                return;
+            }
+            try {
+                const transaction = db.transaction('records', 'readonly');
+                const store = transaction.objectStore('records');
+                const todayStr = new Date().toISOString().split('T')[0];
+                
+                let income = 0;
+                let expense = 0;
+                
+                const cursorRequest = store.openCursor();
+                cursorRequest.onsuccess = e => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        const record = cursor.value;
+                        if (record.date === todayStr) {
+                            const amount = parseFloat(record.amount) || 0;
+                            if (record.type === 'income') {
+                                income += amount;
+                            } else if (record.type === 'expense') {
+                                expense += amount;
+                            }
+                        }
+                        cursor.continue();
+                    } else {
+                        resolve({ income, expense });
+                    }
+                };
+                cursorRequest.onerror = () => resolve({ income: 0, expense: 0 });
+            } catch (err) {
+                console.error('Error querying IndexedDB in SW:', err);
+                resolve({ income: 0, expense: 0 });
+            }
+        };
+    });
+}
+
+// Helper to update widget by tag
+async function updateWidget(tag) {
+    if (!self.widgets) return;
+    try {
+        const total = await getTodayTotal();
+        await self.widgets.updateByTag(tag, {
+            template: 'easy-accounting-widget',
+            data: {
+                expense: total.expense.toLocaleString('zh-TW'),
+                income: total.income.toLocaleString('zh-TW')
+            }
+        });
+        console.log(`Widget ${tag} updated successfully.`);
+    } catch (err) {
+        console.error(`Failed to update widget ${tag}:`, err);
+    }
+}
+
+// Widget lifecycle events
+self.addEventListener('widgetinstall', event => {
+    event.waitUntil(updateWidget(event.tag));
+});
+
+self.addEventListener('widgetclick', event => {
+    if (event.action === 'refresh' || event.verb === 'refresh') {
+        event.waitUntil(updateWidget(event.tag));
+    }
+});

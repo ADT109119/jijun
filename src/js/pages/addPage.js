@@ -242,10 +242,10 @@ export class AddPage {
                 </div>
             </div>
         `
-        await this.setupAddPageListeners(recordId)
+        await this.setupAddPageListeners(recordId, params)
     }
 
-    async setupAddPageListeners(recordId) {
+    async setupAddPageListeners(recordId, params) {
         const isEditMode = !!recordId
         let recordToEdit = null
 
@@ -327,6 +327,26 @@ export class AddPage {
                 } catch (e) {
                     console.error('Error applying temp data:', e)
                 }
+            }
+        }
+
+        // PWA Share Target & Query Param Pre-fill Support
+        if (!recordId && params) {
+            const amountParam = params.get('amount')
+            const noteParam = params.get('note')
+            const typeParam = params.get('type')
+
+            if (typeParam && (typeParam === 'expense' || typeParam === 'income')) {
+                currentType = typeParam
+            }
+            if (amountParam && !isNaN(parseFloat(amountParam))) {
+                currentAmount = amountParam.toString()
+                if (amountDisplay) {
+                    amountDisplay.textContent = formatCurrency(currentAmount)
+                }
+            }
+            if (noteParam && noteInput) {
+                noteInput.value = noteParam
             }
         }
 
