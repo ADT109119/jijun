@@ -1,4 +1,5 @@
 {
+    "id": "/",
     "name": "輕鬆記帳",
     "short_name": "輕鬆記帳",
     "description": "簡單實用的記帳 PWA 應用程式",
@@ -9,6 +10,46 @@
     "orientation": "portrait-primary",
     "scope": "/",
     "lang": "zh-TW",
+    "dir": "ltr",
+    "prefer_related_applications": false,
+    "launch_handler": {
+        "client_mode": "focus-existing"
+    },
+    "share_target": {
+        "action": "/",
+        "method": "GET",
+        "params": {
+            "title": "share_title",
+            "text": "share_text",
+            "url": "share_url"
+        }
+    },
+    "widgets": [
+        {
+            "tag": "easy-accounting-widget",
+            "name": "輕鬆記帳小工具",
+            "description": "查看今日收支概覽與快速記帳",
+            "template": "easy-accounting-widget",
+            "ms_ac_template": "/widgets/template.json",
+            "data": "/widgets/data.json",
+            "type": "application/json",
+            "auth": false,
+            "icons": [
+                {
+                    "src": "/icon/icon.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ],
+            "screenshots": [
+                {
+                    "src": "/screenshots/mobile-1.png",
+                    "sizes": "368x818",
+                    "type": "image/png"
+                }
+            ]
+        }
+    ],
     "icons": [
         {
             "src": "/icon/icon.png",
@@ -17,7 +58,7 @@
             "purpose": "any maskable"
         },
         {
-            "src": "/icon/icon.png",
+            "src": "/icon/icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"
@@ -27,7 +68,19 @@
     "screenshots": [
         {
             "src": "/screenshots/mobile-1.png",
-            "sizes": "390x844",
+            "sizes": "368x818",
+            "type": "image/png",
+            "form_factor": "narrow"
+        },
+        {
+            "src": "/screenshots/mobile-2.png",
+            "sizes": "363x816",
+            "type": "image/png",
+            "form_factor": "narrow"
+        },
+        {
+            "src": "/screenshots/mobile-3.png",
+            "sizes": "363x816",
             "type": "image/png",
             "form_factor": "narrow"
         }
