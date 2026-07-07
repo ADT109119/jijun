@@ -29,7 +29,7 @@
             "tag": "easy-accounting-widget",
             "name": "輕鬆記帳小工具",
             "description": "查看今日收支概覽與快速記帳",
-            "template": "easy-accounting-widget",
+            "template": "/widgets/template.json",
             "ms_ac_template": "/widgets/template.json",
             "data": "/widgets/data.json",
             "type": "application/json",
