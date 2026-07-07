@@ -6,76 +6,78 @@ export default {
         description: '在首頁顯示購物清單，買完直接記帳！',
         author: 'The walking fish 步行魚',
         icon: 'fa-list-check',
-        permissions: [
-            'storage',
-            'data:write',
-            'ui'
-        ]
+        permissions: ['storage', 'data:write', 'ui'],
     },
     escapeHTML(str) {
-        if (typeof str !== 'string') return str;
-        return str.replace(/[&<>"']/g, function(match) {
+        if (typeof str !== 'string') return str
+        return str.replace(/[&<>"']/g, function (match) {
             const escapeMap = {
                 '&': '&amp;',
                 '<': '&lt;',
                 '>': '&gt;',
                 '"': '&quot;',
-                "'": '&#39;'
-            };
-            return escapeMap[match];
-        });
+                "'": '&#39;',
+            }
+            return escapeMap[match]
+        })
     },
 
     init(context) {
-        this.context = context;
-        this.items = context.storage.getJSON('list') || [];
-        
+        this.context = context
+        this.items = context.storage.getJSON('list') || []
+
         // Register Home Widget
         // Register Home Widget
-        context.ui.registerHomeWidget('com.walkingfish.shopping_list', (container) => this.renderWidget(container));
+        context.ui.registerHomeWidget(
+            'com.walkingfish.shopping_list',
+            container => this.renderWidget(container)
+        )
     },
 
     save() {
-        this.context.storage.setJSON('list', this.items);
+        this.context.storage.setJSON('list', this.items)
     },
 
     addItem(name) {
-        if (!name.trim()) return;
-        this.items.push({ id: Date.now(), name: name.trim(), checked: false });
-        this.save();
-        this.renderList();
+        if (!name.trim()) return
+        this.items.push({ id: Date.now(), name: name.trim(), checked: false })
+        this.save()
+        this.renderList()
     },
 
     async checkItem(id) {
-        const item = this.items.find(i => i.id === id);
-        if (!item) return;
+        const item = this.items.find(i => i.id === id)
+        if (!item) return
 
         // Confirm purchase
-        const confirmed = await this.context.ui.showConfirm('已購買？', `是否將 "${this.escapeHTML(item.name)}" 加入支出紀錄？`);
-        
+        const confirmed = await this.context.ui.showConfirm(
+            '已購買？',
+            `是否將 "${this.escapeHTML(item.name)}" 加入支出紀錄？`
+        )
+
         if (confirmed) {
             // Remove from list
-            this.items = this.items.filter(i => i.id !== id);
-            this.save();
-            this.renderList();
+            this.items = this.items.filter(i => i.id !== id)
+            this.save()
+            this.renderList()
 
             // Navigate to Add Page with pre-filled data
             this.context.ui.openAddPage({
                 type: 'expense',
                 description: item.name,
-                category: 'shopping' // Or let user choose
-            });
+                category: 'shopping', // Or let user choose
+            })
         }
     },
 
     deleteItem(id) {
-        this.items = this.items.filter(i => i.id !== id);
-        this.save();
-        this.renderList();
+        this.items = this.items.filter(i => i.id !== id)
+        this.save()
+        this.renderList()
     },
 
     renderWidget(container) {
-        this.container = container; 
+        this.container = container
         container.innerHTML = `
             <div class="bg-white rounded-xl shadow-sm border border-wabi-border p-4">
                 <div class="flex items-center justify-between mb-3">
@@ -97,34 +99,39 @@ export default {
                 </ul>
                 ${this.items.length === 0 ? '<p class="text-xs text-center text-gray-400 py-2">清單是空的，太棒了！</p>' : ''}
             </div>
-        `;
+        `
 
-        this.listEl = container.querySelector('#shop-list');
-        this.inputEl = container.querySelector('#shop-add-input');
-        
+        this.listEl = container.querySelector('#shop-list')
+        this.inputEl = container.querySelector('#shop-add-input')
+
         // Bind Events
-        container.querySelector('#shop-add-btn').addEventListener('click', () => {
-            this.addItem(this.inputEl.value);
-            this.inputEl.value = '';
-        });
+        container
+            .querySelector('#shop-add-btn')
+            .addEventListener('click', () => {
+                this.addItem(this.inputEl.value)
+                this.inputEl.value = ''
+            })
 
         // Enter key
-        this.inputEl.addEventListener('keypress', (e) => {
+        this.inputEl.addEventListener('keypress', e => {
             if (e.key === 'Enter') {
-                this.addItem(this.inputEl.value);
-                this.inputEl.value = '';
+                this.addItem(this.inputEl.value)
+                this.inputEl.value = ''
             }
-        });
+        })
 
-        this.renderList();
+        this.renderList()
     },
 
     renderList() {
-        if (!this.listEl) return;
-        
-        this.container.querySelector('.count-badge').textContent = this.items.length;
-        
-        this.listEl.innerHTML = this.items.map(item => `
+        if (!this.listEl) return
+
+        this.container.querySelector('.count-badge').textContent =
+            this.items.length
+
+        this.listEl.innerHTML = this.items
+            .map(
+                item => `
             <li class="flex items-center justify-between group p-2 hover:bg-gray-50 rounded-lg transition-colors">
                 <div class="flex items-center gap-3 cursor-pointer item-click-area" data-id="${item.id}">
                     <div class="w-5 h-5 rounded border border-gray-300 flex items-center justify-center hover:border-wabi-primary transition-colors">
@@ -136,22 +143,24 @@ export default {
                     <i class="fa-solid fa-times"></i>
                 </button>
             </li>
-        `).join('');
+        `
+            )
+            .join('')
 
         // Bind Item Events
         this.listEl.querySelectorAll('.item-click-area').forEach(el => {
             el.addEventListener('click', () => {
-                const id = parseInt(el.dataset.id, 10);
-                this.checkItem(id);
-            });
-        });
+                const id = parseInt(el.dataset.id, 10)
+                this.checkItem(id)
+            })
+        })
 
         this.listEl.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const id = parseInt(btn.dataset.id, 10);
-                this.deleteItem(id);
-            });
-        });
-    }
-};
+            btn.addEventListener('click', e => {
+                e.stopPropagation()
+                const id = parseInt(btn.dataset.id, 10)
+                this.deleteItem(id)
+            })
+        })
+    },
+}
