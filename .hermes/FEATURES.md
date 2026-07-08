@@ -2,7 +2,7 @@
 
 ## 專案資訊
 - **GitHub**: https://github.com/ADT109119/jijun
-- **當前版本**: v2.1.5.9
+- **當前版本**: v2.1.6.0
 - **技術棧**: Vanilla JS + IndexedDB (idb) + Vite + Vitest + Playwright + Capacitor Android
 - **CSS**: Tailwind CDN + FontAwesome + Chart.js
 - **Schema**: IndexedDB v13 (信用卡支援)
@@ -136,8 +136,9 @@
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
-| #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
+| #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Open | 深色模式下小工具背景仍為白色 |
 | #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | PWA 載入 2-5 秒空白等待、骨架畫面 ⏳ 研究中；計算機式鍵盤 ✅ 已實作 (v2.1.5.7) |
+| #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
 | #8 | 疑問與建議 (Maiagaru) | Open | 分類預算 ✅ 已實作、手機鍵盤 UX ⏳ 排程 #U01、PDF/AI 等功能 💡 已列入調研 |
@@ -146,6 +147,7 @@
 
 ## 更新歷史
 
+- **2026-07-08**: v2.1.6.0 發布 (owner commit) — PWA 進階能力：防重複啟動、外部分享記帳、Windows 桌面小工具、Service Worker 強化、manifest.json 更新、新增 icon-512.png 與截圖；GitHub: 78 stars, 6 open issues (新增 #51 小工具深色模式問題)；703 tests 全過、ESLint 乾淨；昨日 Code Review pluginManager.js 產出報告 (2 HIGH, 4 MEDIUM, 4 LOW)
 - **2026-07-07**: Code Review pluginManager.js — 發現 2 HIGH (importScripts 繞過沙盒、Blob URL 沙盒逃逸)、4 MEDIUM (腳本大小限制、getRecords 參數、Hook 數量限制、PluginStorage 清理)、4 LOW (版本比較 semver、權限邏輯簡化、屬性命名、z-index)；產出 code-review-pluginManager-2026-07-07.md；703 tests 全過、ESLint 乾淨；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；MOZE 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；網路調研無新 issue
 - **2026-07-06**: 新增 recordsList.js 單元測試 (19 tests, 總計 703) — 涵蓋轉帳抵消、搜尋/類型過濾、日期推移、標題顯示、session 過濾器、欠款狀態顯示、欠款類別排除摘要；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-04**: 新增 virtualKeyboardDetector.js 單元測試 (38 tests, 總計 676) — 涵蓋 constructor 設定、_setState 去重、Layer 2 Visual Viewport resize/orientation、Layer 3 Focus/Blur selector matching、destroy/cleanup；確認 code review 發現的 input[type="number"] 未支援問題；MOZE 最新版本 v4.1.27 (2026/6/30)、Actual Budget 26.7.0 (2026-07-01)、Firefly III v6.6.3；GitHub 77 stars, 5 open issues 無變化
