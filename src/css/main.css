@@ -177,3 +177,121 @@ select option {
 #account-selector-container:empty {
     display: none;
 }
+
+/* ==================== Plugin Dark Mode Overrides ==================== */
+/* 1. Home Widget styling: enforce standard theme surface & border on the plugin's root card container (direct child of .plugin-widget) */
+.dark .plugin-widget > div {
+    background-color: rgb(var(--theme-surface, 30 41 59)) !important;
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+/* 2. Plugin Pages & Custom Elements Backgrounds */
+.dark #app-container.plugin-page .bg-white,
+.dark .plugin-widget .bg-white {
+    background-color: rgb(var(--theme-surface, 30 41 59)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-50,
+.dark #app-container.plugin-page .bg-gray-100,
+.dark #app-container.plugin-page .bg-indigo-50,
+.dark #app-container.plugin-page .bg-emerald-50,
+.dark .plugin-widget .bg-gray-50,
+.dark .plugin-widget .bg-gray-100,
+.dark .plugin-widget .bg-indigo-50,
+.dark .plugin-widget .bg-emerald-50 {
+    background-color: rgb(var(--theme-bg, 15 23 42)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-200,
+.dark .plugin-widget .bg-gray-200 {
+    background-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-300,
+.dark .plugin-widget .bg-gray-300 {
+    background-color: rgba(var(--theme-border, 51 65 85), 0.8) !important;
+}
+
+/* 3. Text and Label Colors */
+.dark #app-container.plugin-page .text-black,
+.dark #app-container.plugin-page .text-gray-900,
+.dark #app-container.plugin-page .text-gray-800,
+.dark #app-container.plugin-page .text-gray-700,
+.dark .plugin-widget .text-black,
+.dark .plugin-widget .text-gray-900,
+.dark .plugin-widget .text-gray-800,
+.dark .plugin-widget .text-gray-700 {
+    color: rgb(var(--theme-text-primary, 248 250 252)) !important;
+}
+
+.dark #app-container.plugin-page .text-gray-600,
+.dark #app-container.plugin-page .text-gray-500,
+.dark #app-container.plugin-page .text-gray-400,
+.dark .plugin-widget .text-gray-600,
+.dark .plugin-widget .text-gray-500,
+.dark .plugin-widget .text-gray-400 {
+    color: rgb(var(--theme-text-secondary, 203 213 225)) !important;
+}
+
+.dark #app-container.plugin-page .text-indigo-600,
+.dark .plugin-widget .text-indigo-600 {
+    color: rgb(var(--theme-accent, 59 130 246)) !important;
+}
+
+.dark #app-container.plugin-page .bg-indigo-600,
+.dark .plugin-widget .bg-indigo-600 {
+    background-color: rgb(var(--theme-accent, 59 130 246)) !important;
+    color: rgb(var(--theme-surface, 30 41 59)) !important;
+}
+
+/* 4. Action Button High Contrast overrides (Specifically target the confirm action in result preview card to ensure readability) */
+.dark #result-card button,
+.dark #result-card button.bg-white,
+.dark #result-card .bg-white {
+    background-color: rgb(var(--theme-primary, 248 250 252)) !important;
+    color: rgb(var(--theme-bg, 15 23 42)) !important;
+}
+
+/* 5. Borders */
+.dark #app-container.plugin-page .border-gray-100,
+.dark #app-container.plugin-page .border-gray-200,
+.dark #app-container.plugin-page .border-indigo-100,
+.dark #app-container.plugin-page .border-emerald-100,
+.dark .plugin-widget .border-gray-100,
+.dark .plugin-widget .border-gray-200,
+.dark .plugin-widget .border-indigo-100,
+.dark .plugin-widget .border-emerald-100 {
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+/* 6. Inputs & Select elements */
+.dark #app-container.plugin-page input[type="text"],
+.dark #app-container.plugin-page input[type="number"],
+.dark #app-container.plugin-page select,
+.dark #app-container.plugin-page textarea,
+.dark .plugin-widget input[type="text"],
+.dark .plugin-widget input[type="number"],
+.dark .plugin-widget select,
+.dark .plugin-widget textarea {
+    background-color: rgb(var(--theme-bg, 15 23 42)) !important;
+    color: rgb(var(--theme-text-primary, 248 250 252)) !important;
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark #app-container.plugin-page input::placeholder,
+.dark .plugin-widget input::placeholder {
+    color: rgb(var(--theme-text-secondary, 203 213 225)) !important;
+    opacity: 0.7;
+}
+
+/* 7. Hover styles */
+.dark .plugin-widget [class*="hover:bg-"]:hover,
+.dark #app-container.plugin-page [class*="hover:bg-"]:hover {
+    background-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark .plugin-widget button:hover,
+.dark #app-container.plugin-page button:hover {
+    filter: brightness(1.2);
+}
+

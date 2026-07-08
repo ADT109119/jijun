@@ -943,9 +943,7 @@ export class SyncService {
                 // 1. 取得本機對此共用帳本的「全部」變更日誌
                 const allLocalChanges = await this.dataService.getChangesSince(
                     0,
-                    {
-                        sharedLedgerUuid: ledger.uuid,
-                    }
+                    { sharedLedgerUuid: ledger.uuid }
                 )
                 if (allLocalChanges.length === 0) continue
 
@@ -1728,15 +1726,33 @@ export class SyncService {
      */
     async _applyAdd(storeName, data) {
         // Per-ledger custom_categories: custom_categories_${ledgerId}
+        // Per-ledger custom_categories
         if (
             storeName === 'custom_categories' ||
             storeName?.startsWith('custom_categories_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.customCategories = data
                 window.app.categoryManager.saveCustomCategories(true)
             } else {
-                localStorage.setItem('customCategories', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'custom_categories',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
@@ -1746,11 +1762,28 @@ export class SyncService {
             storeName === 'category_order' ||
             storeName?.startsWith('category_order_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.categoryOrder = data
                 await window.app.categoryManager.saveCategorySettings(true)
             } else {
-                localStorage.setItem('category_order', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'category_order',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
@@ -1760,27 +1793,64 @@ export class SyncService {
             storeName === 'hidden_categories' ||
             storeName?.startsWith('hidden_categories_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.hiddenCategories = data
                 await window.app.categoryManager.saveCategorySettings(true)
             } else {
-                localStorage.setItem('hidden_categories', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'hidden_categories',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
 
-        if (storeName === 'budget_settings') {
-            if (window.app && window.app.budgetManager) {
+        // Per-ledger budget_settings: budget_settings_${ledgerId}
+        if (
+            storeName === 'budget_settings' ||
+            storeName?.startsWith('budget_settings_')
+        ) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.budgetManager
+            ) {
                 window.app.budgetManager.currentBudget = data.monthlyBudget || 0
                 window.app.budgetManager.categoryBudgets =
                     data.categoryBudgets || {}
+                window.app.budgetManager.categoryBudgetOrder =
+                    data.categoryBudgetOrder || []
+                window.app.budgetManager.excludedBudgetCategories =
+                    data.excludedBudgetCategories || []
                 await window.app.budgetManager.saveBudget(
                     window.app.budgetManager.currentBudget,
                     window.app.budgetManager.categoryBudgets,
+                    window.app.budgetManager.categoryBudgetOrder,
+                    window.app.budgetManager.excludedBudgetCategories,
                     true
                 )
                 if (
-                    window.app &&
                     window.app.router &&
                     window.app.router.routes['home'] &&
                     typeof window.app.router.routes['home'].loadBudgetWidget ===
@@ -1789,10 +1859,26 @@ export class SyncService {
                     window.app.router.routes['home'].loadBudgetWidget() // Auto refresh if available
                 }
             } else {
-                localStorage.setItem('monthlyBudget', data.monthlyBudget || 0)
+                await this.dataService.saveSetting({
+                    key: storeName,
+                    value: data,
+                })
+                const suffix = suffixId ? `_${suffixId}` : ''
                 localStorage.setItem(
-                    'categoryBudgets',
+                    `monthlyBudget${suffix}`,
+                    (data.monthlyBudget || 0).toString()
+                )
+                localStorage.setItem(
+                    `categoryBudgets${suffix}`,
                     JSON.stringify(data.categoryBudgets || {})
+                )
+                localStorage.setItem(
+                    `categoryBudgetOrder${suffix}`,
+                    JSON.stringify(data.categoryBudgetOrder || [])
+                )
+                localStorage.setItem(
+                    `excludedBudgetCategories${suffix}`,
+                    JSON.stringify(data.excludedBudgetCategories || [])
                 )
             }
             return
@@ -1909,11 +1995,28 @@ export class SyncService {
             storeName === 'custom_categories' ||
             storeName?.startsWith('custom_categories_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.customCategories = data
                 window.app.categoryManager.saveCustomCategories(true)
             } else {
-                localStorage.setItem('customCategories', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'custom_categories',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
@@ -1923,11 +2026,28 @@ export class SyncService {
             storeName === 'category_order' ||
             storeName?.startsWith('category_order_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.categoryOrder = data
                 await window.app.categoryManager.saveCategorySettings(true)
             } else {
-                localStorage.setItem('category_order', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'category_order',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
@@ -1937,27 +2057,64 @@ export class SyncService {
             storeName === 'hidden_categories' ||
             storeName?.startsWith('hidden_categories_')
         ) {
-            if (window.app && window.app.categoryManager) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.categoryManager
+            ) {
                 window.app.categoryManager.hiddenCategories = data
                 await window.app.categoryManager.saveCategorySettings(true)
             } else {
-                localStorage.setItem('hidden_categories', JSON.stringify(data))
+                const targetLedgerId =
+                    suffixId || this.dataService.activeLedgerId
+                await this.dataService.saveCategorySetting(
+                    'hidden_categories',
+                    data,
+                    targetLedgerId
+                )
             }
             return
         }
 
-        if (storeName === 'budget_settings') {
-            if (window.app && window.app.budgetManager) {
+        // Per-ledger budget_settings: budget_settings_${ledgerId}
+        if (
+            storeName === 'budget_settings' ||
+            storeName?.startsWith('budget_settings_')
+        ) {
+            const parts = storeName.split('_')
+            const suffixId =
+                parts.length > 2 ? parseInt(parts[parts.length - 1]) : null
+            const isTargetActiveLedger =
+                suffixId === null ||
+                suffixId === this.dataService.activeLedgerId
+
+            if (
+                isTargetActiveLedger &&
+                window.app &&
+                window.app.budgetManager
+            ) {
                 window.app.budgetManager.currentBudget = data.monthlyBudget || 0
                 window.app.budgetManager.categoryBudgets =
                     data.categoryBudgets || {}
+                window.app.budgetManager.categoryBudgetOrder =
+                    data.categoryBudgetOrder || []
+                window.app.budgetManager.excludedBudgetCategories =
+                    data.excludedBudgetCategories || []
                 await window.app.budgetManager.saveBudget(
                     window.app.budgetManager.currentBudget,
                     window.app.budgetManager.categoryBudgets,
+                    window.app.budgetManager.categoryBudgetOrder,
+                    window.app.budgetManager.excludedBudgetCategories,
                     true
                 )
                 if (
-                    window.app &&
                     window.app.router &&
                     window.app.router.routes['home'] &&
                     typeof window.app.router.routes['home'].loadBudgetWidget ===
@@ -1966,16 +2123,32 @@ export class SyncService {
                     window.app.router.routes['home'].loadBudgetWidget() // Auto refresh if available
                 }
             } else {
-                localStorage.setItem('monthlyBudget', data.monthlyBudget || 0)
+                await this.dataService.saveSetting({
+                    key: storeName,
+                    value: data,
+                })
+                const suffix = suffixId ? `_${suffixId}` : ''
                 localStorage.setItem(
-                    'categoryBudgets',
+                    `monthlyBudget${suffix}`,
+                    (data.monthlyBudget || 0).toString()
+                )
+                localStorage.setItem(
+                    `categoryBudgets${suffix}`,
                     JSON.stringify(data.categoryBudgets || {})
+                )
+                localStorage.setItem(
+                    `categoryBudgetOrder${suffix}`,
+                    JSON.stringify(data.categoryBudgetOrder || [])
+                )
+                localStorage.setItem(
+                    `excludedBudgetCategories${suffix}`,
+                    JSON.stringify(data.excludedBudgetCategories || [])
                 )
             }
             return
         }
 
-        // Try to find by UUID first
+        // 如果 UUID 已存在則當新增處理，避免重複
         if (data.uuid) {
             const existing = await this.dataService.getByUUID(
                 storeName,

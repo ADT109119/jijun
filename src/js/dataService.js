@@ -351,9 +351,7 @@ class DataService {
                                     recordStore.createIndex(
                                         'amortizationId',
                                         'amortizationId',
-                                        {
-                                            unique: false,
-                                        }
+                                        { unique: false }
                                     )
                                 }
                             }
@@ -843,9 +841,7 @@ class DataService {
 
                 const shouldDelete = await this.triggerHook(
                     'onRecordDeleteBefore',
-                    {
-                        id,
-                    }
+                    { id }
                 )
                 if (!shouldDelete) throw new Error('Delete cancelled by plugin')
             }
@@ -2669,10 +2665,7 @@ class DataService {
                         'delete',
                         'credit_statements',
                         stmt.id,
-                        {
-                            uuid: stmt.uuid,
-                            ledgerId: stmt.ledgerId,
-                        }
+                        { uuid: stmt.uuid, ledgerId: stmt.ledgerId }
                     )
                 }
             }
@@ -3072,6 +3065,8 @@ class DataService {
             }
         }
     }
+
+    // 清除所有信用卡帳單（注意：此方法在 class 頂部已有定義，此處不重複）
 
     // 清除所有帳戶
     async clearAllAccounts() {
