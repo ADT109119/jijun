@@ -147,6 +147,7 @@
 
 ## 更新歷史
 
+- **2026-07-08**: Code Review budgetManager.js — 發現 2 HIGH (NaN 污染預算計算、事件監聽器綁定方式)、4 MEDIUM (getCategoryById 重複呼叫、SortableJS 全量重建、localStorage 失敗未處理、排除類別未去重)、4 LOW (categoryBudgetOrder fallback 註解、checkBudgetWarning 可提取、水波動畫邊界、測試 mock key 欄位不一致)；產出 code-review-budgetManager-2026-07-08.md；703 tests 全過、ESLint 乾淨；GitHub: 78 stars, 6 open issues (#51/#49/#48/#14/#9/#8) 無變化；v2.1.6.2 owner commit 包含插件深色模式修復（#51）、多帳本同步隔離、PWA Widget 本地時區
 - **2026-07-08**: v2.1.6.0 發布 (owner commit) — PWA 進階能力：防重複啟動、外部分享記帳、Windows 桌面小工具、Service Worker 強化、manifest.json 更新、新增 icon-512.png 與截圖；GitHub: 78 stars, 6 open issues (新增 #51 小工具深色模式問題)；703 tests 全過、ESLint 乾淨；昨日 Code Review pluginManager.js 產出報告 (2 HIGH, 4 MEDIUM, 4 LOW)
 - **2026-07-07**: Code Review pluginManager.js — 發現 2 HIGH (importScripts 繞過沙盒、Blob URL 沙盒逃逸)、4 MEDIUM (腳本大小限制、getRecords 參數、Hook 數量限制、PluginStorage 清理)、4 LOW (版本比較 semver、權限邏輯簡化、屬性命名、z-index)；產出 code-review-pluginManager-2026-07-07.md；703 tests 全過、ESLint 乾淨；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；MOZE 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；網路調研無新 issue
 - **2026-07-06**: 新增 recordsList.js 單元測試 (19 tests, 總計 703) — 涵蓋轉帳抵消、搜尋/類型過濾、日期推移、標題顯示、session 過濾器、欠款狀態顯示、欠款類別排除摘要；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
