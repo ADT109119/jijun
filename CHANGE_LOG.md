@@ -1,5 +1,20 @@
 # 輕鬆記帳 2.0 - 更新日誌
 
+## v2.1.6.1 (2026-07-08) - 修復 PWA Widget 離線載入架構與 Lifecycle 更新邏輯
+
+### 🐛 錯誤修復
+
+- **修復 PWA Widget 載入邏輯**：
+    - 修正 Service Worker 中將 Widget 名稱誤作為 Adaptive Card 模板傳遞的錯誤，改為動態 fetch 完整的卡片 JSON 內容。
+- **修復 Widget payload 格式**：
+    - 修正 data 物件未以 JSON 字串格式化傳送的錯誤，統一序列化為 string。
+- **修復 PWA widgetinstall 事件**：
+    - 解決 event.tag 無此屬性造成的 undefined 更新失敗，改以 event.instanceId 或 event.widget.definition.tag 正確執行註冊更新。
+- **新增啟用時小工具更新**：
+    - 在 SW 啟動（activate）時自動遍歷並重置所有已安裝的桌面小工具，確保每次更新後小工具不會顯示空白。
+
+---
+
 ## v2.1.6.0 (2026-07-07) - 導入 PWA 進階能力：防重複啟動、外部分享記帳與 Windows 桌面小工具
 
 ### ✨ 新功能
