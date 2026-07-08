@@ -87,6 +87,39 @@ export class ThemeManager {
         cssText += '}\n'
         this.styleElement.textContent = cssText
 
+        // Toggle dark-theme class on body based on theme properties or luminance
+        const isDark =
+            theme &&
+            (theme.id === DARK_THEME_ID ||
+                theme.id.includes('dark') ||
+                theme.dark ||
+                (() => {
+                    const bg =
+                        theme.colors &&
+                        (theme.colors['wabi-bg'] ||
+                            theme.colors['wabi-surface'])
+                    if (bg && bg.startsWith('#')) {
+                        const hex = bg.substring(1)
+                        let r = parseInt(hex.substring(0, 2), 16)
+                        let g = parseInt(hex.substring(2, 4), 16)
+                        let b = parseInt(hex.substring(4, 6), 16)
+                        if (hex.length === 3) {
+                            r = parseInt(hex[0] + hex[0], 16)
+                            g = parseInt(hex[1] + hex[1], 16)
+                            b = parseInt(hex[2] + hex[2], 16)
+                        }
+                        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                        return luminance < 128
+                    }
+                    return false
+                })())
+
+        if (isDark) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+
         // Save active theme ID
         await this.dataService.saveSetting({
             key: 'activeThemeId',

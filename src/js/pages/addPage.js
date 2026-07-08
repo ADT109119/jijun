@@ -336,7 +336,10 @@ export class AddPage {
             const noteParam = params.get('note')
             const typeParam = params.get('type')
 
-            if (typeParam && (typeParam === 'expense' || typeParam === 'income')) {
+            if (
+                typeParam &&
+                (typeParam === 'expense' || typeParam === 'income')
+            ) {
                 currentType = typeParam
             }
             if (amountParam && !isNaN(parseFloat(amountParam))) {

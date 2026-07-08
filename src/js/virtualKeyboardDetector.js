@@ -79,7 +79,7 @@ export class VirtualKeyboardDetector {
      * Compares current height against initial height to detect keyboard.
      */
     _onVisualViewportResize() {
-        if (!this.initialHeight) return
+        if (!this.initialHeight || !window.visualViewport) return
         const diff = this.initialHeight - window.visualViewport.height
         if (diff > this.threshold) {
             this._setState(true)
@@ -92,7 +92,9 @@ export class VirtualKeyboardDetector {
      * Reset initial height on orientation change to prevent false positives.
      */
     _onOrientationChange() {
-        this.initialHeight = window.visualViewport.height
+        if (window.visualViewport) {
+            this.initialHeight = window.visualViewport.height
+        }
     }
 
     /**
@@ -101,8 +103,10 @@ export class VirtualKeyboardDetector {
     _onDocFocus(e) {
         const target = e.target
         if (
+            target &&
+            typeof target.matches === 'function' &&
             target.matches(
-                'input[type="text"], textarea, input[type="search"], input[type="email"]'
+                'input[type="text"], input[type="number"], input[type="tel"], textarea, input[type="search"], input[type="email"]'
             )
         ) {
             this._setState(true)
@@ -116,8 +120,10 @@ export class VirtualKeyboardDetector {
     _onDocBlur(e) {
         const target = e.target
         if (
+            target &&
+            typeof target.matches === 'function' &&
             target.matches(
-                'input[type="text"], textarea, input[type="search"], input[type="email"]'
+                'input[type="text"], input[type="number"], input[type="tel"], textarea, input[type="search"], input[type="email"]'
             )
         ) {
             setTimeout(() => {

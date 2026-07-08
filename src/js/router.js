@@ -44,6 +44,9 @@ export class Router {
 
             const page = this.routes[pageName]
             if (page) {
+                if (this.app.appContainer && this.app.appContainer.classList) {
+                    this.app.appContainer.classList.remove('plugin-page')
+                }
                 if (page.render) {
                     await page.render(params)
                 } else {
@@ -57,6 +60,9 @@ export class Router {
                     this.app.pluginManager.getCustomPage(pageName)
                 if (customPage) {
                     this.app.appContainer.innerHTML = '' // Clear container
+                    if (this.app.appContainer && this.app.appContainer.classList) {
+                        this.app.appContainer.classList.add('plugin-page')
+                    }
                     try {
                         customPage.renderFn(this.app.appContainer)
                     } catch (e) {

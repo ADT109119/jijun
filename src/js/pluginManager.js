@@ -224,6 +224,7 @@ export class PluginManager {
         open: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") },
         deleteDatabase: () => { throw new Error("Access Denied: IndexedDB is not allowed in plugins.") }
       };
+      const importScripts = () => { throw new Error("Access Denied: importScripts() is not allowed in plugins.") };
 
       // 網路 API 阻擋（根據權限動態生成）
       ${networkBlock}
@@ -240,6 +241,9 @@ export class PluginManager {
            }
            if (prop === 'eval') {
                throw new Error("Access Denied: eval() is not allowed in plugins.");
+           }
+           if (prop === 'importScripts') {
+                throw new Error("Access Denied: importScripts() is not allowed in plugins.");
            }
            ${networkProxyBlock}
            let value = Reflect.get(target, prop);

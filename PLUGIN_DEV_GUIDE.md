@@ -107,7 +107,7 @@ export default {
 > [!NOTE]
 > **儲存引擎升級 (v2.1.4.4+)**：底層已由同步 `localStorage` 升級為非同步 `IndexedDB` 儲存，大幅提升大數據存取效能。為保持向下相容性，本 API 透過記憶體快取 (In-Memory Cache) 相容層實作，**依然提供完全同步的操作體驗，開發者不需要將其改為 `await` 呼叫**。此外，內部快取已進行安全性強化，使用無原型鏈物件（`Object.create(null)`）防止屬性污染漏洞。
 >
-> 嘗試直接在插件中使用全域的 `window.localStorage` 或 `indexedDB` 將會拋出 `Access Denied` 錯誤。
+> 嘗試直接在插件中使用全域的 `window.localStorage`、`indexedDB` 或 `importScripts()` 將會拋出 `Access Denied` 錯誤（自 v2.1.6.2 起阻擋 `importScripts` 以防範外部腳本動態注入）。
 
 ## 3. 事件 Hook 列表
 
