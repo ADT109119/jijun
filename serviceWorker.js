@@ -1,6 +1,6 @@
 // 現代化 Service Worker
 // 使用統一的版本號和快取名稱
-const APP_VERSION = '2.1.6.0' // 版本號，2.1.2.3 版後在 build 時自動注入 package.json 的版本號
+const APP_VERSION = '2.1.6.1' // 版本號，2.1.2.3 版後在 build 時自動注入 package.json 的版本號
 const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
 const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
 const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
@@ -81,6 +81,8 @@ self.addEventListener('activate', event => {
             }),
             // 立即控制所有客戶端
             self.clients.claim(),
+            // 啟用時更新所有小工具
+            updateAllWidgets(),
         ]).then(() => {
             console.log(`Service Worker v${APP_VERSION} 啟用完成`)
 
@@ -356,31 +358,72 @@ function getTodayTotal() {
     });
 }
 
-// Helper to update widget by tag
-async function updateWidget(tag) {
+// Helper to update widget by instance ID or tag
+async function updateWidgetInstance(instanceId, tag) {
     if (!self.widgets) return;
     try {
+        // Fetch the Adaptive Card template
+        const templateResponse = await fetch('/widgets/template.json');
+        const templateText = await templateResponse.text();
+        
+        // Query today's totals
         const total = await getTodayTotal();
-        await self.widgets.updateByTag(tag, {
-            template: 'easy-accounting-widget',
-            data: {
-                expense: total.expense.toLocaleString('zh-TW'),
-                income: total.income.toLocaleString('zh-TW')
-            }
+        const dataText = JSON.stringify({
+            expense: total.expense.toLocaleString('zh-TW'),
+            income: total.income.toLocaleString('zh-TW')
         });
-        console.log(`Widget ${tag} updated successfully.`);
+        
+        // Update widget using standard Adaptive Card payload (must be stringified JSON)
+        if (instanceId) {
+            await self.widgets.updateByInstanceId(instanceId, {
+                template: templateText,
+                data: dataText
+            });
+            console.log(`Widget instance ${instanceId} updated successfully.`);
+        } else if (tag) {
+            await self.widgets.updateByTag(tag, {
+                template: templateText,
+                data: dataText
+            });
+            console.log(`Widget tag ${tag} updated successfully.`);
+        }
     } catch (err) {
-        console.error(`Failed to update widget ${tag}:`, err);
+        console.error(`Failed to update widget:`, err);
+    }
+}
+
+// Helper to update all installed widgets
+async function updateAllWidgets() {
+    if (!self.widgets) return;
+    try {
+        const widgets = await self.widgets.matchAll({ installed: true });
+        for (const widget of widgets) {
+            for (const instance of widget.instances) {
+                await updateWidgetInstance(instance.id);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update all widgets:', err);
     }
 }
 
 // Widget lifecycle events
 self.addEventListener('widgetinstall', event => {
-    event.waitUntil(updateWidget(event.tag));
+    const tag = event.widget?.definition?.tag || 'easy-accounting-widget';
+    event.waitUntil(updateWidgetInstance(event.instanceId, tag));
+});
+
+self.addEventListener('widgetuninstall', event => {
+    console.log(`Widget ${event.instanceId} uninstalled.`);
 });
 
 self.addEventListener('widgetclick', event => {
     if (event.action === 'refresh' || event.verb === 'refresh') {
-        event.waitUntil(updateWidget(event.tag));
+        event.waitUntil(updateWidgetInstance(event.instanceId));
     }
+});
+
+// Listen to periodicsync events to update all widget instances periodically.
+self.addEventListener('periodicsync', event => {
+    event.waitUntil(updateWidgetInstance(null, event.tag));
 });
