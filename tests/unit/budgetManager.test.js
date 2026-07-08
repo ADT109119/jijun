@@ -38,8 +38,7 @@ function createMockDataService() {
     return {
         activeLedgerId: 1,
         getSetting: vi.fn(async key => {
-            const s = settings[key]
-            return s ? { key: s, value: s } : null
+            return settings[key] ? { key, value: settings[key] } : null
         }),
         saveSetting: vi.fn(async ({ key, value }) => {
             settings[key] = value
@@ -138,18 +137,19 @@ describe('BudgetManager', () => {
             expect(bm.categoryBudgets).toEqual({})
         })
 
-        it('預算值非數字時設為 NaN → 視為 0 以下', async () => {
+        it('預算值與分類預算非數字時，防禦回退為 0', async () => {
             ds.getSetting.mockResolvedValueOnce({
                 key: 'budget_settings_1',
                 value: {
                     monthlyBudget: 'not_a_number',
-                    categoryBudgets: {},
+                    categoryBudgets: { food: 'invalid_val' },
                     categoryBudgetOrder: [],
                 },
             })
 
             await bm.loadBudget()
-            expect(Number.isNaN(bm.currentBudget)).toBe(true) // parseFloat('not_a_number') → NaN
+            expect(bm.currentBudget).toBe(0)
+            expect(bm.categoryBudgets).toEqual({ food: 0 })
         })
     })
 
@@ -205,6 +205,21 @@ describe('BudgetManager', () => {
             expect(
                 JSON.parse(localStorage.getItem('categoryBudgets_1'))
             ).toEqual({ food: 2000 })
+        })
+
+        it('localStorage.setItem 失敗時，不影響 IndexedDB 的正常儲存', async () => {
+            const originalSetItem = localStorage.setItem
+            localStorage.setItem = vi.fn(() => {
+                throw new Error('QuotaExceededError')
+            })
+
+            try {
+                const result = await bm.saveBudget(10000, { food: 3000 }, ['food'])
+                expect(result).toBe(true)
+                expect(ds.saveSetting).toHaveBeenCalled()
+            } finally {
+                localStorage.setItem = originalSetItem
+            }
         })
     })
 
@@ -468,6 +483,43 @@ describe('BudgetManager', () => {
             await bm.saveBudget(10000)
 
             expect(bm.excludedBudgetCategories).toEqual(['food'])
+        })
+
+        it('loadBudget 與 saveBudget 對排除類別進行去重', async () => {
+            ds.getSetting.mockResolvedValueOnce({
+                key: 'budget_settings_1',
+                value: {
+                    monthlyBudget: 10000,
+                    categoryBudgets: {},
+                    categoryBudgetOrder: [],
+                    excludedBudgetCategories: ['food', 'food', 'traffic'],
+                },
+            })
+
+            await bm.loadBudget()
+            expect(bm.excludedBudgetCategories).toEqual(['food', 'traffic'])
+
+            await bm.saveBudget(10000, {}, [], ['traffic', 'traffic', 'food'])
+            expect(bm.excludedBudgetCategories).toEqual(['traffic', 'food'])
+        })
+    })
+
+    // ==================== checkBudgetWarning ====================
+
+    describe('checkBudgetWarning', () => {
+        it('當分類預算總和小於等於全局預算時，回傳 false', () => {
+            const isWarning = bm.checkBudgetWarning(10000, { food: 3000, traffic: 2000 })
+            expect(isWarning).toBe(false)
+        })
+
+        it('當分類預算總和大於全局預算時，回傳 true', () => {
+            const isWarning = bm.checkBudgetWarning(4000, { food: 3000, traffic: 2000 })
+            expect(isWarning).toBe(true)
+        })
+
+        it('當全局預算為 0 時，不觸發警報（回傳 false）', () => {
+            const isWarning = bm.checkBudgetWarning(0, { food: 3000 })
+            expect(isWarning).toBe(false)
         })
     })
 

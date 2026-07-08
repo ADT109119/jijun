@@ -40,14 +40,22 @@ export class BudgetManager {
                         categoryBudgetOrder,
                         excludedBudgetCategories,
                     } = budgetSettings.value
-                    this.currentBudget = monthlyBudget
-                        ? parseFloat(monthlyBudget)
-                        : 0
-                    this.categoryBudgets = categoryBudgets || {}
+                    
+                    const parsedBudget = parseFloat(monthlyBudget)
+                    this.currentBudget = isNaN(parsedBudget) ? 0 : parsedBudget
+
+                    const rawCategoryBudgets = categoryBudgets || {}
+                    this.categoryBudgets = {}
+                    for (const [catId, val] of Object.entries(rawCategoryBudgets)) {
+                        const parsedVal = parseFloat(val)
+                        this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+                    }
+
                     this.categoryBudgetOrder =
                         categoryBudgetOrder || Object.keys(this.categoryBudgets)
-                    this.excludedBudgetCategories =
-                        excludedBudgetCategories || []
+                    
+                    const rawExcluded = excludedBudgetCategories || []
+                    this.excludedBudgetCategories = [...new Set(rawExcluded)]
                     return
                 }
             }
@@ -56,14 +64,20 @@ export class BudgetManager {
             const budget =
                 localStorage.getItem(`monthlyBudget${ledgerSuffix}`) ||
                 localStorage.getItem('monthlyBudget')
-            this.currentBudget = budget ? parseFloat(budget) : 0
+            const parsedBudget = budget ? parseFloat(budget) : 0
+            this.currentBudget = isNaN(parsedBudget) ? 0 : parsedBudget
 
             const categoryBudgetsRaw =
                 localStorage.getItem(`categoryBudgets${ledgerSuffix}`) ||
                 localStorage.getItem('categoryBudgets')
-            this.categoryBudgets = categoryBudgetsRaw
+            const parsedCats = categoryBudgetsRaw
                 ? JSON.parse(categoryBudgetsRaw)
                 : {}
+            this.categoryBudgets = {}
+            for (const [catId, val] of Object.entries(parsedCats)) {
+                const parsedVal = parseFloat(val)
+                this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+            }
 
             const categoryBudgetOrderRaw =
                 localStorage.getItem(`categoryBudgetOrder${ledgerSuffix}`) ||
@@ -76,9 +90,10 @@ export class BudgetManager {
                 localStorage.getItem(
                     `excludedBudgetCategories${ledgerSuffix}`
                 ) || localStorage.getItem('excludedBudgetCategories')
-            this.excludedBudgetCategories = excludedBudgetCategoriesRaw
+            const rawExcluded = excludedBudgetCategoriesRaw
                 ? JSON.parse(excludedBudgetCategoriesRaw)
                 : []
+            this.excludedBudgetCategories = [...new Set(rawExcluded)]
 
             // Migrate from local storage to IndexedDB
             if (
@@ -110,15 +125,20 @@ export class BudgetManager {
         skipLog = false
     ) {
         try {
-            this.currentBudget = amount
+            const parsedAmount = parseFloat(amount)
+            this.currentBudget = isNaN(parsedAmount) ? 0 : parsedAmount
             if (categoryBudgets !== null) {
-                this.categoryBudgets = categoryBudgets
+                this.categoryBudgets = {}
+                for (const [catId, val] of Object.entries(categoryBudgets)) {
+                    const parsedVal = parseFloat(val)
+                    this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+                }
             }
             if (categoryBudgetOrder !== null) {
-                this.categoryBudgetOrder = categoryBudgetOrder
+                this.categoryBudgetOrder = [...categoryBudgetOrder]
             }
             if (excludedBudgetCategories !== null) {
-                this.excludedBudgetCategories = excludedBudgetCategories
+                this.excludedBudgetCategories = [...new Set(excludedBudgetCategories)]
             }
 
             let ledgerSuffix = ''
@@ -126,23 +146,27 @@ export class BudgetManager {
                 ledgerSuffix = `_${this.dataService.activeLedgerId}`
             }
 
-            // Update local storage as a quick backup
-            localStorage.setItem(
-                `monthlyBudget${ledgerSuffix}`,
-                this.currentBudget.toString()
-            )
-            localStorage.setItem(
-                `categoryBudgets${ledgerSuffix}`,
-                JSON.stringify(this.categoryBudgets)
-            )
-            localStorage.setItem(
-                `categoryBudgetOrder${ledgerSuffix}`,
-                JSON.stringify(this.categoryBudgetOrder)
-            )
-            localStorage.setItem(
-                `excludedBudgetCategories${ledgerSuffix}`,
-                JSON.stringify(this.excludedBudgetCategories)
-            )
+            // Update local storage as a quick backup with try-catch wrapper
+            try {
+                localStorage.setItem(
+                    `monthlyBudget${ledgerSuffix}`,
+                    this.currentBudget.toString()
+                )
+                localStorage.setItem(
+                    `categoryBudgets${ledgerSuffix}`,
+                    JSON.stringify(this.categoryBudgets)
+                )
+                localStorage.setItem(
+                    `categoryBudgetOrder${ledgerSuffix}`,
+                    JSON.stringify(this.categoryBudgetOrder)
+                )
+                localStorage.setItem(
+                    `excludedBudgetCategories${ledgerSuffix}`,
+                    JSON.stringify(this.excludedBudgetCategories)
+                )
+            } catch (e) {
+                console.warn('LocalStorage backup failed:', e)
+            }
 
             if (this.dataService) {
                 const payload = {
@@ -182,9 +206,10 @@ export class BudgetManager {
             true
         )
 
-        // Subtract excluded categories from total spent
+        // Subtract excluded categories from total spent (with de-duplication)
         let excludedAmount = 0
-        for (const catId of this.excludedBudgetCategories) {
+        const uniqueExcluded = new Set(this.excludedBudgetCategories)
+        for (const catId of uniqueExcluded) {
             excludedAmount += stats.expenseByCategory[catId] || 0
         }
         const spent = Math.max(0, stats.totalExpense - excludedAmount)
@@ -201,22 +226,16 @@ export class BudgetManager {
             const catRemaining = Math.max(0, budgetAmount - catSpent)
             const catPercentage =
                 budgetAmount > 0 ? (catSpent / budgetAmount) * 100 : 0
+            
+            const categoryManager = window.app && window.app.categoryManager
+            const catObj = categoryManager
+                ? categoryManager.getCategoryById('expense', categoryId)
+                : null
+
             categoryStatuses.push({
                 categoryId,
-                name:
-                    window.app && window.app.categoryManager
-                        ? window.app.categoryManager.getCategoryById(
-                              'expense',
-                              categoryId
-                          )?.name || categoryId
-                        : categoryId,
-                icon:
-                    window.app && window.app.categoryManager
-                        ? window.app.categoryManager.getCategoryById(
-                              'expense',
-                              categoryId
-                          )?.icon || ''
-                        : '',
+                name: catObj?.name || categoryId,
+                icon: catObj?.icon || '',
                 budget: budgetAmount,
                 spent: catSpent,
                 remaining: catRemaining,
@@ -226,7 +245,7 @@ export class BudgetManager {
             })
         }
 
-        // Sort category statuses by custom order, otherwise fall back to percentage descending
+        // Sort category statuses by custom order, otherwise fall back to percentage descending then alphabetical
         if (this.categoryBudgetOrder && this.categoryBudgetOrder.length > 0) {
             categoryStatuses.sort((a, b) => {
                 let idxA = this.categoryBudgetOrder.indexOf(a.categoryId)
@@ -234,10 +253,14 @@ export class BudgetManager {
                 if (idxA === -1) idxA = 999
                 if (idxB === -1) idxB = 999
                 if (idxA !== idxB) return idxA - idxB
-                return b.percentage - a.percentage
+                if (b.percentage !== a.percentage) return b.percentage - a.percentage
+                return a.categoryId.localeCompare(b.categoryId)
             })
         } else {
-            categoryStatuses.sort((a, b) => b.percentage - a.percentage)
+            categoryStatuses.sort((a, b) => {
+                if (b.percentage !== a.percentage) return b.percentage - a.percentage
+                return a.categoryId.localeCompare(b.categoryId)
+            })
         }
 
         return {
@@ -254,7 +277,12 @@ export class BudgetManager {
         return this.getBudgetStatus().then(status => {
             const isOverBudget = status.isOverBudget
             const percentage = Math.min(100, status.percentage)
-            const waterLevel = 100 - percentage
+            let waterLevel = 100 - percentage
+            if (percentage >= 100) {
+                waterLevel = -15
+            } else if (percentage <= 0) {
+                waterLevel = 105
+            }
 
             return `
         <div class="bg-wabi-surface p-4 rounded-lg shadow-sm border border-wabi-border mb-6">
@@ -580,16 +608,13 @@ export class BudgetManager {
         }
 
         const checkBudgetWarning = () => {
-            const budgetInput = document.getElementById('budget-input')
-            const warningEl = document.getElementById('budget-warning-msg')
+            const budgetInput = modal.querySelector('#budget-input')
+            const warningEl = modal.querySelector('#budget-warning-msg')
             if (!budgetInput || !warningEl) return
             const budget = parseFloat(budgetInput.value) || 0
-            let totalCategoryBudget = 0
-            for (const amount of Object.values(workingCategoryBudgets)) {
-                totalCategoryBudget += amount
-            }
-
-            if (totalCategoryBudget > budget && budget > 0) {
+            
+            const isWarning = this.checkBudgetWarning(budget, workingCategoryBudgets)
+            if (isWarning) {
                 warningEl.classList.remove('hidden')
             } else {
                 warningEl.classList.add('hidden')
@@ -656,11 +681,11 @@ export class BudgetManager {
             })
 
         // 事件監聽
-        document
-            .getElementById('save-budget-btn')
+        modal
+            .querySelector('#save-budget-btn')
             .addEventListener('click', async () => {
                 const amount = parseFloat(
-                    document.getElementById('budget-input').value
+                    modal.querySelector('#budget-input').value
                 )
                 if (!isNaN(amount) && amount >= 0) {
                     // Update any changed amounts that didn't trigger 'change' event yet
@@ -713,8 +738,8 @@ export class BudgetManager {
                 }
             })
 
-        document
-            .getElementById('cancel-budget-btn')
+        modal
+            .querySelector('#cancel-budget-btn')
             .addEventListener('click', () => {
                 this.closeBudgetModal()
             })
@@ -728,8 +753,17 @@ export class BudgetManager {
 
         // 自動聚焦輸入框
         setTimeout(() => {
-            document.getElementById('budget-input').focus()
+            const inputEl = modal.querySelector('#budget-input')
+            if (inputEl) inputEl.focus()
         }, 100)
+    }
+
+    checkBudgetWarning(budgetAmount, categoryBudgets) {
+        let totalCategoryBudget = 0
+        for (const amount of Object.values(categoryBudgets)) {
+            totalCategoryBudget += amount
+        }
+        return totalCategoryBudget > budgetAmount && budgetAmount > 0
     }
 
     closeBudgetModal() {
