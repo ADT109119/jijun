@@ -147,6 +147,7 @@
 
 ## 更新歷史
 
+- **2026-07-09**: Code Review main.js — 發現 2 HIGH (PWA Share Target XSS 風險已確認下游有 escapeHTML、SW 自動重載可能丟失使用者資料)、4 MEDIUM (MAX_ITERATIONS 硬編碼、processAmortizations N+1 查詢、updateSidebarLedger inline style 主題不一致、showLedgerSwitcherPopup icon 未做 XSS 驗證)、4 LOW；修復 ESLint no-useless-escape 錯誤 ([\$￥]→[$￥])；產出 code-review-main-2026-07-09.md；708 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#51/#49/#48/#14/#8) 無變化；#U07 跨月比較報表已完成
 - **2026-07-08**: Code Review budgetManager.js — 發現 2 HIGH (NaN 污染預算計算、事件監聽器綁定方式)、4 MEDIUM (getCategoryById 重複呼叫、SortableJS 全量重建、localStorage 失敗未處理、排除類別未去重)、4 LOW (categoryBudgetOrder fallback 註解、checkBudgetWarning 可提取、水波動畫邊界、測試 mock key 欄位不一致)；產出 code-review-budgetManager-2026-07-08.md；703 tests 全過、ESLint 乾淨；GitHub: 78 stars, 6 open issues (#51/#49/#48/#14/#9/#8) 無變化；v2.1.6.2 owner commit 包含插件深色模式修復（#51）、多帳本同步隔離、PWA Widget 本地時區
 - **2026-07-08**: v2.1.6.0 發布 (owner commit) — PWA 進階能力：防重複啟動、外部分享記帳、Windows 桌面小工具、Service Worker 強化、manifest.json 更新、新增 icon-512.png 與截圖；GitHub: 78 stars, 6 open issues (新增 #51 小工具深色模式問題)；703 tests 全過、ESLint 乾淨；昨日 Code Review pluginManager.js 產出報告 (2 HIGH, 4 MEDIUM, 4 LOW)
 - **2026-07-07**: Code Review pluginManager.js — 發現 2 HIGH (importScripts 繞過沙盒、Blob URL 沙盒逃逸)、4 MEDIUM (腳本大小限制、getRecords 參數、Hook 數量限制、PluginStorage 清理)、4 LOW (版本比較 semver、權限邏輯簡化、屬性命名、z-index)；產出 code-review-pluginManager-2026-07-07.md；703 tests 全過、ESLint 乾淨；GitHub: 77 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；MOZE 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；網路調研無新 issue
