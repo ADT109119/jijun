@@ -186,7 +186,7 @@ class EasyAccountingApp {
             // Requires either prefix indicator (e.g., 消費, NT$) OR suffix indicator (元, 元整) to avoid false positives on arbitrary numbers
             let amount = ''
             const amountRegex =
-                /(?:(?:消費|金額|扣款|刷卡|支付|NT\$|TWD|USD|[\$￥])\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:元|元整))/i
+                /(?:(?:消費|金額|扣款|刷卡|支付|NT\$|TWD|USD|[$￥])\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:元|元整))/i
             const match = combinedText.match(amountRegex)
             if (match) {
                 amount = (match[1] || match[2]).replace(/,/g, '')
