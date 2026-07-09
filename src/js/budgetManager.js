@@ -505,8 +505,11 @@ export class BudgetManager {
 
         renderExcludeCategoriesList()
 
-        const renderCategoryBudgetList = () => {
-            categoryBudgetsList.innerHTML = ''
+        const renderCategoryBudgetList = (fullRebuild = true) => {
+            if (fullRebuild) {
+                categoryBudgetsList.innerHTML = ''
+            }
+
             if (Object.keys(workingCategoryBudgets).length === 0) {
                 categoryBudgetsList.innerHTML =
                     '<div class="text-center text-sm text-wabi-text-secondary py-2">無設定分類預算</div>'
@@ -517,11 +520,99 @@ export class BudgetManager {
                 return
             }
 
-            // Render based on order
+            // Incremental mode: update only changed items, preserve SortableJS
+            if (!fullRebuild) {
+                const currentIds = new Set(Array.from(categoryBudgetsList.querySelectorAll('.cat-budget-item-row')).map(el => el.dataset.id))
+                const targetIds = new Set(Object.keys(workingCategoryBudgets))
+
+                // Remove items no longer in workingCategoryBudgets
+                currentIds.forEach(id => {
+                    if (!targetIds.has(id)) {
+                        const row = categoryBudgetsList.querySelector(`.cat-budget-item-row[data-id="${id}"]`)
+                        if (row) row.remove()
+                    }
+                })
+
+                // Update or add items
+                workingCategoryBudgetOrder.forEach(catId => {
+                    if (workingCategoryBudgets[catId] === undefined) return
+                    let catName = catId
+                    let catIcon = ''
+                    if (window.app && window.app.categoryManager) {
+                        const cat = window.app.categoryManager.getCategoryById('expense', catId)
+                        if (cat) { catName = cat.name; catIcon = cat.icon }
+                    }
+
+                    let row = categoryBudgetsList.querySelector(`.cat-budget-item-row[data-id="${catId}"]`)
+                    if (row) {
+                        row.querySelector('.cat-budget-amt').value = workingCategoryBudgets[catId]
+                        return
+                    }
+
+                    row = document.createElement('div')
+                    row.className = 'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border cat-budget-item-row'
+                    row.dataset.id = catId
+                    row.innerHTML = `
+          <div class="cursor-grab text-wabi-text-secondary w-6 flex items-center justify-center hover:text-wabi-primary sort-handle">
+            <i class="fas fa-grip-vertical"></i>
+          </div>
+          <div class="flex-shrink-0 w-6 text-center"><i class="${catIcon} text-wabi-text-secondary"></i></div>
+          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${escapeHTML(catName)}</div>
+          <div class="flex-col w-28">
+            <input type="number" data-id="${catId}" value="${workingCategoryBudgets[catId]}" min="0" step="100" class="cat-budget-amt w-full bg-transparent border-b border-wabi-border focus:border-wabi-accent outline-none text-right px-1 py-1 text-sm text-wabi-text-primary">
+          </div>
+          <button class="remove-cat-budget text-wabi-border hover:text-wabi-expense p-1 rounded transition-colors" data-id="${catId}">
+            <i class="fas fa-times"></i>
+          </button>
+        `
+                    // Find insertion index to respect custom order
+                    const existing = Array.from(categoryBudgetsList.querySelectorAll('.cat-budget-item-row'))
+                    let inserted = false
+                    for (const existingRow of existing) {
+                        const existingId = existingRow.dataset.id
+                        const existingIdx = workingCategoryBudgetOrder.indexOf(existingId)
+                        if (existingIdx > workingCategoryBudgetOrder.indexOf(catId)) {
+                            categoryBudgetsList.insertBefore(row, existingRow)
+                            inserted = true
+                            break
+                        }
+                    }
+                    if (!inserted) categoryBudgetsList.appendChild(row)
+                })
+
+                // Bind events for new elements only
+                categoryBudgetsList.querySelectorAll('.cat-budget-amt:not([data-bound])').forEach(el => {
+                    el.setAttribute('data-bound', '1')
+                    el.addEventListener('change', e => {
+                        const id = e.target.getAttribute('data-id')
+                        const val = parseFloat(e.target.value)
+                        if (!isNaN(val) && val >= 0) {
+                            workingCategoryBudgets[id] = val
+                            checkBudgetWarning()
+                        }
+                    })
+                })
+
+                categoryBudgetsList.querySelectorAll('.remove-cat-budget:not([data-bound])').forEach(el => {
+                    el.setAttribute('data-bound', '1')
+                    el.addEventListener('click', e => {
+                        const id = e.currentTarget.getAttribute('data-id')
+                        delete workingCategoryBudgets[id]
+                        workingCategoryBudgetOrder = workingCategoryBudgetOrder.filter(catId => catId !== id)
+                        renderCategoryBudgetList(false)
+                        checkBudgetWarning()
+                    })
+                })
+
+                return
+            }
+
+            // Full rebuild path (initial render or explicit rebuild)
+            categoryBudgetsList.innerHTML = ''
+
             const itemsToRender = workingCategoryBudgetOrder.filter(
                 id => workingCategoryBudgets[id] !== undefined
             )
-            // Append any trailing items that somehow missed the order array
             Object.keys(workingCategoryBudgets).forEach(id => {
                 if (!itemsToRender.includes(id)) itemsToRender.push(id)
             })
@@ -585,7 +676,7 @@ export class BudgetManager {
                             workingCategoryBudgetOrder.filter(
                                 catId => catId !== id
                             )
-                        renderCategoryBudgetList()
+                        renderCategoryBudgetList(false)
                         checkBudgetWarning()
                     })
                 })
@@ -601,7 +692,7 @@ export class BudgetManager {
                 onEnd: () => {
                     const newOrder = Array.from(categoryBudgetsList.children)
                         .map(row => row.dataset.id)
-                        .filter(id => id) // Filter out the add placeholder
+                        .filter(id => id)
                     workingCategoryBudgetOrder = newOrder
                 },
             })
