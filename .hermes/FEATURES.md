@@ -44,7 +44,7 @@
 ## 待開發
 
 ### 高優先級 (P1)
-- [ ] **#U07 跨月比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 四個階段全部完成 (2026-06-21 完成第四階段，2026-06-23 Code Review 確認所有改善項已修復)
+- [x] **#U07 跨月比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 四個階段全部完成 (2026-06-21 完成第四階段，2026-06-23 Code Review 確認所有改善項已修復)
 - [ ] **#U02 純自架後端雲端備份** — 不依賴 Google Drive，提供自架後端作為備份/同步目標
 - [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示
 - [ ] **#P01 週期性交易跨裝置同步問題** — 多裝置修改/刪除週期性交易時會互相覆蓋設定，導致重複紀錄和大量自動記帳記錄（需調查 recurring_transactions 的 UUID 同步機制與衝突處理）
@@ -97,6 +97,9 @@
 - MOZE v4.1.27+ (2026/6/30+) — 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；交易明細預覽統計面板 (平均、中位數、最高/最低)；搜尋支援輸入幣種篩選
 - MOZE 比較報表詳情 — 多維度表格分析，可交叉比對分類×時間段，支援變化率顯示
 - MOZE iPad 版 — 大螢幕重新設計，跨裝置即時同步
+- MOZE v4.1.28+ (2026/7/8 更新) — iOS 26.0/26.0.1 相容性修補、年度週期事件建立修復、明細報表折線圖餘額調整正負區分
+- Firefly III v6.6.6 (2026-07-10 開發版) — 持續翻譯和修補更新
+- Actual Budget (2026-07 更新) — 多 dashboard 頁面、自訂主題、可設定平均範圍的月度支出報表、標籤顯示/隱藏支援
 - Actual Budget (2026-06-22 調研) — 2026 Roadmap: OIDC/multi-user、多新報表類型、schedules 可調時框、NPM sync package、年度預算差異報表
 - MOZE 定價趨勢 — 2026/1/1 起專業版訂閱價格上調，4.0 功能期免費延長至 2025/12/31
 - Akaunting (2026-06-14 調研) — 開源帳務軟體，支援發票、多帳本、雲端同步
@@ -136,8 +139,8 @@
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
-| #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Open | 深色模式下小工具背景仍為白色 |
-| #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | PWA 載入 2-5 秒空白等待、骨架畫面 ⏳ 研究中；計算機式鍵盤 ✅ 已實作 (v2.1.5.7) |
+| #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Closed ✅ (2026-07-09) | v2.1.6.2 已修復 (commit 9fa42d7) |
+| #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | 骨架畫面 ✅ 已實作 (v2.1.6.x)；計算機式鍵盤 ✅ 已實作 (v2.1.5.7)；PWA 載入 2-5 秒空白已改善 |
 | #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
@@ -147,10 +150,12 @@
 
 ## 更新歷史
 
-- **2026-07-12**: Code Review main.js 改善 (M04/H02/L02/M01) — M04: showLedgerSwitcherPopup icon XSS 防護；H02: SW reload 資料保護；L02: SW 更新 showToast；M01: MAX_ITERATIONS 提取常數；708 tests 全過、ESLint 乾淨
+- **2026-07-12**: 新增 amortizationModal.js 單元測試 (36 tests，總計 744)；ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
+- **2026-07-12**: 新增 amortizationModal.js 單元測試；網路調研：Issue #51 已關閉（v2.1.6.2 修復），GitHub 剩 4 open issues (#49/#48/#14/#8)；MOZE v4.1.28 iOS 相容修補；Firefly III v6.6.6 開發版；Actual Budget 可設定平均範圍月度支出報表
 - **2026-07-12**: Code Review main.js 改善 (M02/M03) — M02: processAmortizations N+1 查詢優化 (迴圈外 batch 載入 records 按 amortizationId 分組)；M03: updateSidebarLedger inline style 改為 CSS custom property (--ledger-color)；708 tests 全過、ESLint 乾淨
 - **2026-07-12**: Code Review 回饋修復 (R01-R04) — R01: SW reload confirm 取消 refreshing 旗標重置；R02: color inline style hex 驗證；R03: 合併重複 import；R04: SW update toast 文字修正；708 tests 全過、ESLint 乾淨
 - **2026-07-12**: Antigravity CLI code review 回饋 — icon regex XSS 修復 (\S+ 改為 fa-[a-zA-Z0-9-]+)；color regex 僅允許 3/4/6/8 位數 hex；708 tests 全過、ESLint 乾淨
+- **2026-07-12**: 實作 PWA 骨架畫面 (Issue #49) — index.html 加入骨架 HTML（導航/結餘卡片/最近紀錄），內建 animate-pulse 動畫，dark mode 支援；JS 載入完成後由 innerHTML 自動取代；708 tests 全過、ESLint 乾淨
 - **2026-07-09**: Code Review main.js — 發現 2 HIGH (PWA Share Target XSS 風險已確認下游有 escapeHTML、SW 自動重載可能丟失使用者資料)、4 MEDIUM (MAX_ITERATIONS 硬編碼、processAmortizations N+1 查詢、updateSidebarLedger inline style 主題不一致、showLedgerSwitcherPopup icon 未做 XSS 驗證)、4 LOW；修復 ESLint no-useless-escape 錯誤 ([\$￥]→[$￥])；產出 code-review-main-2026-07-09.md；708 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#51/#49/#48/#14/#8) 無變化；#U07 跨月比較報表已完成
 - **2026-07-08**: Code Review budgetManager.js — 發現 2 HIGH (NaN 污染預算計算、事件監聽器綁定方式)、4 MEDIUM (getCategoryById 重複呼叫、SortableJS 全量重建、localStorage 失敗未處理、排除類別未去重)、4 LOW (categoryBudgetOrder fallback 註解、checkBudgetWarning 可提取、水波動畫邊界、測試 mock key 欄位不一致)；產出 code-review-budgetManager-2026-07-08.md；703 tests 全過、ESLint 乾淨；GitHub: 78 stars, 6 open issues (#51/#49/#48/#14/#9/#8) 無變化；v2.1.6.2 owner commit 包含插件深色模式修復（#51）、多帳本同步隔離、PWA Widget 本地時區
 - **2026-07-08**: v2.1.6.0 發布 (owner commit) — PWA 進階能力：防重複啟動、外部分享記帳、Windows 桌面小工具、Service Worker 強化、manifest.json 更新、新增 icon-512.png 與截圖；GitHub: 78 stars, 6 open issues (新增 #51 小工具深色模式問題)；703 tests 全過、ESLint 乾淨；昨日 Code Review pluginManager.js 產出報告 (2 HIGH, 4 MEDIUM, 4 LOW)
