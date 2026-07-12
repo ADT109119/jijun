@@ -4,6 +4,7 @@ import {
     calculateNextDueDate,
     shouldSkipDate,
     calculateAmortizationDetails,
+    MAX_ITERATIONS,
 } from './utils.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
@@ -17,7 +18,7 @@ import { RewardService } from './rewardService.js'
 import { NotificationService } from './notificationService.js'
 import { ThemeManager } from './themeManager.js'
 import { Router } from './router.js'
-import { escapeHTML } from './utils.js'
+import { escapeHTML, showToast } from './utils.js'
 
 import { HomePage } from './pages/homePage.js'
 import { AddPage } from './pages/addPage.js'
@@ -223,7 +224,6 @@ class EasyAccountingApp {
                 let { nextDueDate } = tx
 
                 let iterations = 0
-                const MAX_ITERATIONS = 365 // 安全上限：避免無限迴圈
 
                 while (
                     nextDueDate &&
@@ -298,7 +298,6 @@ class EasyAccountingApp {
 
                 let { nextDueDate, completedPeriods } = item
                 let iterations = 0
-                const MAX_ITERATIONS = 365
 
                 while (
                     nextDueDate &&
@@ -422,7 +421,20 @@ class EasyAccountingApp {
                     () => {
                         if (refreshing) return
                         refreshing = true
-                        window.location.reload()
+                        // Check if user is actively editing a form to avoid losing data
+                        const activeEl = document.activeElement
+                        const isEditing = activeEl && (
+                            activeEl.tagName === 'INPUT' ||
+                            activeEl.tagName === 'TEXTAREA' ||
+                            activeEl.isContentEditable
+                        )
+                        if (isEditing && activeEl.value) {
+                            if (confirm('應用程式有新版本可用，但您有未儲存的資料。確定要重新載入嗎？')) {
+                                window.location.reload()
+                            }
+                        } else {
+                            window.location.reload()
+                        }
                     }
                 )
 
@@ -433,15 +445,7 @@ class EasyAccountingApp {
                             newWorker.state === 'installed' &&
                             navigator.serviceWorker.controller
                         ) {
-                            // Show update notification via SettingsPage helper if possible,
-                            // or just ignore here as SettingsPage handles manual check.
-                            // The original code called this.showUpdateAvailable(registration)
-                            // which was in main.js. I moved it to SettingsPage.
-                            // If we want auto-notification, we might need a global toast or something.
-                            // For now, I'll omit it or implement a simple toast.
-                            console.log(
-                                'New content is available; please refresh.'
-                            )
+                            showToast('有新版本可用，點擊刷新以更新', 'info', 5000)
                         }
                     })
                 })
@@ -504,7 +508,7 @@ class EasyAccountingApp {
                             ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
                             <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
-                                <i class="${l.icon || 'fa-solid fa-book'}"></i>
+                                <i class="${/^fa-(solid|regular|brands)\s+\S+$/.test(l.icon) ? l.icon : 'fa-solid fa-book'}"></i>
                             </div>
                             <div class="flex-1 min-w-0 text-left flex flex-col justify-center">
                                 <div class="flex items-center gap-1.5">
