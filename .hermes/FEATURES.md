@@ -150,7 +150,7 @@
 
 ## 更新歷史
 
-- **2026-07-12**: 新增 amortizationModal.js 單元測試 (36 tests，總計 744)；ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
+- **2026-07-12**: 新增 changelog.js 單元測試 (47 tests，總計 791)；ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-12**: 新增 amortizationModal.js 單元測試；網路調研：Issue #51 已關閉（v2.1.6.2 修復），GitHub 剩 4 open issues (#49/#48/#14/#8)；MOZE v4.1.28 iOS 相容修補；Firefly III v6.6.6 開發版；Actual Budget 可設定平均範圍月度支出報表
 - **2026-07-12**: Code Review main.js 改善 (M02/M03) — M02: processAmortizations N+1 查詢優化 (迴圈外 batch 載入 records 按 amortizationId 分組)；M03: updateSidebarLedger inline style 改為 CSS custom property (--ledger-color)；708 tests 全過、ESLint 乾淨
 - **2026-07-12**: Code Review 回饋修復 (R01-R04) — R01: SW reload confirm 取消 refreshing 旗標重置；R02: color inline style hex 驗證；R03: 合併重複 import；R04: SW update toast 文字修正；708 tests 全過、ESLint 乾淨
