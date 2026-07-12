@@ -292,6 +292,19 @@ class EasyAccountingApp {
             allLedgers: true,
         })
 
+        // 預先載入所有 records，按 amortizationId 分組 — 避免迴圈內 N+1 查詢
+        const allRecords = await this.dataService.getRecords({
+            allLedgers: true,
+        })
+        const recordsByAmortId = new Map()
+        for (const r of allRecords) {
+            if (r.amortizationId !== null && r.amortizationId !== undefined) {
+                const list = recordsByAmortId.get(r.amortizationId) || []
+                list.push(r)
+                recordsByAmortId.set(r.amortizationId, list)
+            }
+        }
+
         for (const item of items) {
             try {
                 if (item.status !== 'active') continue
@@ -327,10 +340,7 @@ class EasyAccountingApp {
                             )
 
                         const historyRecords =
-                            await this.dataService.getRecords({
-                                amortizationId: item.id,
-                                allLedgers: true,
-                            })
+                            recordsByAmortId.get(item.id) || []
                         const actualPaidSoFar = historyRecords.reduce(
                             (sum, r) => sum + r.amount,
                             0
@@ -464,12 +474,9 @@ class EasyAccountingApp {
         const iconEl = document.getElementById('sidebar-ledger-icon')
         const nameEl = document.getElementById('sidebar-ledger-name')
         if (iconEl) {
-            // Check if there is an active theme applied. If there is, let CSS variables or theme icons handle it
-            // if we are using specific CSS classes. Alternatively, since Ledger color is an entity property,
-            // we should just apply the entity color. Wait, if we are in dark mode, hardcoded colors might clash,
-            // but the user's issue was "Sidebar background color didn't revert/adjust properly".
-            // Let's ensure we use the entity's ledger color, but we don't mess with the rest of the sidebar's CSS.
-            iconEl.style.backgroundColor = ledger.color || '#334A52'
+            // Use CSS custom property so theme system can override the ledger color
+            iconEl.style.setProperty('--ledger-color', ledger.color || '#334A52')
+            iconEl.style.backgroundColor = 'var(--ledger-color)'
             const safeIcon = /^fa-(solid|regular|brands)\s+\S+$/.test(
                 ledger.icon
             )
