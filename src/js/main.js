@@ -5,6 +5,8 @@ import {
     shouldSkipDate,
     calculateAmortizationDetails,
     MAX_ITERATIONS,
+    escapeHTML,
+    showToast,
 } from './utils.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
@@ -18,7 +20,6 @@ import { RewardService } from './rewardService.js'
 import { NotificationService } from './notificationService.js'
 import { ThemeManager } from './themeManager.js'
 import { Router } from './router.js'
-import { escapeHTML, showToast } from './utils.js'
 
 import { HomePage } from './pages/homePage.js'
 import { AddPage } from './pages/addPage.js'
@@ -441,6 +442,8 @@ class EasyAccountingApp {
                         if (isEditing && activeEl.value) {
                             if (confirm('應用程式有新版本可用，但您有未儲存的資料。確定要重新載入嗎？')) {
                                 window.location.reload()
+                            } else {
+                                refreshing = false // 使用者取消，重置旗標讓下次可正常更新
                             }
                         } else {
                             window.location.reload()
@@ -455,7 +458,7 @@ class EasyAccountingApp {
                             newWorker.state === 'installed' &&
                             navigator.serviceWorker.controller
                         ) {
-                            showToast('有新版本可用，點擊刷新以更新', 'info', 5000)
+                            showToast('新版本可用，請重新整理頁面', 'info', 8000)
                         }
                     })
                 })
@@ -514,7 +517,7 @@ class EasyAccountingApp {
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
                             ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
-                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
+                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${/^#[0-9a-fA-F]{3,8}$/.test(l.color) ? l.color : '#334A52'}">
                                 <i class="${/^fa-(solid|regular|brands)\s+\S+$/.test(l.icon) ? l.icon : 'fa-solid fa-book'}"></i>
                             </div>
                             <div class="flex-1 min-w-0 text-left flex flex-col justify-center">
