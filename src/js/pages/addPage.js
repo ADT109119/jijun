@@ -8,10 +8,12 @@ import {
     customConfirm,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
+import { AIService } from '../aiService.js'
 
 export class AddPage {
     constructor(app) {
         this.app = app
+        this.aiService = new AIService(this.app.dataService)
         this._keypadListener = null
     }
 
@@ -109,6 +111,15 @@ export class AddPage {
                                         ? `
                                     <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
                                         <i class="fa-solid fa-credit-card text-lg"></i>
+                                    </button>
+                                `
+                                        : ''
+                                }
+                                ${
+                                    !isEditMode
+                                        ? `
+                                    <button id="ai-entry-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-primary/10" title="AI 語音/文字記帳">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
                                     </button>
                                 `
                                         : ''
@@ -1515,8 +1526,186 @@ export class AddPage {
         return `
             <button data-key="${key}" class="keypad-btn text-xl py-2 text-center rounded-none transition-colors touch-manipulation duration-200 ease-in-out ${specialClasses} hover:bg-black/5">
                 ${content}
-            </button>
-        `
+        // --- AI 語意記帳整合 (僅在新增模式下啟用) ---
+        const aiBtn = document.getElementById('ai-entry-btn')
+        if (aiBtn) {
+            aiBtn.addEventListener('click', () => {
+                const aiModal = document.createElement('div')
+                aiModal.id = 'ai-entry-modal'
+                aiModal.className = 'fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm'
+                
+                aiModal.innerHTML = `
+                    <div class="bg-wabi-surface rounded-2xl w-full max-w-md p-6 border border-wabi-border flex flex-col gap-4 shadow-2xl text-wabi-text-primary">
+                        <div class="flex items-center justify-between border-b border-wabi-border pb-3">
+                            <h3 class="text-lg font-bold text-wabi-primary flex items-center gap-2">
+                                <i class="fa-solid fa-wand-magic-sparkles text-wabi-accent"></i>AI 語意記帳
+                            </h3>
+                            <button id="close-ai-modal" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1">
+                                <i class="fa-solid fa-xmark text-lg"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-wabi-text-secondary">直接輸入或用語音說出記帳內容，AI 將自動為您解析金額、分類、帳戶與備註。</p>
+                        
+                        <textarea id="ai-text-input" class="w-full h-24 p-3 bg-wabi-bg border border-wabi-border rounded-xl resize-none focus:border-wabi-primary focus:ring-wabi-primary text-sm placeholder:text-wabi-text-secondary" placeholder="例如：今天中午吃麥當勞花了 150 元，用信用卡付的"></textarea>
+                        
+                        <div class="flex items-center gap-3">
+                            <button id="ai-mic-btn" class="size-12 shrink-0 rounded-xl bg-wabi-primary/10 text-wabi-primary flex items-center justify-center transition-all hover:bg-wabi-primary/20" title="語音輸入">
+                                <i class="fa-solid fa-microphone text-lg"></i>
+                            </button>
+                            <button id="ai-parse-btn" class="flex-1 h-12 bg-wabi-accent text-wabi-primary rounded-xl font-bold hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-brain"></i>
+                                <span>AI 解析</span>
+                            </button>
+                        </div>
+                        <div id="ai-status-msg" class="text-center text-xs text-wabi-text-secondary hidden"></div>
+                    </div>
+                `
+                document.body.appendChild(aiModal)
+
+                const textInput = aiModal.querySelector('#ai-text-input')
+                const micBtn = aiModal.querySelector('#ai-mic-btn')
+                const parseBtn = aiModal.querySelector('#ai-parse-btn')
+                const closeBtn = aiModal.querySelector('#close-ai-modal')
+                const statusMsg = aiModal.querySelector('#ai-status-msg')
+
+                textInput.focus()
+
+                // 關閉 Modal
+                const closeModal = () => aiModal.remove()
+                closeBtn.addEventListener('click', closeModal)
+                aiModal.addEventListener('click', e => {
+                    if (e.target === aiModal) closeModal()
+                })
+
+                // Web Speech API 語音辨識
+                let recognition = null
+                let isRecording = false
+                if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
+                    recognition = new SpeechRec()
+                    recognition.continuous = false
+                    recognition.lang = 'zh-TW'
+                    recognition.interimResults = false
+
+                    recognition.onstart = () => {
+                        isRecording = true
+                        micBtn.classList.remove('bg-wabi-primary/10', 'text-wabi-primary')
+                        micBtn.classList.add('bg-red-500', 'text-white', 'animate-pulse')
+                        statusMsg.textContent = '正在聆聽中，請說話...'
+                        statusMsg.classList.remove('hidden')
+                    }
+
+                    recognition.onend = () => {
+                        isRecording = false
+                        micBtn.classList.add('bg-wabi-primary/10', 'text-wabi-primary')
+                        micBtn.classList.remove('bg-red-500', 'text-white', 'animate-pulse')
+                        statusMsg.classList.add('hidden')
+                    }
+
+                    recognition.onresult = event => {
+                        const transcript = event.results[0][0].transcript
+                        textInput.value = (textInput.value + ' ' + transcript).trim()
+                    }
+
+                    recognition.onerror = event => {
+                        console.error('語音辨識錯誤:', event.error)
+                        showToast('語音辨識出錯: ' + event.error, 'error')
+                    }
+                } else {
+                    micBtn.classList.add('opacity-40', 'cursor-not-allowed')
+                    micBtn.title = '您的瀏覽器不支援語音辨識'
+                }
+
+                micBtn.addEventListener('click', () => {
+                    if (!recognition) {
+                        showToast('此裝置不支援語音輸入，請使用鍵盤輸入', 'warning')
+                        return
+                    }
+                    if (isRecording) {
+                        recognition.stop()
+                    } else {
+                        recognition.start()
+                    }
+                })
+
+                // 解析按鈕
+                parseBtn.addEventListener('click', async () => {
+                    const text = textInput.value.trim()
+                    if (!text) {
+                        showToast('請先輸入或說出記帳內容！', 'warning')
+                        return
+                    }
+
+                    parseBtn.disabled = true
+                    parseBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> <span>解析中...</span>'
+                    statusMsg.textContent = 'AI 正在解析您的交易資料...'
+                    statusMsg.classList.remove('hidden')
+
+                    try {
+                        // 1. 動態取得當前的分類與帳戶名稱清單
+                        const activeCategories = this.app.categoryManager.getAllCategories(currentType).map(c => c.name)
+                        const accountNames = accounts.map(a => a.name)
+
+                        // 2. 呼叫 aiService 推論與解析
+                        const parsed = await this.aiService.parseRecord(text, activeCategories, accountNames)
+
+                        // 3. 欄位填入與 UI 更新
+                        if (parsed.type) {
+                            currentType = parsed.type
+                            updateTypeUI() // 切換收支類型並重繪分類
+                        }
+
+                        if (parsed.amount) {
+                            currentAmount = parsed.amount.toString()
+                            if (amountDisplay) {
+                                amountDisplay.textContent = formatCurrency(currentAmount)
+                            }
+                        }
+
+                        if (parsed.description && noteInput) {
+                            noteInput.value = parsed.description
+                        }
+
+                        // 匹配並選定分類
+                        if (parsed.category) {
+                            const allCategories = this.app.categoryManager.getAllCategories(currentType)
+                            const matchedCat = allCategories.find(c => c.name === parsed.category)
+                            if (matchedCat) {
+                                selectedCategory = matchedCat.id
+                                updateSelectedCategoryUI(matchedCat)
+                                renderCategories()
+                            }
+                        }
+
+                        // 匹配並選定帳戶 (多帳戶模式下)
+                        if (parsed.account && advancedModeEnabled) {
+                            const matchedAcc = accounts.find(a => a.name === parsed.account)
+                            if (matchedAcc) {
+                                selectedAccountId = matchedAcc.id
+                                updateAccountSelectorUI()
+                            }
+                        }
+
+                        showToast('AI 記帳解析成功！已自動為您填妥欄位。')
+                        closeModal()
+                    } catch (err) {
+                        console.error('AI 解析出錯:', err)
+                        
+                        // 4. 容錯降級：嘗試從輸入中用正則極限捕獲金額，至少預填入 UI，引導用戶檢查
+                        const amountMatch = text.match(/\d+/)
+                        if (amountMatch) {
+                            currentAmount = amountMatch[0]
+                            if (amountDisplay) {
+                                amountDisplay.textContent = formatCurrency(currentAmount)
+                            }
+                        }
+                        
+                        showToast('AI 解析未完全成功，已為您預填部分欄位，請手動校對與補全資料。', 'warning')
+                        closeModal()
+                    }
+                })
+            })
+        }
     }
 
     showAccountSelectionModal(accounts, currentAccountId, onSelect) {
