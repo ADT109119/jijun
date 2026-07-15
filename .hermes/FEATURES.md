@@ -140,7 +140,7 @@
 |-------|------|------|------|
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
 | #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Closed ✅ (2026-07-09) | v2.1.6.2 已修復 (commit 9fa42d7) |
-| #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | 骨架畫面 ✅ 已實作 (v2.1.6.x)；計算機式鍵盤 ✅ 已實作 (v2.1.5.7)；PWA 載入 2-5 秒空白已改善 |
+| #49 | 手機 PWA 載入速度優化 (yanggu0413) | Open | 骨架畫面 ✅ 已實作 (v2.1.6.x)；計算機式鍵盤 ✅ 已實作 (v2.1.5.7)；**兩項核心需求已完成，建議關閉** |
 | #48 | 優化記帳輸入體驗、行事曆檢視、交通票價試算 (Lucas-Weii) | Open | 行事曆金流檢視、小算盤輸入、大眾運輸票價試算 |
 | #14 | 建議功能 (isaswa) | Open | 多幣種 ✅ 已排程 #U03、分期 ✅ 已涵蓋 (amortizations)、信用卡資料層 ✅ Schema v13 |
 | #9 | UI 改動建議 (hyaoang) | Open | 分類排序 ✅ 已實作、問號圖示 ⏳ 排程中、鍵盤改版 ❌ 暫不修改 |
@@ -150,7 +150,8 @@
 
 ## 更新歷史
 
-- **2026-07-12**: 新增 changelog.js 單元測試 (47 tests，總計 791)；ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
+- **2026-07-15**: Code Review statistics.js — 發現 2 HIGH (renderTopExpenses XSS: r.description 未 escapeHTML、帳戶餘額 N+1 查詢)、3 MEDIUM (Tailwind→Hex 顏色映射重複 DRY violation、趨勢圖硬編碼顏色不支援深色主題、熱力圖 toISOString UTC 時區偏移)、4 LOW (技術債註記、destroy 未清除事件監聽器、空值檢查、測試覆蓋不足)；產出 code-review-statistics-2026-07-15.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；Firefly III v6.6.3 穩定版；Actual Budget 26.7.0 穩定版
+- **2026-07-15**: 每日晨報 — 791 tests 全過；Git working tree clean；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作，建議關閉；#48 小算盤功能與 #49 計算機鍵盤為同功能
 - **2026-07-12**: 新增 amortizationModal.js 單元測試；網路調研：Issue #51 已關閉（v2.1.6.2 修復），GitHub 剩 4 open issues (#49/#48/#14/#8)；MOZE v4.1.28 iOS 相容修補；Firefly III v6.6.6 開發版；Actual Budget 可設定平均範圍月度支出報表
 - **2026-07-12**: Code Review main.js 改善 (M02/M03) — M02: processAmortizations N+1 查詢優化 (迴圈外 batch 載入 records 按 amortizationId 分組)；M03: updateSidebarLedger inline style 改為 CSS custom property (--ledger-color)；708 tests 全過、ESLint 乾淨
 - **2026-07-12**: Code Review 回饋修復 (R01-R04) — R01: SW reload confirm 取消 refreshing 旗標重置；R02: color inline style hex 驗證；R03: 合併重複 import；R04: SW update toast 文字修正；708 tests 全過、ESLint 乾淨
