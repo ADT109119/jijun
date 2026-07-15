@@ -306,5 +306,17 @@ select option {
     body.is-capacitor-native [class*="sticky"][class*="top-0"] {
         top: env(safe-area-inset-top, 0px) !important;
     }
+
+    /* 狀態列防穿模遮罩：擋住往上滾動穿透狀態列的內容 */
+    body.is-capacitor-native::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-top, 0px);
+        background-color: rgb(var(--theme-bg, 245 245 243));
+        z-index: 40; /* 位於滾動內容之上，但低於 Modal 與 Toast */
+    }
 }
 

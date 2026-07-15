@@ -19,6 +19,7 @@ import { NotificationService } from './notificationService.js'
 import { ThemeManager } from './themeManager.js'
 import { Router } from './router.js'
 import { escapeHTML } from './utils.js'
+import { updateAndroidWidget } from './widgetHelper.js'
 
 import { HomePage } from './pages/homePage.js'
 import { AddPage } from './pages/addPage.js'
@@ -42,6 +43,11 @@ import { LicensePage } from './pages/licensePage.js'
 
 class EasyAccountingApp {
     constructor() {
+        const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+        if (isNative) {
+            document.body.classList.add('is-capacitor-native');
+        }
+
         this.dataService = new DataService()
         this.categoryManager = new CategoryManager(this.dataService)
         this.changelogManager = new ChangelogManager()
@@ -214,9 +220,7 @@ class EasyAccountingApp {
         // 偵測並設定 Capacitor 原生環境
         const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
         if (isNative) {
-            document.body.classList.add('is-capacitor-native');
-
-            // 處理 Capacitor Android 實體返回鍵
+            // 處理 Capacitor Android 實體返回鍵與 Deep Link
             import('@capacitor/app').then(({ App }) => {
                 let lastBackTime = 0;
                 App.addListener('backButton', () => {
@@ -239,7 +243,75 @@ class EasyAccountingApp {
                         }, 100);
                     }
                 });
+
+                // 處理冷啟動 Deep Link (從 Widget 啟動)
+                App.getLaunchUrl().then((launchUrlObj) => {
+                    if (launchUrlObj && launchUrlObj.url) {
+                        this.handleDeepLink(launchUrlObj.url);
+                    }
+                });
+
+                // 處理熱啟動 Deep Link (從 Widget 喚醒)
+                App.addListener('appUrlOpen', (event) => {
+                    if (event && event.url) {
+                        this.handleDeepLink(event.url);
+                    }
+                });
             });
+
+            // 初始化時更新一次 Widget 資料
+            updateAndroidWidget(this.dataService, this.categoryManager, this.budgetManager);
+        }
+
+        // 每次渲染頁面完成後，同步更新 Widget 資料
+        this.pluginManager.registerHook('onPageRenderAfter', (pageName) => {
+            updateAndroidWidget(this.dataService, this.categoryManager, this.budgetManager);
+
+            // 處理小工具捷徑分類自動選取
+            if (pageName === 'add' && this.pendingWidgetCategory) {
+                const categoryId = this.pendingWidgetCategory;
+                this.pendingWidgetCategory = null; // 清除暫存
+                
+                // 等待 DOM 渲染完畢再點擊
+                setTimeout(() => {
+                    this.autoSelectCategoryOnAddPage(categoryId);
+                }, 100);
+            }
+        });
+    }
+
+    /**
+     * 處理原生 Widget 的 Deep Link 跳轉
+     * @param {string} urlStr
+     */
+    handleDeepLink(urlStr) {
+        try {
+            // 解析 deep link，例如 easyaccounting://home?widget_action=quick_add&category=food
+            const url = new URL(urlStr);
+            if (url.protocol === 'easyaccounting:') {
+                if (url.searchParams.get('widget_action') === 'quick_add') {
+                    const category = url.searchParams.get('category');
+                    if (category) {
+                        this.pendingWidgetCategory = category;
+                    }
+                    window.location.hash = '#add';
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse deep link URL:', e);
+        }
+    }
+
+    /**
+     * 自動選取記帳頁面上的類別
+     * @param {string} categoryId 
+     */
+    autoSelectCategoryOnAddPage(categoryId) {
+        const btn = document.querySelector(`.category-button[data-category-id="${categoryId}"]`);
+        if (btn) {
+            btn.click();
+        } else {
+            console.warn(`Category button for categoryId "${categoryId}" not found.`);
         }
     }
 

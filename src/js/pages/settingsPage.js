@@ -24,6 +24,7 @@ export class SettingsPage {
                         </div>
                         ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
                         ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
+                        ${this.createSettingItem('fa-solid fa-barcode', '設定發票載具', 'set-invoice-carrier-btn')}
                     
                         <!-- 深色模式快速切換 -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/30">
@@ -252,6 +253,26 @@ export class SettingsPage {
         if (manageThemesBtn) {
             manageThemesBtn.addEventListener('click', () => {
                 window.location.hash = '#themes'
+            })
+        }
+        // Invoice Carrier setting button
+        const setInvoiceCarrierBtn = document.getElementById('set-invoice-carrier-btn')
+        if (setInvoiceCarrierBtn) {
+            setInvoiceCarrierBtn.addEventListener('click', async () => {
+                const currentCarrier = localStorage.getItem('invoice_carrier_code') || ''
+                const newCarrier = prompt('請輸入發票載具號碼 (例如: /ABC1234):', currentCarrier)
+                if (newCarrier !== null) {
+                    const trimmed = newCarrier.trim()
+                    if (trimmed && !trimmed.startsWith('/')) {
+                        showToast('發票載具必須以 / 開頭！', 'error')
+                        return
+                    }
+                    localStorage.setItem('invoice_carrier_code', trimmed)
+                    showToast('發票載具設定成功！', 'success')
+                    
+                    const { updateAndroidWidget } = await import('../widgetHelper.js')
+                    updateAndroidWidget(this.app.dataService, this.app.categoryManager, this.app.budgetManager)
+                }
             })
         }
         // Ledger management button
