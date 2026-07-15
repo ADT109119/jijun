@@ -295,3 +295,16 @@ select option {
     filter: brightness(1.2);
 }
 
+/* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效，不影響手機 PWA) */
+@media (max-width: 767px) {
+    body.is-capacitor-native #app-container {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    
+    /* 調整所有 sticky top-0 的定位，使滾動時能完美停在狀態列下方 */
+    body.is-capacitor-native .sticky.top-0, 
+    body.is-capacitor-native [class*="sticky"][class*="top-0"] {
+        top: env(safe-area-inset-top, 0px) !important;
+    }
+}
+

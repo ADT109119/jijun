@@ -4,6 +4,7 @@ import {
     calculateNextDueDate,
     shouldSkipDate,
     calculateAmortizationDetails,
+    showToast,
 } from './utils.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
@@ -209,6 +210,37 @@ class EasyAccountingApp {
 
         // Start Router
         this.router.init()
+
+        // 偵測並設定 Capacitor 原生環境
+        const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+        if (isNative) {
+            document.body.classList.add('is-capacitor-native');
+
+            // 處理 Capacitor Android 實體返回鍵
+            import('@capacitor/app').then(({ App }) => {
+                let lastBackTime = 0;
+                App.addListener('backButton', () => {
+                    const hash = window.location.hash;
+                    if (!hash || hash === '#home') {
+                        const now = Date.now();
+                        if (now - lastBackTime < 2000) {
+                            App.exitApp();
+                        } else {
+                            lastBackTime = now;
+                            showToast('再按一次返回鍵退出應用', 'info');
+                        }
+                    } else {
+                        const oldHash = window.location.hash;
+                        window.history.back();
+                        setTimeout(() => {
+                            if (window.location.hash === oldHash) {
+                                window.location.hash = '#home';
+                            }
+                        }, 100);
+                    }
+                });
+            });
+        }
     }
 
     async processRecurringTransactions() {

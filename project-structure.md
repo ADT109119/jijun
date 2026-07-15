@@ -51,7 +51,7 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 
 ## 模組依賴
 
-- `main.js` → 所有模組 (中心樞紐)
+- `main.js` → 所有模組 (中心樞紐)，**動態 import** `@capacitor/app`
 - `ledgerManager.js` → `dataService.js`, `utils.js`
 - `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
 - `syncService.js` → `dataService.js`
