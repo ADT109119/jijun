@@ -7,6 +7,11 @@ export class SettingsPage {
     }
 
     async render() {
+        const isAndroidApk = typeof window !== 'undefined' && 
+                             window.Capacitor && 
+                             window.Capacitor.isNativePlatform?.() && 
+                             window.Capacitor.getPlatform?.() === 'android';
+
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <div class="flex items-center p-4 pb-2 justify-between bg-wabi-bg sticky top-0 z-10">
@@ -24,7 +29,7 @@ export class SettingsPage {
                         </div>
                         ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
                         ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
-                        ${this.createSettingItem('fa-solid fa-barcode', '設定發票載具', 'set-invoice-carrier-btn')}
+                        ${isAndroidApk ? this.createSettingItem('fa-solid fa-barcode', '設定發票載具', 'set-invoice-carrier-btn') : ''}
                     
                         <!-- 深色模式快速切換 -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/30">
@@ -258,21 +263,25 @@ export class SettingsPage {
         // Invoice Carrier setting button
         const setInvoiceCarrierBtn = document.getElementById('set-invoice-carrier-btn')
         if (setInvoiceCarrierBtn) {
-            setInvoiceCarrierBtn.addEventListener('click', async () => {
+            setInvoiceCarrierBtn.addEventListener('click', () => {
                 const currentCarrier = localStorage.getItem('invoice_carrier_code') || ''
-                const newCarrier = prompt('請輸入發票載具號碼 (例如: /ABC1234):', currentCarrier)
-                if (newCarrier !== null) {
-                    const trimmed = newCarrier.trim()
-                    if (trimmed && !trimmed.startsWith('/')) {
-                        showToast('發票載具必須以 / 開頭！', 'error')
-                        return
+                this.showInputModal(
+                    '設定發票載具',
+                    '請輸入發票載具號碼 (例如: /ABC1234):',
+                    currentCarrier,
+                    async (newCarrier) => {
+                        const trimmed = newCarrier.trim()
+                        if (trimmed && !trimmed.startsWith('/')) {
+                            showToast('發票載具必須以 / 開頭！', 'error')
+                            return
+                        }
+                        localStorage.setItem('invoice_carrier_code', trimmed)
+                        showToast('發票載具設定成功！', 'success')
+                        
+                        const { updateAndroidWidget } = await import('../widgetHelper.js')
+                        updateAndroidWidget(this.app.dataService, this.app.categoryManager, this.app.budgetManager)
                     }
-                    localStorage.setItem('invoice_carrier_code', trimmed)
-                    showToast('發票載具設定成功！', 'success')
-                    
-                    const { updateAndroidWidget } = await import('../widgetHelper.js')
-                    updateAndroidWidget(this.app.dataService, this.app.categoryManager, this.app.budgetManager)
-                }
+                )
             })
         }
         // Ledger management button
@@ -959,6 +968,55 @@ export class SettingsPage {
         modal
             .querySelector('#settings-alert-ok')
             .addEventListener('click', () => modal.remove())
+    }
+
+    showInputModal(title, message, defaultValue, onConfirm) {
+        const modal = document.createElement('div')
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 shadow-xl border border-wabi-border/30">
+                <h3 class="text-lg font-bold text-wabi-primary mb-2">${title}</h3>
+                <p class="text-sm text-wabi-text-secondary mb-4">${message}</p>
+                <div class="mb-6">
+                    <input type="text" id="settings-input-value" value="${defaultValue}" class="w-full bg-wabi-surface border border-wabi-border text-wabi-text-primary text-base rounded-lg focus:ring-2 focus:ring-wabi-primary focus:border-wabi-primary p-3 outline-none" placeholder="例如: /ABC1234">
+                </div>
+                <div class="flex space-x-3">
+                    <button id="settings-input-ok" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
+                        確定
+                    </button>
+                    <button id="settings-input-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
+                        取消
+                    </button>
+                </div>
+            </div>
+        `
+        document.body.appendChild(modal)
+
+        const inputEl = modal.querySelector('#settings-input-value')
+        setTimeout(() => {
+            inputEl.focus()
+            inputEl.select()
+        }, 100)
+
+        const handleOk = () => {
+            const val = inputEl.value
+            modal.remove()
+            onConfirm(val)
+        }
+
+        modal
+            .querySelector('#settings-input-cancel')
+            .addEventListener('click', () => modal.remove())
+        modal
+            .querySelector('#settings-input-ok')
+            .addEventListener('click', handleOk)
+
+        inputEl.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                handleOk()
+            }
+        })
     }
 
     showUpdateAvailable(registration) {

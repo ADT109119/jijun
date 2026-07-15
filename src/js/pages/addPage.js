@@ -696,12 +696,16 @@ export class AddPage {
         // Initialize virtual keyboard detector
         vkDetector = new VirtualKeyboardDetector({
             onShow: () => {
-                vkForcedHide = true
-                toggleKeypadGrid(false) // 強制隱藏 keypad
+                if (window.innerWidth < 768) {
+                    vkForcedHide = true
+                    toggleKeypadGrid(false) // 強制隱藏 keypad
+                }
             },
             onHide: () => {
-                vkForcedHide = false
-                toggleKeypadGrid(true) // 恢復顯示 keypad
+                if (vkForcedHide) {
+                    vkForcedHide = false
+                    toggleKeypadGrid(true) // 恢復顯示 keypad
+                }
             },
             threshold: 150,
         })
@@ -1409,6 +1413,15 @@ export class AddPage {
                 Delete: 'ac',
                 Escape: 'ac',
             }
+
+            if (calculatorModeEnabled) {
+                keyMap['+'] = '+'
+                keyMap['-'] = '-'
+                keyMap['*'] = '×'
+                keyMap['/'] = '÷'
+                keyMap['='] = 'save'
+            }
+
             if (keyMap[e.key]) {
                 e.preventDefault()
                 handleKeypad(keyMap[e.key])
