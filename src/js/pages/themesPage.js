@@ -1,4 +1,4 @@
-import { showToast, customConfirm } from '../utils.js'
+import { showToast, customConfirm, getStoreUrl } from '../utils.js'
 import { DARK_THEME_ID } from '../themeManager.js'
 
 export class ThemesPage {
@@ -14,7 +14,7 @@ export class ThemesPage {
         // 偷偷抓商店版本資訊，用於「有更新」檢測（離線時靜默失敗）
         let storeIndex = []
         try {
-            const res = await fetch(`themes/index.json?t=${Date.now()}`)
+            const res = await fetch(getStoreUrl(`themes/index.json?t=${Date.now()}`))
             if (res.ok) storeIndex = await res.json()
         } catch (_) {
             /* 離線時忽略 */
@@ -145,7 +145,7 @@ export class ThemesPage {
                 btn.innerHTML =
                     '<i class="fa-solid fa-spinner fa-spin mr-1"></i>更新中'
                 try {
-                    const response = await fetch(btn.dataset.url)
+                    const response = await fetch(getStoreUrl(btn.dataset.url))
                     if (!response.ok) throw new Error('fetch failed')
                     const themeData = await response.json()
                     await this.app.dataService.installTheme(themeData)

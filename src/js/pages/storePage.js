@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js'
+import { showToast, getStoreUrl } from '../utils.js'
 
 export class StorePage {
     constructor(app) {
@@ -27,7 +27,7 @@ export class StorePage {
         const plugins = await this.app.pluginManager.getInstalledPlugins()
 
         try {
-            const res = await fetch(`plugins/index.json?t=${Date.now()}`)
+            const res = await fetch(getStoreUrl(`plugins/index.json?t=${Date.now()}`))
             if (res.ok) {
                 const storePlugins = await res.json()
                 this.renderStoreList(storePlugins, plugins)
@@ -110,7 +110,7 @@ export class StorePage {
 
                     try {
                         const response = await fetch(
-                            `${btn.dataset.url}?t=${Date.now()}`
+                            getStoreUrl(`${btn.dataset.url}?t=${Date.now()}`)
                         )
                         const script = await response.text()
                         const file = new File([script], 'plugin.js', {

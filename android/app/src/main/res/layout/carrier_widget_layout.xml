@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_carrier_bg">
+
+    <!-- 頂部黃色 Banner -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="32dp"
+        android:background="@drawable/widget_carrier_header_bg"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="輕鬆記帳 發票載具"
+            android:textColor="#333333"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 條碼內容區塊 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="10dp">
+
+        <!-- 條碼顯示區 (Code 39 Bitmap) -->
+        <ImageView
+            android:id="@+id/widget_barcode_img"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:scaleType="fitXY"
+            android:contentDescription="載具條碼" />
+
+        <!-- 載具代碼文字 -->
+        <TextView
+            android:id="@+id/widget_barcode_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="/ABC1234"
+            android:textColor="#666666"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+    </LinearLayout>
+</LinearLayout>

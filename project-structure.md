@@ -23,6 +23,7 @@ src/js/
 ├── syncService.js       # Google Drive 雲端備份&同步
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── router.js            # 路由管理
+├── widgetHelper.js      # Android Widget 資料計算與同步輔助
 └── utils.js             # 共用工具函數 (格式化、Toast 等)
 
 src/js/pages/
@@ -35,7 +36,23 @@ src/css/
 
 android/                 # Capacitor Android 原生專案
 ├── app/src/main/
-│   └── AndroidManifest.xml  # 含 AdMob App ID
+│   ├── AndroidManifest.xml  # 含 AdMob App ID 與 Widget/DeepLink 配置
+│   ├── java/com/walkingfish/easyaccounting/
+│   │   ├── MainActivity.java           # 註冊 WidgetStoragePlugin
+│   │   ├── WidgetStoragePlugin.java     # 自訂儲存插件
+│   │   ├── EasyAccountingWidgetProvider.java # 桌面統計小工具 Provider
+│   │   ├── InvoiceCarrierWidgetProvider.java # 發票載具小工具 Provider (Code 39 繪製)
+│   │   └── QuickCategoryWidgetProvider.java  # 快速分類捷徑小工具 Provider
+│   └── res/
+│       ├── layout/
+│       │   ├── widget_layout.xml       # 統計小工具佈局 XML
+│       │   ├── carrier_widget_layout.xml # 載具小工具佈局 XML
+│       │   └── shortcut_widget_layout.xml # 快速捷徑小工具佈局 XML
+│       ├── xml/
+│       │   ├── widget_info.xml         # 統計小工具設定 XML
+│       │   ├── carrier_widget_info.xml  # 載具小工具設定 XML
+│       │   └── shortcut_widget_info.xml # 快速捷徑小工具設定 XML
+│       └── drawable/                   # 小工具樣式與分類圓形背景、向量圖標 XML (ic_cat_food.xml 等)
 └── variables.gradle     # SDK 版本設定 (minSdk=23, targetSdk=35)
 
 public/                  # 靜態資源目錄
@@ -51,7 +68,7 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 
 ## 模組依賴
 
-- `main.js` → 所有模組 (中心樞紐)
+- `main.js` → 所有模組 (中心樞紐)，**動態 import** `@capacitor/app`
 - `ledgerManager.js` → `dataService.js`, `utils.js`
 - `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
 - `syncService.js` → `dataService.js`

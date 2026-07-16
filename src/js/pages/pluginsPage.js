@@ -1,4 +1,4 @@
-import { showToast, customConfirm } from '../utils.js'
+import { showToast, customConfirm, getStoreUrl } from '../utils.js'
 
 export class PluginsPage {
     constructor(app) {
@@ -86,7 +86,7 @@ export class PluginsPage {
 
         // Load Store Data
         try {
-            const res = await fetch(`plugins/index.json?t=${Date.now()}`)
+            const res = await fetch(getStoreUrl(`plugins/index.json?t=${Date.now()}`))
             if (res.ok) {
                 const storePlugins = await res.json()
                 const storeContainer = document.getElementById(
@@ -158,7 +158,7 @@ export class PluginsPage {
                             btn.textContent = '下載中...'
                             try {
                                 const response = await fetch(
-                                    `${btn.dataset.url}?t=${Date.now()}`
+                                    getStoreUrl(`${btn.dataset.url}?t=${Date.now()}`)
                                 )
                                 const script = await response.text()
                                 const file = new File([script], 'plugin.js', {

@@ -57,6 +57,9 @@ export default defineConfig({
         __AD_ADMOB_REWARDED_ID__: JSON.stringify(
             adConfig.admobRewardedId ?? ''
         ),
+        __WEB_STORE_URL__: JSON.stringify(
+            adConfig.webStoreUrl ?? 'https://jijun.the-walking-fish.com'
+        ),
     },
     build: {
         outDir: 'dist',

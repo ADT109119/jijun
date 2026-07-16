@@ -1,5 +1,15 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.6.3': {
+        date: '2026-07-15',
+        title: '支援計算機實體鍵盤運作，優化桌機小鍵盤焦點體驗',
+        features: [],
+        bugfixes: [],
+        improvements: [
+            '優化計算機鍵盤映射：於記帳小鍵盤計算機模式下，支援實體鍵盤之 +、-、*、/ 與 = 鍵進行算術計算，並將 = 鍵與 Enter 鍵一致映射至計算機的求值/儲存功能。',
+            '優化桌面小鍵盤焦點體驗：在桌面寬度下（螢幕寬度 >= 768px）聚焦記帳頁面的輸入框（如備註）時，不再強制收起小鍵盤，提供更順暢的桌機版大螢幕操作。',
+        ],
+    },
     '2.1.6.2': {
         date: '2026-07-08',
         title: '新增預算排除類別與插件深色模式，修復多帳本同步隔離與 PWA Widget 本地時區顯示問題',
@@ -821,9 +831,9 @@ export class ChangelogManager {
     getVersionInfo(version) {
         return CHANGELOG[version]
             ? {
-                  version,
-                  ...CHANGELOG[version],
-              }
+                version,
+                ...CHANGELOG[version],
+            }
             : null
     }
 
@@ -853,8 +863,7 @@ export class ChangelogManager {
         
         ${note ? `<div class="mb-3 p-2 bg-yellow-100/50 border border-yellow-300/30 rounded text-sm text-yellow-800">${note}</div>` : ''}
         
-        ${
-            features.length > 0
+        ${features.length > 0
                 ? `
           <div class="mb-3">
             <h5 class="text-sm font-semibold text-wabi-income mb-2">✨ 新功能</h5>
@@ -864,10 +873,9 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-        }
+            }
         
-        ${
-            bugfixes.length > 0
+        ${bugfixes.length > 0
                 ? `
           <div class="mb-3">
             <h5 class="text-sm font-semibold text-wabi-expense mb-2">🐛 錯誤修復</h5>
@@ -877,10 +885,9 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-        }
+            }
         
-        ${
-            improvements.length > 0
+        ${improvements.length > 0
                 ? `
           <div class="mb-3">
             <h5 class="text-sm font-semibold text-wabi-primary mb-2">🔧 改進優化</h5>
@@ -890,7 +897,7 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-        }
+            }
       </div>
     `
     }
@@ -908,65 +915,62 @@ export class ChangelogManager {
       
       <!-- 更新內容 -->
       <div class="space-y-2">
-        ${
-            features.length > 0
+        ${features.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-green-600 mb-1">✨ 新功能</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${features
-                  .slice(0, 3)
-                  .map(
-                      feature =>
-                          `<li class="flex items-start"><span class="text-green-500 mr-1">•</span><span>${feature}</span></li>`
-                  )
-                  .join('')}
+                    .slice(0, 3)
+                    .map(
+                        feature =>
+                            `<li class="flex items-start"><span class="text-green-500 mr-1">•</span><span>${feature}</span></li>`
+                    )
+                    .join('')}
               ${features.length > 3 ? `<li class="text-gray-400">...還有 ${features.length - 3} 項功能</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-        }
+            }
         
-        ${
-            bugfixes.length > 0
+        ${bugfixes.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-red-600 mb-1">🐛 錯誤修復</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${bugfixes
-                  .slice(0, 3)
-                  .map(
-                      fix =>
-                          `<li class="flex items-start"><span class="text-red-500 mr-1">•</span><span>${fix}</span></li>`
-                  )
-                  .join('')}
+                    .slice(0, 3)
+                    .map(
+                        fix =>
+                            `<li class="flex items-start"><span class="text-red-500 mr-1">•</span><span>${fix}</span></li>`
+                    )
+                    .join('')}
               ${bugfixes.length > 3 ? `<li class="text-gray-400">...還有 ${bugfixes.length - 3} 項修復</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-        }
+            }
         
-        ${
-            improvements.length > 0
+        ${improvements.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-blue-600 mb-1">🔧 改進優化</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${improvements
-                  .slice(0, 3)
-                  .map(
-                      improvement =>
-                          `<li class="flex items-start"><span class="text-blue-500 mr-1">•</span><span>${improvement}</span></li>`
-                  )
-                  .join('')}
+                    .slice(0, 3)
+                    .map(
+                        improvement =>
+                            `<li class="flex items-start"><span class="text-blue-500 mr-1">•</span><span>${improvement}</span></li>`
+                    )
+                    .join('')}
               ${improvements.length > 3 ? `<li class="text-gray-400">...還有 ${improvements.length - 3} 項優化</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-        }
+            }
       </div>
     `
     }
@@ -997,10 +1001,10 @@ export class ChangelogManager {
         
         <div class="flex-1 overflow-y-auto p-4">
           ${allVersions
-              .map((version, index) =>
-                  this.renderVersionInfo(version, index === 0)
-              )
-              .join('')}
+                .map((version, index) =>
+                    this.renderVersionInfo(version, index === 0)
+                )
+                .join('')}
         </div>
         
         <div class="p-4 border-t border-wabi-border text-center">

@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js'
+import { showToast, getStoreUrl } from '../utils.js'
 
 export class ThemeStorePage {
     constructor(app) {
@@ -24,7 +24,7 @@ export class ThemeStorePage {
         const installedThemes = await this.app.dataService.getInstalledThemes()
 
         try {
-            const res = await fetch(`themes/index.json?t=${Date.now()}`)
+            const res = await fetch(getStoreUrl(`themes/index.json?t=${Date.now()}`))
             if (res.ok) {
                 const storeThemes = await res.json()
                 this.renderStoreList(storeThemes, installedThemes)
@@ -122,7 +122,7 @@ export class ThemeStorePage {
                 btn.textContent = '下載中...'
 
                 try {
-                    const response = await fetch(btn.dataset.url)
+                    const response = await fetch(getStoreUrl(btn.dataset.url))
                     if (!response.ok)
                         throw new Error('Failed to fetch theme JSON')
                     const themeData = await response.json()

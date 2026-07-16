@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:updatePeriodMillis="86400000"
+    android:initialLayout="@layout/carrier_widget_layout"
+    android:previewLayout="@layout/carrier_widget_layout"
+    android:description="@string/widget_description_carrier"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen">
+</appwidget-provider>

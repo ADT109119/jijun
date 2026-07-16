@@ -482,3 +482,17 @@ export function calculateAmortizationDetails(
 
     return { amountPerPeriod, exactTotalToPay }
 }
+
+/**
+ * 取得商店資源的完整 URL (Capacitor App 轉向遠端網址，避免本地端檔案過大)
+ * @param {string} path - 商店資源的相對路徑
+ * @returns {string} 完整的 URL 路徑
+ */
+export function getStoreUrl(path) {
+    const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+    // __WEB_STORE_URL__ is injected by Vite Define
+    // @ts-ignore
+    const baseUrl = isNative ? __WEB_STORE_URL__ : '';
+    const separator = path.startsWith('/') ? '' : '/';
+    return `${baseUrl}${separator}${path}`;
+}

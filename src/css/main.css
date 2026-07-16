@@ -295,12 +295,28 @@ select option {
     filter: brightness(1.2);
 }
 
-/* ==================== Skeleton Screen ==================== */
-.skeleton-bg {
-    background-color: #e2e8f0;
-}
+/* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效，不影響手機 PWA) */
+@media (max-width: 767px) {
+    body.is-capacitor-native #app-container {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    
+    /* 調整所有 sticky top-0 的定位，使滾動時能完美停在狀態列下方 */
+    body.is-capacitor-native .sticky.top-0, 
+    body.is-capacitor-native [class*="sticky"][class*="top-0"] {
+        top: env(safe-area-inset-top, 0px) !important;
+    }
 
-.dark .skeleton-bg {
-    background-color: #334155;
+    /* 狀態列防穿模遮罩：擋住往上滾動穿透狀態列的內容 */
+    body.is-capacitor-native::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-top, 0px);
+        background-color: rgb(var(--theme-bg, 245 245 243));
+        z-index: 40; /* 位於滾動內容之上，但低於 Modal 與 Toast */
+    }
 }
 
