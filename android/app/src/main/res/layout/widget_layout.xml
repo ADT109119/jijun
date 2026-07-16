@@ -90,17 +90,31 @@
             android:progress="0"
             android:progressDrawable="@drawable/widget_progress_drawable" />
 
-        <!-- 分類預算提醒 (支援多行) -->
+        <!-- 分類預算提醒 ×3 -->
         <TextView
-            android:id="@+id/widget_category_budget_status"
-            android:layout_width="wrap_content"
+            android:id="@+id/widget_cat_budget_1"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:maxLines="3"
             android:text=""
             android:textColor="#80FFFFFF"
             android:textSize="9sp"
-            android:lineSpacingExtra="2dp"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/widget_cat_budget_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#80FFFFFF"
+            android:textSize="9sp"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/widget_cat_budget_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#80FFFFFF"
+            android:textSize="9sp"
             android:visibility="gone" />
     </LinearLayout>
 
