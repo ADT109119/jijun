@@ -150,6 +150,7 @@
 
 ## 更新歷史
 
+- **2026-07-16**: Code Review widgetHelper.js — 發現 1 HIGH (categoryManager 參數未使用)、3 MEDIUM (每次頁面渲染觸發完整 Records 查詢效能瓶頸、loadBudget 重複 IO、硬編碼 $ 貨幣符號不支援多幣種 #U03)、2 LOW (無單元測試覆蓋、new Date() 重複實例化)；產出 code-review-widgetHelper-2026-07-16.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-15**: Code Review statistics.js — 發現 2 HIGH (renderTopExpenses XSS: r.description 未 escapeHTML、帳戶餘額 N+1 查詢)、3 MEDIUM (Tailwind→Hex 顏色映射重複 DRY violation、趨勢圖硬編碼顏色不支援深色主題、熱力圖 toISOString UTC 時區偏移)、4 LOW (技術債註記、destroy 未清除事件監聽器、空值檢查、測試覆蓋不足)；產出 code-review-statistics-2026-07-15.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；Firefly III v6.6.3 穩定版；Actual Budget 26.7.0 穩定版
 - **2026-07-15**: 每日晨報 — 791 tests 全過；Git working tree clean；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作，建議關閉；#48 小算盤功能與 #49 計算機鍵盤為同功能
 - **2026-07-12**: 新增 amortizationModal.js 單元測試；網路調研：Issue #51 已關閉（v2.1.6.2 修復），GitHub 剩 4 open issues (#49/#48/#14/#8)；MOZE v4.1.28 iOS 相容修補；Firefly III v6.6.6 開發版；Actual Budget 可設定平均範圍月度支出報表
