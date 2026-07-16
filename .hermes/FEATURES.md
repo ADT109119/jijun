@@ -150,6 +150,7 @@
 
 ## 更新歷史
 
+- **2026-07-17**: 新增 widgetHelper.js 單元測試 (27 tests, 總計 818) — 涵蓋早期回傳 (Capacitor/DB未初始化)、今日支出計算、本月結餘 (正/負/零)、預算進度 (正常/超100%上限/四捨五入)、分類預算狀態 (⚠️超支/📊最高使用率/排除分類/多超支取最大)、無預算、WidgetStorage 呼叫參數、錯誤處理、carrierCode、邊界條件；791→818 tests；GitHub: 78 stars, 5 open issues 無變化；Actual Budget 26.7.0 (銀行同步+CLI stable)；Firefly III develop-20260711
 - **2026-07-16**: Code Review widgetHelper.js — 發現 1 HIGH (categoryManager 參數未使用)、3 MEDIUM (每次頁面渲染觸發完整 Records 查詢效能瓶頸、loadBudget 重複 IO、硬編碼 $ 貨幣符號不支援多幣種 #U03)、2 LOW (無單元測試覆蓋、new Date() 重複實例化)；產出 code-review-widgetHelper-2026-07-16.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-15**: Code Review statistics.js — 發現 2 HIGH (renderTopExpenses XSS: r.description 未 escapeHTML、帳戶餘額 N+1 查詢)、3 MEDIUM (Tailwind→Hex 顏色映射重複 DRY violation、趨勢圖硬編碼顏色不支援深色主題、熱力圖 toISOString UTC 時區偏移)、4 LOW (技術債註記、destroy 未清除事件監聽器、空值檢查、測試覆蓋不足)；產出 code-review-statistics-2026-07-15.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；Firefly III v6.6.3 穩定版；Actual Budget 26.7.0 穩定版
 - **2026-07-15**: 每日晨報 — 791 tests 全過；Git working tree clean；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作，建議關閉；#48 小算盤功能與 #49 計算機鍵盤為同功能
