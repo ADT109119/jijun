@@ -1,1 +1,0 @@
-System.register(["./main-legacy-BC1Lq6z6.js","./index-legacy-CPahGcSA.js"],function(e,t){"use strict";var i,n;return{setters:[e=>{i=e._},e=>{n=e.registerPlugin}],execute:function(){e("App",n("App",{web:()=>i(()=>t.import("./web-legacy-hqZLXXCh.js"),void 0).then(e=>new e.AppWeb)}))}}});
