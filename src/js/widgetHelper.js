@@ -54,20 +54,27 @@ export async function updateAndroidWidget(dataService, categoryManager, budgetMa
         console.warn('[Widget] Failed to calculate budget progress:', e)
     }
 
-    // Block 3: Category budget status
+    // Block 3: Category budget status (show multiple categories)
     try {
         const budgetStatus = await budgetManager.getBudgetStatus()
         if (budgetStatus && budgetStatus.categoryStatuses && budgetStatus.categoryStatuses.length > 0) {
+            const lines = []
             const overBudgets = budgetStatus.categoryStatuses.filter(c => c.isOverBudget && !c.isExcluded)
-            if (overBudgets.length > 0) {
-                const topOver = overBudgets.sort((a, b) => (b.spent - b.budget) - (a.spent - a.budget))[0]
-                catBudgetStatusText = `⚠️ ${topOver.name}已超支 $${Math.round(topOver.spent - topOver.budget)}`
-            } else {
-                const activeCats = budgetStatus.categoryStatuses.filter(c => c.percentage > 0 && !c.isExcluded)
-                if (activeCats.length > 0) {
-                    const topUsage = activeCats.sort((a, b) => b.percentage - a.percentage)[0]
-                    catBudgetStatusText = `📊 ${topUsage.name}已使用 ${Math.round(topUsage.percentage)}%`
+            const sortedOver = overBudgets.sort((a, b) => (b.spent - b.budget) - (a.spent - a.budget))
+            for (const cat of sortedOver) {
+                lines.push(`⚠️ ${cat.name}超支 $${Math.round(cat.spent - cat.budget)}`)
+                if (lines.length >= 2) break
+            }
+            if (lines.length < 3) {
+                const activeCats = budgetStatus.categoryStatuses.filter(c => c.percentage > 0 && !c.isOverBudget && !c.isExcluded)
+                const sortedActive = activeCats.sort((a, b) => b.percentage - a.percentage)
+                for (const cat of sortedActive) {
+                    lines.push(`📊 ${cat.name} ${Math.round(cat.percentage)}%`)
+                    if (lines.length >= 3) break
                 }
+            }
+            if (lines.length > 0) {
+                catBudgetStatusText = lines.join('\n')
             }
         }
     } catch (e) {
