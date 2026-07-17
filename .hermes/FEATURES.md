@@ -46,7 +46,7 @@
 ### 高優先級 (P1)
 - [x] **#U07 跨月比較報表功能** — 支援跨月份/跨年度的收支比較報表 (參考 MOZE 4.0 比較報表) — ✅ 四個階段全部完成 (2026-06-21 完成第四階段，2026-06-23 Code Review 確認所有改善項已修復)
 - [ ] **#U02 純自架後端雲端備份** — 不依賴 Google Drive，提供自架後端作為備份/同步目標
-- [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示
+- [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示 ⏳ 規劃中 (PLAN-U03-MULTI-CURRENCY.md, v2.2.x, Schema v14)
 - [ ] **#P01 週期性交易跨裝置同步問題** — 多裝置修改/刪除週期性交易時會互相覆蓋設定，導致重複紀錄和大量自動記帳記錄（需調查 recurring_transactions 的 UUID 同步機制與衝突處理）
 
 ### 中優先級 (P2)
@@ -150,7 +150,7 @@
 
 ## 更新歷史
 
-- **2026-07-17**: 新增 widgetHelper.js 單元測試 (27 tests, 總計 818) — 涵蓋早期回傳 (Capacitor/DB未初始化)、今日支出計算、本月結餘 (正/負/零)、預算進度 (正常/超100%上限/四捨五入)、分類預算狀態 (⚠️超支/📊最高使用率/排除分類/多超支取最大)、無預算、WidgetStorage 呼叫參數、錯誤處理、carrierCode、邊界條件；791→818 tests；GitHub: 78 stars, 5 open issues 無變化；Actual Budget 26.7.0 (銀行同步+CLI stable)；Firefly III develop-20260711
+- **2026-07-17**: Code Review themeManager.js — 發現 1 Critical (SVG innerHTML XSS: `template.innerHTML` 直接解析主題來源的 SVG 字串，惡意主題可注入 `<script>` 或事件處理器)、1 High (CSS 變數值未消毒: fallback 值直接嵌入 CSS 文字，可注入 `@import` 等惡意規則)、3 Medium (MutationObserver 全域效能開銷、深色主題檢測 `id.includes('dark')` 過於寬鬆、fetch dark.json 缺少超時/離線保護)、2 Low (luminance 重複 hex 解析邏輯、缺少 destroy 方法)；產出 code-review-themeManager-2026-07-17.md；安全評分 4/10 (SVG+CSS 注入未防護)；818 tests 全過；GitHub: 78 stars, 5 open issues 無變化；MOZE 最新版 v4.1.28 (2026/6/23 iOS 26 相容性 FIX)；Actual Budget 26.7.0 (銀行同步+CLI stable)；Firefly III v6.6.3 穩定版
 - **2026-07-16**: Code Review widgetHelper.js — 發現 1 HIGH (categoryManager 參數未使用)、3 MEDIUM (每次頁面渲染觸發完整 Records 查詢效能瓶頸、loadBudget 重複 IO、硬編碼 $ 貨幣符號不支援多幣種 #U03)、2 LOW (無單元測試覆蓋、new Date() 重複實例化)；產出 code-review-widgetHelper-2026-07-16.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化
 - **2026-07-15**: Code Review statistics.js — 發現 2 HIGH (renderTopExpenses XSS: r.description 未 escapeHTML、帳戶餘額 N+1 查詢)、3 MEDIUM (Tailwind→Hex 顏色映射重複 DRY violation、趨勢圖硬編碼顏色不支援深色主題、熱力圖 toISOString UTC 時區偏移)、4 LOW (技術債註記、destroy 未清除事件監聽器、空值檢查、測試覆蓋不足)；產出 code-review-statistics-2026-07-15.md；791 tests 全過、ESLint 乾淨；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8) 無變化；Firefly III v6.6.3 穩定版；Actual Budget 26.7.0 穩定版
 - **2026-07-15**: 每日晨報 — 791 tests 全過；Git working tree clean；GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作，建議關閉；#48 小算盤功能與 #49 計算機鍵盤為同功能
