@@ -1,4 +1,4 @@
-import { customConfirm } from './utils.js'
+import { customConfirm, formatDateToString } from './utils.js'
 const openDB =
     window.idb?.openDB ||
     (() => {
@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 13 // Schema version 13: Credit card support (type, creditLimit, statementDay, dueDay)
+        this.dbVersion = 14 // Schema version 14: Migrate legacy debt payments to records for correct balances
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -401,6 +401,94 @@ class DataService {
                                 stmtStore.createIndex('ledgerId', 'ledgerId')
                                 stmtStore.createIndex('period', 'period')
                                 stmtStore.createIndex('status', 'status')
+                            }
+                        }
+                        // Schema version 14: Migrate legacy debt payments to records for correct balances
+                        if (oldVersion < 14) {
+                            const debtsStore = transaction.objectStore('debts')
+                            const recordsStore = transaction.objectStore('records')
+                            const contactsStore = transaction.objectStore('contacts')
+                            const accountsStore = transaction.objectStore('accounts')
+
+                            // 獲取預設帳戶，做為 fallback 帳戶 ID
+                            let defaultAccountId = null
+                            let accCursor = await accountsStore.openCursor()
+                            if (accCursor) {
+                                defaultAccountId = accCursor.value.id
+                            }
+
+                            let cursor = await debtsStore.openCursor()
+                            while (cursor) {
+                                const debt = cursor.value
+                                if (debt.payments && debt.payments.length > 0) {
+                                    let updated = false
+                                    
+                                    // 獲取聯絡人名稱
+                                    let contactName = '未知聯絡人'
+                                    if (debt.contactId) {
+                                        const contact = await contactsStore.get(debt.contactId)
+                                        if (contact) {
+                                            contactName = contact.name || '未知聯絡人'
+                                        }
+                                    }
+
+                                    // 獲取原始記帳紀錄的帳戶 ID
+                                    let originalAccountId = null
+                                    if (debt.recordId) {
+                                        const originalRecord = await recordsStore.get(debt.recordId)
+                                        if (originalRecord) {
+                                            originalAccountId = originalRecord.accountId
+                                        }
+                                    }
+
+                                    const updatedPayments = []
+                                    for (const payment of debt.payments) {
+                                        if (!payment.recordId && !payment.recordUuid) {
+                                            const paymentDate = payment.date || formatDateToString(new Date())
+                                            let recordAccountId = originalAccountId || defaultAccountId
+
+                                            // 建立記帳紀錄
+                                            const record = {
+                                                type: debt.type === 'receivable' ? 'income' : 'expense',
+                                                category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
+                                                amount: payment.amount,
+                                                date: paymentDate,
+                                                description: debt.type === 'receivable'
+                                                    ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                                    : `還款：${contactName} - ${debt.description || ''}`,
+                                                ledgerId: debt.ledgerId || 1,
+                                                debtId: debt.id,
+                                                ...(recordAccountId ? { accountId: recordAccountId } : {}),
+                                            }
+
+                                            // 生成 uuid (因為從 version 7 起需要 uuid)
+                                            record.uuid =
+                                                self.crypto && self.crypto.randomUUID
+                                                    ? self.crypto.randomUUID()
+                                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+                                                          /[xy]/g,
+                                                          function (c) {
+                                                              const r = (Math.random() * 16) | 0,
+                                                                  v = c === 'x' ? r : (r & 0x3) | 0x8
+                                                              return v.toString(16)
+                                                          }
+                                                      )
+
+                                            // 寫入 records
+                                            const newRecordId = await recordsStore.add(record)
+                                            payment.recordId = newRecordId
+                                            payment.recordUuid = record.uuid
+                                            updated = true
+                                        }
+                                        updatedPayments.push(payment)
+                                    }
+
+                                    if (updated) {
+                                        debt.payments = updatedPayments
+                                        await cursor.update(debt)
+                                    }
+                                }
+                                cursor = await cursor.continue()
                             }
                         }
                     },
@@ -3636,7 +3724,7 @@ class DataService {
             // Create payment record in history
             const paymentRecord = {
                 amount,
-                date: new Date().toISOString().split('T')[0],
+                date: formatDateToString(new Date()),
                 recordId: null,
             }
 
@@ -3667,7 +3755,7 @@ class DataService {
                             ? 'debt_collection'
                             : 'debt_repayment',
                     amount: amount,
-                    date: new Date().toISOString().split('T')[0],
+                    date: formatDateToString(new Date()),
                     description:
                         debt.type === 'receivable'
                             ? `收回欠款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`
