@@ -390,7 +390,7 @@ export class DebtManager {
             <div class="flex items-center justify-between mt-3 pt-3 border-t border-wabi-border">
               <div class="flex items-center gap-2 text-sm text-wabi-text-secondary">
                 <i class="fa-solid fa-check-circle text-wabi-income"></i>
-                <span>已於 ${formatDate(new Date(debt.settledAt).toISOString().split('T')[0], 'short')} 結清</span>
+                <span>已於 ${formatDate(formatDateToString(new Date(debt.settledAt)), 'short')} 結清</span>
               </div>
               <div class="flex gap-2">
                 <button class="edit-debt-btn px-3 py-1 text-xs font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${debt.id}">
