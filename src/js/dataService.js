@@ -1173,7 +1173,8 @@ class DataService {
         records = records.filter(
             r =>
                 r.category !== 'debt_collection' &&
-                r.category !== 'debt_repayment'
+                r.category !== 'debt_repayment' &&
+                r.category !== 'balance_adjustment'
         )
 
         const stats = {
@@ -1334,6 +1335,45 @@ class DataService {
             } catch (e) {
                 console.warn('Silenced error:', e)
             }
+            const files = []
+            try {
+                if (!this.useLocalStorage) {
+                    const tx = this.db.transaction('files', 'readonly')
+                    let cursor = await tx.store.openCursor()
+                    while (cursor) {
+                        const fileData = cursor.value
+                        let dataUrl = ''
+                        try {
+                            dataUrl = await new Promise(
+                                (resolve, reject) => {
+                                    const reader = new FileReader()
+                                    reader.onload = () =>
+                                        resolve(reader.result)
+                                    reader.onerror = reject
+                                    reader.readAsDataURL(fileData.data)
+                                }
+                            )
+                        } catch (e) {
+                            console.warn(
+                                'Failed to convert file to data URL:',
+                                e
+                            )
+                            cursor = await cursor.continue()
+                            continue
+                        }
+                        files.push({
+                            id: cursor.key,
+                            name: fileData.name,
+                            type: fileData.type,
+                            dataUrl: dataUrl,
+                            createdAt: fileData.createdAt,
+                        })
+                        cursor = await cursor.continue()
+                    }
+                }
+            } catch (e) {
+                console.warn('Silenced error:', e)
+            }
 
             const exportData = {
                 version: '2.3.0',
@@ -1353,6 +1393,7 @@ class DataService {
                 recurring_transactions: recurring_transactions,
                 amortizations: amortizations,
                 credit_statements: credit_statements,
+                files: files,
                 customCategories: customCategoriesMap,
                 categoryOrder: categoryOrderMap,
                 hiddenCategories: hiddenCategoriesMap,
@@ -1626,6 +1667,81 @@ class DataService {
                         }
                     }
 
+                    // 4.5 匯入檔案 (頭像等) 並建立 ID Map
+                    const oldFileIdToNewIdMap = new Map()
+                    if (
+                        !this.useLocalStorage &&
+                        data.files &&
+                        Array.isArray(data.files)
+                    ) {
+                        try {
+                            const txF = this.db.transaction(
+                                'files',
+                                'readwrite'
+                            )
+                            await txF.store.clear()
+                            await txF.done
+                        } catch (e) {
+                            console.warn('Silenced error:', e)
+                        }
+                        const txF = this.db.transaction('files', 'readwrite')
+                        for (const file of data.files) {
+                            const oldId = file.id
+                            // 略過舊版匯出（無 dataUrl 欄位或資料已損毀）
+                            if (
+                                !file.dataUrl ||
+                                typeof file.dataUrl !== 'string'
+                            ) {
+                                console.warn(
+                                    'Skipping file without dataUrl:',
+                                    file.name
+                                )
+                                continue
+                            }
+                            let blob
+                            try {
+                                const parts = file.dataUrl.split(',')
+                                const mimeMatch =
+                                    parts[0].match(/:(.*?);/)
+                                if (!mimeMatch)
+                                    throw new Error('Invalid data URL')
+                                const mime = mimeMatch[1]
+                                const bstr = atob(parts[1])
+                                const n = bstr.length
+                                const u8arr = new Uint8Array(n)
+                                for (let i = 0; i < n; i++) {
+                                    u8arr[i] = bstr.charCodeAt(i)
+                                }
+                                blob = new Blob([u8arr], { type: mime })
+                            } catch (e) {
+                                console.warn(
+                                    'Failed to parse imported file data:',
+                                    e
+                                )
+                                continue
+                            }
+                            const dbFile = {
+                                name: file.name,
+                                type: file.type,
+                                data: blob,
+                                createdAt:
+                                    file.createdAt || Date.now(),
+                            }
+                            let newId
+                            try {
+                                newId = await txF.store.add(dbFile)
+                            } catch (e) {
+                                console.warn(
+                                    'Failed to import file:',
+                                    e
+                                )
+                                continue
+                            }
+                            oldFileIdToNewIdMap.set(oldId, newId)
+                        }
+                        await txF.done
+                    }
+
                     // 5. 匯入聯絡人並建立 ID Map
                     const oldContactIdToNewIdMap = new Map()
                     if (data.contacts && Array.isArray(data.contacts)) {
@@ -1635,6 +1751,13 @@ class DataService {
                             contactData.ledgerId = getMappedLedgerId(
                                 contactData.ledgerId
                             )
+                            // 重新映射頭像檔案 ID
+                            if (contactData.avatarFileId) {
+                                contactData.avatarFileId =
+                                    oldFileIdToNewIdMap.get(
+                                        contactData.avatarFileId
+                                    ) || null
+                            }
                             const newId = await this.addContact(contactData)
                             oldContactIdToNewIdMap.set(oldId, newId)
                         }
@@ -3463,16 +3586,52 @@ class DataService {
         }
     }
 
-    async settleDebt(id, paymentAmount = null) {
+    async settleDebt(id, paymentAmount = null, accountIdOrOptions = null) {
         try {
             const debt = await this.getDebt(id)
             if (!debt) throw new Error('Debt not found')
             if (debt.settled) return debt // Already settled
 
+            // 相容舊呼叫 (第 3 參數為 accountId) 與新呼叫 (物件包含選項)
+            let accountId = null
+            let createDetail = true
+            let forceCreate = false
+            if (
+                accountIdOrOptions &&
+                typeof accountIdOrOptions === 'object'
+            ) {
+                ({
+                    accountId = null,
+                    createDetail = true,
+                    forceCreate = false,
+                } = accountIdOrOptions)
+            } else {
+                accountId = accountIdOrOptions || null
+            }
+
             // Determine payment amount (full or partial)
             const amount = paymentAmount || debt.remainingAmount
             const newRemainingAmount = debt.remainingAmount - amount
             const isFullySettled = newRemainingAmount <= 0
+
+            // 原始欠款紀錄所屬帳戶（用於判斷是否強制建立還款明細）
+            let debtRecordAccountId = null
+            if (debt.recordId) {
+                const mainRecord = await this.getRecord(debt.recordId)
+                if (mainRecord && mainRecord.accountId) {
+                    debtRecordAccountId = mainRecord.accountId
+                }
+            }
+
+            // 若還款帳戶與原始欠款紀錄帳戶不同，強制建立還款明細以維持帳款平衡
+            if (
+                forceCreate ||
+                (accountId !== null &&
+                    debtRecordAccountId !== null &&
+                    accountId !== debtRecordAccountId)
+            ) {
+                createDetail = true
+            }
 
             // Create payment record in history
             const paymentRecord = {
@@ -3481,13 +3640,25 @@ class DataService {
                 recordId: null,
             }
 
-            // Only create a transaction record if this debt was NOT linked to an existing expense/income
-            // If it was linked (recordId exists), the cash flow was already recorded at creation
-            // Creating another record would cause double-counting in statistics
+            // 是否建立「還款 / 欠款回收」記帳明細：
+            // - 若欠款未連結任何記帳紀錄（純欠款），預設建立
+            // - 若已連結，則依 createDetail 決定；跨帳戶還款時已強制建立
             let newRecordId = null
-            if (!debt.recordId) {
+            if (createDetail || !debt.recordId) {
                 const contact = await this.getContact(debt.contactId)
                 const contactName = contact?.name || '未知聯絡人'
+
+                // 決定還款紀錄所屬帳戶
+                let recordAccountId = accountId
+                if (!recordAccountId && debtRecordAccountId) {
+                    recordAccountId = debtRecordAccountId
+                }
+                if (!recordAccountId) {
+                    const accounts = await this.getAccounts()
+                    if (accounts && accounts.length > 0) {
+                        recordAccountId = accounts[0].id
+                    }
+                }
 
                 const record = {
                     type: debt.type === 'receivable' ? 'income' : 'expense',
@@ -3503,6 +3674,9 @@ class DataService {
                             : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
                     ledgerId: debt.ledgerId,
                     debtId: id,
+                    ...(recordAccountId
+                        ? { accountId: recordAccountId }
+                        : {}),
                 }
 
                 newRecordId = await this.addRecord(record)
@@ -3541,8 +3715,8 @@ class DataService {
     }
 
     // Add partial payment to a debt
-    async addPartialPayment(debtId, amount) {
-        return this.settleDebt(debtId, amount)
+    async addPartialPayment(debtId, amount, accountIdOrOptions = null) {
+        return this.settleDebt(debtId, amount, accountIdOrOptions)
     }
 
     // Get debt summary by contact

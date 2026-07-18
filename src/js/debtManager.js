@@ -337,7 +337,7 @@ export class DebtManager {
         <div id="debt-item-${debt.id}" class="bg-wabi-surface rounded-lg border ${isHighlighted ? 'border-wabi-primary ring-2 ring-wabi-primary/20' : 'border-wabi-border'} p-4 ${debt.settled ? 'opacity-60' : ''}" data-debt-id="${debt.id}">
           <div class="flex items-start justify-between">
             <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center rounded-full ${isReceivable ? 'bg-wabi-income/20 text-wabi-income' : 'bg-wabi-expense/20 text-wabi-expense'} size-10">
+              <div class="contact-avatar flex items-center justify-center rounded-full ${isReceivable ? 'bg-wabi-income/20 text-wabi-income ring-2 ring-wabi-income' : 'bg-wabi-expense/20 text-wabi-expense ring-2 ring-wabi-expense'} size-10 overflow-hidden" data-avatar-id="${contact?.avatarFileId || ''}">
                 <i class="fa-solid fa-user"></i>
               </div>
               <div>
@@ -422,6 +422,9 @@ export class DebtManager {
     }
 
     listContainer.innerHTML = html;
+
+    // 非同步載入聯絡人頭像
+    this.loadContactAvatars();
 
     // Bind settle buttons
     listContainer.querySelectorAll('.settle-debt-btn').forEach(btn => {
@@ -601,6 +604,7 @@ export class DebtManager {
           <select id="partial-account-select" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
             ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
           </select>
+          <p class="text-xs text-wabi-text-secondary mt-1">還款將建立「${isReceivable ? '欠款回收' : '還款'}」明細並調整此帳戶餘額；若與欠款紀錄帳戶不同，亦會據此維持帳款平衡。</p>
         </div>
         ` : ''}
 
@@ -645,7 +649,9 @@ export class DebtManager {
       const accountSelect = modal.querySelector('#partial-account-select');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
 
-      await this.dataService.addPartialPayment(debtId, amount, selectedAccountId);
+      await this.dataService.addPartialPayment(debtId, amount, {
+        accountId: selectedAccountId,
+      });
       closeModal();
       // Maintain current filter state instead of full re-render
       await this.updateSummaryCards();
@@ -683,6 +689,7 @@ export class DebtManager {
           <select id="settle-account-select" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
             ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
           </select>
+          <p class="text-xs text-wabi-text-secondary mt-1">結清將建立「${isReceivable ? '欠款回收' : '還款'}」明細並調整此帳戶餘額；若與欠款紀錄帳戶不同，亦會據此維持帳款平衡。</p>
         </div>
 
         <div class="flex space-x-3">
@@ -709,7 +716,9 @@ export class DebtManager {
       const accountSelect = modal.querySelector('#settle-account-select');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
 
-      await this.dataService.settleDebt(debtId, null, selectedAccountId);
+      await this.dataService.settleDebt(debtId, null, {
+        accountId: selectedAccountId,
+      });
       closeModal();
       showToast('已結清欠款並產生記帳紀錄', 'success');
       await this.updateSummaryCards();
@@ -723,34 +732,64 @@ export class DebtManager {
     const contactName = contact?.name || '未知聯絡人';
     const isReceivable = debt.type === 'receivable';
     const payments = debt.payments || [];
+    const originalRecordId = debt.recordId || null;
 
     const modal = document.createElement('div');
     modal.id = 'payment-history-modal';
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
 
+    const originalRecordHtml = originalRecordId ? `
+      <div class="flex items-center justify-between p-3 bg-wabi-primary/10 rounded-lg border border-wabi-primary/30 debt-record-link cursor-pointer hover:bg-wabi-primary/20 transition-colors" data-record-id="${originalRecordId}">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center justify-center rounded-full bg-wabi-primary/20 text-wabi-primary size-8 text-sm">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+          </div>
+          <div>
+            <p class="font-medium text-wabi-primary">原始欠款明細</p>
+            <p class="text-xs text-wabi-text-secondary">${formatDate(debt.date, 'short')}</p>
+          </div>
+        </div>
+        <span class="text-xs text-wabi-primary flex items-center gap-1">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> 檢視
+        </span>
+      </div>
+    ` : '';
+
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
         <h3 class="text-lg font-semibold mb-2 text-wabi-primary">${isReceivable ? '收款' : '還款'}歷程</h3>
         <p class="text-sm text-wabi-text-secondary mb-4">${contactName} - ${debt.description || '無備註'}</p>
-        
+
         <div class="space-y-3 mb-4">
+          ${originalRecordHtml}
           ${payments.length === 0 ? `
             <p class="text-center py-4 text-wabi-text-secondary">尚無還款記錄</p>
-          ` : payments.map((payment, index) => `
-            <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
-              <div class="flex items-center gap-3">
-                <div class="flex items-center justify-center rounded-full ${isReceivable ? 'bg-wabi-income/20 text-wabi-income' : 'bg-wabi-expense/20 text-wabi-expense'} size-8 text-sm">
-                  ${index + 1}
+          ` : payments.map((payment, index) => {
+            const hasRecord = !!payment.recordId;
+            const clickableClass = hasRecord
+              ? 'debt-record-link cursor-pointer hover:bg-wabi-border/60 transition-colors'
+              : '';
+            return `
+              <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border ${clickableClass}" ${hasRecord ? `data-record-id="${payment.recordId}"` : ''}>
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center justify-center rounded-full ${isReceivable ? 'bg-wabi-income/20 text-wabi-income' : 'bg-wabi-expense/20 text-wabi-expense'} size-8 text-sm">
+                    ${index + 1}
+                  </div>
+                  <div>
+                    <p class="font-medium ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">
+                      ${isReceivable ? '+' : '-'}${formatCurrency(payment.amount)}
+                    </p>
+                    <p class="text-xs text-wabi-text-secondary">${formatDate(payment.date, 'short')}</p>
+                  </div>
                 </div>
-                <div>
-                  <p class="font-medium ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">
-                    ${isReceivable ? '+' : '-'}${formatCurrency(payment.amount)}
-                  </p>
-                  <p class="text-xs text-wabi-text-secondary">${formatDate(payment.date, 'short')}</p>
-                </div>
+                ${hasRecord ? `
+                  <span class="text-xs text-wabi-primary flex items-center gap-1">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> 檢視
+                  </span>
+                ` : ''}
               </div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
 
         <div class="border-t border-wabi-border pt-3">
@@ -783,6 +822,17 @@ export class DebtManager {
     modal.querySelector('#close-history-btn').addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
       if (e.target === modal) closeModal();
+    });
+
+    // 點擊明細跳轉到對應的記帳紀錄
+    modal.querySelectorAll('.debt-record-link').forEach(el => {
+      el.addEventListener('click', () => {
+        const recordId = el.dataset.recordId;
+        if (recordId) {
+          window.location.hash = `#add?id=${recordId}`;
+          closeModal();
+        }
+      });
     });
   }
 

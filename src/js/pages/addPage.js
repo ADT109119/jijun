@@ -6,6 +6,7 @@ import {
     escapeHTML,
     calculateAmortizationDetails,
     customConfirm,
+    customAlert,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
 
@@ -213,6 +214,10 @@ export class AddPage {
 
                         <!-- Categories -->
                         <div id="add-category-grid" class="px-4 mt-2 grid grid-cols-4 gap-4"></div>
+                        <div id="add-debt-category-hint" class="hidden mx-4 mt-3 p-3 rounded-lg bg-wabi-primary/5 border border-wabi-primary/20 text-wabi-text-secondary text-xs leading-relaxed">
+                          <i class="fa-solid fa-circle-info mr-1 text-wabi-primary"></i>
+                          此類別較為特殊：<b>不會計入</b>收支統計，但會<b>影響</b>多帳戶模式下所選帳戶的餘額。
+                        </div>
                         <div class="h-8"></div> <!-- Spacer for better scrolling end experience -->
                     </div>
                 </div>
@@ -355,7 +360,7 @@ export class AddPage {
 
         // Setup debt panel if available
         if (toggleDebtBtn && debtPanel) {
-            const loadContacts = async () => {
+            const loadContacts = async (selectedId = null) => {
                 const contacts = await this.app.dataService.getContacts()
                 const select = document.getElementById('debt-contact-select')
                 if (select) {
@@ -364,10 +369,61 @@ export class AddPage {
                         contacts
                             .map(
                                 c =>
-                                    `<option value="${c.id}">${escapeHTML(c.name)}</option>`
+                                    `<option value="${c.id}" ${selectedId !== null && c.id === selectedId ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
                             )
-                            .join('')
+                            .join('') +
+                        `<option value="__new__">+ 新增聯絡人</option>`
                 }
+            }
+
+            // 快速新增聯絡人（新增記帳頁內嵌）
+            const showQuickAddContactModal = () => {
+                const modal = document.createElement('div')
+                modal.id = 'quick-add-contact-modal'
+                modal.className =
+                    'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+                modal.innerHTML = `
+                    <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
+                        <h3 class="text-lg font-semibold mb-4 text-wabi-primary">新增聯絡人</h3>
+                        <div class="mb-6">
+                            <label class="text-sm font-medium text-wabi-text-primary mb-2 block">名稱</label>
+                            <input type="text" id="quick-contact-name" placeholder="輸入聯絡人名稱"
+                                class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+                        </div>
+                        <div class="flex space-x-3">
+                            <button id="quick-contact-save" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">新增</button>
+                            <button id="quick-contact-cancel" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
+                        </div>
+                    </div>
+                `
+                document.body.appendChild(modal)
+                const closeModal = () => modal.remove()
+                modal
+                    .querySelector('#quick-contact-cancel')
+                    .addEventListener('click', closeModal)
+                modal.addEventListener('click', e => {
+                    if (e.target === modal) closeModal()
+                })
+                setTimeout(() => {
+                    modal.querySelector('#quick-contact-name').focus()
+                }, 100)
+                modal
+                    .querySelector('#quick-contact-save')
+                    .addEventListener('click', async () => {
+                        const name = modal
+                            .querySelector('#quick-contact-name')
+                            .value.trim()
+                        if (!name) {
+                            customAlert('請輸入聯絡人名稱')
+                            return
+                        }
+                        const newId = await this.app.dataService.addContact({
+                            name,
+                        })
+                        closeModal()
+                        await loadContacts(newId)
+                        showToast('已新增聯絡人', 'success')
+                    })
             }
 
             toggleDebtBtn.addEventListener('click', async () => {
@@ -439,9 +495,12 @@ export class AddPage {
             document
                 .getElementById('debt-contact-select')
                 ?.addEventListener('change', e => {
-                    debtContactId = e.target.value
-                        ? parseInt(e.target.value)
-                        : null
+                    const val = e.target.value
+                    if (val === '__new__') {
+                        showQuickAddContactModal()
+                        return
+                    }
+                    debtContactId = val ? parseInt(val) : null
                 })
         }
 
@@ -816,6 +875,16 @@ export class AddPage {
                 `
             } else {
                 selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`
+            }
+
+            // 提示：還款 / 欠款回收 類別較為特殊
+            const debtHint = document.getElementById('add-debt-category-hint')
+            if (debtHint) {
+                const isSpecial =
+                    category &&
+                    (category.id === 'debt_repayment' ||
+                        category.id === 'debt_collection')
+                debtHint.classList.toggle('hidden', !isSpecial)
             }
         }
 
@@ -1700,7 +1769,9 @@ export class AddPage {
             const accountSelect = modal.querySelector('#payment-account-select');
             const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
 
-            await this.app.dataService.settleDebt(debt.id, amount, selectedAccountId);
+            await this.app.dataService.settleDebt(debt.id, amount, {
+                accountId: selectedAccountId,
+            });
             closeModal();
             showToast('還款成功！');
             // Re-render

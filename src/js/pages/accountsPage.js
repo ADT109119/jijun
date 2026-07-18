@@ -66,6 +66,17 @@ export class AccountsPage {
     async setupAccountsPageListeners() {
         const accounts = await this.app.dataService.getAccounts()
         const allRecords = await this.app.dataService.getRecords() // Get all records once
+        // 建立「我欠別人」(payable) 欠款的 id 集合，用於從帳戶餘額中排除其原始欠款紀錄
+        // （依使用者模型：建立 payable 欠款當下不扣款，實際扣款發生於還款時）
+        const debts = await this.app.dataService.getDebts()
+        const payableDebtIds = new Set(
+            debts.filter(d => d.type === 'payable').map(d => String(d.id))
+        )
+        const isBalanceExempt = record =>
+            record.debtId !== null &&
+            payableDebtIds.has(String(record.debtId)) &&
+            record.category !== 'debt_repayment' &&
+            record.category !== 'debt_collection'
         const container = document.getElementById('accounts-list-container')
         const totalAssetsEl = document.getElementById('total-assets')
 
@@ -80,7 +91,7 @@ export class AccountsPage {
 
         for (const account of accounts) {
             const recordsForAccount = allRecords.filter(
-                r => r.accountId === account.id
+                r => r.accountId === account.id && !isBalanceExempt(r)
             )
             const currentBalance = recordsForAccount.reduce(
                 (balance, record) => {
@@ -278,24 +289,23 @@ export class AccountsPage {
                     return
                 }
 
-                const createRecord = modal.querySelector(
-                    '#add-adjustment-record'
-                ).checked
+                    const createRecord = modal.querySelector(
+                        '#add-adjustment-record'
+                    ).checked
 
-                if (createRecord) {
-                    // Ensure the "adjustment" category exists or handle it gracefully.
-                    // Since there is no built-in "adjustment" category we just set category to 'other' and note to '平帳'
-                    const type = diff > 0 ? 'income' : 'expense'
-                    const newRecord = {
-                        amount: Math.abs(diff),
-                        type: type,
-                        category: 'other',
-                        date: formatDateToString(new Date()),
-                        note: '平帳',
-                        accountId: account.id,
-                    }
-                    await this.app.dataService.addRecord(newRecord)
-                    showToast('已新增平帳紀錄')
+                    if (createRecord) {
+                        // 平帳紀錄：使用隱藏的「帳務差額」分類（不可手動選擇，不計入收支統計，但會影響帳戶餘額）
+                        const type = diff > 0 ? 'income' : 'expense'
+                        const newRecord = {
+                            amount: Math.abs(diff),
+                            type: type,
+                            category: 'balance_adjustment',
+                            date: formatDateToString(new Date()),
+                            description: '平帳',
+                            accountId: account.id,
+                        }
+                        await this.app.dataService.addRecord(newRecord)
+                        showToast('已新增平帳紀錄')
                 } else {
                     account.balance += diff
                     await this.app.dataService.updateAccount(
