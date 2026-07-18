@@ -7,7 +7,7 @@ body {
     font-family: 'Inter', 'Noto Sans TC', sans-serif;
     padding-top: env(safe-area-inset-top, 0px); /* 避開系統狀態列 */
     padding-bottom: 80px; /* Space for bottom navigation */
-    background-color: #F5F5F3; /* wabi-bg */
+    background-color: #f5f5f3; /* wabi-bg */
 }
 
 @media (min-width: 768px) {
@@ -56,13 +56,13 @@ select option {
 
 /* Add Record Page - Category button active state */
 .category-button.active {
-    border-color: #B95A5A; /* wabi-expense */
-    background-color: #B95A5A1A; /* wabi-expense with opacity */
+    border-color: #b95a5a; /* wabi-expense */
+    background-color: #b95a5a1a; /* wabi-expense with opacity */
 }
 
 .category-button.active-income {
-    border-color: #6A9C89; /* wabi-income */
-    background-color: #6A9C891A; /* wabi-income with opacity */
+    border-color: #6a9c89; /* wabi-income */
+    background-color: #6a9c891a; /* wabi-income with opacity */
 }
 
 /* Toast animation */
@@ -125,12 +125,12 @@ select option {
 }
 
 @keyframes wave-scroll {
-  0% {
-    background-position-x: 0;
-  }
-  100% {
-    background-position-x: -1000px; /* A large prime number for smooth looping */
-  }
+    0% {
+        background-position-x: 0;
+    }
+    100% {
+        background-position-x: -1000px; /* A large prime number for smooth looping */
+    }
 }
 
 .budget-wave::before,
@@ -138,7 +138,9 @@ select option {
     content: '';
     position: absolute;
     left: 0;
-    bottom: calc(100% - 40px); /* Position waves at the top of the water level */
+    bottom: calc(
+        100% - 40px
+    ); /* Position waves at the top of the water level */
     right: 0;
     height: 40px; /* Height of the SVG wave */
     background-repeat: repeat-x;
@@ -175,3 +177,155 @@ select option {
 #account-selector-container:empty {
     display: none;
 }
+
+/* ==================== Plugin Dark Mode Overrides ==================== */
+/* 1. Home Widget styling: enforce standard theme surface & border on the plugin's root card container (direct child of .plugin-widget) */
+.dark .plugin-widget > div {
+    background-color: rgb(var(--theme-surface, 30 41 59)) !important;
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+/* 2. Plugin Pages & Custom Elements Backgrounds */
+.dark #app-container.plugin-page .bg-white,
+.dark .plugin-widget .bg-white {
+    background-color: rgb(var(--theme-surface, 30 41 59)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-50,
+.dark #app-container.plugin-page .bg-gray-100,
+.dark #app-container.plugin-page .bg-indigo-50,
+.dark #app-container.plugin-page .bg-emerald-50,
+.dark .plugin-widget .bg-gray-50,
+.dark .plugin-widget .bg-gray-100,
+.dark .plugin-widget .bg-indigo-50,
+.dark .plugin-widget .bg-emerald-50 {
+    background-color: rgb(var(--theme-bg, 15 23 42)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-200,
+.dark .plugin-widget .bg-gray-200 {
+    background-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark #app-container.plugin-page .bg-gray-300,
+.dark .plugin-widget .bg-gray-300 {
+    background-color: rgba(var(--theme-border, 51 65 85), 0.8) !important;
+}
+
+/* 3. Text and Label Colors */
+.dark #app-container.plugin-page .text-black,
+.dark #app-container.plugin-page .text-gray-900,
+.dark #app-container.plugin-page .text-gray-800,
+.dark #app-container.plugin-page .text-gray-700,
+.dark .plugin-widget .text-black,
+.dark .plugin-widget .text-gray-900,
+.dark .plugin-widget .text-gray-800,
+.dark .plugin-widget .text-gray-700 {
+    color: rgb(var(--theme-text-primary, 248 250 252)) !important;
+}
+
+.dark #app-container.plugin-page .text-gray-600,
+.dark #app-container.plugin-page .text-gray-500,
+.dark #app-container.plugin-page .text-gray-400,
+.dark .plugin-widget .text-gray-600,
+.dark .plugin-widget .text-gray-500,
+.dark .plugin-widget .text-gray-400 {
+    color: rgb(var(--theme-text-secondary, 203 213 225)) !important;
+}
+
+.dark #app-container.plugin-page .text-indigo-600,
+.dark .plugin-widget .text-indigo-600 {
+    color: rgb(var(--theme-accent, 59 130 246)) !important;
+}
+
+.dark #app-container.plugin-page .bg-indigo-600,
+.dark .plugin-widget .bg-indigo-600 {
+    background-color: rgb(var(--theme-accent, 59 130 246)) !important;
+    color: rgb(var(--theme-surface, 30 41 59)) !important;
+}
+
+/* 4. Action Button High Contrast overrides (Specifically target the confirm action in result preview card to ensure readability) */
+.dark #result-card button,
+.dark #result-card button.bg-white,
+.dark #result-card .bg-white {
+    background-color: rgb(var(--theme-primary, 248 250 252)) !important;
+    color: rgb(var(--theme-bg, 15 23 42)) !important;
+}
+
+/* 5. Borders */
+.dark #app-container.plugin-page .border-gray-100,
+.dark #app-container.plugin-page .border-gray-200,
+.dark #app-container.plugin-page .border-indigo-100,
+.dark #app-container.plugin-page .border-emerald-100,
+.dark .plugin-widget .border-gray-100,
+.dark .plugin-widget .border-gray-200,
+.dark .plugin-widget .border-indigo-100,
+.dark .plugin-widget .border-emerald-100 {
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+/* 6. Inputs & Select elements */
+.dark #app-container.plugin-page input[type="text"],
+.dark #app-container.plugin-page input[type="number"],
+.dark #app-container.plugin-page select,
+.dark #app-container.plugin-page textarea,
+.dark .plugin-widget input[type="text"],
+.dark .plugin-widget input[type="number"],
+.dark .plugin-widget select,
+.dark .plugin-widget textarea {
+    background-color: rgb(var(--theme-bg, 15 23 42)) !important;
+    color: rgb(var(--theme-text-primary, 248 250 252)) !important;
+    border-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark #app-container.plugin-page input::placeholder,
+.dark .plugin-widget input::placeholder {
+    color: rgb(var(--theme-text-secondary, 203 213 225)) !important;
+    opacity: 0.7;
+}
+
+/* 7. Hover styles */
+.dark .plugin-widget [class*="hover:bg-"]:hover,
+.dark #app-container.plugin-page [class*="hover:bg-"]:hover {
+    background-color: rgb(var(--theme-border, 51 65 85)) !important;
+}
+
+.dark .plugin-widget button:hover,
+.dark #app-container.plugin-page button:hover {
+    filter: brightness(1.2);
+}
+
+/* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效，不影響手機 PWA) */
+@media (max-width: 767px) {
+    body.is-capacitor-native #app-container {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    
+    /* 調整所有 sticky top-0 的定位，使滾動時能完美停在狀態列下方 */
+    body.is-capacitor-native .sticky.top-0, 
+    body.is-capacitor-native [class*="sticky"][class*="top-0"] {
+        top: env(safe-area-inset-top, 0px) !important;
+    }
+
+    /* 狀態列防穿模遮罩：擋住往上滾動穿透狀態列的內容 */
+    body.is-capacitor-native::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-top, 0px);
+        background-color: rgb(var(--theme-bg, 245 245 243));
+        z-index: 40; /* 位於滾動內容之上，但低於 Modal 與 Toast */
+    }
+}
+
+/* ==================== Skeleton Screen ==================== */
+.skeleton-bg {
+    background-color: #e2e8f0;
+}
+
+.dark .skeleton-bg {
+    background-color: #334155;
+}
+

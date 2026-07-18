@@ -1,8 +1,8 @@
-import { showToast } from '../utils.js';
+import { showToast, getStoreUrl } from '../utils.js'
 
 export class StorePage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -22,54 +22,67 @@ export class StorePage {
                      <div class="text-center py-12 text-wabi-text-secondary animate-pulse">載入中...</div>
                 </div>
             </div>
-        `;
+        `
 
-        const plugins = await this.app.pluginManager.getInstalledPlugins();
+        const plugins = await this.app.pluginManager.getInstalledPlugins()
 
         try {
-            const res = await fetch(`plugins/index.json?t=${Date.now()}`);
+            const res = await fetch(getStoreUrl(`plugins/index.json?t=${Date.now()}`))
             if (res.ok) {
-                const storePlugins = await res.json();
-                this.renderStoreList(storePlugins, plugins);
+                const storePlugins = await res.json()
+                this.renderStoreList(storePlugins, plugins)
 
                 // Search Logic
-                document.getElementById('store-search').addEventListener('input', (e) => {
-                    const term = e.target.value.toLowerCase().trim();
-                    const filtered = storePlugins.filter(p =>
-                        p.name.toLowerCase().includes(term) ||
-                        p.description.toLowerCase().includes(term) ||
-                        (p.author && p.author.toLowerCase().includes(term))
-                    );
-                    this.renderStoreList(filtered, plugins);
-                });
+                document
+                    .getElementById('store-search')
+                    .addEventListener('input', e => {
+                        const term = e.target.value.toLowerCase().trim()
+                        const filtered = storePlugins.filter(
+                            p =>
+                                p.name.toLowerCase().includes(term) ||
+                                p.description.toLowerCase().includes(term) ||
+                                (p.author &&
+                                    p.author.toLowerCase().includes(term))
+                        )
+                        this.renderStoreList(filtered, plugins)
+                    })
             }
-        } catch(e) {
-             document.getElementById('full-store-list').innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`;
+        } catch (e) {
+            const container = document.getElementById('full-store-list')
+            if (container)
+                container.innerHTML = `<div class="text-center py-12 text-red-500">無法載入商店資料</div>`
         }
     }
 
     renderStoreList(list, installedPlugins) {
-        const container = document.getElementById('full-store-list');
+        const container = document.getElementById('full-store-list')
+        if (!container) return
         if (list.length === 0) {
-            container.innerHTML = `<div class="text-center py-12 text-gray-400">沒有找到相關插件</div>`;
-            return;
+            container.innerHTML = `<div class="text-center py-12 text-gray-400">沒有找到相關插件</div>`
+            return
         }
 
-        container.innerHTML = list.map(p => {
-             const installed = installedPlugins.find(i => i.id === p.id);
-             let btnHtml = '';
+        container.innerHTML = list
+            .map(p => {
+                const installed = installedPlugins.find(i => i.id === p.id)
+                let btnHtml = ''
 
-             if (installed) {
-                 if (this.app.pluginManager.compareVersions(p.version, installed.version) > 0) {
-                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`;
-                 } else {
-                      btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`;
-                 }
-             } else {
-                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`;
-             }
+                if (installed) {
+                    if (
+                        this.app.pluginManager.compareVersions(
+                            p.version,
+                            installed.version
+                        ) > 0
+                    ) {
+                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`
+                    } else {
+                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`
+                    }
+                } else {
+                    btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`
+                }
 
-             return `
+                return `
                     <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl aspect-square group-hover:scale-110 transition-transform">
@@ -83,40 +96,53 @@ export class StorePage {
                         </div>
                         ${btnHtml}
                     </div>
-             `;
-        }).join('');
+             `
+            })
+            .join('')
 
         // Bind Store Page Buttons
         container.querySelectorAll('.store-install-btn').forEach(btn => {
-             if (!btn.disabled) {
+            if (!btn.disabled) {
                 btn.addEventListener('click', async () => {
-                    const originalText = btn.innerHTML;
-                    btn.disabled = true;
-                    btn.textContent = '下載中...';
+                    const originalText = btn.innerHTML
+                    btn.disabled = true
+                    btn.textContent = '下載中...'
 
                     try {
-                        const response = await fetch(btn.dataset.url);
-                        const script = await response.text();
-                        const file = new File([script], 'plugin.js', { type: 'text/javascript' });
+                        const response = await fetch(
+                            getStoreUrl(`${btn.dataset.url}?t=${Date.now()}`)
+                        )
+                        const script = await response.text()
+                        const file = new File([script], 'plugin.js', {
+                            type: 'text/javascript',
+                        })
                         // 找到對應的商店插件資訊，傳入權限與 icon
-                        const matchedPlugin = list.find(sp => sp.id === btn.dataset.id);
-                        await this.app.pluginManager.installPlugin(file, matchedPlugin || null);
-                        showToast('安裝成功！', 'success');
+                        const matchedPlugin = list.find(
+                            sp => sp.id === btn.dataset.id
+                        )
+                        await this.app.pluginManager.installPlugin(
+                            file,
+                            matchedPlugin || null
+                        )
+                        showToast('安裝成功！', 'success')
 
                         // Updates UI
                         // Fetch latest status
-                        await this.app.pluginManager.getInstalledPlugins();
-                        this.render(); // Re-render store page
+                        await this.app.pluginManager.getInstalledPlugins()
+                        this.render() // Re-render store page
                     } catch (e) {
-                        console.error(e);
-                        if (e.message !== '使用者取消安裝' && e.message !== '使用者取消更新') {
-                            showToast('安裝失敗', 'error');
+                        console.error(e)
+                        if (
+                            e.message !== '使用者取消安裝' &&
+                            e.message !== '使用者取消更新'
+                        ) {
+                            showToast('安裝失敗', 'error')
                         }
-                        btn.disabled = false;
-                        btn.innerHTML = originalText;
+                        btn.disabled = false
+                        btn.innerHTML = originalText
                     }
-                });
-             }
-        });
+                })
+            }
+        })
     }
 }

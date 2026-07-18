@@ -1,14 +1,16 @@
 export class ContactsPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
-        const debtEnabled = await this.app.dataService.getSetting('debtManagementEnabled');
+        const debtEnabled = await this.app.dataService.getSetting(
+            'debtManagementEnabled'
+        )
         if (!debtEnabled?.value) {
-            window.location.hash = '#settings';
-            return;
+            window.location.hash = '#settings'
+            return
         }
-        await this.app.debtManager.renderContactsPage(this.app.appContainer);
+        await this.app.debtManager.renderContactsPage(this.app.appContainer)
     }
 }

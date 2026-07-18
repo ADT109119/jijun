@@ -1,186 +1,294 @@
-import { debounce } from './utils.js';
+import { debounce } from './utils.js'
 
 // 內建深色主題 ID（不可刪除、自動更新）
-export const DARK_THEME_ID = 'com.walkingfish.theme.dark';
+export const DARK_THEME_ID = 'com.walkingfish.theme.dark'
 
 export class ThemeManager {
     constructor(dataService) {
-        this.dataService = dataService;
-        this.activeTheme = null;
-        this.styleElement = null;
-        this.observer = null;
+        this.dataService = dataService
+        this.activeTheme = null
+        this.styleElement = null
+        this.observer = null
 
         // Ensure style element exists
-        this.styleElement = document.getElementById('dynamic-theme-styles');
+        this.styleElement = document.getElementById('dynamic-theme-styles')
         if (!this.styleElement) {
-            this.styleElement = document.createElement('style');
-            this.styleElement.id = 'dynamic-theme-styles';
-            document.head.appendChild(this.styleElement);
+            this.styleElement = document.createElement('style')
+            this.styleElement.id = 'dynamic-theme-styles'
+            document.head.appendChild(this.styleElement)
         }
     }
 
     // 判斷是否為內建深色主題（不可刪除）
     isBuiltinTheme(themeId) {
-        return themeId === DARK_THEME_ID;
+        return themeId === DARK_THEME_ID
     }
 
     async init() {
         // 總是重新抓取 dark.json，確保內建深色主題保持最新版本
         try {
-            const response = await fetch('themes/dark.json');
+            const response = await fetch('themes/dark.json')
             if (response.ok) {
-                const latestDark = await response.json();
-                await this.dataService.installTheme(latestDark); // installTheme 有 upsert 語意
-                console.log('Built-in Dark Mode theme updated.');
+                const latestDark = await response.json()
+                await this.dataService.installTheme(latestDark) // installTheme 有 upsert 語意
+                console.log('Built-in Dark Mode theme updated.')
             }
         } catch (e) {
-            console.warn('Failed to auto-update dark theme', e);
+            console.warn('Failed to auto-update dark theme', e)
         }
 
-        const setting = await this.dataService.getSetting('activeThemeId');
-        const activeThemeId = setting ? setting.value : null;
+        const setting = await this.dataService.getSetting('activeThemeId')
+        const activeThemeId = setting ? setting.value : null
 
         if (activeThemeId) {
-            const theme = await this.dataService.getTheme(activeThemeId);
+            const theme = await this.dataService.getTheme(activeThemeId)
             if (theme) {
-                await this.applyTheme(theme);
+                await this.applyTheme(theme)
             }
         }
     }
 
     // Utility to convert hex to RGB triplet (e.g., "#334A52" -> "51 74 82")
     hexToRgbTriplet(hex) {
+        if (!hex || typeof hex !== 'string') {
+            return null
+        }
         // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
-        const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
-        hex = hex.replace(shorthandRegex, function(m, r, g, b) {
-            return r + r + g + g + b + b;
-        });
+        const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i
+        hex = hex.replace(shorthandRegex, function (m, r, g, b) {
+            return r + r + g + g + b + b
+        })
 
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ?
-            `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}` :
-            null;
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+        return result
+            ? `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}`
+            : null
     }
 
     async applyTheme(theme) {
-        this.activeTheme = theme;
+        this.activeTheme = theme
 
         // Apply CSS Variables
-        let cssText = ':root {\n';
+        let cssText = ':root {\n'
         if (theme && theme.colors) {
             for (const [key, value] of Object.entries(theme.colors)) {
                 // key is like "wabi-bg", we want "--theme-bg"
-                const cssVarName = key.replace(/^wabi-/, '');
+                // Sanitize the variable name to a safe CSS identifier to prevent
+                // injection via crafted theme color keys (CSS Injection, H-01)
+                const cssVarName = String(key)
+                    .replace(/^wabi-/, '')
+                    .replace(/[^a-zA-Z0-9_-]/g, '')
+                if (!cssVarName) continue
                 // Try converting hex to RGB triplet
-                const rgbValue = this.hexToRgbTriplet(value);
+                const rgbValue = this.hexToRgbTriplet(value)
                 if (rgbValue) {
-                    cssText += `  --theme-${cssVarName}: ${rgbValue};\n`;
+                    cssText += `  --theme-${cssVarName}: ${rgbValue};\n`
                 } else {
-                    // Fallback if not a hex code
-                    cssText += `  --theme-${cssVarName}: ${value};\n`;
+                    // Fallback if not a hex code. Strip characters that can break
+                    // out of the declaration or inject @rules (CSS Injection, H-01)
+                    const sanitized = String(value).replace(/[;{}@<>]/g, '')
+                    cssText += `  --theme-${cssVarName}: ${sanitized};\n`
                 }
             }
         }
-        cssText += '}\n';
-        this.styleElement.textContent = cssText;
+        cssText += '}\n'
+        this.styleElement.textContent = cssText
+
+        // Toggle dark-theme class on body based on theme properties or luminance
+        const isDark =
+            theme &&
+            (theme.id === DARK_THEME_ID ||
+                theme.id.includes('dark') ||
+                theme.dark ||
+                (() => {
+                    const bg =
+                        theme.colors &&
+                        (theme.colors['wabi-bg'] ||
+                            theme.colors['wabi-surface'])
+                    if (bg && bg.startsWith('#')) {
+                        const hex = bg.substring(1)
+                        let r = parseInt(hex.substring(0, 2), 16)
+                        let g = parseInt(hex.substring(2, 4), 16)
+                        let b = parseInt(hex.substring(4, 6), 16)
+                        if (hex.length === 3) {
+                            r = parseInt(hex[0] + hex[0], 16)
+                            g = parseInt(hex[1] + hex[1], 16)
+                            b = parseInt(hex[2] + hex[2], 16)
+                        }
+                        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                        return luminance < 128
+                    }
+                    return false
+                })())
+
+        if (isDark) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
 
         // Save active theme ID
-        await this.dataService.saveSetting({ key: 'activeThemeId', value: theme ? theme.id : null });
+        await this.dataService.saveSetting({
+            key: 'activeThemeId',
+            value: theme ? theme.id : null,
+        })
 
         // Apply Icon Replacements
-        this.stopIconObserver();
+        this.stopIconObserver()
 
         // Remove existing theme replacements
-        this.clearReplacedIcons();
+        this.clearReplacedIcons()
 
         if (theme && theme.icons && Object.keys(theme.icons).length > 0) {
-            this.applyIconReplacements(theme.icons);
-            this.startIconObserver(theme.icons);
+            this.applyIconReplacements(theme.icons)
+            this.startIconObserver(theme.icons)
         }
     }
 
     async clearTheme() {
-        await this.applyTheme(null);
+        await this.applyTheme(null)
     }
 
     clearReplacedIcons() {
         // Remove our injected replacements
-        document.querySelectorAll('.theme-icon-replacement').forEach(el => el.remove());
+        document
+            .querySelectorAll('.theme-icon-replacement')
+            .forEach(el => el.remove())
         // Unhide original elements
         document.querySelectorAll('[data-original-display]').forEach(el => {
-            el.style.display = el.getAttribute('data-original-display') || '';
-            el.removeAttribute('data-original-display');
-        });
+            el.style.display = el.getAttribute('data-original-display') || ''
+            el.removeAttribute('data-original-display')
+        })
+    }
+
+    /**
+     * 解析並消毒 SVG 字串，移除可執行腳本與事件處理器，防止儲存型 XSS (CR-01)。
+     * @param {string} svgString
+     * @returns {SVGElement|null} 消毒後的 SVG 元素，若解析失敗則回傳 null
+     */
+    sanitizeSVG(svgString) {
+        if (typeof svgString !== 'string' || !svgString.trim()) return null
+        let doc
+        try {
+            doc = new DOMParser().parseFromString(
+                svgString.trim(),
+                'image/svg+xml'
+            )
+        } catch {
+            return null
+        }
+        const parseError = doc.querySelector('parsererror')
+        const svg = doc.documentElement
+        if (parseError || !svg || svg.nodeName.toLowerCase() !== 'svg') {
+            return null
+        }
+
+        // 移除可嵌入 HTML/腳本的元素
+        svg.querySelectorAll('script, foreignObject').forEach(el =>
+            el.remove()
+        )
+
+        // 遍歷所有節點，移除事件屬性與 javascript: 連結
+        const nodes = [svg, ...svg.querySelectorAll('*')]
+        for (const el of nodes) {
+            for (const attr of Array.from(el.attributes)) {
+                const name = attr.name.toLowerCase()
+                const value = attr.value.toLowerCase().trim()
+                if (name.startsWith('on')) {
+                    el.removeAttribute(attr.name)
+                } else if (
+                    (name === 'href' || name === 'xlink:href') &&
+                    value.startsWith('javascript:')
+                ) {
+                    el.removeAttribute(attr.name)
+                }
+            }
+        }
+        return svg
     }
 
     applyIconReplacements(iconsConfig) {
         for (const [selector, replacementInfo] of Object.entries(iconsConfig)) {
-            const elements = document.querySelectorAll(selector);
+            const elements = document.querySelectorAll(selector)
             elements.forEach(el => {
-                if (el.nextElementSibling && el.nextElementSibling.classList.contains('theme-icon-replacement')) {
-                    return; // Already replaced
+                if (
+                    el.nextElementSibling &&
+                    el.nextElementSibling.classList.contains(
+                        'theme-icon-replacement'
+                    )
+                ) {
+                    return // Already replaced
                 }
 
                 // Hide original element
-                const computedDisplay = window.getComputedStyle(el).display;
+                const computedDisplay = window.getComputedStyle(el).display
                 if (el.style.display !== 'none') {
-                    el.setAttribute('data-original-display', computedDisplay);
-                    el.style.display = 'none';
+                    el.setAttribute('data-original-display', computedDisplay)
+                    el.style.display = 'none'
                 }
 
                 // Create replacement
-                let replacementNode;
+                let replacementNode
                 if (replacementInfo.type === 'image') {
-                    replacementNode = document.createElement('img');
-                    replacementNode.src = replacementInfo.src;
-                    replacementNode.className = `theme-icon-replacement ${replacementInfo.className || ''}`;
-                    if (replacementInfo.width) replacementNode.style.width = replacementInfo.width;
-                    if (replacementInfo.height) replacementNode.style.height = replacementInfo.height;
+                    replacementNode = document.createElement('img')
+                    replacementNode.src = replacementInfo.src
+                    replacementNode.className = `theme-icon-replacement ${replacementInfo.className || ''}`
+                    if (replacementInfo.width)
+                        replacementNode.style.width = replacementInfo.width
+                    if (replacementInfo.height)
+                        replacementNode.style.height = replacementInfo.height
                 } else if (replacementInfo.type === 'fontawesome') {
-                    replacementNode = document.createElement('i');
-                    replacementNode.className = `${replacementInfo.className} theme-icon-replacement`;
+                    replacementNode = document.createElement('i')
+                    replacementNode.className = `${replacementInfo.className} theme-icon-replacement`
                 } else if (replacementInfo.type === 'svg') {
-                    const template = document.createElement('template');
-                    template.innerHTML = replacementInfo.svg.trim();
-                    replacementNode = template.content.firstChild;
-                    replacementNode.classList.add('theme-icon-replacement');
-                    if (replacementInfo.className) {
-                        replacementNode.setAttribute('class', replacementNode.getAttribute('class') + ' ' + replacementInfo.className);
+                    // Parse via DOMParser and sanitize to prevent SVG/stored XSS
+                    // from malicious theme sources (CR-01)
+                    replacementNode = this.sanitizeSVG(replacementInfo.svg)
+                    if (replacementNode) {
+                        replacementNode.classList.add('theme-icon-replacement')
+                    }
+                    if (replacementNode && replacementInfo.className) {
+                        replacementNode.setAttribute(
+                            'class',
+                            replacementNode.getAttribute('class') +
+                                ' ' +
+                                replacementInfo.className
+                        )
                     }
                 }
 
                 if (replacementNode) {
-                    el.parentNode.insertBefore(replacementNode, el.nextSibling);
+                    el.parentNode.insertBefore(replacementNode, el.nextSibling)
                 }
-            });
+            })
         }
     }
 
     startIconObserver(iconsConfig) {
         const processMutations = debounce(() => {
-            this.applyIconReplacements(iconsConfig);
-        }, 100);
+            this.applyIconReplacements(iconsConfig)
+        }, 100)
 
-        this.observer = new MutationObserver((mutations) => {
-            let shouldProcess = false;
+        this.observer = new MutationObserver(mutations => {
+            let shouldProcess = false
             for (const mutation of mutations) {
                 if (mutation.addedNodes.length > 0) {
-                    shouldProcess = true;
-                    break;
+                    shouldProcess = true
+                    break
                 }
             }
             if (shouldProcess) {
-                processMutations();
+                processMutations()
             }
-        });
+        })
 
-        this.observer.observe(document.body, { childList: true, subtree: true });
+        this.observer.observe(document.body, { childList: true, subtree: true })
     }
 
     stopIconObserver() {
         if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+            this.observer.disconnect()
+            this.observer = null
         }
     }
 }

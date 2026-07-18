@@ -49,26 +49,26 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 ## 關鍵設計決策
 
 - **多帳本架構 (Schema v11)**:
-  - `ledgers` object store 儲存帳本元資料 (名稱、圖示、顏色、類型、uuid)
-  - 所有資料 store (records, accounts, contacts, debts, recurring_transactions, amortizations) 新增 `ledgerId` index
-  - 所有 CRUD 操作透過 `DataService.activeLedgerId` 自動過濾，傳入 `{ allLedgers: true }` 可跳過過濾
-  - **同步與備份**:
-    - 使用 `uuid` 作為跨裝置實體關聯的唯一標識，解決 `ledgerId` (Auto-increment PK) 在不同裝置不一致的問題
-    - 匯出/匯入支援「全帳本打包」，匯入時自動建立 ID 映射 (Remapping) 並關聯至正確帳本
-  - Schema 升級 (v8→v9): 移除帳戶名稱唯一約束
-  - Schema 升級 (v10→v11): 新增 `amortizations` object store
+    - `ledgers` object store 儲存帳本元資料 (名稱、圖示、顏色、類型、uuid)
+    - 所有資料 store (records, accounts, contacts, debts, recurring_transactions, amortizations) 新增 `ledgerId` index
+    - 所有 CRUD 操作透過 `DataService.activeLedgerId` 自動過濾，傳入 `{ allLedgers: true }` 可跳過過濾
+    - **同步與備份**:
+        - 使用 `uuid` 作為跨裝置實體關聯的唯一標識，解決 `ledgerId` (Auto-increment PK) 在不同裝置不一致的問題
+        - 匯出/匯入支援「全帳本打包」，匯入時自動建立 ID 映射 (Remapping) 並關聯至正確帳本
+    - Schema 升級 (v8→v9): 移除帳戶名稱唯一約束
+    - Schema 升級 (v10→v11): 新增 `amortizations` object store
 - **攤提/折舊/分期 (amortizations)**:
-  - 統一模型：分期付款 / 折舊 / 攤提 均使用 `amortizations` store，以 `type` 欄位區分
-  - 支援首付 (`downPayment`) 與年金利率計算 (`interestRate`)
-  - `processAmortizations()` 在 `main.js` init 時自動觸發：到期且 `status=active` 的項目自動生成記帳紀錄
-  - 自動生成的紀錄帶有 `amortizationId` 欄位，可追溯至所屬的分期計畫
-  - 到達總期數後自動標記 `status=completed`
-  - 入口位於設定頁「攤提/分期管理」（獨立功能，不需開啟多帳戶模式）
-  - 新增紀錄頁可透過內嵌面板（類似欠款面板）快速建立分期計畫
-  - **設計決策**：addPage 啟用分期時，只建立計畫不建立全額記帳紀錄；每期紀錄由 `processAmortizations()` 自動生成
+    - 統一模型：分期付款 / 折舊 / 攤提 均使用 `amortizations` store，以 `type` 欄位區分
+    - 支援首付 (`downPayment`) 與年金利率計算 (`interestRate`)
+    - `processAmortizations()` 在 `main.js` init 時自動觸發：到期且 `status=active` 的項目自動生成記帳紀錄
+    - 自動生成的紀錄帶有 `amortizationId` 欄位，可追溯至所屬的分期計畫
+    - 到達總期數後自動標記 `status=completed`
+    - 入口位於設定頁「攤提/分期管理」（獨立功能，不需開啟多帳戶模式）
+    - 新增紀錄頁可透過內嵌面板（類似欠款面板）快速建立分期計畫
+    - **設計決策**：addPage 啟用分期時，只建立計畫不建立全額記帳紀錄；每期紀錄由 `processAmortizations()` 自動生成
 - **週期性交易 & 攤提/分期 為獨立功能**，不綁定多帳戶模式開關；帳戶選擇器僅在多帳戶模式啟用時顯示
 - **rewardService.js（雙平台）**: 模組載入時偵測 `Capacitor.isNativePlatform()`：
-  - **原生** → 動態 import `@capacitor-community/admob`，使用 AdMob SDK 的 Banner 和 Rewarded Video
-  - **Web** → 保留 AdSense 橫幅 + GPT 獎勵廣告 + 內建推廣廣告備案
-  - 24 小時無廣告狀態存於 `localStorage`
+    - **原生** → 動態 import `@capacitor-community/admob`，使用 AdMob SDK 的 Banner 和 Rewarded Video
+    - **Web** → 保留 AdSense 橫幅 + GPT 獎勵廣告 + 內建推廣廣告備案
+    - 24 小時無廣告狀態存於 `localStorage`
 - **Capacitor Android**: Web 資產打包進 `android/app/src/main/assets/public/`，透過 WebView 載入本地檔案，AdMob 為原生 overlay

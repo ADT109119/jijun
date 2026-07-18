@@ -4,4 +4,7 @@
     <string name="title_activity_main">輕鬆記帳</string>
     <string name="package_name">com.walkingfish.easyaccounting</string>
     <string name="custom_url_scheme">com.walkingfish.easyaccounting</string>
+    <string name="widget_description_main">顯示今日支出、本月結餘和預算進度，並可快速記帳</string>
+    <string name="widget_description_carrier">在桌面顯示發票載具條碼，方便快速出示</string>
+    <string name="widget_description_shortcut">快速選擇分類並記帳</string>
 </resources>

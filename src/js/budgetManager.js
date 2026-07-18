@@ -3,153 +3,288 @@ import { formatCurrency, getDateRange, showToast, escapeHTML } from './utils.js'
 import Sortable from 'sortablejs'
 
 export class BudgetManager {
-  constructor(dataService) {
-    this.dataService = dataService
-    this.currentBudget = 0
-    this.categoryBudgets = {}
-    this.categoryBudgetOrder = []
-  }
+    constructor(dataService) {
+        this.dataService = dataService
+        this.currentBudget = 0
+        this.categoryBudgets = {}
+        this.categoryBudgetOrder = []
+        this.excludedBudgetCategories = []
+    }
 
-  async loadBudget() {
-    try {
-      let ledgerSuffix = '';
-      if (this.dataService && this.dataService.activeLedgerId) {
-          ledgerSuffix = `_${this.dataService.activeLedgerId}`;
-      }
+    async loadBudget() {
+        try {
+            let ledgerSuffix = ''
+            if (this.dataService && this.dataService.activeLedgerId) {
+                ledgerSuffix = `_${this.dataService.activeLedgerId}`
+            }
 
-      if (this.dataService) {
-        let budgetSettings = await this.dataService.getSetting(`budget_settings${ledgerSuffix}`);
-        
-        // Fallback for migration from single-ledger to multi-ledger
-        if (!budgetSettings && ledgerSuffix !== '' && ledgerSuffix === '_1') {
-            budgetSettings = await this.dataService.getSetting('budget_settings');
+            if (this.dataService) {
+                let budgetSettings = await this.dataService.getSetting(
+                    `budget_settings${ledgerSuffix}`
+                )
+
+                // Fallback for migration from single-ledger to multi-ledger
+                if (
+                    !budgetSettings &&
+                    ledgerSuffix !== '' &&
+                    ledgerSuffix === '_1'
+                ) {
+                    budgetSettings =
+                        await this.dataService.getSetting('budget_settings')
+                }
+
+                if (budgetSettings && budgetSettings.value) {
+                    const {
+                        monthlyBudget,
+                        categoryBudgets,
+                        categoryBudgetOrder,
+                        excludedBudgetCategories,
+                    } = budgetSettings.value
+                    
+                    const parsedBudget = parseFloat(monthlyBudget)
+                    this.currentBudget = isNaN(parsedBudget) ? 0 : parsedBudget
+
+                    const rawCategoryBudgets = categoryBudgets || {}
+                    this.categoryBudgets = {}
+                    for (const [catId, val] of Object.entries(rawCategoryBudgets)) {
+                        const parsedVal = parseFloat(val)
+                        this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+                    }
+
+                    this.categoryBudgetOrder =
+                        categoryBudgetOrder || Object.keys(this.categoryBudgets)
+                    
+                    const rawExcluded = excludedBudgetCategories || []
+                    this.excludedBudgetCategories = [...new Set(rawExcluded)]
+                    return
+                }
+            }
+
+            // Fallback to local storage (legacy or non-indexedDB)
+            const budget =
+                localStorage.getItem(`monthlyBudget${ledgerSuffix}`) ||
+                localStorage.getItem('monthlyBudget')
+            const parsedBudget = budget ? parseFloat(budget) : 0
+            this.currentBudget = isNaN(parsedBudget) ? 0 : parsedBudget
+
+            const categoryBudgetsRaw =
+                localStorage.getItem(`categoryBudgets${ledgerSuffix}`) ||
+                localStorage.getItem('categoryBudgets')
+            const parsedCats = categoryBudgetsRaw
+                ? JSON.parse(categoryBudgetsRaw)
+                : {}
+            this.categoryBudgets = {}
+            for (const [catId, val] of Object.entries(parsedCats)) {
+                const parsedVal = parseFloat(val)
+                this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+            }
+
+            const categoryBudgetOrderRaw =
+                localStorage.getItem(`categoryBudgetOrder${ledgerSuffix}`) ||
+                localStorage.getItem('categoryBudgetOrder')
+            this.categoryBudgetOrder = categoryBudgetOrderRaw
+                ? JSON.parse(categoryBudgetOrderRaw)
+                : Object.keys(this.categoryBudgets)
+
+            const excludedBudgetCategoriesRaw =
+                localStorage.getItem(
+                    `excludedBudgetCategories${ledgerSuffix}`
+                ) || localStorage.getItem('excludedBudgetCategories')
+            const rawExcluded = excludedBudgetCategoriesRaw
+                ? JSON.parse(excludedBudgetCategoriesRaw)
+                : []
+            this.excludedBudgetCategories = [...new Set(rawExcluded)]
+
+            // Migrate from local storage to IndexedDB
+            if (
+                this.dataService &&
+                (this.currentBudget > 0 ||
+                    Object.keys(this.categoryBudgets).length > 0)
+            ) {
+                await this.saveBudget(
+                    this.currentBudget,
+                    this.categoryBudgets,
+                    this.categoryBudgetOrder,
+                    this.excludedBudgetCategories
+                )
+            }
+        } catch (error) {
+            console.error('載入預算失敗:', error)
+            this.currentBudget = 0
+            this.categoryBudgets = {}
+            this.categoryBudgetOrder = []
+            this.excludedBudgetCategories = []
+        }
+    }
+
+    async saveBudget(
+        amount,
+        categoryBudgets = null,
+        categoryBudgetOrder = null,
+        excludedBudgetCategories = null,
+        skipLog = false
+    ) {
+        try {
+            const parsedAmount = parseFloat(amount)
+            this.currentBudget = isNaN(parsedAmount) ? 0 : parsedAmount
+            if (categoryBudgets !== null) {
+                this.categoryBudgets = {}
+                for (const [catId, val] of Object.entries(categoryBudgets)) {
+                    const parsedVal = parseFloat(val)
+                    this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
+                }
+            }
+            if (categoryBudgetOrder !== null) {
+                this.categoryBudgetOrder = [...categoryBudgetOrder]
+            }
+            if (excludedBudgetCategories !== null) {
+                this.excludedBudgetCategories = [...new Set(excludedBudgetCategories)]
+            }
+
+            let ledgerSuffix = ''
+            if (this.dataService && this.dataService.activeLedgerId) {
+                ledgerSuffix = `_${this.dataService.activeLedgerId}`
+            }
+
+            // Update local storage as a quick backup with try-catch wrapper
+            try {
+                localStorage.setItem(
+                    `monthlyBudget${ledgerSuffix}`,
+                    this.currentBudget.toString()
+                )
+                localStorage.setItem(
+                    `categoryBudgets${ledgerSuffix}`,
+                    JSON.stringify(this.categoryBudgets)
+                )
+                localStorage.setItem(
+                    `categoryBudgetOrder${ledgerSuffix}`,
+                    JSON.stringify(this.categoryBudgetOrder)
+                )
+                localStorage.setItem(
+                    `excludedBudgetCategories${ledgerSuffix}`,
+                    JSON.stringify(this.excludedBudgetCategories)
+                )
+            } catch (e) {
+                console.warn('LocalStorage backup failed:', e)
+            }
+
+            if (this.dataService) {
+                const payload = {
+                    monthlyBudget: this.currentBudget,
+                    categoryBudgets: this.categoryBudgets,
+                    categoryBudgetOrder: this.categoryBudgetOrder,
+                    excludedBudgetCategories: this.excludedBudgetCategories,
+                }
+                await this.dataService.saveSetting({
+                    key: `budget_settings${ledgerSuffix}`,
+                    value: payload,
+                })
+
+                if (!skipLog) {
+                    this.dataService.logChange(
+                        'update',
+                        `budget_settings${ledgerSuffix}`,
+                        'all',
+                        payload
+                    )
+                }
+            }
+            return true
+        } catch (error) {
+            console.error('儲存預算失敗:', error)
+            return false
+        }
+    }
+
+    async getBudgetStatus() {
+        const dateRange = getDateRange('month')
+        // Budget should not include transfers, so offset them
+        const stats = await this.dataService.getStatistics(
+            dateRange.startDate,
+            dateRange.endDate,
+            null,
+            true
+        )
+
+        // Subtract excluded categories from total spent (with de-duplication)
+        let excludedAmount = 0
+        const uniqueExcluded = new Set(this.excludedBudgetCategories)
+        for (const catId of uniqueExcluded) {
+            excludedAmount += stats.expenseByCategory[catId] || 0
+        }
+        const spent = Math.max(0, stats.totalExpense - excludedAmount)
+        const remaining = Math.max(0, this.currentBudget - spent)
+        const percentage =
+            this.currentBudget > 0 ? (spent / this.currentBudget) * 100 : 0
+
+        const categoryStatuses = []
+        for (const [categoryId, budgetAmount] of Object.entries(
+            this.categoryBudgets
+        )) {
+            if (budgetAmount <= 0) continue
+            const catSpent = stats.expenseByCategory[categoryId] || 0
+            const catRemaining = Math.max(0, budgetAmount - catSpent)
+            const catPercentage =
+                budgetAmount > 0 ? (catSpent / budgetAmount) * 100 : 0
+            
+            const categoryManager = window.app && window.app.categoryManager
+            const catObj = categoryManager
+                ? categoryManager.getCategoryById('expense', categoryId)
+                : null
+
+            categoryStatuses.push({
+                categoryId,
+                name: catObj?.name || categoryId,
+                icon: catObj?.icon || '',
+                budget: budgetAmount,
+                spent: catSpent,
+                remaining: catRemaining,
+                percentage: Math.min(100, catPercentage),
+                isOverBudget: catSpent > budgetAmount,
+                isExcluded: this.excludedBudgetCategories.includes(categoryId),
+            })
         }
 
-        if (budgetSettings && budgetSettings.value) {
-          const { monthlyBudget, categoryBudgets, categoryBudgetOrder } = budgetSettings.value;
-          this.currentBudget = monthlyBudget ? parseFloat(monthlyBudget) : 0;
-          this.categoryBudgets = categoryBudgets || {};
-          this.categoryBudgetOrder = categoryBudgetOrder || Object.keys(this.categoryBudgets);
-          return;
+        // Sort category statuses by custom order, otherwise fall back to percentage descending then alphabetical
+        if (this.categoryBudgetOrder && this.categoryBudgetOrder.length > 0) {
+            categoryStatuses.sort((a, b) => {
+                let idxA = this.categoryBudgetOrder.indexOf(a.categoryId)
+                let idxB = this.categoryBudgetOrder.indexOf(b.categoryId)
+                if (idxA === -1) idxA = 999
+                if (idxB === -1) idxB = 999
+                if (idxA !== idxB) return idxA - idxB
+                if (b.percentage !== a.percentage) return b.percentage - a.percentage
+                return a.categoryId.localeCompare(b.categoryId)
+            })
+        } else {
+            categoryStatuses.sort((a, b) => {
+                if (b.percentage !== a.percentage) return b.percentage - a.percentage
+                return a.categoryId.localeCompare(b.categoryId)
+            })
         }
-      }
-      
-      // Fallback to local storage (legacy or non-indexedDB)
-      const budget = localStorage.getItem(`monthlyBudget${ledgerSuffix}`) || localStorage.getItem('monthlyBudget')
-      this.currentBudget = budget ? parseFloat(budget) : 0
-      
-      const categoryBudgetsRaw = localStorage.getItem(`categoryBudgets${ledgerSuffix}`) || localStorage.getItem('categoryBudgets')
-      this.categoryBudgets = categoryBudgetsRaw ? JSON.parse(categoryBudgetsRaw) : {}
 
-      const categoryBudgetOrderRaw = localStorage.getItem(`categoryBudgetOrder${ledgerSuffix}`) || localStorage.getItem('categoryBudgetOrder')
-      this.categoryBudgetOrder = categoryBudgetOrderRaw ? JSON.parse(categoryBudgetOrderRaw) : Object.keys(this.categoryBudgets)
-      
-      // Migrate from local storage to IndexedDB
-      if (this.dataService && (this.currentBudget > 0 || Object.keys(this.categoryBudgets).length > 0)) {
-        await this.saveBudget(this.currentBudget, this.categoryBudgets, this.categoryBudgetOrder);
-      }
-      
-    } catch (error) {
-      console.error('載入預算失敗:', error)
-      this.currentBudget = 0
-      this.categoryBudgets = {}
-      this.categoryBudgetOrder = []
-    }
-  }
-
-  async saveBudget(amount, categoryBudgets = null, categoryBudgetOrder = null, skipLog = false) {
-    try {
-      this.currentBudget = amount
-      if (categoryBudgets !== null) {
-        this.categoryBudgets = categoryBudgets
-      }
-      if (categoryBudgetOrder !== null) {
-        this.categoryBudgetOrder = categoryBudgetOrder;
-      }
-      
-      let ledgerSuffix = '';
-      if (this.dataService && this.dataService.activeLedgerId) {
-          ledgerSuffix = `_${this.dataService.activeLedgerId}`;
-      }
-
-      // Update local storage as a quick backup
-      localStorage.setItem(`monthlyBudget${ledgerSuffix}`, this.currentBudget.toString())
-      localStorage.setItem(`categoryBudgets${ledgerSuffix}`, JSON.stringify(this.categoryBudgets))
-      localStorage.setItem(`categoryBudgetOrder${ledgerSuffix}`, JSON.stringify(this.categoryBudgetOrder))
-
-      if (this.dataService) {
-        const payload = { monthlyBudget: this.currentBudget, categoryBudgets: this.categoryBudgets, categoryBudgetOrder: this.categoryBudgetOrder };
-        await this.dataService.saveSetting({ key: `budget_settings${ledgerSuffix}`, value: payload });
-        
-        if (!skipLog) {
-          this.dataService.logChange('update', `budget_settings${ledgerSuffix}`, 'all', payload);
+        return {
+            budget: this.currentBudget,
+            spent: spent,
+            remaining: remaining,
+            percentage: Math.min(100, percentage),
+            isOverBudget: spent > this.currentBudget,
+            categoryStatuses: categoryStatuses,
         }
-      }
-      return true
-    } catch (error) {
-      console.error('儲存預算失敗:', error)
-      return false
-    }
-  }
-
-  async getBudgetStatus() {
-    const dateRange = getDateRange('month')
-    // Budget should not include transfers, so offset them
-    const stats = await this.dataService.getStatistics(dateRange.startDate, dateRange.endDate, null, true);
-    
-    const spent = stats.totalExpense
-    const remaining = Math.max(0, this.currentBudget - spent)
-    const percentage = this.currentBudget > 0 ? (spent / this.currentBudget) * 100 : 0
-    
-    const categoryStatuses = [];
-    for (const [categoryId, budgetAmount] of Object.entries(this.categoryBudgets)) {
-      if (budgetAmount <= 0) continue;
-      const catSpent = stats.expenseByCategory[categoryId] || 0;
-      const catRemaining = Math.max(0, budgetAmount - catSpent);
-      const catPercentage = budgetAmount > 0 ? (catSpent / budgetAmount) * 100 : 0;
-      categoryStatuses.push({
-        categoryId,
-        name: window.app && window.app.categoryManager ? window.app.categoryManager.getCategoryById('expense', categoryId)?.name || categoryId : categoryId,
-        icon: window.app && window.app.categoryManager ? window.app.categoryManager.getCategoryById('expense', categoryId)?.icon || '' : '',
-        budget: budgetAmount,
-        spent: catSpent,
-        remaining: catRemaining,
-        percentage: Math.min(100, catPercentage),
-        isOverBudget: catSpent > budgetAmount
-      });
     }
 
-    // Sort category statuses by custom order, otherwise fall back to percentage descending
-    if (this.categoryBudgetOrder && this.categoryBudgetOrder.length > 0) {
-      categoryStatuses.sort((a, b) => {
-        let idxA = this.categoryBudgetOrder.indexOf(a.categoryId);
-        let idxB = this.categoryBudgetOrder.indexOf(b.categoryId);
-        if (idxA === -1) idxA = 999;
-        if (idxB === -1) idxB = 999;
-        if (idxA !== idxB) return idxA - idxB;
-        return b.percentage - a.percentage;
-      });
-    } else {
-      categoryStatuses.sort((a, b) => b.percentage - a.percentage);
-    }
+    renderBudgetWidget() {
+        return this.getBudgetStatus().then(status => {
+            const isOverBudget = status.isOverBudget
+            const percentage = Math.min(100, status.percentage)
+            let waterLevel = 100 - percentage
+            if (percentage >= 100) {
+                waterLevel = -15
+            } else if (percentage <= 0) {
+                waterLevel = 105
+            }
 
-    return {
-      budget: this.currentBudget,
-      spent: spent,
-      remaining: remaining,
-      percentage: Math.min(100, percentage),
-      isOverBudget: spent > this.currentBudget,
-      categoryStatuses: categoryStatuses
-    }
-  }
-
-  renderBudgetWidget() {
-    return this.getBudgetStatus().then(status => {
-      const isOverBudget = status.isOverBudget;
-      const percentage = Math.min(100, status.percentage);
-      const waterLevel = 100 - percentage;
-
-      return `
+            return `
         <div class="bg-wabi-surface p-4 rounded-lg shadow-sm border border-wabi-border mb-6">
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-lg font-semibold text-wabi-primary">本月預算</h3>
@@ -158,7 +293,9 @@ export class BudgetManager {
             </button>
           </div>
           
-          ${status.budget > 0 ? `
+          ${
+              status.budget > 0
+                  ? `
             <div class="budget-wave-container">
               <div class="budget-wave" style="top: ${waterLevel}%;"></div>
               <div class="budget-info">
@@ -169,22 +306,30 @@ export class BudgetManager {
                   <div class="text-xs text-wabi mt-1">${formatCurrency(status.spent)} / ${formatCurrency(status.budget)}</div>
               </div>
             </div>
-            ${isOverBudget ? `
+            ${
+                isOverBudget
+                    ? `
               <div class="mt-3 p-2 bg-wabi-expense/10 border border-wabi-expense/20 rounded text-center">
                 <span class="text-wabi-expense text-sm">⚠️ 已超出全局預算 ${formatCurrency(status.spent - status.budget)}</span>
               </div>
-            ` : ''}
+            `
+                    : ''
+            }
             
-            ${status.categoryStatuses && status.categoryStatuses.length > 0 ? `
+            ${
+                status.categoryStatuses && status.categoryStatuses.length > 0
+                    ? `
               <div class="mt-4 pt-3 border-t border-wabi-border/50">
                 <div class="text-sm font-medium text-wabi-text-secondary mb-2">分類預算</div>
                 <div class="space-y-3">
-                  ${status.categoryStatuses.map(catStat => `
-                    <div class="category-budget-item">
+                  ${status.categoryStatuses
+                      .map(
+                          catStat => `
+                    <div class="category-budget-item ${catStat.isExcluded ? 'opacity-50' : ''}">
                       <div class="flex justify-between items-end mb-1">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i class="${catStat.icon} text-wabi-text-secondary"></i>
-                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}</span>
+                          <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}${catStat.isExcluded ? ' <span class="text-[0.65rem] text-wabi-text-secondary">(排除)</span>' : ''}</span>
                         </div>
                         <div class="text-right flex-shrink-0">
                           <div class="text-sm font-medium ${catStat.isOverBudget ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
@@ -193,14 +338,19 @@ export class BudgetManager {
                         </div>
                       </div>
                       <div class="h-1.5 w-full bg-wabi-border/50 rounded-full overflow-hidden flex">
-                        <div class="h-full rounded-full transition-all duration-500 ease-out ${catStat.isOverBudget ? 'bg-wabi-expense' : (catStat.percentage > 80 ? 'bg-wabi-expense/80' : 'bg-wabi-primary')}" style="width: ${catStat.percentage}%"></div>
+                        <div class="h-full rounded-full transition-all duration-500 ease-out ${catStat.isOverBudget ? 'bg-wabi-expense' : catStat.percentage > 80 ? 'bg-wabi-expense/80' : 'bg-wabi-primary'}" style="width: ${catStat.percentage}%"></div>
                       </div>
                     </div>
-                  `).join('')}
+                  `
+                      )
+                      .join('')}
                 </div>
               </div>
-            ` : ''}
-          ` : `
+            `
+                    : ''
+            }
+          `
+                  : `
             <div class="text-center py-8">
               <div class="text-4xl mb-3">💰</div>
               <p class="text-wabi-text-secondary mb-4">設定每月預算來追蹤支出</p>
@@ -208,27 +358,36 @@ export class BudgetManager {
                 設定預算
               </button>
             </div>
-          `}
+          `
+          }
         </div>
       `
-    })
-  }
-
-  showBudgetModal() {
-    // 確保每次只存在一個預算設定彈窗
-    this.closeBudgetModal()
-
-    const modal = document.createElement('div')
-    modal.id = 'budget-modal'
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
-    
-    let categoryOptions = '<option value="" disabled selected>選擇分類...</option>';
-    if (window.app && window.app.categoryManager) {
-      const expenseCategories = window.app.categoryManager.getAllCategories('expense');
-      categoryOptions += expenseCategories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+        })
     }
 
-    modal.innerHTML = `
+    showBudgetModal() {
+        // 確保每次只存在一個預算設定彈窗
+        this.closeBudgetModal()
+
+        const modal = document.createElement('div')
+        modal.id = 'budget-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
+        let categoryOptions =
+            '<option value="" disabled selected>選擇分類...</option>'
+        if (window.app && window.app.categoryManager) {
+            const expenseCategories =
+                window.app.categoryManager.getAllCategories('expense')
+            categoryOptions += expenseCategories
+                .map(
+                    c =>
+                        `<option value="${c.id}">${escapeHTML(c.name)}</option>`
+                )
+                .join('')
+        }
+
+        modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[90vh] overflow-y-auto wabi-scrollbar">
         <h3 class="text-lg font-semibold mb-4 text-wabi-primary">設定每月預算</h3>
         
@@ -254,6 +413,19 @@ export class BudgetManager {
             <!-- 分類預算列表會動態生成於此 -->
           </div>
         </div>
+
+        <div class="mb-6 pt-4 border-t border-wabi-border">
+          <div class="flex justify-between items-center mb-2">
+            <label class="block text-sm font-medium text-wabi-text-primary">
+              <i class="fas fa-eye-slash text-xs"></i> 預算排除類別
+            </label>
+            <span class="text-[0.65rem] text-wabi-text-secondary">不計入全局預算</span>
+          </div>
+          <p class="text-xs text-wabi-text-secondary mb-3">勾選要從全局預算統計中排除的支出分類</p>
+          <div id="exclude-categories-list" class="space-y-2">
+            <!-- 排除類別列表會動態生成於此 -->
+          </div>
+        </div>
         
         <div class="flex space-x-3 mt-6">
           <button id="save-budget-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-3 rounded-lg transition-colors">
@@ -265,45 +437,206 @@ export class BudgetManager {
         </div>
       </div>
     `
-    
-    document.body.appendChild(modal)
 
-    const categoryBudgetsList = modal.querySelector('#category-budgets-list');
-    const workingCategoryBudgets = { ...this.categoryBudgets };
-    let workingCategoryBudgetOrder = [...(this.categoryBudgetOrder || Object.keys(this.categoryBudgets))];
-    let sortableInstance = null;
+        document.body.appendChild(modal)
 
-    const renderCategoryBudgetList = () => {
-      categoryBudgetsList.innerHTML = '';
-      if (Object.keys(workingCategoryBudgets).length === 0) {
-        categoryBudgetsList.innerHTML = '<div class="text-center text-sm text-wabi-text-secondary py-2">無設定分類預算</div>';
-        if (sortableInstance) { sortableInstance.destroy(); sortableInstance = null; }
-        return;
-      }
+        const categoryBudgetsList = modal.querySelector(
+            '#category-budgets-list'
+        )
+        const excludeCategoriesList = modal.querySelector(
+            '#exclude-categories-list'
+        )
+        const workingCategoryBudgets = { ...this.categoryBudgets }
+        let workingCategoryBudgetOrder = [
+            ...(this.categoryBudgetOrder || Object.keys(this.categoryBudgets)),
+        ]
+        let workingExcludedCategories = [...this.excludedBudgetCategories]
+        let sortableInstance = null
 
-      // Render based on order
-      const itemsToRender = workingCategoryBudgetOrder.filter(id => workingCategoryBudgets[id] !== undefined);
-      // Append any trailing items that somehow missed the order array
-      Object.keys(workingCategoryBudgets).forEach(id => {
-          if (!itemsToRender.includes(id)) itemsToRender.push(id);
-      });
+        // Render exclude categories list
+        const renderExcludeCategoriesList = () => {
+            excludeCategoriesList.innerHTML = ''
+            if (window.app && window.app.categoryManager) {
+                const expenseCategories =
+                    window.app.categoryManager.getAllCategories('expense')
+                if (expenseCategories.length === 0) {
+                    excludeCategoriesList.innerHTML =
+                        '<div class="text-center text-sm text-wabi-text-secondary py-2">無可用支出分類</div>'
+                    return
+                }
+                expenseCategories.forEach(cat => {
+                    const isChecked = workingExcludedCategories.includes(cat.id)
+                    const item = document.createElement('label')
+                    item.className = `flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${isChecked ? 'bg-wabi-surface border-wabi-border' : 'border-wabi-border/30 hover:bg-wabi-surface'}`
+                    item.innerHTML = `
+            <input type="checkbox" value="${cat.id}" ${isChecked ? 'checked' : ''} class="exclude-cat-checkbox accent-wabi-accent w-4 h-4 cursor-pointer">
+            <div class="flex-shrink-0 w-5 text-center"><i class="${cat.icon} text-wabi-text-secondary"></i></div>
+            <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(cat.name)}</span>
+          `
+                    excludeCategoriesList.appendChild(item)
+                })
 
-      itemsToRender.forEach(catId => {
-        const amount = workingCategoryBudgets[catId];
-        let catName = catId;
-        let catIcon = '';
-        if (window.app && window.app.categoryManager) {
-          const cat = window.app.categoryManager.getCategoryById('expense', catId);
-          if (cat) {
-            catName = cat.name;
-            catIcon = cat.icon;
-          }
+                // Bind change events
+                excludeCategoriesList
+                    .querySelectorAll('.exclude-cat-checkbox')
+                    .forEach(el => {
+                        el.addEventListener('change', e => {
+                            const catId = e.target.value
+                            if (e.target.checked) {
+                                if (
+                                    !workingExcludedCategories.includes(catId)
+                                ) {
+                                    workingExcludedCategories.push(catId)
+                                }
+                            } else {
+                                workingExcludedCategories =
+                                    workingExcludedCategories.filter(
+                                        id => id !== catId
+                                    )
+                            }
+                            checkBudgetWarning()
+                        })
+                    })
+            } else {
+                excludeCategoriesList.innerHTML =
+                    '<div class="text-center text-sm text-wabi-text-secondary py-2">無法載入分類資料</div>'
+            }
         }
 
-        const item = document.createElement('div');
-        item.className = 'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border cat-budget-item-row';
-        item.dataset.id = catId;
-        item.innerHTML = `
+        renderExcludeCategoriesList()
+
+        const renderCategoryBudgetList = (fullRebuild = true) => {
+            if (fullRebuild) {
+                categoryBudgetsList.innerHTML = ''
+            }
+
+            if (Object.keys(workingCategoryBudgets).length === 0) {
+                categoryBudgetsList.innerHTML =
+                    '<div class="text-center text-sm text-wabi-text-secondary py-2">無設定分類預算</div>'
+                if (sortableInstance) {
+                    sortableInstance.destroy()
+                    sortableInstance = null
+                }
+                return
+            }
+
+            // Incremental mode: update only changed items, preserve SortableJS
+            if (!fullRebuild) {
+                const currentIds = new Set(Array.from(categoryBudgetsList.querySelectorAll('.cat-budget-item-row')).map(el => el.dataset.id))
+                const targetIds = new Set(Object.keys(workingCategoryBudgets))
+
+                // Remove items no longer in workingCategoryBudgets
+                currentIds.forEach(id => {
+                    if (!targetIds.has(id)) {
+                        const row = categoryBudgetsList.querySelector(`.cat-budget-item-row[data-id="${id}"]`)
+                        if (row) row.remove()
+                    }
+                })
+
+                // Update or add items
+                workingCategoryBudgetOrder.forEach(catId => {
+                    if (workingCategoryBudgets[catId] === undefined) return
+                    let catName = catId
+                    let catIcon = ''
+                    if (window.app && window.app.categoryManager) {
+                        const cat = window.app.categoryManager.getCategoryById('expense', catId)
+                        if (cat) { catName = cat.name; catIcon = cat.icon }
+                    }
+
+                    let row = categoryBudgetsList.querySelector(`.cat-budget-item-row[data-id="${catId}"]`)
+                    if (row) {
+                        row.querySelector('.cat-budget-amt').value = workingCategoryBudgets[catId]
+                        return
+                    }
+
+                    row = document.createElement('div')
+                    row.className = 'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border cat-budget-item-row'
+                    row.dataset.id = catId
+                    row.innerHTML = `
+          <div class="cursor-grab text-wabi-text-secondary w-6 flex items-center justify-center hover:text-wabi-primary sort-handle">
+            <i class="fas fa-grip-vertical"></i>
+          </div>
+          <div class="flex-shrink-0 w-6 text-center"><i class="${catIcon} text-wabi-text-secondary"></i></div>
+          <div class="flex-1 text-sm truncate w-16 text-wabi-text-primary">${escapeHTML(catName)}</div>
+          <div class="flex-col w-28">
+            <input type="number" data-id="${catId}" value="${workingCategoryBudgets[catId]}" min="0" step="100" class="cat-budget-amt w-full bg-transparent border-b border-wabi-border focus:border-wabi-accent outline-none text-right px-1 py-1 text-sm text-wabi-text-primary">
+          </div>
+          <button class="remove-cat-budget text-wabi-border hover:text-wabi-expense p-1 rounded transition-colors" data-id="${catId}">
+            <i class="fas fa-times"></i>
+          </button>
+        `
+                    // Find insertion index to respect custom order
+                    const existing = Array.from(categoryBudgetsList.querySelectorAll('.cat-budget-item-row'))
+                    let inserted = false
+                    for (const existingRow of existing) {
+                        const existingId = existingRow.dataset.id
+                        const existingIdx = workingCategoryBudgetOrder.indexOf(existingId)
+                        if (existingIdx > workingCategoryBudgetOrder.indexOf(catId)) {
+                            categoryBudgetsList.insertBefore(row, existingRow)
+                            inserted = true
+                            break
+                        }
+                    }
+                    if (!inserted) categoryBudgetsList.appendChild(row)
+                })
+
+                // Bind events for new elements only
+                categoryBudgetsList.querySelectorAll('.cat-budget-amt:not([data-bound])').forEach(el => {
+                    el.setAttribute('data-bound', '1')
+                    el.addEventListener('change', e => {
+                        const id = e.target.getAttribute('data-id')
+                        const val = parseFloat(e.target.value)
+                        if (!isNaN(val) && val >= 0) {
+                            workingCategoryBudgets[id] = val
+                            checkBudgetWarning()
+                        }
+                    })
+                })
+
+                categoryBudgetsList.querySelectorAll('.remove-cat-budget:not([data-bound])').forEach(el => {
+                    el.setAttribute('data-bound', '1')
+                    el.addEventListener('click', e => {
+                        const id = e.currentTarget.getAttribute('data-id')
+                        delete workingCategoryBudgets[id]
+                        workingCategoryBudgetOrder = workingCategoryBudgetOrder.filter(catId => catId !== id)
+                        renderCategoryBudgetList(false)
+                        checkBudgetWarning()
+                    })
+                })
+
+                return
+            }
+
+            // Full rebuild path (initial render or explicit rebuild)
+            categoryBudgetsList.innerHTML = ''
+
+            const itemsToRender = workingCategoryBudgetOrder.filter(
+                id => workingCategoryBudgets[id] !== undefined
+            )
+            Object.keys(workingCategoryBudgets).forEach(id => {
+                if (!itemsToRender.includes(id)) itemsToRender.push(id)
+            })
+
+            itemsToRender.forEach(catId => {
+                const amount = workingCategoryBudgets[catId]
+                let catName = catId
+                let catIcon = ''
+                if (window.app && window.app.categoryManager) {
+                    const cat = window.app.categoryManager.getCategoryById(
+                        'expense',
+                        catId
+                    )
+                    if (cat) {
+                        catName = cat.name
+                        catIcon = cat.icon
+                    }
+                }
+
+                const item = document.createElement('div')
+                item.className =
+                    'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border cat-budget-item-row'
+                item.dataset.id = catId
+                item.innerHTML = `
           <div class="cursor-grab text-wabi-text-secondary w-6 flex items-center justify-center hover:text-wabi-primary sort-handle">
             <i class="fas fa-grip-vertical"></i>
           </div>
@@ -315,76 +648,85 @@ export class BudgetManager {
           <button class="remove-cat-budget text-wabi-border hover:text-wabi-expense p-1 rounded transition-colors" data-id="${catId}">
             <i class="fas fa-times"></i>
           </button>
-        `;
-        categoryBudgetsList.appendChild(item);
-      });
+        `
+                categoryBudgetsList.appendChild(item)
+            })
 
-      // Bind events for dynamically added elements
-      categoryBudgetsList.querySelectorAll('.cat-budget-amt').forEach(el => {
-        el.addEventListener('change', (e) => {
-          const id = e.target.getAttribute('data-id');
-          const val = parseFloat(e.target.value);
-          if (!isNaN(val) && val >= 0) {
-            workingCategoryBudgets[id] = val;
-            checkBudgetWarning();
-          }
-        });
-      });
+            // Bind events for dynamically added elements
+            categoryBudgetsList
+                .querySelectorAll('.cat-budget-amt')
+                .forEach(el => {
+                    el.addEventListener('change', e => {
+                        const id = e.target.getAttribute('data-id')
+                        const val = parseFloat(e.target.value)
+                        if (!isNaN(val) && val >= 0) {
+                            workingCategoryBudgets[id] = val
+                            checkBudgetWarning()
+                        }
+                    })
+                })
 
-      categoryBudgetsList.querySelectorAll('.remove-cat-budget').forEach(el => {
-        el.addEventListener('click', (e) => {
-          const id = e.currentTarget.getAttribute('data-id');
-          delete workingCategoryBudgets[id];
-          workingCategoryBudgetOrder = workingCategoryBudgetOrder.filter(catId => catId !== id);
-          renderCategoryBudgetList();
-          checkBudgetWarning();
-        });
-      });
+            categoryBudgetsList
+                .querySelectorAll('.remove-cat-budget')
+                .forEach(el => {
+                    el.addEventListener('click', e => {
+                        const id = e.currentTarget.getAttribute('data-id')
+                        delete workingCategoryBudgets[id]
+                        workingCategoryBudgetOrder =
+                            workingCategoryBudgetOrder.filter(
+                                catId => catId !== id
+                            )
+                        renderCategoryBudgetList(false)
+                        checkBudgetWarning()
+                    })
+                })
 
-      // Initialize SortableJS
-      if (sortableInstance) {
-          sortableInstance.destroy();
-      }
-      sortableInstance = new Sortable(categoryBudgetsList, {
-          handle: '.sort-handle',
-          animation: 150,
-          ghostClass: 'opacity-50',
-          onEnd: () => {
-              const newOrder = Array.from(categoryBudgetsList.children)
-                  .map(row => row.dataset.id)
-                  .filter(id => id); // Filter out the add placeholder
-              workingCategoryBudgetOrder = newOrder;
-          }
-      });
-    };
-
-    const checkBudgetWarning = () => {
-        const budgetInput = document.getElementById('budget-input');
-        const warningEl = document.getElementById('budget-warning-msg');
-        if (!budgetInput || !warningEl) return;
-        const budget = parseFloat(budgetInput.value) || 0;
-        let totalCategoryBudget = 0;
-        for (const amount of Object.values(workingCategoryBudgets)) {
-            totalCategoryBudget += amount;
+            // Initialize SortableJS
+            if (sortableInstance) {
+                sortableInstance.destroy()
+            }
+            sortableInstance = new Sortable(categoryBudgetsList, {
+                handle: '.sort-handle',
+                animation: 150,
+                ghostClass: 'opacity-50',
+                onEnd: () => {
+                    const newOrder = Array.from(categoryBudgetsList.children)
+                        .map(row => row.dataset.id)
+                        .filter(id => id)
+                    workingCategoryBudgetOrder = newOrder
+                },
+            })
         }
 
-        if (totalCategoryBudget > budget && budget > 0) {
-            warningEl.classList.remove('hidden');
-        } else {
-            warningEl.classList.add('hidden');
+        const checkBudgetWarning = () => {
+            const budgetInput = modal.querySelector('#budget-input')
+            const warningEl = modal.querySelector('#budget-warning-msg')
+            if (!budgetInput || !warningEl) return
+            const budget = parseFloat(budgetInput.value) || 0
+            
+            const isWarning = this.checkBudgetWarning(budget, workingCategoryBudgets)
+            if (isWarning) {
+                warningEl.classList.remove('hidden')
+            } else {
+                warningEl.classList.add('hidden')
+            }
         }
-    };
 
-    // Add event listener to the main budget input to also trigger checking the warning
-    modal.querySelector('#budget-input').addEventListener('input', checkBudgetWarning);
+        // Add event listener to the main budget input to also trigger checking the warning
+        modal
+            .querySelector('#budget-input')
+            .addEventListener('input', checkBudgetWarning)
 
-    renderCategoryBudgetList();
+        renderCategoryBudgetList()
 
-    // 新增分類預算邏輯
-    modal.querySelector('#add-category-budget-btn').addEventListener('click', () => {
-      const addRow = document.createElement('div');
-      addRow.className = 'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border border-dashed';
-      addRow.innerHTML = `
+        // 新增分類預算邏輯
+        modal
+            .querySelector('#add-category-budget-btn')
+            .addEventListener('click', () => {
+                const addRow = document.createElement('div')
+                addRow.className =
+                    'flex items-center gap-2 bg-wabi-surface p-2 rounded border border-wabi-border border-dashed'
+                addRow.innerHTML = `
         <select class="flex-1 bg-transparent text-sm p-1 border-b border-wabi-border focus:border-wabi-accent outline-none text-wabi-text-primary cursor-pointer wabi-scrollbar">
           ${categoryOptions}
         </select>
@@ -394,82 +736,131 @@ export class BudgetManager {
         <button class="cancel-add-cat text-wabi-border hover:text-wabi-expense p-1 transition-colors">
           <i class="fas fa-times"></i>
         </button>
-      `;
-      categoryBudgetsList.appendChild(addRow);
-      
-      const selectEl = addRow.querySelector('select');
-      
-      addRow.querySelector('.confirm-add-cat').addEventListener('click', () => {
-        const selectedId = selectEl.value;
-        if (selectedId && !workingCategoryBudgets[selectedId] && workingCategoryBudgets[selectedId] !== 0) {
-          workingCategoryBudgets[selectedId] = 0; // Default to 0, user will edit
-          if (!workingCategoryBudgetOrder.includes(selectedId)) {
-             workingCategoryBudgetOrder.push(selectedId);
-          }
-          renderCategoryBudgetList();
-        } else if (workingCategoryBudgets[selectedId] !== undefined) {
-          renderCategoryBudgetList(); // Just re-render to discard
-        }
-      });
-      
-      addRow.querySelector('.cancel-add-cat').addEventListener('click', () => {
-        renderCategoryBudgetList();
-      });
-    });
-    
-    // 事件監聽
-    document.getElementById('save-budget-btn').addEventListener('click', async () => {
-      const amount = parseFloat(document.getElementById('budget-input').value)
-      if (!isNaN(amount) && amount >= 0) {
-        // Update any changed amounts that didn't trigger 'change' event yet
-        let totalCategoryBudget = 0;
-        categoryBudgetsList.querySelectorAll('.cat-budget-amt').forEach(el => {
-          const id = el.getAttribute('data-id');
-          const val = parseFloat(el.value);
-          if (!isNaN(val) && val >= 0) {
-            workingCategoryBudgets[id] = val;
-          }
-        });
+      `
+                categoryBudgetsList.appendChild(addRow)
 
-        for (const amnt of Object.values(workingCategoryBudgets)) {
-          totalCategoryBudget += amnt;
-        }
+                const selectEl = addRow.querySelector('select')
 
-        if (totalCategoryBudget > amount && amount > 0) {
-          showToast('注意：分類預算總和已超過全局預算！', 'warning')
-        } else {
-          showToast('預算設定已儲存', 'success')
-        }
+                addRow
+                    .querySelector('.confirm-add-cat')
+                    .addEventListener('click', () => {
+                        const selectedId = selectEl.value
+                        if (
+                            selectedId &&
+                            !workingCategoryBudgets[selectedId] &&
+                            workingCategoryBudgets[selectedId] !== 0
+                        ) {
+                            workingCategoryBudgets[selectedId] = 0 // Default to 0, user will edit
+                            if (
+                                !workingCategoryBudgetOrder.includes(selectedId)
+                            ) {
+                                workingCategoryBudgetOrder.push(selectedId)
+                            }
+                            renderCategoryBudgetList()
+                        } else if (
+                            workingCategoryBudgets[selectedId] !== undefined
+                        ) {
+                            renderCategoryBudgetList() // Just re-render to discard
+                        }
+                    })
 
-        await this.saveBudget(amount, workingCategoryBudgets, workingCategoryBudgetOrder)
-        this.closeBudgetModal()
-        if (window.app && window.app.router && window.app.router.routes['home']) {
-            window.app.router.routes['home'].loadBudgetWidget();
-        }
-      }
-    })
-    
-    document.getElementById('cancel-budget-btn').addEventListener('click', () => {
-      this.closeBudgetModal()
-    })
-    
-    // 點擊背景關閉
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        this.closeBudgetModal()
-      }
-    })
-    
-    // 自動聚焦輸入框
-    setTimeout(() => {
-      document.getElementById('budget-input').focus()
-    }, 100)
-  }
+                addRow
+                    .querySelector('.cancel-add-cat')
+                    .addEventListener('click', () => {
+                        renderCategoryBudgetList()
+                    })
+            })
 
-  closeBudgetModal() {
-    const modal = document.getElementById('budget-modal')
-    if (modal) {
-      modal.remove()
+        // 事件監聽
+        modal
+            .querySelector('#save-budget-btn')
+            .addEventListener('click', async () => {
+                const amount = parseFloat(
+                    modal.querySelector('#budget-input').value
+                )
+                if (!isNaN(amount) && amount >= 0) {
+                    // Update any changed amounts that didn't trigger 'change' event yet
+                    let totalCategoryBudget = 0
+                    categoryBudgetsList
+                        .querySelectorAll('.cat-budget-amt')
+                        .forEach(el => {
+                            const id = el.getAttribute('data-id')
+                            const val = parseFloat(el.value)
+                            if (!isNaN(val) && val >= 0) {
+                                workingCategoryBudgets[id] = val
+                            }
+                        })
+
+                    for (const amnt of Object.values(workingCategoryBudgets)) {
+                        totalCategoryBudget += amnt
+                    }
+
+                    // Re-collect excluded categories from checkboxes
+                    const finalExcludedCategories = []
+                    excludeCategoriesList
+                        .querySelectorAll('.exclude-cat-checkbox:checked')
+                        .forEach(el => {
+                            finalExcludedCategories.push(el.value)
+                        })
+
+                    if (totalCategoryBudget > amount && amount > 0) {
+                        showToast(
+                            '注意：分類預算總和已超過全局預算！',
+                            'warning'
+                        )
+                    } else {
+                        showToast('預算設定已儲存', 'success')
+                    }
+
+                    await this.saveBudget(
+                        amount,
+                        workingCategoryBudgets,
+                        workingCategoryBudgetOrder,
+                        finalExcludedCategories
+                    )
+                    this.closeBudgetModal()
+                    if (
+                        window.app &&
+                        window.app.router &&
+                        window.app.router.routes['home']
+                    ) {
+                        window.app.router.routes['home'].loadBudgetWidget()
+                    }
+                }
+            })
+
+        modal
+            .querySelector('#cancel-budget-btn')
+            .addEventListener('click', () => {
+                this.closeBudgetModal()
+            })
+
+        // 點擊背景關閉
+        modal.addEventListener('click', e => {
+            if (e.target === modal) {
+                this.closeBudgetModal()
+            }
+        })
+
+        // 自動聚焦輸入框
+        setTimeout(() => {
+            const inputEl = modal.querySelector('#budget-input')
+            if (inputEl) inputEl.focus()
+        }, 100)
     }
-  }
+
+    checkBudgetWarning(budgetAmount, categoryBudgets) {
+        let totalCategoryBudget = 0
+        for (const amount of Object.values(categoryBudgets)) {
+            totalCategoryBudget += amount
+        }
+        return totalCategoryBudget > budgetAmount && budgetAmount > 0
+    }
+
+    closeBudgetModal() {
+        const modal = document.getElementById('budget-modal')
+        if (modal) {
+            modal.remove()
+        }
+    }
 }

@@ -1,6 +1,6 @@
 export class PrivacyPage {
     constructor(app) {
-        this.app = app;
+        this.app = app
     }
 
     async render() {
@@ -34,6 +34,6 @@ export class PrivacyPage {
                     <p>我們保留隨時修改本隱私權政策的權利，更新後將不會另行發布通知。您繼續使用本應用程式即表示您同意修改後的隱私權政策。</p>
                 </div>
             </div>
-        `;
+        `
     }
 }

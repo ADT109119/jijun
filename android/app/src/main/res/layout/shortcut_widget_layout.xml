@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_bg">
+
+    <!-- Header Area -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="快速捷徑記帳"
+            android:textColor="#B3FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_shortcut_btn_add"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_btn_rounded_bg"
+            android:text=" ＋ 記一筆 "
+            android:textColor="#FFFFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1AFFFFFF"
+        android:layout_marginBottom="8dp"
+        android:contentDescription="divider" />
+
+    <!-- 5 Category Shortcuts -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <!-- 飲食 (Food) -->
+        <LinearLayout
+            android:id="@+id/widget_shortcut_cat_food"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_cat_food"
+                android:src="@drawable/ic_cat_food"
+                android:padding="8dp"
+                android:scaleType="fitCenter" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="飲食"
+                android:textColor="#B3FFFFFF"
+                android:textSize="10sp"/>
+        </LinearLayout>
+
+        <!-- 交通 (Transport) -->
+        <LinearLayout
+            android:id="@+id/widget_shortcut_cat_transport"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_cat_transport"
+                android:src="@drawable/ic_cat_transport"
+                android:padding="8dp"
+                android:scaleType="fitCenter" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="交通"
+                android:textColor="#B3FFFFFF"
+                android:textSize="10sp"/>
+        </LinearLayout>
+
+        <!-- 娛樂 (Entertainment) -->
+        <LinearLayout
+            android:id="@+id/widget_shortcut_cat_entertainment"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_cat_entertainment"
+                android:src="@drawable/ic_cat_entertainment"
+                android:padding="8dp"
+                android:scaleType="fitCenter" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="娛樂"
+                android:textColor="#B3FFFFFF"
+                android:textSize="10sp"/>
+        </LinearLayout>
+
+        <!-- 購物 (Shopping) -->
+        <LinearLayout
+            android:id="@+id/widget_shortcut_cat_shopping"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_cat_shopping"
+                android:src="@drawable/ic_cat_shopping"
+                android:padding="8dp"
+                android:scaleType="fitCenter" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="購物"
+                android:textColor="#B3FFFFFF"
+                android:textSize="10sp"/>
+        </LinearLayout>
+
+        <!-- 日常 (Daily) -->
+        <LinearLayout
+            android:id="@+id/widget_shortcut_cat_daily"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+            <ImageView
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="@drawable/bg_cat_daily"
+                android:src="@drawable/ic_cat_daily"
+                android:padding="8dp"
+                android:scaleType="fitCenter" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="日常"
+                android:textColor="#B3FFFFFF"
+                android:textSize="10sp"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

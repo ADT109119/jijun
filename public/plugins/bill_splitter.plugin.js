@@ -2,18 +2,23 @@ export default {
     meta: {
         id: 'com.walkingfish.bill_splitter',
         name: '分帳神器',
-        version: '1.2',
+        version: '1.8',
         description: '聚餐旅遊分帳助手，支援非平分模式，即時顯示剩餘金額。',
         author: 'The walking fish 步行魚',
-        icon: 'fa-file-invoice-dollar'
+        icon: 'fa-file-invoice-dollar',
+        permissions: ['data:read', 'data:write', 'ui'],
     },
 
     init(context) {
-        this.ctx = context;
-        this.ctx.ui.registerPage('split-bill', '分帳神器', (container) => this.render(container));
+        this.ctx = context
+        this.ctx.ui.registerPage('split-bill', '分帳神器', container =>
+            this.render(container)
+        )
 
-        this.ctx.ui.registerHomeWidget('com.walkingfish.bill_splitter', (container) => {
-            container.innerHTML = `
+        this.ctx.ui.registerHomeWidget(
+            'com.walkingfish.bill_splitter',
+            container => {
+                container.innerHTML = `
                 <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors" id="open-splitter-widget">
                     <div class="flex items-center gap-3">
                         <div class="bg-indigo-500 text-wabi-surface rounded-lg size-10 flex items-center justify-center">
@@ -26,20 +31,26 @@ export default {
                     </div>
                     <i class="fa-solid fa-chevron-right text-indigo-300"></i>
                 </div>
-            `;
-            container.querySelector('#open-splitter-widget').addEventListener('click', () => {
-                this.ctx.ui.navigateTo('#split-bill');
-            });
-        });
+            `
+                container
+                    .querySelector('#open-splitter-widget')
+                    .addEventListener('click', () => {
+                        this.ctx.ui.navigateTo('#split-bill')
+                    })
+            }
+        )
     },
 
     async render(container) {
-        const contacts = await this.ctx.data.getContacts();
-        const expenseCategories = await this.ctx.data.getCategories('expense');
-        const defaultCategory = expenseCategories.find(c => c.id === 'food') ||
-                              expenseCategories.find(c => c.id === 'others') ||
-                              expenseCategories[0];
-        const defaultCategoryId = defaultCategory ? defaultCategory.id : 'others';
+        const contacts = await this.ctx.data.getContacts()
+        const expenseCategories = await this.ctx.data.getCategories('expense')
+        const defaultCategory =
+            expenseCategories.find(c => c.id === 'food') ||
+            expenseCategories.find(c => c.id === 'others') ||
+            expenseCategories[0]
+        const defaultCategoryId = defaultCategory
+            ? defaultCategory.id
+            : 'others'
 
         container.innerHTML = `
             <div class="px-4 pb-24 pt-4 space-y-4">
@@ -83,12 +94,20 @@ export default {
                         <div id="contact-section">
                             <label class="block text-sm font-medium text-gray-700 mb-2">分攤對象</label>
                             <div class="space-y-2 max-h-48 overflow-y-auto mb-3 custom-scrollbar">
-                                ${contacts.length > 0 ? contacts.map(c => `
+                                ${
+                                    contacts.length > 0
+                                        ? contacts
+                                              .map(
+                                                  c => `
                                     <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
                                         <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
                                         <span class="ml-3 font-medium text-gray-700">${c.name}</span>
                                     </label>
-                                `).join('') : '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'}
+                                `
+                                              )
+                                              .join('')
+                                        : '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'
+                                }
                             </div>
                             <div class="flex gap-2">
                                 <input type="text" id="new-contact-name" class="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm" placeholder="新聯絡人名稱">
@@ -156,130 +175,177 @@ export default {
                     </button>
                 </div>
             </div>
-        `;
+        `
 
-        this.bindEvents(contacts, defaultCategoryId);
+        this.bindEvents(contacts, defaultCategoryId)
     },
 
     bindEvents(initialContacts, defaultCategoryId) {
-        const contacts = [...initialContacts];
-        const modeIPaidBtn = document.getElementById('mode-i-paid');
-        const modeFriendPaidBtn = document.getElementById('mode-friend-paid');
-        const payerSection = document.getElementById('payer-section');
-        const contactSection = document.getElementById('contact-section');
-        const customSection = document.getElementById('custom-section');
-        const includeMeSection = document.getElementById('include-me-section');
-        const remainingDisplay = document.getElementById('remaining-display');
-        const amountInput = document.getElementById('split-amount');
-        const includeMeCb = document.getElementById('include-me');
-        const resultCard = document.getElementById('result-card');
-        const createBtn = document.getElementById('create-debt-btn');
-        const payerSelect = document.getElementById('payer-select');
-        const addContactBtn = document.getElementById('add-contact-btn');
-        const newContactInput = document.getElementById('new-contact-name');
-        const categorySelect = document.getElementById('split-category');
-        const splitEqualBtn = document.getElementById('split-equal');
-        const splitCustomBtn = document.getElementById('split-custom');
-        const customList = document.getElementById('custom-list');
-        const addPersonBtn = document.getElementById('add-person-btn');
+        const contacts = [...initialContacts]
+        const modeIPaidBtn = document.getElementById('mode-i-paid')
+        const modeFriendPaidBtn = document.getElementById('mode-friend-paid')
+        const payerSection = document.getElementById('payer-section')
+        const contactSection = document.getElementById('contact-section')
+        const customSection = document.getElementById('custom-section')
+        const includeMeSection = document.getElementById('include-me-section')
+        const remainingDisplay = document.getElementById('remaining-display')
+        const amountInput = document.getElementById('split-amount')
+        const includeMeCb = document.getElementById('include-me')
+        const resultCard = document.getElementById('result-card')
+        const createBtn = document.getElementById('create-debt-btn')
+        const payerSelect = document.getElementById('payer-select')
+        const addContactBtn = document.getElementById('add-contact-btn')
+        const newContactInput = document.getElementById('new-contact-name')
+        const categorySelect = document.getElementById('split-category')
+        const splitEqualBtn = document.getElementById('split-equal')
+        const splitCustomBtn = document.getElementById('split-custom')
+        const customList = document.getElementById('custom-list')
+        const addPersonBtn = document.getElementById('add-person-btn')
 
-        let mode = 'i-paid';
-        let splitMode = 'equal';
+        let mode = 'i-paid'
+        let splitMode = 'equal'
 
         // Mode switching (i-paid vs friend-paid)
-        const switchMode = (m) => {
-            mode = m;
+        const switchMode = m => {
+            mode = m
             if (m === 'i-paid') {
-                modeIPaidBtn.className = 'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all';
-                modeFriendPaidBtn.className = 'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all';
-                payerSection.classList.add('hidden');
-                contactSection.classList.remove('hidden');
-                customSection.classList.remove('hidden');
+                modeIPaidBtn.className =
+                    'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all'
+                modeFriendPaidBtn.className =
+                    'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all'
+                payerSection.classList.add('hidden')
+                contactSection.classList.remove('hidden')
+                customSection.classList.remove('hidden')
             } else {
-                modeFriendPaidBtn.className = 'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all';
-                modeIPaidBtn.className = 'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all';
-                payerSection.classList.remove('hidden');
-                contactSection.classList.remove('hidden');
-                customSection.classList.remove('hidden');
+                modeFriendPaidBtn.className =
+                    'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all'
+                modeIPaidBtn.className =
+                    'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all'
+                payerSection.classList.remove('hidden')
+                contactSection.classList.remove('hidden')
+                customSection.classList.remove('hidden')
             }
-            calculateResult();
-        };
-        modeIPaidBtn.addEventListener('click', () => switchMode('i-paid'));
-        modeFriendPaidBtn.addEventListener('click', () => switchMode('friend-paid'));
+            calculateResult()
+        }
+        modeIPaidBtn.addEventListener('click', () => switchMode('i-paid'))
+        modeFriendPaidBtn.addEventListener('click', () =>
+            switchMode('friend-paid')
+        )
 
         // Split mode switching (equal vs custom)
         splitEqualBtn.addEventListener('click', () => {
-            splitMode = 'equal';
-            splitEqualBtn.className = 'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all';
-            splitCustomBtn.className = 'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all';
-            contactSection.classList.remove('hidden');
-            includeMeSection.classList.remove('hidden');
-            customSection.classList.add('hidden');
-            remainingDisplay.classList.add('hidden');
-            calculateResult();
-        });
+            splitMode = 'equal'
+            splitEqualBtn.className =
+                'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all'
+            splitCustomBtn.className =
+                'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all'
+            contactSection.classList.remove('hidden')
+            includeMeSection.classList.remove('hidden')
+            customSection.classList.add('hidden')
+            remainingDisplay.classList.add('hidden')
+            calculateResult()
+        })
         splitCustomBtn.addEventListener('click', () => {
-            splitMode = 'custom';
-            splitCustomBtn.className = 'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all';
-            splitEqualBtn.className = 'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all';
-            contactSection.classList.add('hidden');
-            includeMeSection.classList.add('hidden');
-            customSection.classList.remove('hidden');
-            remainingDisplay.classList.remove('hidden');
+            splitMode = 'custom'
+            splitCustomBtn.className =
+                'flex-1 py-2 text-sm font-bold rounded-md bg-white text-indigo-600 shadow-sm transition-all'
+            splitEqualBtn.className =
+                'flex-1 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-all'
+            contactSection.classList.add('hidden')
+            includeMeSection.classList.add('hidden')
+            customSection.classList.remove('hidden')
+            remainingDisplay.classList.remove('hidden')
             // Initialize custom list with selected contacts
-            initCustomList();
-        });
+            initCustomList()
+        })
 
         // Add contact
-        addContactBtn.addEventListener('click', () => {
-            const name = newContactInput.value.trim();
-            if (!name) return;
-            const id = 'c-' + Date.now();
-            contacts.push({ id, name });
-            this.ctx.data.addContact({ id, name });
-            // Re-render contact list
-            renderContacts();
-            newContactInput.value = '';
-        });
+        addContactBtn.addEventListener('click', async () => {
+            const name = newContactInput.value.trim()
+            if (!name) return
+            try {
+                const id = await this.ctx.data.addContact({ name })
+                contacts.push({ id, name })
+                // Re-render contact list
+                renderContacts()
+                newContactInput.value = ''
+            } catch (err) {
+                this.ctx.ui.showToast('新增聯絡人失敗', 'error')
+            }
+        })
 
         const renderContacts = () => {
-            const container = contactSection.querySelector('.space-y-2.max-h-48');
-            container.innerHTML = contacts.map(c => `
-                <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
-                    <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
-                    <span class="ml-3 font-medium text-gray-700">${c.name}</span>
-                </label>
-            `).join('');
-            container.querySelectorAll('input[name="split-contact"]').forEach(cb => {
-                cb.addEventListener('change', calculateResult);
-            });
-        };
+            const container = contactSection.querySelector(
+                '.space-y-2.max-h-48'
+            )
+            if (contacts.length > 0) {
+                container.innerHTML = contacts
+                    .map(
+                        c => `
+                    <label class="flex items-center p-3 bg-gray-50 rounded-lg border border-gray-100 cursor-pointer hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
+                        <input type="checkbox" name="split-contact" value="${c.id}" class="size-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
+                        <span class="ml-3 font-medium text-gray-700">${c.name}</span>
+                    </label>
+                `
+                    )
+                    .join('')
+                container
+                    .querySelectorAll('input[name="split-contact"]')
+                    .forEach(cb => {
+                        cb.addEventListener('change', calculateResult)
+                    })
+            } else {
+                container.innerHTML =
+                    '<div class="text-center text-gray-400 py-2">尚無聯絡人，請先新增</div>'
+            }
+
+            // Update payer select dropdown options as well
+            if (payerSelect) {
+                const currentPayerVal = payerSelect.value
+                payerSelect.innerHTML = contacts
+                    .map(
+                        c =>
+                            `<option value="${c.id}" ${String(c.id) === String(currentPayerVal) ? 'selected' : ''}>${c.name}</option>`
+                    )
+                    .join('')
+            }
+        }
 
         // Custom split: init list
-        let customEntries = [];
+        let customEntries = []
         const initCustomList = () => {
-            if (customEntries.length > 0) return;
-            customEntries = [];
+            if (customEntries.length > 0) return
+            customEntries = []
             // Pre-populate from checked contacts
-            document.querySelectorAll('input[name="split-contact"]:checked').forEach(cb => {
-                const contact = contacts.find(c => c.id === cb.value);
-                if (contact) {
-                    customEntries.push({ id: contact.id, name: contact.name, amount: '' });
-                }
-            });
+            document
+                .querySelectorAll('input[name="split-contact"]:checked')
+                .forEach(cb => {
+                    const contact = contacts.find(
+                        c => String(c.id) === String(cb.value)
+                    )
+                    if (contact) {
+                        customEntries.push({
+                            id: contact.id,
+                            name: contact.name,
+                            amount: '',
+                        })
+                    }
+                })
             // If none selected, add "我" as first entry
             if (customEntries.length === 0) {
-                customEntries.push({ id: '__me__', name: '我', amount: '' });
+                customEntries.push({ id: '__me__', name: '我', amount: '' })
             }
-            renderCustomList();
-        };
+            renderCustomList()
+        }
 
         const renderCustomList = () => {
-            customList.innerHTML = customEntries.map((entry, idx) => `
+            customList.innerHTML = customEntries
+                .map(
+                    (entry, idx) => `
                 <div class="flex items-center gap-2">
                     <select class="custom-person-name flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none" data-idx="${idx}">
                         <option value="__me__" ${entry.id === '__me__' ? 'selected' : ''}>我</option>
-                        ${contacts.map(c => `<option value="${c.id}" ${c.id === entry.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                        ${contacts.map(c => `<option value="${c.id}" ${String(c.id) === String(entry.id) ? 'selected' : ''}>${c.name}</option>`).join('')}
                     </select>
                     <div class="relative flex-1">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
@@ -289,249 +355,525 @@ export default {
                         <i class="fa-solid fa-times"></i>
                     </button>
                 </div>
-            `).join('');
+            `
+                )
+                .join('')
 
             // Bind events
-            customList.querySelectorAll('.custom-person-amount').forEach(input => {
-                input.addEventListener('input', calculateRemaining);
-            });
+            customList
+                .querySelectorAll('.custom-person-amount')
+                .forEach(input => {
+                    input.addEventListener('input', calculateRemaining)
+                })
             customList.querySelectorAll('.remove-person').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const idx = parseInt(btn.dataset.idx);
-                    customEntries.splice(idx, 1);
-                    renderCustomList();
-                    calculateRemaining();
-                });
-            });
-        };
+                    const idx = parseInt(btn.dataset.idx)
+                    customEntries.splice(idx, 1)
+                    renderCustomList()
+                    calculateRemaining()
+                })
+            })
+        }
 
         addPersonBtn.addEventListener('click', () => {
-            customEntries.push({ id: '__me__', name: '我', amount: '' });
-            renderCustomList();
-        });
+            customEntries.push({ id: '__me__', name: '我', amount: '' })
+            renderCustomList()
+        })
 
         // Remaining calculation
         const calculateRemaining = () => {
-            const total = parseFloat(amountInput.value) || 0;
-            let assigned = 0;
+            const total = parseFloat(amountInput.value) || 0
+            let assigned = 0
             customEntries.forEach(entry => {
-                assigned += parseFloat(entry.amount) || 0;
-            });
+                assigned += parseFloat(entry.amount) || 0
+            })
             // Re-read from DOM for live updates
-            customList.querySelectorAll('.custom-person-amount').forEach(input => {
-                const idx = parseInt(input.dataset.idx);
-                customEntries[idx].amount = input.value;
-            });
-            let assignedLive = 0;
-            customEntries.forEach(e => assignedLive += parseFloat(e.amount) || 0);
-            const remaining = total - assignedLive;
-            document.getElementById('remaining-amount').textContent = '$' + remaining.toFixed(0);
-            const okDiv = document.getElementById('remaining-ok');
+            customList
+                .querySelectorAll('.custom-person-amount')
+                .forEach(input => {
+                    const idx = parseInt(input.dataset.idx)
+                    customEntries[idx].amount = input.value
+                })
+            let assignedLive = 0
+            customEntries.forEach(
+                e => (assignedLive += parseFloat(e.amount) || 0)
+            )
+            const remaining = total - assignedLive
+            document.getElementById('remaining-amount').textContent =
+                '$' + remaining.toFixed(0)
+            const okDiv = document.getElementById('remaining-ok')
             if (remaining === 0) {
-                okDiv.classList.remove('hidden');
+                okDiv.classList.remove('hidden')
             } else {
-                okDiv.classList.add('hidden');
+                okDiv.classList.add('hidden')
             }
-            updateResultCard();
-        };
+            updateResultCard()
+        }
 
         // Core calculation
         const calculateResult = () => {
-            const total = parseFloat(amountInput.value) || 0;
-            const checked = document.querySelectorAll('input[name="split-contact"]:checked');
-            let count = checked.length;
-            if (includeMeCb.checked) count += 1;
+            const total = parseFloat(amountInput.value) || 0
+            const checked = document.querySelectorAll(
+                'input[name="split-contact"]:checked'
+            )
+            let count = checked.length
+            if (includeMeCb.checked) count += 1
 
-            document.getElementById('split-count-display').textContent = count + ' 人分攤';
-            document.getElementById('preview-total').textContent = '$' + total.toFixed(0);
+            document.getElementById('split-count-display').textContent =
+                count + ' 人分攤'
+            document.getElementById('preview-total').textContent =
+                '$' + total.toFixed(0)
 
             if (count > 0) {
-                const perPerson = total / count;
-                document.getElementById('result-amount').textContent = '$' + perPerson.toFixed(0);
-                document.getElementById('result-title').textContent = '每人應付';
-                resultCard.classList.remove('opacity-50', 'grayscale');
-                createBtn.disabled = false;
+                const perPerson = total / count
+                document.getElementById('result-amount').textContent =
+                    '$' + perPerson.toFixed(0)
+                document.getElementById('result-title').textContent = '每人應付'
+                resultCard.classList.remove('opacity-50', 'grayscale')
+                createBtn.disabled = false
             } else {
-                document.getElementById('result-amount').textContent = '$0';
-                resultCard.classList.add('opacity-50', 'grayscale');
-                createBtn.disabled = true;
+                document.getElementById('result-amount').textContent = '$0'
+                resultCard.classList.add('opacity-50', 'grayscale')
+                createBtn.disabled = true
             }
-        };
+        }
 
         const updateResultCard = () => {
-            const total = parseFloat(amountInput.value) || 0;
-            document.getElementById('preview-total').textContent = '$' + total.toFixed(0);
+            const total = parseFloat(amountInput.value) || 0
+            document.getElementById('preview-total').textContent =
+                '$' + total.toFixed(0)
             if (splitMode === 'custom') {
-                let assigned = 0;
-                customEntries.forEach(e => assigned += parseFloat(e.amount) || 0);
-                const remaining = total - assigned;
-                document.getElementById('result-amount').textContent = '$' + remaining.toFixed(0);
-                document.getElementById('result-title').textContent = '剩餘未分';
+                let assigned = 0
+                customEntries.forEach(
+                    e => (assigned += parseFloat(e.amount) || 0)
+                )
+                const remaining = total - assigned
+                document.getElementById('result-amount').textContent =
+                    '$' + remaining.toFixed(0)
+                document.getElementById('result-title').textContent = '剩餘未分'
                 if (customEntries.length > 0 && remaining === 0) {
-                    resultCard.classList.remove('opacity-50', 'grayscale');
-                    createBtn.disabled = false;
+                    resultCard.classList.remove('opacity-50', 'grayscale')
+                    createBtn.disabled = false
                 } else {
-                    resultCard.classList.add('opacity-50', 'grayscale');
-                    createBtn.disabled = true;
+                    resultCard.classList.add('opacity-50', 'grayscale')
+                    createBtn.disabled = true
                 }
             }
-        };
+        }
 
         amountInput.addEventListener('input', () => {
-            if (splitMode === 'equal') calculateResult();
-            else calculateRemaining();
-        });
-        includeMeCb.addEventListener('change', calculateResult);
+            if (splitMode === 'equal') calculateResult()
+            else calculateRemaining()
+        })
+        includeMeCb.addEventListener('change', calculateResult)
 
         // Create debts
         createBtn.addEventListener('click', async () => {
-            const totalAmount = parseFloat(amountInput.value) || 0;
-            const note = document.getElementById('split-note').value.trim();
-            const category = categorySelect.value;
-            const ledgerId = this.ctx.activeLedgerId();
+            const totalAmount = parseFloat(amountInput.value) || 0
+            const note = document.getElementById('split-note').value.trim()
+            const category = categorySelect.value
+            const ledgerId = this.ctx.activeLedgerId()
 
             if (splitMode === 'equal') {
-                await this.handleEqualSplit(totalAmount, note, category, ledgerId);
+                await this.handleEqualSplit(
+                    totalAmount,
+                    note,
+                    category,
+                    ledgerId
+                )
             } else {
-                await this.handleCustomSplit(totalAmount, note, category, ledgerId);
+                await this.handleCustomSplit(
+                    totalAmount,
+                    note,
+                    category,
+                    ledgerId
+                )
             }
-        });
+        })
+
+        // Initialize contact list and event listeners
+        renderContacts()
     },
 
     async handleEqualSplit(totalAmount, note, categoryId, ledgerId) {
-        const contacts = await this.ctx.data.getContacts();
-        const checked = document.querySelectorAll('input[name="split-contact"]:checked');
-        const includeMe = document.getElementById('include-me').checked;
-        const mode = document.getElementById('mode-i-paid').classList.contains('bg-white') ? 'i-paid' : 'friend-paid';
+        console.log('[BillSplitter] Starting handleEqualSplit:', {
+            totalAmount,
+            note,
+            categoryId,
+            ledgerId,
+        })
+        try {
+            const contacts = await this.ctx.data.getContacts()
+            console.log('[BillSplitter] Fetched contacts:', contacts)
 
-        let splitContacts = [];
-        checked.forEach(cb => {
-            const c = contacts.find(x => x.id === cb.value);
-            if (c) splitContacts.push(c);
-        });
-        if (includeMe) splitContacts.push({ id: '__me__', name: '我' });
+            const checked = document.querySelectorAll(
+                'input[name="split-contact"]:checked'
+            )
+            const includeMe = document.getElementById('include-me').checked
+            const mode = document
+                .getElementById('mode-i-paid')
+                .classList.contains('bg-white')
+                ? 'i-paid'
+                : 'friend-paid'
+            console.log('[BillSplitter] UI States:', {
+                checkedCount: checked.length,
+                includeMe,
+                mode,
+            })
 
-        const count = splitContacts.length;
-        const perPerson = Math.round(totalAmount / count);
+            const splitContacts = []
+            checked.forEach(cb => {
+                const cleanId =
+                    cb.value && !isNaN(cb.value) ? Number(cb.value) : cb.value
+                const c = contacts.find(x => String(x.id) === String(cleanId))
+                console.log(
+                    '[BillSplitter] Matching checkbox value:',
+                    cb.value,
+                    'cleanId:',
+                    cleanId,
+                    'match:',
+                    c
+                )
+                if (c) splitContacts.push(c)
+            })
+            if (includeMe) splitContacts.push({ id: '__me__', name: '我' })
+            console.log('[BillSplitter] Final splitContacts:', splitContacts)
 
-        // Create expense record
-        const expense = {
-            type: 'expense',
-            category: categoryId,
-            amount: totalAmount,
-            description: note || '聚餐分帳',
-            date: new Date().toISOString().split('T')[0]
-        };
-        await this.ctx.data.addRecord(expense);
-
-        // Create debts
-        if (mode === 'i-paid') {
-            for (const contact of splitContacts.filter(c => c.id !== '__me__')) {
-                await this.ctx.data.addDebt({
-                    type: 'receivable',
-                    contactId: contact.id,
-                    amount: perPerson,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳'
-                });
+            const count = splitContacts.length
+            if (count === 0) {
+                console.warn('[BillSplitter] Count is 0, aborting split')
+                this.ctx.ui.showToast('請選擇分攤對象', 'error')
+                return
             }
-        } else {
-            const payerId = document.getElementById('payer-select').value;
-            for (const contact of splitContacts.filter(c => c.id !== '__me__' && c.id !== payerId)) {
-                await this.ctx.data.addDebt({
-                    type: 'payable',
-                    contactId: contact.id,
-                    amount: perPerson,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳'
-                });
+
+            const dateStr = new Date().toISOString().split('T')[0]
+
+            if (mode === 'i-paid') {
+                // Calculate shares for each contact in splitContacts
+                const baseShare = Math.floor(totalAmount / count)
+                const remainder = totalAmount % count
+
+                // Assign shares
+                const shares = splitContacts.map((contact, index) => {
+                    return {
+                        contact,
+                        amount: baseShare + (index < remainder ? 1 : 0),
+                    }
+                })
+
+                for (const share of shares) {
+                    const contact = share.contact
+                    const shareAmount = share.amount
+                    if (shareAmount === 0) continue
+
+                    if (String(contact.id) === '__me__') {
+                        // Create my own expense record (no debt)
+                        const recordId = await this.ctx.data.addRecord({
+                            ledgerId,
+                            type: 'expense',
+                            category: categoryId,
+                            amount: shareAmount,
+                            description: `${note || '聚餐分帳'} (我自付)`,
+                            date: dateStr,
+                        })
+                        console.log(
+                            '[BillSplitter] Created my own share record:',
+                            recordId,
+                            'amount:',
+                            shareAmount
+                        )
+                    } else {
+                        // Create expense record for this contact's share
+                        const recordId = await this.ctx.data.addRecord({
+                            ledgerId,
+                            type: 'expense',
+                            category: categoryId,
+                            amount: shareAmount,
+                            description: `${note || '聚餐分帳'} (${contact.name}分攤)`,
+                            date: dateStr,
+                        })
+                        console.log(
+                            '[BillSplitter] Created share record for',
+                            contact.name,
+                            'recordId:',
+                            recordId,
+                            'amount:',
+                            shareAmount
+                        )
+
+                        // Create receivable debt
+                        const finalContactId =
+                            contact.id && !isNaN(contact.id)
+                                ? Number(contact.id)
+                                : contact.id
+                        const debtId = await this.ctx.data.addDebt({
+                            ledgerId,
+                            type: 'receivable',
+                            contactId: finalContactId,
+                            amount: shareAmount,
+                            date: dateStr,
+                            description: `${note || '聚餐分帳'} (${contact.name}分攤)`,
+                            recordId: recordId,
+                        })
+                        console.log(
+                            '[BillSplitter] Created receivable debt for',
+                            contact.name,
+                            'debtId:',
+                            debtId
+                        )
+
+                        // Link record to debt
+                        await this.ctx.data.updateRecord(recordId, {
+                            debtId: debtId,
+                        })
+                    }
+                }
+            } else {
+                // Friend Paid:
+                // I owe the payer my share.
+                const baseShare = Math.floor(totalAmount / count)
+                const remainder = totalAmount % count
+
+                // Find my share amount
+                const myIndex = splitContacts.findIndex(
+                    c => String(c.id) === '__me__'
+                )
+                if (myIndex === -1) {
+                    console.warn(
+                        '[BillSplitter] Me is not included in split, nothing to record'
+                    )
+                    this.ctx.ui.showToast('分帳完成 (我不需分攤)', 'success')
+                    this.ctx.ui.navigateTo('#home')
+                    return
+                }
+                const myShareAmount = baseShare + (myIndex < remainder ? 1 : 0)
+
+                if (myShareAmount > 0) {
+                    const rawPayerId =
+                        document.getElementById('payer-select').value
+                    const payerId =
+                        rawPayerId && !isNaN(rawPayerId)
+                            ? Number(rawPayerId)
+                            : rawPayerId
+                    const payerName =
+                        contacts.find(c => String(c.id) === String(payerId))
+                            ?.name || '聯絡人'
+
+                    // Create expense record for my share
+                    const recordId = await this.ctx.data.addRecord({
+                        ledgerId,
+                        type: 'expense',
+                        category: categoryId,
+                        amount: myShareAmount,
+                        description: `${note || '聚餐分帳'} (欠 ${payerName})`,
+                        date: dateStr,
+                    })
+                    console.log(
+                        '[BillSplitter] Created my share record (friend paid):',
+                        recordId,
+                        'amount:',
+                        myShareAmount
+                    )
+
+                    // Create payable debt
+                    const debtId = await this.ctx.data.addDebt({
+                        ledgerId,
+                        type: 'payable',
+                        contactId: payerId,
+                        amount: myShareAmount,
+                        date: dateStr,
+                        description: `${note || '聚餐分帳'} (欠 ${payerName})`,
+                        recordId: recordId,
+                    })
+                    console.log(
+                        '[BillSplitter] Created payable debt to payer:',
+                        debtId
+                    )
+
+                    // Link record to debt
+                    await this.ctx.data.updateRecord(recordId, {
+                        debtId: debtId,
+                    })
+                }
             }
-            const totalOwed = (count - (includeMe ? 1 : 0)) * perPerson;
-            if (totalOwed !== 0) {
-                await this.ctx.data.addDebt({
-                    type: 'receivable',
-                    contactId: payerId,
-                    amount: totalOwed,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳 (代付)'
-                });
-            }
+
+            console.log('[BillSplitter] Split completed successfully')
+            this.ctx.ui.showToast('分帳成功！', 'success')
+            this.ctx.ui.navigateTo('#home')
+        } catch (err) {
+            console.error('[BillSplitter] Error in handleEqualSplit:', err)
+            this.ctx.ui.showToast('分帳失敗：' + err.message, 'error')
         }
-
-        this.ctx.toast.show('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
     },
 
     async handleCustomSplit(totalAmount, note, categoryId, ledgerId) {
-        const contacts = await this.ctx.data.getContacts();
-        const mode = document.getElementById('mode-i-paid').classList.contains('bg-white') ? 'i-paid' : 'friend-paid';
-
-        // Read custom entries from DOM
-        const entries = [];
-        const customList = document.getElementById('custom-list');
-        customList.querySelectorAll('.custom-person-amount').forEach(input => {
-            const idx = input.dataset.idx;
-            const nameSelect = customList.querySelector(`.custom-person-name[data-idx="${idx}"]`);
-            const contactId = nameSelect.value;
-            const amount = parseFloat(input.value) || 0;
-            entries.push({ contactId, amount });
-        });
-
-        // Create expense record
-        const expense = {
-            id: 'exp-' + Date.now(),
-            ledgerId,
-            date: new Date().toISOString().split('T')[0],
-            amount: totalAmount,
-            note: note || '聚餐分帳',
+        console.log('[BillSplitter] Starting handleCustomSplit:', {
+            totalAmount,
+            note,
             categoryId,
-            type: 'expense'
-        };
-        await this.ctx.data.addRecord(expense);
+            ledgerId,
+        })
+        try {
+            const contacts = await this.ctx.data.getContacts()
+            console.log('[BillSplitter] Fetched contacts:', contacts)
 
-        // Create debts based on custom split
-        if (mode === 'i-paid') {
-            for (const entry of entries) {
-                if (entry.contactId === '__me__' || entry.amount === 0) continue;
-                await this.ctx.data.addDebt({
-                    ledgerId,
-                    contactId: entry.contactId,
-                    amount: entry.amount,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳',
-                    type: 'receivable'
-                });
+            const mode = document
+                .getElementById('mode-i-paid')
+                .classList.contains('bg-white')
+                ? 'i-paid'
+                : 'friend-paid'
+            console.log('[BillSplitter] UI States:', { mode })
+
+            // Read custom entries from DOM
+            const entries = []
+            const customList = document.getElementById('custom-list')
+            customList
+                .querySelectorAll('.custom-person-amount')
+                .forEach(input => {
+                    const idx = input.dataset.idx
+                    const nameSelect = customList.querySelector(
+                        `.custom-person-name[data-idx="${idx}"]`
+                    )
+                    const rawContactId = nameSelect.value
+                    const contactId =
+                        rawContactId && !isNaN(rawContactId)
+                            ? Number(rawContactId)
+                            : rawContactId
+                    const amount = parseFloat(input.value) || 0
+                    entries.push({ contactId, amount })
+                })
+            console.log('[BillSplitter] Read entries:', entries)
+
+            const dateStr = new Date().toISOString().split('T')[0]
+
+            // Create debts and records based on custom split
+            if (mode === 'i-paid') {
+                console.log(
+                    '[BillSplitter] Mode: i-paid. Creating custom receivables'
+                )
+                for (const entry of entries) {
+                    if (entry.amount === 0) continue
+
+                    if (String(entry.contactId) === '__me__') {
+                        // Create my own expense record
+                        const recordId = await this.ctx.data.addRecord({
+                            ledgerId,
+                            type: 'expense',
+                            category: categoryId,
+                            amount: entry.amount,
+                            description: `${note || '聚餐分帳'} (我自付)`,
+                            date: dateStr,
+                        })
+                        console.log(
+                            '[BillSplitter] Created my own custom share record:',
+                            recordId,
+                            'amount:',
+                            entry.amount
+                        )
+                    } else {
+                        const contactName =
+                            contacts.find(
+                                c => String(c.id) === String(entry.contactId)
+                            )?.name || '聯絡人'
+
+                        // Create expense record for this contact's share
+                        const recordId = await this.ctx.data.addRecord({
+                            ledgerId,
+                            type: 'expense',
+                            category: categoryId,
+                            amount: entry.amount,
+                            description: `${note || '聚餐分帳'} (${contactName}分攤)`,
+                            date: dateStr,
+                        })
+                        console.log(
+                            '[BillSplitter] Created custom share record:',
+                            recordId,
+                            'amount:',
+                            entry.amount
+                        )
+
+                        // Create receivable debt
+                        const debtId = await this.ctx.data.addDebt({
+                            ledgerId,
+                            contactId: entry.contactId,
+                            amount: entry.amount,
+                            date: dateStr,
+                            description: `${note || '聚餐分帳'} (${contactName}分攤)`,
+                            type: 'receivable',
+                            recordId: recordId,
+                        })
+                        console.log(
+                            '[BillSplitter] Created receivable debt:',
+                            debtId
+                        )
+
+                        // Link record to debt
+                        await this.ctx.data.updateRecord(recordId, {
+                            debtId: debtId,
+                        })
+                    }
+                }
+            } else {
+                // Friend Paid
+                const rawPayerId = document.getElementById('payer-select').value
+                const payerId =
+                    rawPayerId && !isNaN(rawPayerId)
+                        ? Number(rawPayerId)
+                        : rawPayerId
+                const payerName =
+                    contacts.find(c => String(c.id) === String(payerId))
+                        ?.name || '聯絡人'
+
+                const myEntry = entries.find(
+                    e => String(e.contactId) === '__me__'
+                )
+                const myShareAmount = myEntry ? myEntry.amount : 0
+
+                if (myShareAmount > 0) {
+                    // Create expense record for my share
+                    const recordId = await this.ctx.data.addRecord({
+                        ledgerId,
+                        type: 'expense',
+                        category: categoryId,
+                        amount: myShareAmount,
+                        description: `${note || '聚餐分帳'} (欠 ${payerName})`,
+                        date: dateStr,
+                    })
+                    console.log(
+                        '[BillSplitter] Created my custom share record (friend paid):',
+                        recordId,
+                        'amount:',
+                        myShareAmount
+                    )
+
+                    // Create payable debt
+                    const debtId = await this.ctx.data.addDebt({
+                        ledgerId,
+                        contactId: payerId,
+                        amount: myShareAmount,
+                        date: dateStr,
+                        description: `${note || '聚餐分帳'} (欠 ${payerName})`,
+                        type: 'payable',
+                        recordId: recordId,
+                    })
+                    console.log(
+                        '[BillSplitter] Created payable debt to payer:',
+                        debtId
+                    )
+
+                    // Link record to debt
+                    await this.ctx.data.updateRecord(recordId, {
+                        debtId: debtId,
+                    })
+                }
             }
-        } else {
-            const payerId = document.getElementById('payer-select').value;
-            for (const entry of entries) {
-                if (entry.amount === 0) continue;
-                if (entry.contactId === payerId) continue;
-                await this.ctx.data.addDebt({
-                    ledgerId,
-                    contactId: entry.contactId,
-                    amount: entry.amount,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳',
-                    type: 'payable'
-                });
-            }
-            const payerEntry = entries.find(e => e.contactId === payerId);
-            const payerShare = payerEntry ? payerEntry.amount : 0;
-            const owedToPayer = totalAmount - payerShare;
-            if (owedToPayer > 0) {
-                await this.ctx.data.addDebt({
-                    ledgerId,
-                    contactId: payerId,
-                    amount: owedToPayer,
-                    date: new Date().toISOString().split('T')[0],
-                    description: note || '聚餐分帳 (代付)',
-                    type: 'receivable'
-                });
-            }
+
+            console.log('[BillSplitter] Split completed successfully')
+            this.ctx.ui.showToast('分帳成功！', 'success')
+            this.ctx.ui.navigateTo('#home')
+        } catch (err) {
+            console.error('[BillSplitter] Error in handleCustomSplit:', err)
+            this.ctx.ui.showToast('分帳失敗：' + err.message, 'error')
         }
-
-        this.ctx.toast.show('分帳成功！', 'success');
-        this.ctx.ui.navigateTo('#dashboard');
     },
-};
+}
