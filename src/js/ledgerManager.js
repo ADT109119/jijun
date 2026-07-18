@@ -276,6 +276,24 @@ export class LedgerManager {
                 timestamp: now,
             })
         )
+        exported.amortizations.forEach(a =>
+            changes.push({
+                deviceId,
+                operation: 'add',
+                storeName: 'amortizations',
+                data: a,
+                timestamp: now,
+            })
+        )
+        exported.credit_statements.forEach(s =>
+            changes.push({
+                deviceId,
+                operation: 'add',
+                storeName: 'credit_statements',
+                data: s,
+                timestamp: now,
+            })
+        )
         exported.records.forEach(r =>
             changes.push({
                 deviceId,

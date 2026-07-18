@@ -73,14 +73,21 @@ export class ThemeManager {
         if (theme && theme.colors) {
             for (const [key, value] of Object.entries(theme.colors)) {
                 // key is like "wabi-bg", we want "--theme-bg"
-                const cssVarName = key.replace(/^wabi-/, '')
+                // Sanitize the variable name to a safe CSS identifier to prevent
+                // injection via crafted theme color keys (CSS Injection, H-01)
+                const cssVarName = String(key)
+                    .replace(/^wabi-/, '')
+                    .replace(/[^a-zA-Z0-9_-]/g, '')
+                if (!cssVarName) continue
                 // Try converting hex to RGB triplet
                 const rgbValue = this.hexToRgbTriplet(value)
                 if (rgbValue) {
                     cssText += `  --theme-${cssVarName}: ${rgbValue};\n`
                 } else {
-                    // Fallback if not a hex code
-                    cssText += `  --theme-${cssVarName}: ${value};\n`
+                    // Fallback if not a hex code. Strip characters that can break
+                    // out of the declaration or inject @rules (CSS Injection, H-01)
+                    const sanitized = String(value).replace(/[;{}@<>]/g, '')
+                    cssText += `  --theme-${cssVarName}: ${sanitized};\n`
                 }
             }
         }
@@ -154,6 +161,52 @@ export class ThemeManager {
         })
     }
 
+    /**
+     * 解析並消毒 SVG 字串，移除可執行腳本與事件處理器，防止儲存型 XSS (CR-01)。
+     * @param {string} svgString
+     * @returns {SVGElement|null} 消毒後的 SVG 元素，若解析失敗則回傳 null
+     */
+    sanitizeSVG(svgString) {
+        if (typeof svgString !== 'string' || !svgString.trim()) return null
+        let doc
+        try {
+            doc = new DOMParser().parseFromString(
+                svgString.trim(),
+                'image/svg+xml'
+            )
+        } catch {
+            return null
+        }
+        const parseError = doc.querySelector('parsererror')
+        const svg = doc.documentElement
+        if (parseError || !svg || svg.nodeName.toLowerCase() !== 'svg') {
+            return null
+        }
+
+        // 移除可嵌入 HTML/腳本的元素
+        svg.querySelectorAll('script, foreignObject').forEach(el =>
+            el.remove()
+        )
+
+        // 遍歷所有節點，移除事件屬性與 javascript: 連結
+        const nodes = [svg, ...svg.querySelectorAll('*')]
+        for (const el of nodes) {
+            for (const attr of Array.from(el.attributes)) {
+                const name = attr.name.toLowerCase()
+                const value = attr.value.toLowerCase().trim()
+                if (name.startsWith('on')) {
+                    el.removeAttribute(attr.name)
+                } else if (
+                    (name === 'href' || name === 'xlink:href') &&
+                    value.startsWith('javascript:')
+                ) {
+                    el.removeAttribute(attr.name)
+                }
+            }
+        }
+        return svg
+    }
+
     applyIconReplacements(iconsConfig) {
         for (const [selector, replacementInfo] of Object.entries(iconsConfig)) {
             const elements = document.querySelectorAll(selector)
@@ -188,11 +241,13 @@ export class ThemeManager {
                     replacementNode = document.createElement('i')
                     replacementNode.className = `${replacementInfo.className} theme-icon-replacement`
                 } else if (replacementInfo.type === 'svg') {
-                    const template = document.createElement('template')
-                    template.innerHTML = replacementInfo.svg.trim()
-                    replacementNode = template.content.firstChild
-                    replacementNode.classList.add('theme-icon-replacement')
-                    if (replacementInfo.className) {
+                    // Parse via DOMParser and sanitize to prevent SVG/stored XSS
+                    // from malicious theme sources (CR-01)
+                    replacementNode = this.sanitizeSVG(replacementInfo.svg)
+                    if (replacementNode) {
+                        replacementNode.classList.add('theme-icon-replacement')
+                    }
+                    if (replacementNode && replacementInfo.className) {
                         replacementNode.setAttribute(
                             'class',
                             replacementNode.getAttribute('class') +

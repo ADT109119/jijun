@@ -322,11 +322,11 @@ export class StatisticsManager {
                              ${index + 1}
                         </div>
                         <div>
-                             <p class="text-sm font-bold text-wabi-text-primary">${r.description || categoryName}</p>
+                             <p class="text-sm font-bold text-wabi-text-primary">${escapeHTML(r.description || categoryName)}</p>
                              <div class="flex items-center gap-2 text-xs text-wabi-text-secondary">
-                                 <span><i class="${icon} mr-1"></i>${categoryName}</span>
+                                 <span><i class="${escapeHTML(icon)} mr-1"></i>${escapeHTML(categoryName)}</span>
                                  <span>•</span>
-                                 <span>${r.date}</span>
+                                 <span>${escapeHTML(r.date)}</span>
                              </div>
                         </div>
                     </div>
@@ -537,7 +537,7 @@ export class StatisticsManager {
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2">
                     <span class="size-3 rounded-full" style="background-color: ${colors[i]};"></span>
-                    <span>${cat.name}</span>
+                    <span>${escapeHTML(cat.name)}</span>
                 </div>
                 <div class="font-medium">
                     <span>${formatCurrency(cat.value)}</span>
@@ -655,7 +655,7 @@ export class StatisticsManager {
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2">
                     <span class="size-3 rounded-full" style="background-color: ${colors[i]};"></span>
-                    <span>${cat.name}</span>
+                    <span>${escapeHTML(cat.name)}</span>
                 </div>
                 <div class="font-medium">
                     <span>${formatCurrency(cat.value)}</span>

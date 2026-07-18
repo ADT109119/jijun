@@ -193,7 +193,7 @@ class EasyAccountingApp {
             // Requires either prefix indicator (e.g., 消費, NT$) OR suffix indicator (元, 元整) to avoid false positives on arbitrary numbers
             let amount = ''
             const amountRegex =
-                /(?:(?:消費|金額|扣款|刷卡|支付|NT\$|TWD|USD|[\$￥])\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:元|元整))/i
+                /(?:(?:消費|金額|扣款|刷卡|支付|NT\$|TWD|USD|[$￥])\s*([0-9,]+(?:\.[0-9]+)?)|([0-9,]+(?:\.[0-9]+)?)\s*(?:元|元整))/i
             const match = combinedText.match(amountRegex)
             if (match) {
                 amount = (match[1] || match[2]).replace(/,/g, '')
@@ -266,6 +266,17 @@ class EasyAccountingApp {
         // 每次渲染頁面完成後，同步更新 Widget 資料
         this.pluginManager.registerHook('onPageRenderAfter', (pageName) => {
             updateAndroidWidget(this.dataService, this.categoryManager, this.budgetManager);
+
+            // 處理小工具捷徑分類自動選取
+            if (pageName === 'add' && this.pendingWidgetCategory) {
+                const categoryId = this.pendingWidgetCategory;
+                this.pendingWidgetCategory = null; // 清除暫存
+                
+                // 等待 DOM 渲染完畢再點擊
+                setTimeout(() => {
+                    this.autoSelectCategoryOnAddPage(categoryId);
+                }, 100);
+            }
         });
     }
 
@@ -275,16 +286,15 @@ class EasyAccountingApp {
      */
     handleDeepLink(urlStr) {
         try {
+            // 解析 deep link，例如 easyaccounting://home?widget_action=quick_add&category=food
             const url = new URL(urlStr);
             if (url.protocol === 'easyaccounting:') {
                 if (url.searchParams.get('widget_action') === 'quick_add') {
                     const category = url.searchParams.get('category');
-                    window.location.hash = '#add';
                     if (category) {
-                        setTimeout(() => {
-                            this.autoSelectCategoryOnAddPage(category);
-                        }, 300);
+                        this.pendingWidgetCategory = category;
                     }
+                    window.location.hash = '#add';
                 }
             }
         } catch (e) {
@@ -317,7 +327,6 @@ class EasyAccountingApp {
                 let { nextDueDate } = tx
 
                 let iterations = 0
-                const MAX_ITERATIONS = 365 // 安全上限：避免無限迴圈
 
                 while (
                     nextDueDate &&
@@ -386,13 +395,25 @@ class EasyAccountingApp {
             allLedgers: true,
         })
 
+        // 預先載入所有 records，按 amortizationId 分組 — 避免迴圈內 N+1 查詢
+        const allRecords = await this.dataService.getRecords({
+            allLedgers: true,
+        })
+        const recordsByAmortId = new Map()
+        for (const r of allRecords) {
+            if (r.amortizationId !== null && r.amortizationId !== undefined) {
+                const list = recordsByAmortId.get(r.amortizationId) || []
+                list.push(r)
+                recordsByAmortId.set(r.amortizationId, list)
+            }
+        }
+
         for (const item of items) {
             try {
                 if (item.status !== 'active') continue
 
                 let { nextDueDate, completedPeriods } = item
                 let iterations = 0
-                const MAX_ITERATIONS = 365
 
                 while (
                     nextDueDate &&
@@ -422,10 +443,7 @@ class EasyAccountingApp {
                             )
 
                         const historyRecords =
-                            await this.dataService.getRecords({
-                                amortizationId: item.id,
-                                allLedgers: true,
-                            })
+                            recordsByAmortId.get(item.id) || []
                         const actualPaidSoFar = historyRecords.reduce(
                             (sum, r) => sum + r.amount,
                             0
@@ -516,7 +534,22 @@ class EasyAccountingApp {
                     () => {
                         if (refreshing) return
                         refreshing = true
-                        window.location.reload()
+                        // Check if user is actively editing a form to avoid losing data
+                        const activeEl = document.activeElement
+                        const isEditing = activeEl && (
+                            activeEl.tagName === 'INPUT' ||
+                            activeEl.tagName === 'TEXTAREA' ||
+                            activeEl.isContentEditable
+                        )
+                        if (isEditing && activeEl.value) {
+                            if (confirm('應用程式有新版本可用，但您有未儲存的資料。確定要重新載入嗎？')) {
+                                window.location.reload()
+                            } else {
+                                refreshing = false // 使用者取消，重置旗標讓下次可正常更新
+                            }
+                        } else {
+                            window.location.reload()
+                        }
                     }
                 )
 
@@ -527,15 +560,7 @@ class EasyAccountingApp {
                             newWorker.state === 'installed' &&
                             navigator.serviceWorker.controller
                         ) {
-                            // Show update notification via SettingsPage helper if possible,
-                            // or just ignore here as SettingsPage handles manual check.
-                            // The original code called this.showUpdateAvailable(registration)
-                            // which was in main.js. I moved it to SettingsPage.
-                            // If we want auto-notification, we might need a global toast or something.
-                            // For now, I'll omit it or implement a simple toast.
-                            console.log(
-                                'New content is available; please refresh.'
-                            )
+                            showToast('新版本可用，請重新整理頁面', 'info', 8000)
                         }
                     })
                 })
@@ -554,13 +579,10 @@ class EasyAccountingApp {
         const iconEl = document.getElementById('sidebar-ledger-icon')
         const nameEl = document.getElementById('sidebar-ledger-name')
         if (iconEl) {
-            // Check if there is an active theme applied. If there is, let CSS variables or theme icons handle it
-            // if we are using specific CSS classes. Alternatively, since Ledger color is an entity property,
-            // we should just apply the entity color. Wait, if we are in dark mode, hardcoded colors might clash,
-            // but the user's issue was "Sidebar background color didn't revert/adjust properly".
-            // Let's ensure we use the entity's ledger color, but we don't mess with the rest of the sidebar's CSS.
-            iconEl.style.backgroundColor = ledger.color || '#334A52'
-            const safeIcon = /^fa-(solid|regular|brands)\s+\S+$/.test(
+            // Use CSS custom property so theme system can override the ledger color
+            iconEl.style.setProperty('--ledger-color', ledger.color || '#334A52')
+            iconEl.style.backgroundColor = 'var(--ledger-color)'
+            const safeIcon = /^fa-(solid|regular|brands)\s+fa-[a-zA-Z0-9-]+$/.test(
                 ledger.icon
             )
                 ? ledger.icon
@@ -597,8 +619,8 @@ class EasyAccountingApp {
                         <button class="ledger-switch-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
                             ${l.id === activeLedgerId ? 'bg-wabi-primary/10 border border-wabi-primary/30' : 'hover:bg-wabi-bg border border-transparent'}"
                             data-id="${l.id}">
-                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${l.color || '#334A52'}">
-                                <i class="${l.icon || 'fa-solid fa-book'}"></i>
+                            <div class="flex items-center justify-center rounded-lg text-white shrink-0 size-9 text-sm shadow-sm" style="background-color: ${/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(l.color) ? l.color : '#334A52'}">
+                                <i class="${/^fa-(solid|regular|brands)\s+fa-[a-zA-Z0-9-]+$/.test(l.icon) ? l.icon : 'fa-solid fa-book'}"></i>
                             </div>
                             <div class="flex-1 min-w-0 text-left flex flex-col justify-center">
                                 <div class="flex items-center gap-1.5">

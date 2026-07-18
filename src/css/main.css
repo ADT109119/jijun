@@ -320,3 +320,12 @@ select option {
     }
 }
 
+/* ==================== Skeleton Screen ==================== */
+.skeleton-bg {
+    background-color: #e2e8f0;
+}
+
+.dark .skeleton-bg {
+    background-color: #334155;
+}
+

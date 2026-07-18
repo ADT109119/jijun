@@ -7,6 +7,7 @@
 ```
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations)
+├── themeManager.js       # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── categories.js        # 分類常數與工具函數
@@ -80,7 +81,13 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 
 - `recordsList.test.js` # 測試明細紀錄列表與預設時間範圍設定
 - `amortization.test.js` # 測試折舊攤提分期邏輯
+- `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal
 - `budgetManager.test.js` # 測試預算管理邏輯
 - `categoryManager.test.js` # 測試分類管理邏輯
-- ...等等（共有 19 個測試檔案，對應各主要模組的單元驗證）
+- `changelog.test.js` # 測試更新日誌解析與渲染
+- `themeManager.test.js` # 測試主題管理 (含 SVG 消毒與 CSS 變數消毒)
+- `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化
+- `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
+- `dataService.test.js` # 測試 IndexedDB 資料層 (含刪除帳本級聯清理)
+- ...等等（共有 24 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試

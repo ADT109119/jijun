@@ -1,5 +1,8 @@
 // 工具函數模組
 
+/** 週期交易/攤提最大迭代次數上限 */
+export const MAX_ITERATIONS = 365
+
 /**
  * 轉義 HTML 特殊字元，防止 XSS 攻擊
  * @param {string} str - 要轉義的字串
