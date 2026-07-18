@@ -1300,18 +1300,32 @@ export class DebtManager {
     return null;
   }
 
-  // Async load avatars for contact list
+  // Async load avatars for contact list with parallel loading and URL revoking to prevent memory leaks
   async loadContactAvatars() {
     const avatarElements = this.container.querySelectorAll('.contact-avatar[data-avatar-id]');
-    for (const el of avatarElements) {
+    const promises = Array.from(avatarElements).map(async (el) => {
       const avatarId = el.dataset.avatarId;
-      if (avatarId) {
+      if (!avatarId) return;
+      try {
         const file = await this.dataService.getFile(parseInt(avatarId));
         if (file && file.data) {
           const url = URL.createObjectURL(file.data);
           el.innerHTML = `<img src="${url}" class="w-full h-full object-cover" style="dynamic-range-limit: standard;">`;
+          const img = el.querySelector('img');
+          if (img) {
+            const handleRevoke = () => {
+              URL.revokeObjectURL(url);
+              img.removeEventListener('load', handleRevoke);
+              img.removeEventListener('error', handleRevoke);
+            };
+            img.addEventListener('load', handleRevoke);
+            img.addEventListener('error', handleRevoke);
+          }
         }
+      } catch (e) {
+        console.warn('Failed to load avatar:', avatarId, e);
       }
-    }
+    });
+    await Promise.all(promises);
   }
 }
