@@ -27,7 +27,7 @@
             android:id="@+id/widget_shortcut_btn_add"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/widget_btn_bg"
+            android:background="@drawable/widget_btn_rounded_bg"
             android:text=" ＋ 記一筆 "
             android:textColor="#FFFFFFFF"
             android:textSize="11sp"

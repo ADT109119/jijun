@@ -1185,14 +1185,15 @@ class DataService {
             records: records, // Include filtered records in result
         }
 
-        // Pre-fetch debts for effective amount calculation
-        const debtIds = [
-            ...new Set(records.filter(r => r.debtId).map(r => r.debtId)),
-        ]
+        // Pre-fetch debts for effective amount calculation (single batch query
+        // instead of N+1 per-record lookups)
+        const debtRecords = records.filter(r => r.debtId)
         const debtsMap = {}
-        for (const debtId of debtIds) {
-            const debt = await this.getDebt(debtId)
-            if (debt) debtsMap[debtId] = debt
+        if (debtRecords.length > 0) {
+            const allDebts = await this.getDebts()
+            for (const d of allDebts) {
+                debtsMap[d.id] = d
+            }
         }
 
         // We shouldn't use forEach to modify variables inside and mutate them, but it works
@@ -3707,6 +3708,7 @@ class DataService {
                 'debts',
                 'recurring_transactions',
                 'amortizations',
+                'credit_statements',
             ]
             for (const storeName of dataStores) {
                 const tx = this.db.transaction(storeName, 'readwrite')

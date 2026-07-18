@@ -35,15 +35,24 @@ public class EasyAccountingWidgetProvider extends AppWidgetProvider {
         views.setTextViewText(R.id.widget_budget_progress, budgetProgressText);
         views.setProgressBar(R.id.widget_progress_bar, 100, budgetProgressVal, false);
 
+        // 分類預算狀態 (最多 3 行)
+        int[] catIds = {R.id.widget_cat_budget_1, R.id.widget_cat_budget_2, R.id.widget_cat_budget_3};
         if (categoryBudgetStatus == null || categoryBudgetStatus.trim().isEmpty()) {
-            views.setViewVisibility(R.id.widget_category_budget_status, android.view.View.GONE);
+            for (int id : catIds) {
+                views.setViewVisibility(id, android.view.View.GONE);
+            }
         } else {
-            views.setViewVisibility(R.id.widget_category_budget_status, android.view.View.VISIBLE);
-            views.setTextViewText(R.id.widget_category_budget_status, categoryBudgetStatus);
-            if (categoryBudgetStatus.contains("超支") || categoryBudgetStatus.contains("⚠️")) {
-                views.setTextColor(R.id.widget_category_budget_status, Color.parseColor("#FFEF9A9A"));
-            } else {
-                views.setTextColor(R.id.widget_category_budget_status, Color.parseColor("#80FFFFFF"));
+            String[] lines = categoryBudgetStatus.split("\n", 3);
+            boolean hasOverBudget = categoryBudgetStatus.contains("超支") || categoryBudgetStatus.contains("⚠️");
+            int textColor = hasOverBudget ? Color.parseColor("#FFEF9A9A") : Color.parseColor("#80FFFFFF");
+            for (int i = 0; i < catIds.length; i++) {
+                if (i < lines.length && !lines[i].trim().isEmpty()) {
+                    views.setViewVisibility(catIds[i], android.view.View.VISIBLE);
+                    views.setTextViewText(catIds[i], lines[i].trim());
+                    views.setTextColor(catIds[i], textColor);
+                } else {
+                    views.setViewVisibility(catIds[i], android.view.View.GONE);
+                }
             }
         }
 

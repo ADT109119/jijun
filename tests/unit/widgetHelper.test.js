@@ -125,7 +125,7 @@ describe('updateAndroidWidget', () => {
             await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
-                expect.objectContaining({ monthBalance: '+$3000' })
+                expect.objectContaining({ monthBalance: '+$3,000' })
             )
         })
 
@@ -139,7 +139,7 @@ describe('updateAndroidWidget', () => {
             await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
-                expect.objectContaining({ monthBalance: '-$2500' })
+                expect.objectContaining({ monthBalance: '-$2,500' })
             )
         })
 
@@ -277,7 +277,7 @@ describe('updateAndroidWidget', () => {
             await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
-                expect.objectContaining({ categoryBudgetStatus: '⚠️ 交通已超支 $1000' })
+                expect.objectContaining({ categoryBudgetStatus: '⚠️ 交通已超支 $1,000' })
             )
         })
 
@@ -363,7 +363,7 @@ describe('updateAndroidWidget', () => {
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith({
                 todayExpense: '$150',
-                monthBalance: '+$6850',
+                monthBalance: '+$6,850',
                 budgetProgressText: '預算已使用: 16% (3150/20000)',
                 budgetProgressVal: 16,
                 categoryBudgetStatus: '📊 餐飲已使用 40%',

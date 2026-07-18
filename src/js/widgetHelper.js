@@ -1,4 +1,4 @@
-import { formatDateToString } from './utils.js'
+import { formatDateToString, formatCurrency } from './utils.js'
 
 /**
  * 重新整理並更新 Android Widget 上的統計資料
@@ -56,7 +56,7 @@ export async function updateAndroidWidget(dataService, categoryManager, budgetMa
                 const overBudgets = budgetStatus.categoryStatuses.filter(c => c.isOverBudget && !c.isExcluded)
                 if (overBudgets.length > 0) {
                     const topOver = overBudgets.sort((a, b) => (b.spent - b.budget) - (a.spent - a.budget))[0]
-                    catBudgetStatusText = `⚠️ ${topOver.name}已超支 $${Math.round(topOver.spent - topOver.budget)}`
+                    catBudgetStatusText = `⚠️ ${topOver.name}已超支 ${formatCurrency(Math.round(topOver.spent - topOver.budget))}`
                 } else {
                     const activeCats = budgetStatus.categoryStatuses.filter(c => c.percentage > 0 && !c.isExcluded)
                     if (activeCats.length > 0) {
@@ -69,7 +69,7 @@ export async function updateAndroidWidget(dataService, categoryManager, budgetMa
 
         // 4. 格式化結餘：正數顯示 "+$350"，負數顯示 "-$350"
         const balanceSign = monthBalance >= 0 ? '+' : '-'
-        const balanceText = `${balanceSign}$${Math.abs(monthBalance)}`
+        const balanceText = `${balanceSign}${formatCurrency(Math.abs(monthBalance))}`
 
         // 5. 延遲導入 Capacitor 的 registerPlugin，避免在 Web 平台 import 時出錯
         const { registerPlugin } = await import('@capacitor/core')
@@ -79,7 +79,7 @@ export async function updateAndroidWidget(dataService, categoryManager, budgetMa
 
         // 6. 直接將欄位攤平傳入，避免巢狀 getObject 解析失敗
         await WidgetStorage.updateWidgetData({
-            todayExpense: `$${todayExpense}`,
+            todayExpense: formatCurrency(todayExpense),
             monthBalance: balanceText,
             budgetProgressText: progressText,
             budgetProgressVal: progressVal,
