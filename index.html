@@ -100,15 +100,99 @@
                 },
             }
         </script>
-      <script type="module" crossorigin src="/assets/main-xc3tjfGh.js"></script>
-      <link rel="stylesheet" crossorigin href="/assets/main-sNwH_fzv.css">
+      <script type="module" crossorigin src="/assets/main-CULVtsu3.js"></script>
+      <link rel="stylesheet" crossorigin href="/assets/main-Bpz1lMiW.css">
       <script type="module">import.meta.url;import("_").catch(()=>1);(async function*(){})().next();if(location.protocol!="file:"){window.__vite_is_modern_browser=true}</script>
       <script type="module">!function(){if(window.__vite_is_modern_browser)return;console.warn("vite: loading legacy chunks, syntax error above and the same error below should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}();</script>
     </head>
 
     <body class="font-display bg-wabi-bg text-wabi-text-primary">
         <div id="app-container" class="relative min-h-screen w-full md:pl-64">
-            <!-- Pages will be injected here -->
+            <!-- ===== 骨架畫面 (Skeleton Screen) — JS 載入完成前顯示 ===== -->
+            <div id="skeleton-screen" class="p-4 pb-24 md:pb-8 max-w-3xl mx-auto animate-pulse">
+                <!-- Header 骨架 -->
+                <div class="flex items-center justify-between mb-6">
+                    <div class="h-8 w-40 rounded-lg skeleton-bg"></div>
+                    <div class="h-8 w-8 rounded-full skeleton-bg"></div>
+                </div>
+
+                <!-- Balance Card 骨架 -->
+                <div class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-6 mb-8">
+                    <div class="h-4 w-20 mx-auto rounded skeleton-bg"></div>
+                    <div class="h-10 w-36 mx-auto mt-3 rounded skeleton-bg"></div>
+                    <div class="flex justify-around pt-6 mt-4 border-t border-wabi-border">
+                        <div class="text-center space-y-2">
+                            <div class="h-3 w-12 mx-auto rounded skeleton-bg"></div>
+                            <div class="h-6 w-20 mx-auto rounded skeleton-bg"></div>
+                        </div>
+                        <div class="text-center space-y-2">
+                            <div class="h-3 w-12 mx-auto rounded skeleton-bg"></div>
+                            <div class="h-6 w-20 mx-auto rounded skeleton-bg"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Records 骨架 -->
+                <div class="mb-12">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="h-5 w-20 rounded skeleton-bg"></div>
+                        <div class="h-4 w-16 rounded skeleton-bg"></div>
+                    </div>
+                    <div class="space-y-2">
+                        <!-- Record row x5 -->
+                        <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
+                            <div class="size-12 rounded-lg skeleton-bg shrink-0"></div>
+                            <div class="flex-1 min-w-0 space-y-1.5">
+                                <div class="h-4 w-28 rounded skeleton-bg"></div>
+                                <div class="h-3 w-20 rounded skeleton-bg"></div>
+                            </div>
+                            <div class="h-5 w-16 rounded skeleton-bg"></div>
+                        </div>
+                        <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
+                            <div class="size-12 rounded-lg skeleton-bg shrink-0"></div>
+                            <div class="flex-1 min-w-0 space-y-1.5">
+                                <div class="h-4 w-28 rounded skeleton-bg"></div>
+                                <div class="h-3 w-20 rounded skeleton-bg"></div>
+                            </div>
+                            <div class="h-5 w-16 rounded skeleton-bg"></div>
+                        </div>
+                        <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
+                            <div class="size-12 rounded-lg skeleton-bg shrink-0"></div>
+                            <div class="flex-1 min-w-0 space-y-1.5">
+                                <div class="h-4 w-28 rounded skeleton-bg"></div>
+                                <div class="h-3 w-20 rounded skeleton-bg"></div>
+                            </div>
+                            <div class="h-5 w-16 rounded skeleton-bg"></div>
+                        </div>
+                        <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
+                            <div class="size-12 rounded-lg skeleton-bg shrink-0"></div>
+                            <div class="flex-1 min-w-0 space-y-1.5">
+                                <div class="h-4 w-28 rounded skeleton-bg"></div>
+                                <div class="h-3 w-20 rounded skeleton-bg"></div>
+                            </div>
+                            <div class="h-5 w-16 rounded skeleton-bg"></div>
+                        </div>
+                        <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
+                            <div class="size-12 rounded-lg skeleton-bg shrink-0"></div>
+                            <div class="flex-1 min-w-0 space-y-1.5">
+                                <div class="h-4 w-28 rounded skeleton-bg"></div>
+                                <div class="h-3 w-20 rounded skeleton-bg"></div>
+                            </div>
+                            <div class="h-5 w-16 rounded skeleton-bg"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer 骨架 -->
+                <div class="pt-8 border-t border-wabi-border/50 text-center">
+                    <div class="flex justify-center gap-3 mb-2">
+                        <div class="h-3 w-16 rounded skeleton-bg"></div>
+                        <div class="h-3 w-16 rounded skeleton-bg"></div>
+                    </div>
+                    <div class="h-3 w-48 mx-auto rounded skeleton-bg"></div>
+                </div>
+            </div>
+            <!-- Pages will be injected here by JS -->
         </div>
 
         <!-- Bottom Navigation Bar -->
@@ -238,6 +322,6 @@
 
       <script nomodule>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
       <script nomodule crossorigin id="vite-legacy-polyfill" src="/assets/polyfills-legacy-CPYAIXow.js"></script>
-      <script nomodule crossorigin id="vite-legacy-entry" data-src="/assets/main-legacy-BzlnpVDQ.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+      <script nomodule crossorigin id="vite-legacy-entry" data-src="/assets/main-legacy-S3mqUEtc.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
     </body>
 </html>
