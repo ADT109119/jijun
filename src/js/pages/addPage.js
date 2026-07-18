@@ -422,6 +422,7 @@ export class AddPage {
                         })
                         closeModal()
                         await loadContacts(newId)
+                        debtContactId = newId
                         showToast('已新增聯絡人', 'success')
                     })
             }
@@ -498,6 +499,7 @@ export class AddPage {
                     const val = e.target.value
                     if (val === '__new__') {
                         showQuickAddContactModal()
+                        e.target.value = debtContactId || ''
                         return
                     }
                     debtContactId = val ? parseInt(val) : null
