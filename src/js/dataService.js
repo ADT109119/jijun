@@ -3814,7 +3814,11 @@ class DataService {
         try {
             const debts = await this.getDebts({ allLedgers: true })
             return debts.some(d =>
-                (d.payments || []).some(p => !p.recordId && !p.recordUuid)
+                (d.payments || []).some(
+                    p =>
+                        (!p.recordId && !p.recordUuid) ||
+                        (d.recordId && p.recordId === d.recordId)
+                )
             )
         } catch (error) {
             console.error('檢查欠款紀錄完整性失敗:', error)
@@ -3824,7 +3828,8 @@ class DataService {
 
     // 修復因操作中斷（例如結清/收款途中關閉應用程式）而殘留的
     // 「付款已寫入 debt.payments，但對應記帳紀錄卻未建立」的欠款資料。
-    // 每筆 payment 若缺少 recordId / recordUuid，即補建一筆對應的
+    // 同時也修復舊版（行為變更前）連結欠款中指向原始借貸紀錄而非還款明細的付款。
+    // 每筆 payment 若缺少 recordId / recordUuid，或 recordId 仍指向原始欠款紀錄，
     // debt_repayment / debt_collection 記帳明細。
     //
     // 注意：目前由 main.js 於每次啟動時呼叫，以確保歷史中斷資料能被修復；
@@ -3875,7 +3880,10 @@ class DataService {
                 let updated = false
                 const updatedPayments = []
                 for (const payment of payments) {
-                    if (!payment.recordId && !payment.recordUuid) {
+                    if (
+                        (!payment.recordId && !payment.recordUuid) ||
+                        (debt.recordId && payment.recordId === debt.recordId)
+                    ) {
                         const recordAccountId = originalAccountId || defaultAccountId
                         const record = {
                             type: debt.type === 'receivable' ? 'income' : 'expense',

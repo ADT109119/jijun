@@ -1292,4 +1292,75 @@ describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
         const needs = await ds.needsDebtRepair()
         expect(needs).toBe(true)
     })
+
+    it('修復舊式付款：payment.recordId === debt.recordId 時補建還款紀錄', async () => {
+        ds.db._storeData.records.push({
+            id: 77,
+            type: 'expense',
+            amount: 1000,
+            accountId: 10,
+            ledgerId: 1,
+        })
+        ds.db._storeData.debts.push({
+            id: 4,
+            type: 'payable',
+            description: '舊版借款',
+            originalAmount: 1000,
+            remainingAmount: 500,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-4',
+            recordId: 77,
+            recordUuid: 'rec-uuid-77',
+            // 舊版行為：payment 指向原始欠款紀錄，而非獨立的還款明細
+            payments: [
+                { amount: 500, date: '2024-06-01', recordId: 77, recordUuid: 'rec-uuid-77' },
+            ],
+        })
+
+        const result = await ds.repairOrphanedDebtRecords()
+
+        expect(result.repairedCount).toBe(1)
+        const records = ds.db._storeData.records
+        const repayment = records.find(r => r.debtId === 4)
+        expect(repayment).toBeDefined()
+        expect(repayment.category).toBe('debt_repayment')
+        expect(repayment.id).not.toBe(77)
+
+        // payment 已被更新為指向新建立的還款紀錄
+        const debt = ds.db._storeData.debts[0]
+        expect(debt.payments[0].recordId).toBe(repayment.id)
+        expect(debt.payments[0].recordUuid).toBe(repayment.uuid)
+
+        // 冪等：再次執行不重複建立
+        const result2 = await ds.repairOrphanedDebtRecords()
+        expect(result2.repairedCount).toBe(0)
+    })
+
+    it('needsDebtRepair 偵測舊式 payment 回傳 true', async () => {
+        ds.db._storeData.records.push({
+            id: 88,
+            type: 'expense',
+            amount: 1000,
+            accountId: 10,
+            ledgerId: 1,
+        })
+        ds.db._storeData.debts.push({
+            id: 5,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 0,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-5',
+            recordId: 88,
+            recordUuid: 'rec-uuid-88',
+            payments: [
+                { amount: 1000, date: '2024-01-01', recordId: 88, recordUuid: 'rec-uuid-88' },
+            ],
+        })
+
+        expect(await ds.needsDebtRepair()).toBe(true)
+    })
 })
