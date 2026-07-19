@@ -1,4 +1,4 @@
-import { customConfirm } from './utils.js'
+import { customConfirm, formatDateToString } from './utils.js'
 const openDB =
     window.idb?.openDB ||
     (() => {
@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 13 // Schema version 13: Credit card support (type, creditLimit, statementDay, dueDay)
+        this.dbVersion = 14 // Schema version 14: Migrate legacy debt payments to records for correct balances
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -401,6 +401,94 @@ class DataService {
                                 stmtStore.createIndex('ledgerId', 'ledgerId')
                                 stmtStore.createIndex('period', 'period')
                                 stmtStore.createIndex('status', 'status')
+                            }
+                        }
+                        // Schema version 14: Migrate legacy debt payments to records for correct balances
+                        if (oldVersion < 14) {
+                            const debtsStore = transaction.objectStore('debts')
+                            const recordsStore = transaction.objectStore('records')
+                            const contactsStore = transaction.objectStore('contacts')
+                            const accountsStore = transaction.objectStore('accounts')
+
+                            // 獲取預設帳戶，做為 fallback 帳戶 ID
+                            let defaultAccountId = null
+                            let accCursor = await accountsStore.openCursor()
+                            if (accCursor) {
+                                defaultAccountId = accCursor.value.id
+                            }
+
+                            let cursor = await debtsStore.openCursor()
+                            while (cursor) {
+                                const debt = cursor.value
+                                if (debt.payments && debt.payments.length > 0) {
+                                    let updated = false
+                                    
+                                    // 獲取聯絡人名稱
+                                    let contactName = '未知聯絡人'
+                                    if (debt.contactId) {
+                                        const contact = await contactsStore.get(debt.contactId)
+                                        if (contact) {
+                                            contactName = contact.name || '未知聯絡人'
+                                        }
+                                    }
+
+                                    // 獲取原始記帳紀錄的帳戶 ID
+                                    let originalAccountId = null
+                                    if (debt.recordId) {
+                                        const originalRecord = await recordsStore.get(debt.recordId)
+                                        if (originalRecord) {
+                                            originalAccountId = originalRecord.accountId
+                                        }
+                                    }
+
+                                    const updatedPayments = []
+                                    for (const payment of debt.payments) {
+                                        if (!payment.recordId && !payment.recordUuid) {
+                                            const paymentDate = payment.date || formatDateToString(new Date())
+                                            let recordAccountId = originalAccountId || defaultAccountId
+
+                                            // 建立記帳紀錄
+                                            const record = {
+                                                type: debt.type === 'receivable' ? 'income' : 'expense',
+                                                category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
+                                                amount: payment.amount,
+                                                date: paymentDate,
+                                                description: debt.type === 'receivable'
+                                                    ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                                    : `還款：${contactName} - ${debt.description || ''}`,
+                                                ledgerId: debt.ledgerId || 1,
+                                                debtId: debt.id,
+                                                ...(recordAccountId ? { accountId: recordAccountId } : {}),
+                                            }
+
+                                            // 生成 uuid (因為從 version 7 起需要 uuid)
+                                            record.uuid =
+                                                self.crypto && self.crypto.randomUUID
+                                                    ? self.crypto.randomUUID()
+                                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+                                                          /[xy]/g,
+                                                          function (c) {
+                                                              const r = (Math.random() * 16) | 0,
+                                                                  v = c === 'x' ? r : (r & 0x3) | 0x8
+                                                              return v.toString(16)
+                                                          }
+                                                      )
+
+                                            // 寫入 records
+                                            const newRecordId = await recordsStore.add(record)
+                                            payment.recordId = newRecordId
+                                            payment.recordUuid = record.uuid
+                                            updated = true
+                                        }
+                                        updatedPayments.push(payment)
+                                    }
+
+                                    if (updated) {
+                                        debt.payments = updatedPayments
+                                        await cursor.update(debt)
+                                    }
+                                }
+                                cursor = await cursor.continue()
                             }
                         }
                     },
@@ -1173,7 +1261,8 @@ class DataService {
         records = records.filter(
             r =>
                 r.category !== 'debt_collection' &&
-                r.category !== 'debt_repayment'
+                r.category !== 'debt_repayment' &&
+                r.category !== 'balance_adjustment'
         )
 
         const stats = {
@@ -1334,6 +1423,45 @@ class DataService {
             } catch (e) {
                 console.warn('Silenced error:', e)
             }
+            const files = []
+            try {
+                if (!this.useLocalStorage) {
+                    const tx = this.db.transaction('files', 'readonly')
+                    let cursor = await tx.store.openCursor()
+                    while (cursor) {
+                        const fileData = cursor.value
+                        let dataUrl = ''
+                        try {
+                            dataUrl = await new Promise(
+                                (resolve, reject) => {
+                                    const reader = new FileReader()
+                                    reader.onload = () =>
+                                        resolve(reader.result)
+                                    reader.onerror = reject
+                                    reader.readAsDataURL(fileData.data)
+                                }
+                            )
+                        } catch (e) {
+                            console.warn(
+                                'Failed to convert file to data URL:',
+                                e
+                            )
+                            cursor = await cursor.continue()
+                            continue
+                        }
+                        files.push({
+                            id: cursor.key,
+                            name: fileData.name,
+                            type: fileData.type,
+                            dataUrl: dataUrl,
+                            createdAt: fileData.createdAt,
+                        })
+                        cursor = await cursor.continue()
+                    }
+                }
+            } catch (e) {
+                console.warn('Silenced error:', e)
+            }
 
             const exportData = {
                 version: '2.3.0',
@@ -1353,6 +1481,7 @@ class DataService {
                 recurring_transactions: recurring_transactions,
                 amortizations: amortizations,
                 credit_statements: credit_statements,
+                files: files,
                 customCategories: customCategoriesMap,
                 categoryOrder: categoryOrderMap,
                 hiddenCategories: hiddenCategoriesMap,
@@ -1626,6 +1755,81 @@ class DataService {
                         }
                     }
 
+                    // 4.5 匯入檔案 (頭像等) 並建立 ID Map
+                    const oldFileIdToNewIdMap = new Map()
+                    if (
+                        !this.useLocalStorage &&
+                        data.files &&
+                        Array.isArray(data.files)
+                    ) {
+                        try {
+                            const txF = this.db.transaction(
+                                'files',
+                                'readwrite'
+                            )
+                            await txF.store.clear()
+                            await txF.done
+                        } catch (e) {
+                            console.warn('Silenced error:', e)
+                        }
+                        const txF = this.db.transaction('files', 'readwrite')
+                        for (const file of data.files) {
+                            const oldId = file.id
+                            // 略過舊版匯出（無 dataUrl 欄位或資料已損毀）
+                            if (
+                                !file.dataUrl ||
+                                typeof file.dataUrl !== 'string'
+                            ) {
+                                console.warn(
+                                    'Skipping file without dataUrl:',
+                                    file.name
+                                )
+                                continue
+                            }
+                            let blob
+                            try {
+                                const parts = file.dataUrl.split(',')
+                                const mimeMatch =
+                                    parts[0].match(/:(.*?);/)
+                                if (!mimeMatch)
+                                    throw new Error('Invalid data URL')
+                                const mime = mimeMatch[1]
+                                const bstr = atob(parts[1])
+                                const n = bstr.length
+                                const u8arr = new Uint8Array(n)
+                                for (let i = 0; i < n; i++) {
+                                    u8arr[i] = bstr.charCodeAt(i)
+                                }
+                                blob = new Blob([u8arr], { type: mime })
+                            } catch (e) {
+                                console.warn(
+                                    'Failed to parse imported file data:',
+                                    e
+                                )
+                                continue
+                            }
+                            const dbFile = {
+                                name: file.name,
+                                type: file.type,
+                                data: blob,
+                                createdAt:
+                                    file.createdAt || Date.now(),
+                            }
+                            let newId
+                            try {
+                                newId = await txF.store.add(dbFile)
+                            } catch (e) {
+                                console.warn(
+                                    'Failed to import file:',
+                                    e
+                                )
+                                continue
+                            }
+                            oldFileIdToNewIdMap.set(oldId, newId)
+                        }
+                        await txF.done
+                    }
+
                     // 5. 匯入聯絡人並建立 ID Map
                     const oldContactIdToNewIdMap = new Map()
                     if (data.contacts && Array.isArray(data.contacts)) {
@@ -1635,6 +1839,13 @@ class DataService {
                             contactData.ledgerId = getMappedLedgerId(
                                 contactData.ledgerId
                             )
+                            // 重新映射頭像檔案 ID
+                            if (contactData.avatarFileId) {
+                                contactData.avatarFileId =
+                                    oldFileIdToNewIdMap.get(
+                                        contactData.avatarFileId
+                                    ) || null
+                            }
                             const newId = await this.addContact(contactData)
                             oldContactIdToNewIdMap.set(oldId, newId)
                         }
@@ -3463,31 +3674,79 @@ class DataService {
         }
     }
 
-    async settleDebt(id, paymentAmount = null) {
+    async settleDebt(id, paymentAmount = null, accountIdOrOptions = null) {
         try {
             const debt = await this.getDebt(id)
             if (!debt) throw new Error('Debt not found')
             if (debt.settled) return debt // Already settled
+
+            // 相容舊呼叫 (第 3 參數為 accountId) 與新呼叫 (物件包含選項)
+            let accountId = null
+            let createDetail = true
+            let forceCreate = false
+            if (
+                accountIdOrOptions &&
+                typeof accountIdOrOptions === 'object'
+            ) {
+                ({
+                    accountId = null,
+                    createDetail = true,
+                    forceCreate = false,
+                } = accountIdOrOptions)
+            } else {
+                accountId = accountIdOrOptions || null
+            }
 
             // Determine payment amount (full or partial)
             const amount = paymentAmount || debt.remainingAmount
             const newRemainingAmount = debt.remainingAmount - amount
             const isFullySettled = newRemainingAmount <= 0
 
+            // 原始欠款紀錄所屬帳戶（用於判斷是否強制建立還款明細）
+            let debtRecordAccountId = null
+            if (debt.recordId) {
+                const mainRecord = await this.getRecord(debt.recordId)
+                if (mainRecord && mainRecord.accountId) {
+                    debtRecordAccountId = mainRecord.accountId
+                }
+            }
+
+            // 若還款帳戶與原始欠款紀錄帳戶不同，強制建立還款明細以維持帳款平衡
+            if (
+                forceCreate ||
+                (accountId !== null &&
+                    debtRecordAccountId !== null &&
+                    accountId !== debtRecordAccountId)
+            ) {
+                createDetail = true
+            }
+
             // Create payment record in history
             const paymentRecord = {
                 amount,
-                date: new Date().toISOString().split('T')[0],
+                date: formatDateToString(new Date()),
                 recordId: null,
             }
 
-            // Only create a transaction record if this debt was NOT linked to an existing expense/income
-            // If it was linked (recordId exists), the cash flow was already recorded at creation
-            // Creating another record would cause double-counting in statistics
+            // 是否建立「還款 / 欠款回收」記帳明細：
+            // - 若欠款未連結任何記帳紀錄（純欠款），預設建立
+            // - 若已連結，則依 createDetail 決定；跨帳戶還款時已強制建立
             let newRecordId = null
-            if (!debt.recordId) {
+            if (createDetail || !debt.recordId) {
                 const contact = await this.getContact(debt.contactId)
                 const contactName = contact?.name || '未知聯絡人'
+
+                // 決定還款紀錄所屬帳戶
+                let recordAccountId = accountId
+                if (!recordAccountId && debtRecordAccountId) {
+                    recordAccountId = debtRecordAccountId
+                }
+                if (!recordAccountId) {
+                    const accounts = await this.getAccounts()
+                    if (accounts && accounts.length > 0) {
+                        recordAccountId = accounts[0].id
+                    }
+                }
 
                 const record = {
                     type: debt.type === 'receivable' ? 'income' : 'expense',
@@ -3496,13 +3755,16 @@ class DataService {
                             ? 'debt_collection'
                             : 'debt_repayment',
                     amount: amount,
-                    date: new Date().toISOString().split('T')[0],
+                    date: formatDateToString(new Date()),
                     description:
                         debt.type === 'receivable'
                             ? `收回欠款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`
                             : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
                     ledgerId: debt.ledgerId,
                     debtId: id,
+                    ...(recordAccountId
+                        ? { accountId: recordAccountId }
+                        : {}),
                 }
 
                 newRecordId = await this.addRecord(record)
@@ -3541,8 +3803,130 @@ class DataService {
     }
 
     // Add partial payment to a debt
-    async addPartialPayment(debtId, amount) {
-        return this.settleDebt(debtId, amount)
+    async addPartialPayment(debtId, amount, accountIdOrOptions = null) {
+        return this.settleDebt(debtId, amount, accountIdOrOptions)
+    }
+
+    // ==================== 欠款紀錄完整性修復 ====================
+    // 快速判斷是否需要執行欠款紀錄修復（不建立任何紀錄，僅掃描）。
+    // 用於決定是否需要在啟動時顯示轉換提示 Modal。
+    async needsDebtRepair() {
+        try {
+            const debts = await this.getDebts({ allLedgers: true })
+            return debts.some(d =>
+                (d.payments || []).some(
+                    p =>
+                        (!p.recordId && !p.recordUuid) ||
+                        (d.recordId && p.recordId === d.recordId)
+                )
+            )
+        } catch (error) {
+            console.error('檢查欠款紀錄完整性失敗:', error)
+            return false
+        }
+    }
+
+    // 修復因操作中斷（例如結清/收款途中關閉應用程式）而殘留的
+    // 「付款已寫入 debt.payments，但對應記帳紀錄卻未建立」的欠款資料。
+    // 同時也修復舊版（行為變更前）連結欠款中指向原始借貸紀錄而非還款明細的付款。
+    // 每筆 payment 若缺少 recordId / recordUuid，或 recordId 仍指向原始欠款紀錄，
+    // debt_repayment / debt_collection 記帳明細。
+    //
+    // 注意：目前由 main.js 於每次啟動時呼叫，以確保歷史中斷資料能被修復；
+    // 未來版本可改為僅在特定 DB 版本升級（如 v14 移轉）時執行，避免每次掃描。
+    //
+    // @param {(progress: {current:number,total:number,repairedCount:number,phase:string}) => void} [onProgress]
+    // @returns {Promise<{repairedCount:number, scanned:number}>}
+    async repairOrphanedDebtRecords(onProgress) {
+        try {
+            const debts = await this.getDebts({ allLedgers: true })
+            const total = debts.length
+            let current = 0
+            let repairedCount = 0
+
+            for (const debt of debts) {
+                current++
+                const payments = debt.payments || []
+
+                if (payments.length === 0) {
+                    if (onProgress)
+                        onProgress({ current, total, repairedCount, phase: 'scan' })
+                    continue
+                }
+
+                // 聯絡人名稱
+                let contactName = '未知聯絡人'
+                if (debt.contactId) {
+                    const contact = await this.getContact(debt.contactId)
+                    if (contact) contactName = contact.name || '未知聯絡人'
+                }
+
+                // 原始欠款紀錄所屬帳戶，作為建立還款明細的 fallback 帳戶
+                let originalAccountId = null
+                if (debt.recordId) {
+                    const originalRecord = await this.getRecord(debt.recordId)
+                    if (originalRecord) originalAccountId = originalRecord.accountId
+                }
+
+                // 僅選取與欠款同帳本的預設帳戶，避免跨帳本外鍵
+                let defaultAccountId = null
+                const accounts = await this.getAccounts({
+                    ledgerId: debt.ledgerId,
+                })
+                if (accounts && accounts.length > 0) {
+                    defaultAccountId = accounts[0].id
+                }
+
+                let updated = false
+                const updatedPayments = []
+                for (const payment of payments) {
+                    if (
+                        (!payment.recordId && !payment.recordUuid) ||
+                        (debt.recordId && payment.recordId === debt.recordId)
+                    ) {
+                        const recordAccountId = originalAccountId || defaultAccountId
+                        const record = {
+                            type: debt.type === 'receivable' ? 'income' : 'expense',
+                            category:
+                                debt.type === 'receivable'
+                                    ? 'debt_collection'
+                                    : 'debt_repayment',
+                            amount: payment.amount,
+                            date: payment.date || formatDateToString(new Date()),
+                            description:
+                                debt.type === 'receivable'
+                                    ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                    : `還款：${contactName} - ${debt.description || ''}`,
+                            ledgerId: debt.ledgerId || this.activeLedgerId,
+                            debtId: debt.id,
+                            ...(recordAccountId
+                                ? { accountId: recordAccountId }
+                                : {}),
+                        }
+
+                        const newRecordId = await this.addRecord(record)
+                        const newRecord = await this.getRecord(newRecordId)
+                        payment.recordId = newRecordId
+                        payment.recordUuid = newRecord?.uuid || null
+                        updated = true
+                        repairedCount++
+                    }
+                    updatedPayments.push(payment)
+                }
+
+                if (updated) {
+                    await this.updateDebt(debt.id, { payments: updatedPayments })
+                }
+
+                if (onProgress)
+                    onProgress({ current, total, repairedCount, phase: 'repair' })
+            }
+
+            return { repairedCount, scanned: total }
+        } catch (error) {
+            console.error('修復欠款紀錄失敗:', error)
+            throw error
+        }
     }
 
     // Get debt summary by contact

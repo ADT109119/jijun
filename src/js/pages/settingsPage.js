@@ -156,7 +156,6 @@ export class SettingsPage {
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
-
                         <!-- Calculator Mode Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
                             <div class="flex items-center gap-4">
@@ -587,17 +586,13 @@ export class SettingsPage {
             'debt-management-toggle'
         )
         if (debtManagementToggle) {
-            this.app.dataService
-                .getSetting('debtManagementEnabled')
-                .then(setting => {
-                    const isEnabled = !!setting?.value
-                    debtManagementToggle.checked = isEnabled
-                    if (isEnabled) {
-                        document
-                            .getElementById('manage-debts-link-container')
-                            .classList.remove('hidden')
-                    }
-                })
+            this.app.dataService.getSetting('debtManagementEnabled').then(setting => {
+                const isEnabled = !!setting?.value;
+                debtManagementToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                }
+            });
 
             debtManagementToggle.addEventListener('change', async e => {
                 const isEnabled = e.target.checked
@@ -606,16 +601,12 @@ export class SettingsPage {
                     value: isEnabled,
                 })
                 if (isEnabled) {
-                    document
-                        .getElementById('manage-debts-link-container')
-                        .classList.remove('hidden')
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
                 } else {
-                    document
-                        .getElementById('manage-debts-link-container')
-                        .classList.add('hidden')
+                    document.getElementById('manage-debts-link-container').classList.add('hidden');
                 }
-                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`)
-            })
+                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`);
+            });
         }
 
         const manageDebtsBtn = document.getElementById('manage-debts-btn')
