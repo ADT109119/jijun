@@ -5,6 +5,7 @@ import {
     shouldSkipDate,
     calculateAmortizationDetails,
     showToast,
+    MAX_ITERATIONS,
 } from './utils.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
