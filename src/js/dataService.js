@@ -3807,6 +3807,120 @@ class DataService {
         return this.settleDebt(debtId, amount, accountIdOrOptions)
     }
 
+    // ==================== 欠款紀錄完整性修復 ====================
+    // 快速判斷是否需要執行欠款紀錄修復（不建立任何紀錄，僅掃描）。
+    // 用於決定是否需要在啟動時顯示轉換提示 Modal。
+    async needsDebtRepair() {
+        try {
+            const debts = await this.getDebts({ allLedgers: true })
+            return debts.some(d =>
+                (d.payments || []).some(p => !p.recordId && !p.recordUuid)
+            )
+        } catch (error) {
+            console.error('檢查欠款紀錄完整性失敗:', error)
+            return false
+        }
+    }
+
+    // 修復因操作中斷（例如結清/收款途中關閉應用程式）而殘留的
+    // 「付款已寫入 debt.payments，但對應記帳紀錄卻未建立」的欠款資料。
+    // 每筆 payment 若缺少 recordId / recordUuid，即補建一筆對應的
+    // debt_repayment / debt_collection 記帳明細。
+    //
+    // 注意：目前由 main.js 於每次啟動時呼叫，以確保歷史中斷資料能被修復；
+    // 未來版本可改為僅在特定 DB 版本升級（如 v14 移轉）時執行，避免每次掃描。
+    //
+    // @param {(progress: {current:number,total:number,repairedCount:number,phase:string}) => void} [onProgress]
+    // @returns {Promise<{repairedCount:number, scanned:number}>}
+    async repairOrphanedDebtRecords(onProgress) {
+        try {
+            const debts = await this.getDebts({ allLedgers: true })
+            const total = debts.length
+            let current = 0
+            let repairedCount = 0
+
+            for (const debt of debts) {
+                current++
+                const payments = debt.payments || []
+
+                if (payments.length === 0) {
+                    if (onProgress)
+                        onProgress({ current, total, repairedCount, phase: 'scan' })
+                    continue
+                }
+
+                // 聯絡人名稱
+                let contactName = '未知聯絡人'
+                if (debt.contactId) {
+                    const contact = await this.getContact(debt.contactId)
+                    if (contact) contactName = contact.name || '未知聯絡人'
+                }
+
+                // 原始欠款紀錄所屬帳戶，作為建立還款明細的 fallback 帳戶
+                let originalAccountId = null
+                if (debt.recordId) {
+                    const originalRecord = await this.getRecord(debt.recordId)
+                    if (originalRecord) originalAccountId = originalRecord.accountId
+                }
+
+                // 僅選取與欠款同帳本的預設帳戶，避免跨帳本外鍵
+                let defaultAccountId = null
+                const accounts = await this.getAccounts({
+                    ledgerId: debt.ledgerId,
+                })
+                if (accounts && accounts.length > 0) {
+                    defaultAccountId = accounts[0].id
+                }
+
+                let updated = false
+                const updatedPayments = []
+                for (const payment of payments) {
+                    if (!payment.recordId && !payment.recordUuid) {
+                        const recordAccountId = originalAccountId || defaultAccountId
+                        const record = {
+                            type: debt.type === 'receivable' ? 'income' : 'expense',
+                            category:
+                                debt.type === 'receivable'
+                                    ? 'debt_collection'
+                                    : 'debt_repayment',
+                            amount: payment.amount,
+                            date: payment.date || formatDateToString(new Date()),
+                            description:
+                                debt.type === 'receivable'
+                                    ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                    : `還款：${contactName} - ${debt.description || ''}`,
+                            ledgerId: debt.ledgerId || this.activeLedgerId,
+                            debtId: debt.id,
+                            ...(recordAccountId
+                                ? { accountId: recordAccountId }
+                                : {}),
+                        }
+
+                        const newRecordId = await this.addRecord(record)
+                        const newRecord = await this.getRecord(newRecordId)
+                        payment.recordId = newRecordId
+                        payment.recordUuid = newRecord?.uuid || null
+                        updated = true
+                        repairedCount++
+                    }
+                    updatedPayments.push(payment)
+                }
+
+                if (updated) {
+                    await this.updateDebt(debt.id, { payments: updatedPayments })
+                }
+
+                if (onProgress)
+                    onProgress({ current, total, repairedCount, phase: 'repair' })
+            }
+
+            return { repairedCount, scanned: total }
+        } catch (error) {
+            console.error('修復欠款紀錄失敗:', error)
+            throw error
+        }
+    }
+
     // Get debt summary by contact
     async getDebtSummary() {
         try {

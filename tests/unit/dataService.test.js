@@ -1195,3 +1195,101 @@ describe('DataService — settleDebt 欠款結清', () => {
         expect(collection.accountId).toBe(10)
     })
 })
+
+describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        ds.db._storeData.contacts.push({ id: 1, name: '測試聯絡人' })
+        ds.db._storeData.accounts.push({
+            id: 10,
+            name: '現金',
+            ledgerId: 1,
+            uuid: 'acc-uuid-10',
+        })
+    })
+
+    it('為缺少 recordId 的付款補建還款紀錄並回寫 payment', async () => {
+        ds.db._storeData.debts.push({
+            id: 1,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 500,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-1',
+            recordId: null,
+            // 模擬操作中斷：付款已寫入，但對應紀錄未建立
+            payments: [{ amount: 500, date: '2024-01-01' }],
+        })
+
+        const result = await ds.repairOrphanedDebtRecords()
+
+        expect(result.repairedCount).toBe(1)
+        const records = ds.db._storeData.records
+        expect(records).toHaveLength(1)
+        expect(records[0].category).toBe('debt_repayment')
+        expect(records[0].debtId).toBe(1)
+        expect(records[0].ledgerId).toBe(1)
+        expect(records[0].accountId).toBe(10)
+
+        // debt.payments 已回寫 recordId / recordUuid
+        const debt = ds.db._storeData.debts[0]
+        expect(debt.payments[0].recordId).toBe(records[0].id)
+        expect(debt.payments[0].recordUuid).toBe(records[0].uuid)
+    })
+
+    it('已完整的付款不會重複建立紀錄（冪等）', async () => {
+        ds.db._storeData.records.push({
+            id: 99,
+            type: 'expense',
+            amount: 500,
+            accountId: 10,
+            ledgerId: 1,
+            debtId: 2,
+            uuid: 'rec-uuid-99',
+        })
+        ds.db._storeData.debts.push({
+            id: 2,
+            type: 'receivable',
+            description: '借出',
+            originalAmount: 500,
+            remainingAmount: 0,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-2',
+            recordId: null,
+            payments: [
+                { amount: 500, date: '2024-01-01', recordId: 99, recordUuid: 'rec-uuid-99' },
+            ],
+        })
+
+        const result = await ds.repairOrphanedDebtRecords()
+        expect(result.repairedCount).toBe(0)
+        expect(ds.db._storeData.records).toHaveLength(1)
+    })
+
+    it('needsDebtRepair 在存在殘留付款時回傳 true', async () => {
+        ds.db._storeData.debts.push({
+            id: 3,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-3',
+            recordId: null,
+            payments: [{ amount: 1000, date: '2024-01-01' }],
+        })
+
+        const needs = await ds.needsDebtRepair()
+        expect(needs).toBe(true)
+    })
+})

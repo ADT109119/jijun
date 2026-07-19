@@ -92,6 +92,20 @@ class EasyAccountingApp {
     async init() {
         await this.dataService.init()
 
+        // 啟動時執行欠款紀錄完整性檢查：修復因操作中斷（如結清/收款途中關閉應用）
+        // 而殘留的「付款已記錄、對應記帳紀錄卻未建立」的資料。
+        // 目前每次啟動都檢查；未來版本可改為僅在特定 DB 版本升級時執行。
+        try {
+            const needsRepair = await this.dataService
+                .needsDebtRepair()
+                .catch(() => false)
+            if (needsRepair) {
+                await this.runDebtIntegrityCheck()
+            }
+        } catch (e) {
+            console.error('欠款紀錄完整性檢查失敗:', e)
+        }
+
         // 並行初始化無相依關係的核心模組與服務
         await Promise.all([
             this.themeManager.init(),
@@ -385,6 +399,71 @@ class EasyAccountingApp {
                     error
                 )
             }
+        }
+    }
+
+    // ==================== 欠款紀錄完整性檢查 ====================
+    // 顯示「資料轉換中，請勿關閉」的進度 Modal，並執行欠款紀錄修復。
+    // 僅在 needsDebtRepair() 為 true 時由 init() 呼叫，避免無謂的 Modal 閃爍。
+    async runDebtIntegrityCheck() {
+        let modal = null
+        let progressBar = null
+        let progressText = null
+        let modalShown = false
+
+        const ensureModal = () => {
+            if (modalShown) return
+            modalShown = true
+            modal = document.createElement('div')
+            modal.className =
+                'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4'
+            modal.innerHTML = `
+                <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center">
+                    <div class="mb-4">
+                        <i class="fa-solid fa-arrows-rotate fa-spin text-2xl text-wabi-primary"></i>
+                    </div>
+                    <h3 class="text-lg font-semibold mb-2 text-wabi-primary">資料轉換中</h3>
+                    <p class="text-sm text-wabi-text-secondary mb-4">正在檢查並修復欠款紀錄，請勿關閉應用程式。</p>
+                    <div class="w-full bg-wabi-border rounded-full h-2.5 overflow-hidden">
+                        <div id="debt-repair-progress" class="bg-wabi-primary h-2.5 rounded-full transition-all" style="width:0%"></div>
+                    </div>
+                    <p id="debt-repair-text" class="text-xs text-wabi-text-secondary mt-2">準備中…</p>
+                </div>`
+            document.body.appendChild(modal)
+            progressBar = modal.querySelector('#debt-repair-progress')
+            progressText = modal.querySelector('#debt-repair-text')
+        }
+
+        const onProgress = ({ current, total, repairedCount }) => {
+            ensureModal()
+            const pct = total > 0 ? Math.round((current / total) * 100) : 100
+            if (progressBar) progressBar.style.width = `${pct}%`
+            if (progressText) {
+                progressText.textContent =
+                    repairedCount > 0
+                        ? `已修復 ${repairedCount} 筆欠款紀錄 (${current}/${total})`
+                        : `檢查中 ${current}/${total}`
+            }
+        }
+
+        try {
+            const result = await this.dataService.repairOrphanedDebtRecords(
+                onProgress
+            )
+            if (modal) {
+                if (progressBar) progressBar.style.width = '100%'
+                if (progressText) {
+                    progressText.textContent =
+                        result.repairedCount > 0
+                            ? `已完成，修復 ${result.repairedCount} 筆欠款紀錄`
+                            : '欠款紀錄檢查完成'
+                }
+                await new Promise(resolve =>
+                    setTimeout(resolve, result.repairedCount > 0 ? 800 : 300)
+                )
+            }
+        } finally {
+            if (modal) modal.remove()
         }
     }
 
