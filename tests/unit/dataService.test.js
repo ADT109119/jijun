@@ -1072,3 +1072,126 @@ describe('DataService — Credit Card (Schema v13)', () => {
         })
     })
 })
+
+describe('DataService — settleDebt 欠款結清', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        // 基本聯絡人與帳戶
+        ds.db._storeData.contacts.push({ id: 1, name: '測試聯絡人' })
+        ds.db._storeData.accounts.push({
+            id: 10,
+            name: '現金',
+            ledgerId: 1,
+            uuid: 'acc-uuid-10',
+        })
+    })
+
+    async function addDebt(debt) {
+        ds.db._storeData.debts.push(debt)
+    }
+
+    it('純欠款（未連結紀錄）結清會建立還款紀錄並標記已結清', async () => {
+        await addDebt({
+            id: 1,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-1',
+            recordId: null,
+            payments: [],
+        })
+
+        const result = await ds.settleDebt(1, 1000, { accountId: 10 })
+
+        expect(result.settled).toBe(true)
+        expect(result.remainingAmount).toBe(0)
+
+        const records = ds.db._storeData.records
+        expect(records).toHaveLength(1)
+        expect(records[0].category).toBe('debt_repayment')
+        expect(records[0].debtId).toBe(1)
+        expect(records[0].ledgerId).toBe(1)
+    })
+
+    it('連結欠款結清會建立還款紀錄（預期新行為：雙向跳轉需要 recordId）', async () => {
+        ds.db._storeData.records.push({
+            id: 5,
+            type: 'expense',
+            amount: 1000,
+            accountId: 10,
+            ledgerId: 1,
+        })
+        await addDebt({
+            id: 2,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-2',
+            recordId: 5,
+            recordUuid: 'rec-uuid-5',
+            payments: [],
+        })
+
+        const result = await ds.settleDebt(2, 1000, { accountId: 10 })
+
+        expect(result.settled).toBe(true)
+        const records = ds.db._storeData.records
+        const repayment = records.find(r => r.debtId === 2)
+        expect(repayment).toBeDefined()
+        expect(repayment.category).toBe('debt_repayment')
+        expect(repayment.accountId).toBe(10)
+        // 雙向跳轉依賴 payment 帶有 recordId
+        expect(result.payments).toHaveLength(1)
+        expect(result.payments[0].recordId).toBe(repayment.id)
+    })
+
+    it('跨帳戶還款強制建立還款明細並使用還款帳戶', async () => {
+        ds.db._storeData.accounts.push({
+            id: 20,
+            name: '銀行',
+            ledgerId: 1,
+            uuid: 'acc-uuid-20',
+        })
+        ds.db._storeData.records.push({
+            id: 6,
+            type: 'expense',
+            amount: 500,
+            accountId: 20,
+            ledgerId: 1,
+        })
+        await addDebt({
+            id: 3,
+            type: 'receivable',
+            description: '借出',
+            originalAmount: 500,
+            remainingAmount: 500,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-3',
+            recordId: 6,
+            recordUuid: 'rec-uuid-6',
+            payments: [],
+        })
+
+        const result = await ds.settleDebt(3, 500, { accountId: 10 })
+
+        expect(result.settled).toBe(true)
+        const records = ds.db._storeData.records
+        const collection = records.find(r => r.debtId === 3)
+        expect(collection).toBeDefined()
+        expect(collection.category).toBe('debt_collection')
+        expect(collection.accountId).toBe(10)
+    })
+})

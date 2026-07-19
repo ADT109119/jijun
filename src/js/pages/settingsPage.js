@@ -156,6 +156,23 @@ export class SettingsPage {
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
+                        <!-- Linked Debt Repayment Visibility Option -->
+                        <div id="debt-repayment-option-container" class="hidden w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-t border-wabi-border/10">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-receipt"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">顯示有連結的還款</p>
+                                    <p class="text-xs text-wabi-text-secondary">讓有連結記帳的還款也顯示在明細中</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="show-linked-repayments-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
 
                         <!-- Calculator Mode Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
@@ -587,17 +604,14 @@ export class SettingsPage {
             'debt-management-toggle'
         )
         if (debtManagementToggle) {
-            this.app.dataService
-                .getSetting('debtManagementEnabled')
-                .then(setting => {
-                    const isEnabled = !!setting?.value
-                    debtManagementToggle.checked = isEnabled
-                    if (isEnabled) {
-                        document
-                            .getElementById('manage-debts-link-container')
-                            .classList.remove('hidden')
-                    }
-                })
+            this.app.dataService.getSetting('debtManagementEnabled').then(setting => {
+                const isEnabled = !!setting?.value;
+                debtManagementToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                    document.getElementById('debt-repayment-option-container').classList.remove('hidden');
+                }
+            });
 
             debtManagementToggle.addEventListener('change', async e => {
                 const isEnabled = e.target.checked
@@ -606,16 +620,26 @@ export class SettingsPage {
                     value: isEnabled,
                 })
                 if (isEnabled) {
-                    document
-                        .getElementById('manage-debts-link-container')
-                        .classList.remove('hidden')
+                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                    document.getElementById('debt-repayment-option-container').classList.remove('hidden');
                 } else {
-                    document
-                        .getElementById('manage-debts-link-container')
-                        .classList.add('hidden')
+                    document.getElementById('manage-debts-link-container').classList.add('hidden');
+                    document.getElementById('debt-repayment-option-container').classList.add('hidden');
                 }
-                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`)
-            })
+                showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`);
+            });
+
+            const showLinkedRepaymentsToggle = document.getElementById('show-linked-repayments-toggle');
+            if (showLinkedRepaymentsToggle) {
+                this.app.dataService.getSetting('showLinkedRepayments').then(setting => {
+                    showLinkedRepaymentsToggle.checked = !!setting?.value;
+                });
+                showLinkedRepaymentsToggle.addEventListener('change', async (e) => {
+                    const isEnabled = e.target.checked;
+                    await this.app.dataService.saveSetting({ key: 'showLinkedRepayments', value: isEnabled });
+                    showToast(`「顯示有連結的還款」已${isEnabled ? '啟用' : '停用'}`);
+                });
+            }
         }
 
         const manageDebtsBtn = document.getElementById('manage-debts-btn')

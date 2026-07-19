@@ -209,6 +209,10 @@ export class HomePage {
                         icon = 'fa-solid fa-money-bill-transfer'
                         name = '帳戶間轉帳'
                         color = 'bg-gray-400'
+                    } else if (record.category === 'balance_adjustment') {
+                        icon = 'fa-solid fa-scale-balanced'
+                        name = '帳務差額'
+                        color = 'bg-purple-500'
                     } else {
                         const category =
                             this.app.categoryManager.getCategoryById(

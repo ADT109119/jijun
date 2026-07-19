@@ -421,6 +421,21 @@ export class RecordsListManager {
             }
         }
 
+        // Load contacts to display the counterparty name on debt labels
+        this.contactsMap = {}
+        try {
+            if (typeof this.dataService.getContacts === 'function') {
+                const contacts = await this.dataService.getContacts({
+                    allLedgers: true,
+                })
+                for (const c of contacts) {
+                    this.contactsMap[c.id] = c
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load contacts for records list:', e)
+        }
+
         this.applyFiltersAndRender()
     }
 
@@ -494,7 +509,8 @@ export class RecordsListManager {
                 // Exclude debt collection and repayment categories from summary calculation
                 if (
                     r.category === 'debt_collection' ||
-                    r.category === 'debt_repayment'
+                    r.category === 'debt_repayment' ||
+                    r.category === 'balance_adjustment'
                 ) {
                     return acc
                 }
@@ -594,12 +610,20 @@ export class RecordsListManager {
                             record.type,
                             record.category
                         )
-                        const icon = category?.icon || 'fa-solid fa-question'
                         const isTransfer = record.category === 'transfer'
+                        const isBalanceAdjustment =
+                            record.category === 'balance_adjustment'
+                        const icon = isBalanceAdjustment
+                            ? 'fa-solid fa-scale-balanced'
+                            : category?.icon || 'fa-solid fa-question'
                         const name = isTransfer
                             ? '帳戶間轉帳'
-                            : category?.name || '未分類'
-                        const color = category?.color || 'bg-gray-400'
+                            : isBalanceAdjustment
+                              ? '帳務差額'
+                              : category?.name || '未分類'
+                        const color = isBalanceAdjustment
+                            ? 'bg-purple-500'
+                            : category?.color || 'bg-gray-400'
                         const hasDebt = !!record.debtId
                         const hasAmortization = !!record.amortizationId
 
@@ -693,10 +717,14 @@ export class RecordsListManager {
                         const mainAmount = displayLogic.showZero
                             ? 0
                             : record.amount
+                        const contactName =
+                            hasDebt && debt?.contactId && this.contactsMap
+                                ? this.contactsMap[debt.contactId]?.name
+                                : ''
                         const statusLabel = hasDebt
                             ? isDebtSettled
-                                ? '已還清'
-                                : '待還款'
+                                ? `已還清${contactName ? '-' + contactName : ''}`
+                                : `待還款${contactName ? '-' + contactName : ''}`
                             : ''
                         const statusClass = isDebtSettled
                             ? 'bg-wabi-income/20 text-wabi-income'
@@ -708,7 +736,7 @@ export class RecordsListManager {
                             hasDebt && isDebtSettled && displayLogic.arrowToZero
 
                         return `
-                    <a ${isTransfer ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
+                    <a ${isTransfer || isBalanceAdjustment ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer || isBalanceAdjustment ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
                     <div class="flex items-center gap-4 flex-1 min-w-0">
                         <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
                             <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
@@ -717,8 +745,12 @@ export class RecordsListManager {
                             <div class="flex items-center gap-2">
                                 <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
                                 ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-sm cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
-                                ${hasDebt ? '<i class="fa-solid fa-handshake text-orange-500 text-sm" title="有關聯欠款"></i>' : ''}
-                                ${hasDebt && statusLabel ? `<span class="text-xs ${statusClass} px-1.5 py-0.5 rounded">${statusLabel}</span>` : ''}
+                                ${hasDebt ? `
+                                    <button class="debt-link-btn inline-flex items-center gap-1 text-xs ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
+                                        <i class="fa-solid fa-handshake"></i>
+                                        <span>${statusLabel || '欠款'}</span>
+                                    </button>
+                                ` : ''}
                             </div>
                             <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${record.description || '無備註'}</p>
                         </div>
@@ -758,6 +790,16 @@ export class RecordsListManager {
                 window.location.hash = '#amortizations'
             })
         })
+
+        // 欠款按鈕點擊跳轉
+        listContainer.querySelectorAll('.debt-link-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const debtId = btn.dataset.debtId;
+                window.location.hash = `#debts?debtId=${debtId}`;
+            });
+        });
     }
 
     updateSummary(records) {

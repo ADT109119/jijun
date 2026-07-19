@@ -92,11 +92,12 @@ export class ComparisonReport {
             endDate,
         })
 
-        // Pre-filter debt-collection / debt-repayment (same as getStatistics)
+        // Pre-filter debt-collection / debt-repayment / balance-adjustment (same as getStatistics)
         const filtered = records.filter(
             r =>
                 r.category !== 'debt_collection' &&
-                r.category !== 'debt_repayment'
+                r.category !== 'debt_repayment' &&
+                r.category !== 'balance_adjustment'
         )
 
         const periodData = periods.map(label => ({
