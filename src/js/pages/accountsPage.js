@@ -75,8 +75,7 @@ export class AccountsPage {
         const isBalanceExempt = record =>
             record.debtId !== null &&
             payableDebtIds.has(String(record.debtId)) &&
-            record.category !== 'debt_repayment' &&
-            record.category !== 'debt_collection'
+            record.category !== 'debt_repayment'
         const container = document.getElementById('accounts-list-container')
         const totalAssetsEl = document.getElementById('total-assets')
 
