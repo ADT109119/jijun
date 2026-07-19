@@ -1302,6 +1302,15 @@ export class DebtManager {
 
   // Async load avatars for contact list with parallel loading and URL revoking to prevent memory leaks
   async loadContactAvatars() {
+    // Revoke URLs created by a previous render so re-renders (filter/settle)
+    // that happen before images load don't leak the pending object URLs
+    if (this._avatarUrls) {
+      this._avatarUrls.forEach((url) => URL.revokeObjectURL(url))
+      this._avatarUrls.clear()
+    } else {
+      this._avatarUrls = new Set()
+    }
+
     const avatarElements = this.container.querySelectorAll('.contact-avatar[data-avatar-id]');
     const promises = Array.from(avatarElements).map(async (el) => {
       const avatarId = el.dataset.avatarId;
@@ -1310,11 +1319,13 @@ export class DebtManager {
         const file = await this.dataService.getFile(parseInt(avatarId));
         if (file && file.data) {
           const url = URL.createObjectURL(file.data);
+          this._avatarUrls.add(url);
           el.innerHTML = `<img src="${url}" class="w-full h-full object-cover" style="dynamic-range-limit: standard;">`;
           const img = el.querySelector('img');
           if (img) {
             const handleRevoke = () => {
               URL.revokeObjectURL(url);
+              this._avatarUrls.delete(url);
               img.removeEventListener('load', handleRevoke);
               img.removeEventListener('error', handleRevoke);
             };
