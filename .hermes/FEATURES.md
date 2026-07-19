@@ -150,7 +150,7 @@
 
 ## 更新歷史
 
-- **2026-07-19**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.4 已發布，Owner 整合 Code Review 發現修復 (XSS + 共用帳本資料完整性 + 骨架畫面)；#49 建議關閉；Code Review H01/H02 已修復 (credit_statements 孤兒資料 + shareLedger 遺漏)；Security issues (SVG XSS, CSS injection, statistics XSS) 已修復
+- **2026-07-20**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別)；修復 main.js MAX_ITERATIONS import 遺漏 (ESLint no-undef, Code Review 7/9 M01)；826 tests 全過
 - **2026-07-18**: 每日晨報 — GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作確認，建議關閉；昨晚 Code Review: ledgerManager.js (2H/3M/2L) + themeManager.js (1C/1H/3M/2L)；818 tests 全過
 - **2026-07-17**: Code Review ledgerManager.js — 發現 2 HIGH (shareLedger 共用帳本初始化遺漏 amortizations/credit_statements 資料、dataService deleteLedger 串列刪除遺漏 credit_statements 導致孤兒資料殘留)、3 MEDIUM (changes 建構 DRY 違反是 H01 根因、switchLedger 死碼 fallback、joinSharedLedger 缺少外部資料結構驗證)、2 LOW (showToast XSS 已受 textContent 保護、deleteLedger 缺少結果回傳)；產出 code-review-ledgerManager-2026-07-17.md；H02 在 code-review-credit-card-2026-06-12.md 已有記錄但未修復；安全評分 5/10；818 tests 全過；ESLint 乾淨；GitHub: 78 stars, 5 open issues 無變化
 - **2026-07-17**: Code Review themeManager.js — 發現 1 Critical (SVG innerHTML XSS: `template.innerHTML` 直接解析主題來源的 SVG 字串，惡意主題可注入 `<script>` 或事件處理器)、1 High (CSS 變數值未消毒: fallback 值直接嵌入 CSS 文字，可注入 `@import` 等惡意規則)、3 Medium (MutationObserver 全域效能開銷、深色主題檢測 `id.includes('dark')` 過於寬鬆、fetch dark.json 缺少超時/離線保護)、2 Low (luminance 重複 hex 解析邏輯、缺少 destroy 方法)；產出 code-review-themeManager-2026-07-17.md；安全評分 4/10 (SVG+CSS 注入未防護)；818 tests 全過；GitHub: 78 stars, 5 open issues 無變化；MOZE 最新版 v4.1.28 (2026/6/23 iOS 26 相容性 FIX)；Actual Budget 26.7.0 (銀行同步+CLI stable)；Firefly III v6.6.3 穩定版
