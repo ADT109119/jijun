@@ -150,6 +150,7 @@
 
 ## 更新歷史
 
+- **2026-07-22**: Code Review owner hotfix (4eee2b3/0e58dde) — 欠款紀錄完整性修復功能審查：發現 2 HIGH (N+1 查詢效能瓶頸、非原子性修復資料不一致)、3 MEDIUM (非決定性帳戶選擇、重複掃描、recordUuid schema 未確認)、2 LOW (啟動延遲風險、缺少 destroy)；產出 code-review-debt-repair-2026-07-22.md；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)
 - **2026-07-21**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別+聯絡人頭像備份)；826 tests 全過 (24 test files)；Git working tree clean； Issues 狀態無變化
 - **2026-07-20**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別)；修復 main.js MAX_ITERATIONS import 遺漏 (ESLint no-undef, Code Review 7/9 M01)；826 tests 全過
 - **2026-07-18**: 每日晨報 — GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作確認，建議關閉；昨晚 Code Review: ledgerManager.js (2H/3M/2L) + themeManager.js (1C/1H/3M/2L)；818 tests 全過
