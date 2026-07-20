@@ -150,6 +150,7 @@
 
 ## 更新歷史
 
+- **2026-07-21**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別+聯絡人頭像備份)；826 tests 全過 (24 test files)；Git working tree clean； Issues 狀態無變化
 - **2026-07-20**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別)；修復 main.js MAX_ITERATIONS import 遺漏 (ESLint no-undef, Code Review 7/9 M01)；826 tests 全過
 - **2026-07-18**: 每日晨報 — GitHub: 78 stars, 5 open issues (#49/#48/#14/#9/#8)；#49 兩項核心需求（骨架畫面+計算機鍵盤）均已實作確認，建議關閉；昨晚 Code Review: ledgerManager.js (2H/3M/2L) + themeManager.js (1C/1H/3M/2L)；818 tests 全過
 - **2026-07-17**: Code Review ledgerManager.js — 發現 2 HIGH (shareLedger 共用帳本初始化遺漏 amortizations/credit_statements 資料、dataService deleteLedger 串列刪除遺漏 credit_statements 導致孤兒資料殘留)、3 MEDIUM (changes 建構 DRY 違反是 H01 根因、switchLedger 死碼 fallback、joinSharedLedger 缺少外部資料結構驗證)、2 LOW (showToast XSS 已受 textContent 保護、deleteLedger 缺少結果回傳)；產出 code-review-ledgerManager-2026-07-17.md；H02 在 code-review-credit-card-2026-06-12.md 已有記錄但未修復；安全評分 5/10；818 tests 全過；ESLint 乾淨；GitHub: 78 stars, 5 open issues 無變化
