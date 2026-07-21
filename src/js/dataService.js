@@ -412,7 +412,7 @@ class DataService {
 
                             // 獲取預設帳戶，做為 fallback 帳戶 ID
                             let defaultAccountId = null
-                            let accCursor = await accountsStore.openCursor()
+                            const accCursor = await accountsStore.openCursor()
                             if (accCursor) {
                                 defaultAccountId = accCursor.value.id
                             }
@@ -445,7 +445,7 @@ class DataService {
                                     for (const payment of debt.payments) {
                                         if (!payment.recordId && !payment.recordUuid) {
                                             const paymentDate = payment.date || formatDateToString(new Date())
-                                            let recordAccountId = originalAccountId || defaultAccountId
+                                            const recordAccountId = originalAccountId || defaultAccountId
 
                                             // 建立記帳紀錄
                                             const record = {
@@ -3840,6 +3840,21 @@ class DataService {
     async repairOrphanedDebtRecords(onProgress) {
         try {
             const debts = await this.getDebts({ allLedgers: true })
+            const allContacts = await this.getContacts()
+            const allRecords = await this.getRecords({ allLedgers: true })
+            const allAccounts = await this.getAccounts({ allLedgers: true })
+            
+            const contactMap = new Map(allContacts.map(c => [c.id, c]))
+            const recordMap = new Map(allRecords.map(r => [r.id, r]))
+            const accountMap = new Map()
+            for(const acc of allAccounts) {
+                if(!accountMap.has(acc.ledgerId)) accountMap.set(acc.ledgerId, [])
+                accountMap.get(acc.ledgerId).push(acc)
+            }
+            for(const [ledgerId, accounts] of accountMap) {
+                accounts.sort((a, b) => a.id - b.id)
+            }
+
             const total = debts.length
             let current = 0
             let repairedCount = 0
@@ -3848,37 +3863,30 @@ class DataService {
                 current++
                 const payments = debt.payments || []
 
-                if (payments.length === 0) {
-                    if (onProgress)
-                        onProgress({ current, total, repairedCount, phase: 'scan' })
-                    continue
-                }
-
+                let updated = false
+                const updatedPayments = []
+                
                 // 聯絡人名稱
                 let contactName = '未知聯絡人'
                 if (debt.contactId) {
-                    const contact = await this.getContact(debt.contactId)
+                    const contact = contactMap.get(debt.contactId)
                     if (contact) contactName = contact.name || '未知聯絡人'
                 }
 
-                // 原始欠款紀錄所屬帳戶，作為建立還款明細的 fallback 帳戶
+                // 原始欠款紀錄所屬帳戶
                 let originalAccountId = null
                 if (debt.recordId) {
-                    const originalRecord = await this.getRecord(debt.recordId)
+                    const originalRecord = recordMap.get(debt.recordId)
                     if (originalRecord) originalAccountId = originalRecord.accountId
                 }
 
-                // 僅選取與欠款同帳本的預設帳戶，避免跨帳本外鍵
+                // 帳本預設帳戶
                 let defaultAccountId = null
-                const accounts = await this.getAccounts({
-                    ledgerId: debt.ledgerId,
-                })
+                const accounts = accountMap.get(debt.ledgerId)
                 if (accounts && accounts.length > 0) {
                     defaultAccountId = accounts[0].id
                 }
 
-                let updated = false
-                const updatedPayments = []
                 for (const payment of payments) {
                     if (
                         (!payment.recordId && !payment.recordUuid) ||

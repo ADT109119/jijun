@@ -3,10 +3,9 @@ import { formatDateToString, formatCurrency } from './utils.js'
 /**
  * 重新整理並更新 Android Widget 上的統計資料
  * @param {DataService} dataService
- * @param {CategoryManager} categoryManager
  * @param {BudgetManager} budgetManager
  */
-export async function updateAndroidWidget(dataService, categoryManager, budgetManager) {
+export async function updateAndroidWidget(dataService, budgetManager) {
     if (typeof window === 'undefined' || !window.Capacitor || !window.Capacitor.isNativePlatform()) {
         return
     }

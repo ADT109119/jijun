@@ -13,7 +13,7 @@ vi.mock('@capacitor/core', () => ({
 import { updateAndroidWidget } from '../../src/js/widgetHelper.js'
 
 describe('updateAndroidWidget', () => {
-    let mockDataService, mockCategoryManager, mockBudgetManager
+    let mockDataService, mockBudgetManager
 
     beforeEach(() => {
         vi.setSystemTime(new Date(2024, 0, 15))
@@ -26,7 +26,6 @@ describe('updateAndroidWidget', () => {
             db: {},
             getRecords: vi.fn().mockResolvedValue([])
         }
-        mockCategoryManager = {}
         mockBudgetManager = {
             loadBudget: vi.fn().mockResolvedValue(undefined),
             getBudgetStatus: vi.fn().mockResolvedValue({
@@ -50,21 +49,21 @@ describe('updateAndroidWidget', () => {
     describe('early return', () => {
         it('should return early when window.Capacitor does not exist', async () => {
             delete window.Capacitor
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
             expect(mockDataService.getRecords).not.toHaveBeenCalled()
             expect(mockUpdateWidgetData).not.toHaveBeenCalled()
         })
 
         it('should return early when isNativePlatform() returns false', async () => {
             window.Capacitor = { isNativePlatform: () => false }
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
             expect(mockDataService.getRecords).not.toHaveBeenCalled()
             expect(mockUpdateWidgetData).not.toHaveBeenCalled()
         })
 
         it('should return early when dataService is null', async () => {
             const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-            await updateAndroidWidget(null, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(null, mockBudgetManager)
             expect(warnSpy).toHaveBeenCalled()
             expect(mockUpdateWidgetData).not.toHaveBeenCalled()
             warnSpy.mockRestore()
@@ -73,7 +72,7 @@ describe('updateAndroidWidget', () => {
         it('should return early when dataService.db is not initialized', async () => {
             const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
             mockDataService.db = null
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
             expect(warnSpy).toHaveBeenCalledWith('DataService DB is not initialized yet. Skipping widget update.')
             expect(mockUpdateWidgetData).not.toHaveBeenCalled()
             warnSpy.mockRestore()
@@ -91,7 +90,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-01-14', type: 'expense', amount: 30 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ todayExpense: '$150' })
@@ -104,7 +103,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-01-16', type: 'expense', amount: 50 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ todayExpense: '$0' })
@@ -122,7 +121,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-02-01', type: 'income', amount: 3000 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ monthBalance: '+$3,000' })
@@ -136,7 +135,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-01-20', type: 'expense', amount: 500 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ monthBalance: '-$2,500' })
@@ -149,7 +148,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-01-10', type: 'expense', amount: 2000 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ monthBalance: '+$0' })
@@ -170,7 +169,7 @@ describe('updateAndroidWidget', () => {
                 categoryStatuses: []
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -190,7 +189,7 @@ describe('updateAndroidWidget', () => {
                 categoryStatuses: []
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -210,7 +209,7 @@ describe('updateAndroidWidget', () => {
                 categoryStatuses: []
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ budgetProgressVal: 33 })
@@ -234,7 +233,7 @@ describe('updateAndroidWidget', () => {
                 ]
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ categoryBudgetStatus: '⚠️ 餐飲已超支 $500' })
@@ -254,7 +253,7 @@ describe('updateAndroidWidget', () => {
                 ]
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ categoryBudgetStatus: '📊 餐飲已使用 83%' })
@@ -274,7 +273,7 @@ describe('updateAndroidWidget', () => {
                 ]
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ categoryBudgetStatus: '⚠️ 交通已超支 $1,000' })
@@ -294,7 +293,7 @@ describe('updateAndroidWidget', () => {
                 ]
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ categoryBudgetStatus: '📊 交通已使用 5%' })
@@ -313,7 +312,7 @@ describe('updateAndroidWidget', () => {
                 ]
             })
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ categoryBudgetStatus: '' })
@@ -325,7 +324,7 @@ describe('updateAndroidWidget', () => {
 
     describe('no budget', () => {
         it('should show 無預算限制 when budget is 0', async () => {
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -359,7 +358,7 @@ describe('updateAndroidWidget', () => {
             })
             localStorage.setItem('invoice_carrier_code', '/ABC123456')
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith({
                 todayExpense: '$150',
@@ -372,7 +371,7 @@ describe('updateAndroidWidget', () => {
         })
 
         it('should call loadBudget and getBudgetStatus', async () => {
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockBudgetManager.loadBudget).toHaveBeenCalledTimes(1)
             expect(mockBudgetManager.getBudgetStatus).toHaveBeenCalledTimes(1)
@@ -387,7 +386,7 @@ describe('updateAndroidWidget', () => {
             const testError = new Error('Widget update failed')
             mockUpdateWidgetData.mockRejectedValueOnce(testError)
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(errorSpy).toHaveBeenCalledWith(
                 '[Widget] Failed to update Android Widget data:',
@@ -400,7 +399,7 @@ describe('updateAndroidWidget', () => {
             mockUpdateWidgetData.mockRejectedValueOnce(new Error('Widget error'))
 
             await expect(
-                updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+                updateAndroidWidget(mockDataService, mockBudgetManager)
             ).resolves.not.toThrow()
         })
     })
@@ -411,7 +410,7 @@ describe('updateAndroidWidget', () => {
         it('should read carrier code from localStorage', async () => {
             localStorage.setItem('invoice_carrier_code', '/ABC123456')
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ carrierCode: '/ABC123456' })
@@ -419,7 +418,7 @@ describe('updateAndroidWidget', () => {
         })
 
         it('should default to empty string when carrier code not set', async () => {
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ carrierCode: '' })
@@ -433,7 +432,7 @@ describe('updateAndroidWidget', () => {
         it('should handle empty records array', async () => {
             mockDataService.getRecords.mockResolvedValue([])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -449,7 +448,7 @@ describe('updateAndroidWidget', () => {
                 { date: '2024-01-15', type: 'expense', amount: 0 }
             ])
 
-            await updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+            await updateAndroidWidget(mockDataService, mockBudgetManager)
 
             expect(mockUpdateWidgetData).toHaveBeenCalledWith(
                 expect.objectContaining({ todayExpense: '$0' })
@@ -460,7 +459,7 @@ describe('updateAndroidWidget', () => {
             mockBudgetManager.loadBudget.mockRejectedValueOnce(new Error('Budget load failed'))
 
             await expect(
-                updateAndroidWidget(mockDataService, mockCategoryManager, mockBudgetManager)
+                updateAndroidWidget(mockDataService, mockBudgetManager)
             ).resolves.not.toThrow()
         })
     })
