@@ -150,6 +150,7 @@
 
 ## 更新歷史
 
+- **2026-07-23**: Code Review categoryManager.js — 發現 2 HIGH (H01: icon innerHTML XSS 繞過 escapeHTML 防護、H02: 分類刪除 N+1 查詢效能瓶頸)、3 MEDIUM (M01: SortableJS 實例未 destroy 記憶體洩漏 ESLint no-unused-vars 已確認、M02: 自訂顏色直接嵌入 CSS style 未消毒、M03: 分類 ID 產生 Date.now() 碰撞風險)、3 LOW (魔法數字、硬編碼圖示、缺少 destroy)；產出 code-review-categoryManager-2026-07-23.md；安全評分 6/10；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化；Moneybook 2026 全面收費後引發替代方案討論
 - **2026-07-22**: Code Review owner hotfix (4eee2b3/0e58dde) — 欠款紀錄完整性修復功能審查：發現 2 HIGH (N+1 查詢效能瓶頸、非原子性修復資料不一致)、3 MEDIUM (非決定性帳戶選擇、重複掃描、recordUuid schema 未確認)、2 LOW (啟動延遲風險、缺少 destroy)；產出 code-review-debt-repair-2026-07-22.md；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)
 - **2026-07-21**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別+聯絡人頭像備份)；826 tests 全過 (24 test files)；Git working tree clean； Issues 狀態無變化
 - **2026-07-20**: 每日晨報 — GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)；v2.1.6.5 已發布 (還款明細+雙向跳轉+帳務差額類別)；修復 main.js MAX_ITERATIONS import 遺漏 (ESLint no-undef, Code Review 7/9 M01)；826 tests 全過
