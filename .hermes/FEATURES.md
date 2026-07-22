@@ -151,6 +151,7 @@
 
 ## 更新歷史
 
+- **2026-07-25**: ESLint 修復 — `.eslintrc.json` 補上 `__WEB_STORE_URL__` global 定義 (Vite define 注入但 ESLint 未知導致 no-undef 錯誤)；src/js ESLint 錯誤數 1→0；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化
 - **2026-07-24**: Code Review debtManager.js — 發現 2 HIGH (H01: renderContactsPage contact.name 未 escapeHTML XSS、H02: debt.description 多處未 escapeHTML XSS L354/L592/L682/L761/L895)、3 MEDIUM (M01: loadDebtList N+1 按鈕點擊重複查詢、M02: showContactSummaryModal contact.name 未 escapeHTML、M03: updateSummaryCards 每次全量載入無快取)、5 LOW (ESLint no-unused-vars、結清日期多餘 formatDateToString 轉換、缺少 destroy 方法、魔法數字 pageSize、document.execCommand 已淘汰)；產出 code-review-debtManager-2026-07-24.md；安全評分 7/10；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化；Moneybook 2026/7/1 報案第三方冒用
 - **2026-07-23**: Code Review categoryManager.js — 發現 2 HIGH (icon innerHTML XSS 繞過 escapeHTML 防護、分類刪除 N+1 查詢效能瓶頸)、3 MEDIUM (SortableJS 實例未 destroy 記憶體洩漏 ESLint no-unused-vars 已確認、自訂顏色直接嵌入 CSS style 未消毒、分類 ID 產生 Date.now() 碰撞風險)、3 LOW (魔法數字、硬編碼圖示、缺少 destroy)；產出 code-review-categoryManager-2026-07-23.md；安全評分 6/10；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化；Moneybook 2026 全面收費後引發替代方案討論
 - **2026-07-22**: Code Review owner hotfix (4eee2b3/0e58dde) — 欠款紀錄完整性修復功能審查：發現 2 HIGH (N+1 查詢效能瓶頸、非原子性修復資料不一致)、3 MEDIUM (非決定性帳戶選擇、重複掃描、recordUuid schema 未確認)、2 LOW (啟動延遲風險、缺少 destroy)；產出 code-review-debt-repair-2026-07-22.md；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8)

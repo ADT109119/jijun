@@ -18,6 +18,7 @@
         "__AD_ADMOB_BANNER_ID__": "readonly",
         "__AD_ADMOB_REWARDED_ID__": "readonly",
         "__AD_IS_TESTING__": "readonly",
+        "__WEB_STORE_URL__": "readonly",
         "gapi": "readonly",
         "vi": "readonly",
         "google": "readonly"
