@@ -170,10 +170,8 @@ export class CalendarCashFlow {
         const isToday = dayStr === todayStr
 
         let incomeSum = 0
-        let expenseSum = 0
         for (const r of dayRecords) {
             if (r.type === 'income') incomeSum += r.amount
-            if (r.type === 'expense') expenseSum += r.amount
         }
 
         // Get top 3 expense records (by amount desc)
@@ -260,8 +258,11 @@ export class CalendarCashFlow {
             iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 bg-purple-500 bg-opacity-20"><i class="fa-solid fa-scale-balanced text-sm text-purple-500"></i></span>`
         } else if (category) {
             displayName = category.name || r.category
-            const catColor = category.color || 'bg-gray-400'
-            const catIcon = category.icon || 'fa-solid fa-question'
+            // Sanitize color and icon to prevent XSS from custom categories
+            // Color: allow only safe CSS class patterns (letters, digits, hyphens, underscores)
+            const catColor = (category.color || 'bg-gray-400').replace(/[^a-zA-Z0-9_-]/g, '')
+            // Icon: allow only safe CSS class patterns
+            const catIcon = (category.icon || 'fa-solid fa-question').replace(/[^a-zA-Z0-9_ -]/g, '')
             iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 ${catColor} bg-opacity-20"><i class="${catIcon} text-sm"></i></span>`
         } else {
             // Fallback: no category found
@@ -381,6 +382,7 @@ export class CalendarCashFlow {
 
     /** Short amount for compact cell display: 150→"150", 15000→"15k" */
     _formatShort(amount) {
+        if (!Number.isFinite(amount) || amount <= 0) return '0'
         if (amount >= 10000) return `${(amount / 1000).toFixed(1).replace(/\.0$/, '')}k`
         return Math.round(amount).toString()
     }
