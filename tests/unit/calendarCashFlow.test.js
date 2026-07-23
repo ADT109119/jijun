@@ -101,6 +101,12 @@ describe('CalendarCashFlow 單元測試', () => {
 
         await cal.render()
         expect(container.innerHTML).toContain('2026 年')
-        expect(container.innerHTML).toContain('空白天數')
+        // New compact summary bar (Google Calendar style)
+        expect(container.innerHTML).toContain('收入')
+        expect(container.innerHTML).toContain('支出')
+        expect(container.innerHTML).toContain('結餘')
+        // Verify calendar grid structure
+        expect(container.innerHTML).toContain('calendar-cell')
+        expect(container.innerHTML).toContain('calendar-cell')
     })
 })

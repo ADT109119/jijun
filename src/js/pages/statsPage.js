@@ -1,18 +1,21 @@
 import { StatisticsManager } from '../statistics.js'
+import { CalendarCashFlow } from '../calendarCashFlow.js'
 
 export class StatsPage {
     constructor(app) {
         this.app = app
+        this.calendarInstance = null
     }
 
     async render() {
+        this.destroy()
+
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
                     <h1 class="text-lg font-bold text-wabi-primary flex-1 text-center">收支分析</h1>
                 </header>
                 <main class="flex-1 p-4 pb-24">
-                    <!-- 跨月比較入口 -->
                     <a href="#comparison" class="flex items-center gap-3 p-4 rounded-xl bg-wabi-accent/10 border border-wabi-accent/30 mb-6 hover:bg-wabi-accent/20 transition-colors">
                         <i class="fa-solid fa-chart-column text-wabi-accent text-lg"></i>
                         <div class="flex-1">
@@ -21,19 +24,20 @@ export class StatsPage {
                         </div>
                         <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                     </a>
-                    <!-- 行事曆金流檢視入口 -->
-                    <a href="#calendar" class="flex items-center gap-3 p-4 rounded-xl bg-wabi-accent/10 border border-wabi-accent/30 mb-6 hover:bg-wabi-accent/20 transition-colors">
-                        <i class="fa-solid fa-calendar-days text-wabi-accent text-lg"></i>
-                        <div class="flex-1">
-                            <p class="text-sm font-bold text-wabi-accent">行事曆金流檢視</p>
-                            <p class="text-xs text-wabi-text-secondary">以月曆檢視每日收支分佈，快速找出消費高峰日</p>
-                        </div>
-                        <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
-                    </a>
+                    <div id="stats-calendar-container" class="mb-6"></div>
                     <div id="stats-container"></div>
                 </main>
             </div>
         `
+
+        const calendarContainer = this.app.appContainer.querySelector('#stats-calendar-container')
+        this.calendarInstance = new CalendarCashFlow(
+            this.app.dataService,
+            this.app.categoryManager,
+            calendarContainer
+        )
+        await this.calendarInstance.render()
+
         const statisticsManager = new StatisticsManager(
             this.app.dataService,
             this.app.categoryManager
@@ -41,5 +45,12 @@ export class StatsPage {
         statisticsManager.renderStatisticsPage(
             document.getElementById('stats-container')
         )
+    }
+
+    destroy() {
+        if (this.calendarInstance && typeof this.calendarInstance.destroy === 'function') {
+            this.calendarInstance.destroy()
+            this.calendarInstance = null
+        }
     }
 }
