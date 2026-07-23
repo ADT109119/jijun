@@ -4,8 +4,9 @@ import { formatDateToString, formatCurrency } from './utils.js'
  * 重新整理並更新 Android Widget 上的統計資料
  * @param {DataService} dataService
  * @param {BudgetManager} budgetManager
+ * @param {Object} [calendarData] - 行事曆 Widget 資料 (可選)
  */
-export async function updateAndroidWidget(dataService, budgetManager) {
+export async function updateAndroidWidget(dataService, budgetManager, calendarData) {
     if (typeof window === 'undefined' || !window.Capacitor || !window.Capacitor.isNativePlatform()) {
         return
     }
@@ -76,17 +77,84 @@ export async function updateAndroidWidget(dataService, budgetManager) {
 
         const carrierCode = localStorage.getItem('invoice_carrier_code') || ''
 
-        // 6. 直接將欄位攤平傳入，避免巢狀 getObject 解析失敗
-        await WidgetStorage.updateWidgetData({
+        // 6. 組裝傳入物件 (包含行事曆資料)
+        const payload = {
             todayExpense: formatCurrency(todayExpense),
             monthBalance: balanceText,
             budgetProgressText: progressText,
             budgetProgressVal: progressVal,
             categoryBudgetStatus: catBudgetStatusText,
             carrierCode: carrierCode
-        })
-        console.log('[Widget] Data synchronized:', { todayExpense, monthBalance, progressVal, catBudgetStatusText, carrierCode })
+        }
+
+        // 行事曆 Widget 資料
+        if (calendarData) {
+            Object.assign(payload, {
+                calendarDays: calendarData.days || '',
+                calendarMonthLabel: calendarData.monthLabel || '',
+                calendarToday: calendarData.today || '',
+                calendarWeekdayStart: calendarData.weekdayStart || 1
+            })
+        }
+
+        // 7. 直接將欄位攤平傳入，避免巢狀 getObject 解析失敗
+        await WidgetStorage.updateWidgetData(payload)
+        console.log('[Widget] Data synchronized:', { todayExpense, monthBalance, progressVal, catBudgetStatusText, carrierCode, hasCalendar: !!calendarData })
     } catch (e) {
         console.error('[Widget] Failed to update Android Widget data:', e)
+    }
+}
+
+/**
+ * 從 CalendarCashFlow 實例產生 Widget 同步用的行事曆資料
+ * @param {CalendarCashFlow} calendarInstance
+ * @returns {Object | null}
+ */
+export function extractCalendarWidgetData(calendarInstance) {
+    if (!calendarInstance || !calendarInstance._grouped || !calendarInstance.records) {
+        return null
+    }
+
+    const grouped = calendarInstance._grouped
+    const records = calendarInstance.records
+    const currentDate = calendarInstance.currentDate
+    const year = currentDate.getFullYear()
+    const month = currentDate.getMonth() + 1
+    const todayDate = new Date()
+    const todayDay = todayDate.getDate()
+
+    // 產生月份標籤
+    const monthLabel = `${year} 年 ${month} 月`
+
+    // 計算每筆日期是否有收入/支出
+    const dayFlags = {}
+    for (const [dateKey, dayRecords] of Object.entries(grouped)) {
+        const hasIncome = dayRecords.some(r => r.type === 'income')
+        const hasExpense = dayRecords.some(r => r.type === 'expense')
+        // 從 YYYY-MM-DD 提取日期
+        const dayNum = parseInt(dateKey.split('-')[2], 10)
+        dayFlags[dayNum] = {
+            hasIncome: hasIncome ? 1 : 0,
+            hasExpense: hasExpense ? 1 : 0
+        }
+    }
+
+    // 產生 days 字符串: "1,0,0|2,1,0|..."
+    const lastDayOfMonth = new Date(year, month, 0).getDate()
+    const daysEntries = []
+    for (let d = 1; d <= lastDayOfMonth; d++) {
+        const flag = dayFlags[d] || { hasIncome: 0, hasExpense: 0 }
+        daysEntries.push(`${d},${flag.hasIncome},${flag.hasExpense}`)
+    }
+    const daysStr = daysEntries.join('|')
+
+    // 判斷這個月的第一天是星期幾 (0=Sun, 1=Mon, ..., 6=Sat)
+    const firstDayOfWeek = new Date(year, month - 1, 1).getDay()
+
+    return {
+        days: daysStr,
+        monthLabel,
+        today: String(todayDay),
+        weekdayStart: firstDayOfWeek
     }
 }

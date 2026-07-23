@@ -1,5 +1,6 @@
 import { StatisticsManager } from '../statistics.js'
 import { CalendarCashFlow } from '../calendarCashFlow.js'
+import { extractCalendarWidgetData } from '../widgetHelper.js'
 
 export class StatsPage {
     constructor(app) {
@@ -24,8 +25,8 @@ export class StatsPage {
                         </div>
                         <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                     </a>
-                    <div id="stats-calendar-container" class="mb-6"></div>
                     <div id="stats-container"></div>
+                    <div id="stats-calendar-container" class="mt-6"></div>
                 </main>
             </div>
         `
@@ -37,6 +38,17 @@ export class StatsPage {
             calendarContainer
         )
         await this.calendarInstance.render()
+
+        // Sync calendar widget data
+        const calendarData = extractCalendarWidgetData(this.calendarInstance)
+        if (calendarData && typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform()) {
+            try {
+                const { updateAndroidWidget } = await import('../widgetHelper.js')
+                await updateAndroidWidget(this.app.dataService, this.app.budgetManager, calendarData)
+            } catch (e) {
+                console.warn('[Stats] Widget sync failed:', e)
+            }
+        }
 
         const statisticsManager = new StatisticsManager(
             this.app.dataService,

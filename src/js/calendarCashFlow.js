@@ -176,27 +176,43 @@ export class CalendarCashFlow {
             if (r.type === 'expense') expenseSum += r.amount
         }
 
-        // Build transaction bars (max 3 visible)
-        const bars = []
-        for (const r of dayRecords) {
-            if (r.type === 'income') {
-                bars.push({ type: 'income', amount: r.amount })
-            } else {
-                bars.push({ type: 'expense', amount: r.amount })
-            }
-        }
-        bars.sort((a, b) => b.amount - a.amount)
+        // Get top 3 expense records (by amount desc)
+        const expenseRecords = dayRecords
+            .filter(r => r.type === 'expense')
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 3)
 
-        const visibleBars = bars.slice(0, 3)
-        const overflowCount = bars.length - 3
+        // Get category info for display
+        const getCat = (type, catId) => {
+            if (this.categoryManager && typeof this.categoryManager.getCategoryById === 'function') {
+                return this.categoryManager.getCategoryById(type, catId)
+            }
+            return null
+        }
 
         let barsHTML = ''
-        for (const bar of visibleBars) {
-            const color = bar.type === 'income' ? 'bg-wabi-income' : 'bg-wabi-expense'
-            barsHTML += `<div class="${color} rounded-sm h-[3px] w-full min-w-0"></div>`
+        if (expenseRecords.length > 0) {
+            for (const r of expenseRecords) {
+                const cat = getCat(r.type, r.category)
+                const label = cat
+                    ? escapeHTML(cat.name || r.category)
+                    : escapeHTML(r.category)
+                const shortAmount = this._formatShort(r.amount)
+                barsHTML += `<div class="flex items-center justify-between text-[10px] leading-tight">
+                    <span class="truncate text-wabi-text-secondary font-medium">${label}</span>
+                    <span class="ml-1 text-wabi-expense shrink-0 font-semibold">$${shortAmount}</span>
+                </div>`
+            }
         }
-        if (overflowCount > 0) {
-            barsHTML += `<span class="text-[9px] text-wabi-text-secondary font-medium leading-none">+${overflowCount}</span>`
+
+        // Income indicator (if only income, no expenses)
+        if (expenseRecords.length === 0 && incomeSum > 0) {
+            const incomeRecords = dayRecords.filter(r => r.type === 'income')
+            const label = incomeRecords.length > 1 ? `${incomeRecords.length} 筆收入` : '💰 收入'
+            barsHTML = `<div class="flex items-center justify-between text-[10px] leading-tight">
+                <span class="text-wabi-income font-medium">${label}</span>
+                <span class="ml-1 text-wabi-income shrink-0 font-semibold">+$${this._formatShort(incomeSum)}</span>
+            </div>`
         }
 
         const todayClass = isToday
@@ -211,6 +227,58 @@ export class CalendarCashFlow {
                 <div class="flex flex-col gap-[2px] mt-auto pb-0.5">
                     ${barsHTML || '<div class="h-[3px]"></div>'}
                 </div>
+            </div>
+        `
+    }
+
+    /**
+     * Build the icon + label HTML for a record, matching recordsList.js style.
+     * Uses CategoryManager.getCategoryById(type, id) for icon, color, and display name.
+     */
+    _buildRecordHTML(r) {
+        const isInc = r.type === 'income'
+        const sign = isInc ? '+' : '-'
+        const colorClass = isInc ? 'text-wabi-income' : 'text-wabi-expense'
+
+        // Get category info via CategoryManager
+        const category = this.categoryManager
+            && typeof this.categoryManager.getCategoryById === 'function'
+            ? this.categoryManager.getCategoryById(r.type, r.category)
+            : null
+
+        const isTransfer = r.category === 'transfer'
+        const isBalanceAdj = r.category === 'balance_adjustment'
+
+        let displayName
+        let iconHTML
+
+        if (isTransfer) {
+            displayName = '帳戶間轉帳'
+            iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 bg-yellow-500 bg-opacity-20"><i class="fa-solid fa-right-left text-sm text-yellow-500"></i></span>`
+        } else if (isBalanceAdj) {
+            displayName = '帳務差額'
+            iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 bg-purple-500 bg-opacity-20"><i class="fa-solid fa-scale-balanced text-sm text-purple-500"></i></span>`
+        } else if (category) {
+            displayName = category.name || r.category
+            const catColor = category.color || 'bg-gray-400'
+            const catIcon = category.icon || 'fa-solid fa-question'
+            iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 ${catColor} bg-opacity-20"><i class="${catIcon} text-sm"></i></span>`
+        } else {
+            // Fallback: no category found
+            displayName = r.category
+            iconHTML = `<span class="text-base size-8 flex items-center justify-center rounded-lg bg-wabi-bg shrink-0">${isInc ? '💰' : '🛒'}</span>`
+        }
+
+        return `
+            <div class="flex items-center justify-between py-2.5 border-b border-wabi-border last:border-none">
+                <div class="flex items-center gap-2.5 overflow-hidden">
+                    ${iconHTML}
+                    <div class="overflow-hidden">
+                        <p class="text-sm font-medium text-wabi-text-primary truncate">${escapeHTML(displayName)}</p>
+                        ${r.description ? `<p class="text-xs text-wabi-text-secondary truncate">${escapeHTML(r.description)}</p>` : ''}
+                    </div>
+                </div>
+                <span class="text-sm font-semibold ${colorClass} shrink-0">${sign}${this._formatAmount(r.amount)}</span>
             </div>
         `
     }
@@ -238,28 +306,7 @@ export class CalendarCashFlow {
                 .map(r => {
                     if (r.type === 'income') totalIncome += r.amount
                     else totalExpense += r.amount
-
-                    const isInc = r.type === 'income'
-                    const sign = isInc ? '+' : '-'
-                    const colorClass = isInc ? 'text-wabi-income' : 'text-wabi-expense'
-
-                    let icon = '💰'
-                    if (this.categoryManager && typeof this.categoryManager.getCategoryIcon === 'function') {
-                        icon = this.categoryManager.getCategoryIcon(r.category) || (isInc ? '💰' : '🛒')
-                    }
-
-                    return `
-                        <div class="flex items-center justify-between py-2.5 border-b border-wabi-border last:border-none">
-                            <div class="flex items-center gap-2.5 overflow-hidden">
-                                <span class="text-base size-8 flex items-center justify-center rounded-lg bg-wabi-bg shrink-0">${escapeHTML(icon)}</span>
-                                <div class="overflow-hidden">
-                                    <p class="text-sm font-medium text-wabi-text-primary truncate">${escapeHTML(r.category)}</p>
-                                    ${r.description ? `<p class="text-xs text-wabi-text-secondary truncate">${escapeHTML(r.description)}</p>` : ''}
-                                </div>
-                            </div>
-                            <span class="text-sm font-semibold ${colorClass} shrink-0">${sign}${this._formatAmount(r.amount)}</span>
-                        </div>
-                    `
+                    return this._buildRecordHTML(r)
                 })
                 .join('')
         }
@@ -330,5 +377,11 @@ export class CalendarCashFlow {
 
     _formatAmount(amount) {
         return formatCurrency(amount).replace(/^[^\d\-.]+/, '')
+    }
+
+    /** Short amount for compact cell display: 150→"150", 15000→"15k" */
+    _formatShort(amount) {
+        if (amount >= 10000) return `${(amount / 1000).toFixed(1).replace(/\.0$/, '')}k`
+        return Math.round(amount).toString()
     }
 }

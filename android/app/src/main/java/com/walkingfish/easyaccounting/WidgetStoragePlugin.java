@@ -24,12 +24,18 @@ public class WidgetStoragePlugin extends Plugin {
 
             String carrierCode = call.getString("carrierCode", "");
 
+            String calendarDays = call.getString("calendarDays", "");
+            String calendarMonthLabel = call.getString("calendarMonthLabel", "");
+            String calendarToday = call.getString("calendarToday", "");
+            int calendarWeekdayStart = call.getInt("calendarWeekdayStart", 1);
+
             Log.d(TAG, "Received: todayExpense=" + todayExpense
                     + ", monthBalance=" + monthBalance
                     + ", budgetProgressText=" + budgetProgressText
                     + ", budgetProgressVal=" + budgetProgressVal
                     + ", categoryBudgetStatus=" + categoryBudgetStatus
-                    + ", carrierCode=" + carrierCode);
+                    + ", carrierCode=" + carrierCode
+                    + ", calendarDays=" + (calendarDays != null ? calendarDays.substring(0, Math.min(50, calendarDays.length())) : "null"));
 
             SharedPreferences sharedPref = getContext().getSharedPreferences("WidgetData", Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = sharedPref.edit();
@@ -39,12 +45,18 @@ public class WidgetStoragePlugin extends Plugin {
             editor.putInt("budget_progress_val", budgetProgressVal != null ? budgetProgressVal : 0);
             editor.putString("category_budget_status", categoryBudgetStatus);
             editor.putString("carrier_code", carrierCode);
+            // Calendar widget data
+            editor.putString("calendar_days", calendarDays);
+            editor.putString("calendar_month_label", calendarMonthLabel);
+            editor.putString("calendar_today", calendarToday);
+            editor.putInt("calendar_weekday_start", calendarWeekdayStart);
             editor.apply();
 
             // 觸發所有 Widget 立即刷新
             EasyAccountingWidgetProvider.triggerUpdate(getContext());
             InvoiceCarrierWidgetProvider.triggerUpdate(getContext());
             QuickCategoryWidgetProvider.triggerUpdate(getContext());
+            CalendarWidgetProvider.triggerUpdate(getContext());
 
             Log.d(TAG, "All widgets data saved and update triggered.");
             call.resolve();
