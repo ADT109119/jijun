@@ -1,4 +1,4 @@
-import { formatCurrency, escapeHTML } from './utils.js'
+import { formatCurrency, escapeHTML, formatDateToString } from './utils.js'
 
 export class CalendarCashFlow {
     constructor(dataService, categoryManager, container) {
@@ -7,6 +7,12 @@ export class CalendarCashFlow {
         this.container = container
         this.currentDate = new Date()
         this.records = []
+        // Cached grouped data for event handlers
+        this._grouped = null
+        // Bound event handlers for proper cleanup
+        this._prevHandler = null
+        this._nextHandler = null
+        this._cellHandler = null
     }
 
     async render() {
@@ -22,10 +28,7 @@ export class CalendarCashFlow {
 
         try {
             const rawRecords = await this.dataService.getRecords({ startDate, endDate })
-            // Filter out debt collection, debt repayment, balance adjustment if needed (or keep all records per data model)
-            // Let's filter out internal transfers / balance adjustments like stats does, or keep them. Task description:
-            // "Records have: date (YYYY-MM-DD), type ('income'|'expense'), amount (number), category (string), description (string)"
-            // "Use dataService.getRecords({ startDate, endDate }) to fetch data"
+            // 排除內轉、還債、餘額調整等非消費項目
             this.records = rawRecords.filter(
                 r =>
                     r.category !== 'debt_collection' &&
@@ -37,7 +40,9 @@ export class CalendarCashFlow {
             this.records = []
         }
 
-        const grouped = this.groupByDate(this.records)
+        // Cache grouped data for event handlers
+        this._grouped = this.groupByDate(this.records)
+        const grouped = this._grouped
 
         // Calculate daily max for heatmap opacity scaling
         let dailyMax = 0
@@ -64,15 +69,12 @@ export class CalendarCashFlow {
             }
         }
         const netBalance = totalIncome - totalExpense
-        const totalDaysInMonth = lastDay
         const spendingDaysCount = spendingDaysSet.size
-        const emptyDaysCount = totalDaysInMonth - spendingDaysCount
+        const emptyDaysCount = lastDay - spendingDaysCount
 
-        // First day of month and days count
-        const firstDayOfWeek = this.getFirstDayOfMonth(year, month) // 0=Sun, 1=Mon...
-        const daysCount = lastDay
-
-        const todayStr = new Date().toISOString().split('T')[0]
+        const firstDayOfWeek = this.getFirstDayOfMonth(year, month)
+        // Use local date format instead of UTC toISOString
+        const todayStr = formatDateToString(new Date())
 
         // Build calendar grid HTML
         let gridHTML = ''
@@ -88,7 +90,7 @@ export class CalendarCashFlow {
         }
 
         // Days of month
-        for (let day = 1; day <= daysCount; day++) {
+        for (let day = 1; day <= lastDay; day++) {
             const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
             const dayRecords = grouped[dayStr] || []
             gridHTML += this.renderCell(year, month, day, dayRecords, dailyMax, todayStr)
@@ -148,28 +150,38 @@ export class CalendarCashFlow {
     }
 
     setupEventListeners() {
+        // Store bound handlers so destroy() can remove them
+        this._prevHandler = this._prevHandler || this.changeMonth.bind(this, -1)
+        this._nextHandler = this._nextHandler || this.changeMonth.bind(this, 1)
+        this._cellHandler = this._cellHandler || this._onCellClick.bind(this)
+
         const prevBtn = this.container.querySelector('#cal-prev-btn')
         const nextBtn = this.container.querySelector('#cal-next-btn')
 
         if (prevBtn) {
-            prevBtn.onclick = () => this.changeMonth(-1)
+            prevBtn.addEventListener('click', this._prevHandler)
         }
         if (nextBtn) {
-            nextBtn.onclick = () => this.changeMonth(1)
+            nextBtn.addEventListener('click', this._nextHandler)
         }
 
-        // Cell click events
+        // Cell click events — use cached this._grouped
         this.container.querySelectorAll('.calendar-cell').forEach(cell => {
-            cell.onclick = () => {
-                const dateStr = cell.dataset.date
-                const dayRecords = this.groupByDate(this.records)[dateStr] || []
-                this.showDayDetails(dateStr, dayRecords)
-            }
+            cell.addEventListener('click', this._cellHandler)
         })
     }
 
+    _onCellClick(e) {
+        const cell = e.currentTarget
+        const dateStr = cell.dataset.date
+        const dayRecords = this._grouped?.[dateStr] || []
+        this.showDayDetails(dateStr, dayRecords)
+    }
+
     async changeMonth(delta) {
-        this.currentDate.setMonth(this.currentDate.getMonth() + delta)
+        // Fix: set day to 1 before changing month to avoid month-skipping bug
+        const newMonth = this.currentDate.getMonth() + delta
+        this.currentDate = new Date(this.currentDate.getFullYear(), newMonth, 1)
         await this.render()
     }
 
@@ -222,14 +234,18 @@ export class CalendarCashFlow {
 
         const ringClass = isToday ? 'ring-2 ring-wabi-accent shadow-sm' : 'border border-wabi-border/60'
 
+        // XSS fix: escape amount values before embedding in HTML
+        const safeIncome = escapeHTML(String(incomeSum))
+        const safeExpense = escapeHTML(String(expenseSum))
+
         let contentHTML = '<span class="text-wabi-text-secondary/40 text-[10px]">—</span>'
         if (dayRecords.length > 0) {
             let inner = ''
             if (incomeSum > 0) {
-                inner += `<div class="text-[10px] sm:text-xs font-bold text-wabi-income truncate">+${incomeSum}</div>`
+                inner += `<div class="text-[10px] sm:text-xs font-bold text-wabi-income truncate">+${safeIncome}</div>`
             }
             if (expenseSum > 0) {
-                inner += `<div class="text-[10px] sm:text-xs font-bold text-wabi-expense truncate">-${expenseSum}</div>`
+                inner += `<div class="text-[10px] sm:text-xs font-bold text-wabi-expense truncate">-${safeExpense}</div>`
             }
             contentHTML = inner
         }
@@ -281,8 +297,6 @@ export class CalendarCashFlow {
                         icon = this.categoryManager.getCategoryIcon(r.category) || (isInc ? '💰' : '🛒')
                     }
 
-                    const desc = r.description ? `(${r.description})` : ''
-
                     return `
                         <div class="flex items-center justify-between py-3 border-b border-wabi-border/60 last:border-none">
                             <div class="flex items-center gap-3 overflow-hidden">
@@ -292,7 +306,7 @@ export class CalendarCashFlow {
                                     ${r.description ? `<p class="text-xs text-wabi-text-secondary truncate">${escapeHTML(r.description)}</p>` : ''}
                                 </div>
                             </div>
-                            <span class="text-sm font-bold ${colorClass} shrink-0">${sign}${formatCurrency(r.amount).replace('$', '')}</span>
+                            <span class="text-sm font-bold ${colorClass} shrink-0">${sign}${this._formatAmount(r.amount)}</span>
                         </div>
                     `
                 })
@@ -300,7 +314,9 @@ export class CalendarCashFlow {
         }
 
         const net = totalIncome - totalExpense
-        const netSign = net >= 0 ? '+' : '-'
+        const netDisplay = net === 0
+            ? formatCurrency(0)
+            : `${net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(net))}`
         const netColor = net >= 0 ? 'text-wabi-income' : 'text-wabi-expense'
 
         modalContainer.innerHTML = `
@@ -320,7 +336,7 @@ export class CalendarCashFlow {
                     ${records.length > 0 ? `
                         <div class="p-4 bg-wabi-bg border-t border-wabi-border flex items-center justify-between">
                             <span class="text-xs font-medium text-wabi-text-secondary">當日淨收支</span>
-                            <span class="text-base font-bold ${netColor}">${netSign}${formatCurrency(Math.abs(net))}</span>
+                            <span class="text-base font-bold ${netColor}">${netDisplay}</span>
                         </div>
                     ` : ''}
                 </div>
@@ -334,15 +350,38 @@ export class CalendarCashFlow {
             if (modal) modal.remove()
         }
 
-        if (closeBtn) closeBtn.onclick = closeModal
+        if (closeBtn) closeBtn.addEventListener('click', closeModal)
         if (modal) {
-            modal.onclick = e => {
+            modal.addEventListener('click', e => {
                 if (e.target === modal) closeModal()
-            }
+            })
         }
     }
 
     destroy() {
-        // Cleanup if necessary
+        // Remove event listeners from prev/next buttons
+        const prevBtn = this.container?.querySelector('#cal-prev-btn')
+        const nextBtn = this.container?.querySelector('#cal-next-btn')
+        if (prevBtn && this._prevHandler) prevBtn.removeEventListener('click', this._prevHandler)
+        if (nextBtn && this._nextHandler) nextBtn.removeEventListener('click', this._nextHandler)
+        // Remove cell click listeners
+        if (this._cellHandler && this.container) {
+            this.container.querySelectorAll('.calendar-cell').forEach(cell => {
+                cell.removeEventListener('click', this._cellHandler)
+            })
+        }
+        // Close any open modal
+        const modal = this.container?.querySelector('#cal-details-modal')
+        if (modal) modal.remove()
+        // Clear cached data
+        this._grouped = null
+        this._prevHandler = null
+        this._nextHandler = null
+        this._cellHandler = null
+    }
+
+    _formatAmount(amount) {
+        // Remove currency symbol, keeping only digits, decimals, and minus
+        return formatCurrency(amount).replace(/^[^\d\-.]+/, '')
     }
 }
