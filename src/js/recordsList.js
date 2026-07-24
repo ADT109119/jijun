@@ -634,6 +634,13 @@ export class RecordsListManager {
                         const isDebtSettled = debt?.settled === true
                         const isReceivable = debt?.type === 'receivable' // 別人欠我
 
+                        // Determine debt-related categories — repayment/collection records
+                        // are actual money flow and should display their amount normally,
+                        // not with strikethrough or zero-display logic.
+                        const isDebtRepayment = record.category === 'debt_repayment'
+                        const isDebtCollection = record.category === 'debt_collection'
+                        const isDebtSettlementRecord = isDebtRepayment || isDebtCollection
+
                         // Calculate display amount based on debt type and status
                         // - 支出 + 別人欠我 (代墊): 顯示原額，還清後 → $0
                         // - 收入 + 別人欠我: 顯示 $0，還清後 → 原額
@@ -645,7 +652,9 @@ export class RecordsListManager {
                             arrowToZero: false,
                         }
 
-                        if (hasDebt && debt) {
+                        // Only apply debt display logic to the ORIGINAL record. Skip repayment/collection
+                        // records because they are actual money flow entries with their own amounts.
+                        if (hasDebt && debt && !isDebtSettlementRecord) {
                             if (isIncome && isReceivable) {
                                 // 收入+別人欠我：初始 $0，還清後顯示原額
                                 displayLogic.showZero = !isDebtSettled
@@ -1029,5 +1038,13 @@ export class RecordsListManager {
             },
         })
         this.modalsContainer.appendChild(modal)
+    }
+
+    /** Clean up event listeners to prevent memory leaks when navigating away */
+    destroy() {
+        window.removeEventListener('beforeunload', this._saveSessionFilters)
+        if (this._hashChangeHandler) {
+            window.removeEventListener('hashchange', this._hashChangeHandler)
+        }
     }
 }
