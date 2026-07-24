@@ -295,9 +295,20 @@ select option {
     filter: brightness(1.2);
 }
 
-/* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效，不影響手機 PWA) */
+/* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效,不影響手機 PWA) */
 @media (max-width: 767px) {
     body.is-capacitor-native #app-container {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    
+    /* Fixed-position add page wrapper bypasses body padding — add its own safe area */
+    body.is-capacitor-native #add-page-wrapper {
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    
+    /* Add page also opens in PWA/standalone — safe area for all mobile */
+    #add-page-wrapper {
         padding-top: env(safe-area-inset-top, 0px);
     }
     
