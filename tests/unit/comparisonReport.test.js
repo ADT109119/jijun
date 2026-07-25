@@ -75,7 +75,7 @@ describe('ComparisonReport.exportToCSV', () => {
 
     it('產生有效的 CSV 字串', () => {
         const csv = new ComparisonReport(null, null).exportToCSV(mockData)
-        expect(csv).toContain('比較類型')
+        expect(csv).toContain('期間類型')
         expect(csv).toContain('2026-05')
         expect(csv).toContain('2026-06')
     })
@@ -103,13 +103,13 @@ describe('ComparisonReport.exportToCSV', () => {
 
     it('篩選類型顯示在 CSV 中', () => {
         const csv = new ComparisonReport(null, null).exportToCSV(mockData)
-        expect(csv).toContain('篩選類型,all')
+        expect(csv).toContain('篩選類型,全部')
     })
 
     it('typeFilter=expense 時正確顯示', () => {
         const data = { ...mockData, typeFilter: 'expense' }
         const csv = new ComparisonReport(null, null).exportToCSV(data)
-        expect(csv).toContain('篩選類型,expense')
+        expect(csv).toContain('篩選類型,僅支出')
     })
 
     it('空分類比較時仍產生有效 CSV', () => {

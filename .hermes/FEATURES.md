@@ -119,6 +119,7 @@
 - Finch AI Bookkeeping (2026-07-02 調研) — 結合 AI 記帳、多帳本支援、智能支出分析，主打 AI-powered bookkeeping 自動化
 - Moneybook (2026/7/1) — 發布聲明指控第三方冒用名義散布不實內容，已向警方報案
 - 說說記帳 (2026-07-02 調研) — AI 語音記帳 App，支援自訂分類管理，AI 自動分類優先、隱藏分類忽略，語音互動式記帳
+- Indexia 2026 記帳App推薦 — CWMoney（發票自動記帳+條碼）、記帳城市（遊戲化養成）、天天記帳（多帳本+iCloud/Google Drive）
 
 ---
 
@@ -140,6 +141,7 @@
 
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
+| #53 | IOS介面錯誤回報 (Lucas-Weii) | Open ⚠️ (2026-07-24) | iOS 編輯紀錄時刪除鈕及欠款人彈到靈動島無法觸及 — commit 8b3317d 已修復相同問題，需確認是否為不同頁面或新版本回歸 |
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
 | #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Closed ✅ (2026-07-09) | v2.1.6.2 已修復 (commit 9fa42d7) |
 | #49 | 手機 PWA 載入速度優化 (yanggu0413) | Closed ✅ (2026-07-25) | 骨架畫面 ✅ + 計算機式鍵盤 ✅，Owner 已關閉 |
@@ -152,6 +154,7 @@
 
 ## 更新歷史
 
+- **2026-07-27**: 修復 comparisonReport CSV export 測試回歸 (3 tests) — `42fcfdd` commit 將 CSV header 改為中文輸出（期間類型、全部/僅支出），但測試仍期望英文 key；修正 3 個 assertion：`比較類型→期間類型`、`篩選類型,all→全部`、`篩選類型,expense→僅支出`；832 tests 全過；ESLint 乾淨；GitHub: 78 stars, 5 open issues (新增 #53 iOS 靈動島問題，commit 8b3317d 已修相同問題)
 - **2026-07-26**: Code Review calendar cash flow redesign + Android widget (commit a657c98) — 發現 2H (catColor/catIcon XSS、records 檢查未用) / 4M (事件監聽器累積、N+1 getCategoryById、未用變數、渲染順序) / 3L (硬編碼 $、私有屬性、缺少鍵盤關閉)；已修復 H01 XSS 防護 (字元白名單消毒) + M03 移除 unused expenseSum + _formatShort 邊界保護；產出 code-review-calendar-widget-2026-07-26.md；832 tests 全過；ESLint 乾淨；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化
 - **2026-07-25**: ESLint 修復 — `.eslintrc.json` 補上 `__WEB_STORE_URL__` global 定義 (Vite define 注入但 ESLint 未知導致 no-undef 錯誤)；src/js ESLint 錯誤數 1→0；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化
 - **2026-07-24**: Code Review debtManager.js — 發現 2 HIGH (H01: renderContactsPage contact.name 未 escapeHTML XSS、H02: debt.description 多處未 escapeHTML XSS L354/L592/L682/L761/L895)、3 MEDIUM (M01: loadDebtList N+1 按鈕點擊重複查詢、M02: showContactSummaryModal contact.name 未 escapeHTML、M03: updateSummaryCards 每次全量載入無快取)、5 LOW (ESLint no-unused-vars、結清日期多餘 formatDateToString 轉換、缺少 destroy 方法、魔法數字 pageSize、document.execCommand 已淘汰)；產出 code-review-debtManager-2026-07-24.md；安全評分 7/10；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化；Moneybook 2026/7/1 報案第三方冒用
