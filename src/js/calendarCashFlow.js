@@ -1,12 +1,14 @@
 import { formatCurrency, escapeHTML, formatDateToString } from './utils.js'
 
 export class CalendarCashFlow {
-    constructor(dataService, categoryManager, container) {
+    constructor(dataService, categoryManager, container, debtManager) {
         this.dataService = dataService
         this.categoryManager = categoryManager
         this.container = container
+        this.debtManager = debtManager
         this.currentDate = new Date()
         this.records = []
+        this.debtsMap = {}
         this._grouped = null
         this._prevHandler = null
         this._nextHandler = null
@@ -35,6 +37,21 @@ export class CalendarCashFlow {
         } catch (e) {
             console.error('Failed to fetch records for calendar:', e)
             this.records = []
+        }
+
+        // Load debts for display (only if any records are debt-linked)
+        this.debtsMap = {}
+        if (this.records.some(r => r.debtId)) {
+            try {
+                const allDebts = await this.dataService.getDebts() || []
+                for (const d of allDebts) {
+                    if (d && d.id) {
+                        this.debtsMap[d.id] = d
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load debts for calendar:', e)
+            }
         }
 
         this._grouped = this.groupByDate(this.records)
@@ -196,9 +213,22 @@ export class CalendarCashFlow {
                     ? escapeHTML(cat.name || r.category)
                     : escapeHTML(r.category)
                 const shortAmount = this._formatShort(r.amount)
-                barsHTML += `<div class="flex items-center justify-between text-[10px] leading-tight">
-                    <span class="truncate text-wabi-text-secondary font-medium">${label}</span>
-                    <span class="ml-1 text-wabi-expense shrink-0 font-semibold">$${shortAmount}</span>
+
+                // Debt badge for debt-linked records
+                let debtBadge = ''
+                if (r.debtId && this.debtsMap[r.debtId]) {
+                    const debt = this.debtsMap[r.debtId]
+                    if (debt.settled) {
+                        debtBadge = `<span class="ml-0.5 inline-flex shrink-0 text-[8px] leading-none rounded px-0.5 bg-emerald-500/20 text-emerald-600" title="已清償欠款">✓</span>`
+                    } else {
+                        debtBadge = `<span class="ml-0.5 inline-flex shrink-0 text-[8px] leading-none rounded px-0.5 bg-amber-500/20 text-amber-600" title="未清償欠款">⏳</span>`
+                    }
+                }
+
+                // Fix: min-w-0 on label so truncate works in flex child; max-w-[60%] to prevent overflow
+                barsHTML += `<div class="flex items-center justify-between text-[10px] leading-tight overflow-hidden">
+                    <span class="truncate text-wabi-text-secondary font-medium min-w-0 max-w-[60%]">${label}${debtBadge}</span>
+                    <span class="ml-1 text-wabi-expense shrink-0 font-semibold whitespace-nowrap">$${shortAmount}</span>
                 </div>`
             }
         }
@@ -279,7 +309,16 @@ export class CalendarCashFlow {
                         ${r.description ? `<p class="text-xs text-wabi-text-secondary truncate">${escapeHTML(r.description)}</p>` : ''}
                     </div>
                 </div>
-                <span class="text-sm font-semibold ${colorClass} shrink-0">${sign}${this._formatAmount(r.amount)}</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    ${r.debtId && this.debtsMap[r.debtId]
+                        ? (this.debtsMap[r.debtId].settled
+                            ? '<span class="inline-flex text-[10px] leading-none rounded px-1 py-0.5 bg-emerald-500/20 text-emerald-600 font-medium" title="已清償欠款">已清償</span>'
+                            : '<span class="inline-flex text-[10px] leading-none rounded px-1 py-0.5 bg-amber-500/20 text-amber-600 font-medium" title="未清償欠款">未還款</span>'
+                          )
+                        : ''
+                    }
+                    <span class="text-sm font-semibold ${colorClass}">${sign}${this._formatAmount(r.amount)}</span>
+                </div>
             </div>
         `
     }
@@ -374,6 +413,7 @@ export class CalendarCashFlow {
         this._nextHandler = null
         this._cellHandler = null
         this._todayHandler = null
+        this.debtsMap = {}
     }
 
     _formatAmount(amount) {
