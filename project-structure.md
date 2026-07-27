@@ -35,7 +35,7 @@ src/js/pages/
 └── ...                  # 其他頁面
 
 src/css/
-└── main.css             # 主樣式表
+└── main.css             # 主樣式表 (包含 Modal 滑入/滑出與淡入淡出動畫關鍵影格 animate-slide-up / animate-fade-in / animate-modal-pop)
 
 android/                 # Capacitor Android 原生專案
 ├── app/src/main/

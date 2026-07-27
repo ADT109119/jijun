@@ -35,13 +35,71 @@ export function formatDateToString(date) {
  * @param {number} amount - 金額
  * @returns {string} 格式化後的貨幣字串
  */
+/**
+ * 關閉 Modal 並執行平滑退場動畫（淡出 + 下滑/縮小）
+ * 在測試環境 (VITEST/NODE_ENV=test) 中同步移除 DOM 以確保單元測試可靠運作
+ * @param {HTMLElement} modalElement - 外部背景 overlay 元素
+ * @param {HTMLElement|null} [contentElement] - 內部卡片/面板 container 元素
+ * @param {Function} [onComplete] - Modal 移除後的額外 callback
+ */
+export function closeModalWithAnimation(modalElement, contentElement, onComplete) {
+    if (!modalElement || modalElement._isClosing) {
+        if (typeof onComplete === 'function') onComplete()
+        return
+    }
+    modalElement._isClosing = true
+
+    const isTest = typeof process !== 'undefined' && process.env && (process.env.NODE_ENV === 'test' || process.env.VITEST)
+    if (isTest) {
+        if (modalElement.parentNode) modalElement.remove()
+        if (typeof onComplete === 'function') onComplete()
+        return
+    }
+
+    const card = contentElement || modalElement.querySelector('.animate-slide-up, .animate-modal-pop') || modalElement.firstElementChild
+    modalElement.classList.remove('animate-fade-in')
+    modalElement.classList.add('animate-fade-out')
+
+    if (card) {
+        if (card.classList.contains('animate-slide-up')) {
+            card.classList.remove('animate-slide-up')
+            card.classList.add('animate-slide-down')
+        } else if (card.classList.contains('animate-modal-pop')) {
+            card.classList.remove('animate-modal-pop')
+            card.classList.add('animate-modal-pop-down')
+        } else {
+            card.classList.add('animate-slide-down')
+        }
+    }
+
+    let cleanedUp = false
+    const doCleanUp = () => {
+        if (cleanedUp) return
+        cleanedUp = true
+        if (modalElement.parentNode) {
+            modalElement.remove()
+        }
+        if (typeof onComplete === 'function') {
+            onComplete()
+        }
+    }
+
+    const timer = setTimeout(doCleanUp, 180)
+    modalElement.addEventListener('animationend', e => {
+        if (e.target === modalElement || e.target === card) {
+            clearTimeout(timer)
+            doCleanUp()
+        }
+    }, { once: true })
+}
+
 export function customConfirm(message, title = '提示') {
     return new Promise(resolve => {
         const modal = document.createElement('div')
         modal.className =
-            'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in'
         modal.innerHTML = `
-            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all">
+            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all animate-modal-pop">
                 <div class="p-6">
                     <h3 class="text-lg font-bold text-wabi-text-primary mb-2">${escapeHTML(title)}</h3>
                     <p class="text-wabi-text-secondary text-sm">${escapeHTML(message)}</p>
@@ -54,19 +112,15 @@ export function customConfirm(message, title = '提示') {
         `
         document.body.appendChild(modal)
 
+        const close = (res) => closeModalWithAnimation(modal, modal.firstElementChild, () => resolve(res))
+
         modal
             .querySelector('.custom-confirm-cancel')
-            .addEventListener('click', () => {
-                modal.remove()
-                resolve(false)
-            })
+            .addEventListener('click', () => close(false))
 
         modal
             .querySelector('.custom-confirm-ok')
-            .addEventListener('click', () => {
-                modal.remove()
-                resolve(true)
-            })
+            .addEventListener('click', () => close(true))
     })
 }
 
@@ -74,9 +128,9 @@ export function customAlert(message, title = '提示') {
     return new Promise(resolve => {
         const modal = document.createElement('div')
         modal.className =
-            'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in'
         modal.innerHTML = `
-            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all">
+            <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all animate-modal-pop">
                 <div class="p-6">
                     <h3 class="text-lg font-bold text-wabi-text-primary mb-2">${escapeHTML(title)}</h3>
                     <p class="text-wabi-text-secondary text-sm">${escapeHTML(message)}</p>
@@ -91,8 +145,7 @@ export function customAlert(message, title = '提示') {
         modal
             .querySelector('.custom-alert-ok')
             .addEventListener('click', () => {
-                modal.remove()
-                resolve()
+                closeModalWithAnimation(modal, modal.firstElementChild, resolve)
             })
     })
 }
