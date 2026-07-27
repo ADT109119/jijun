@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate, formatDateToString, getDateRange } from './utils.js'
+import { formatCurrency, formatDate, formatDateToString, getDateRange, escapeHTML } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
 export class RecordsListManager {
@@ -408,11 +408,15 @@ export class RecordsListManager {
         const debtIds = [
             ...new Set(records.filter(r => r.debtId).map(r => r.debtId)),
         ]
+        // Batch load debts instead of N+1 individual queries
         this.debtsMap = {}
-        for (const debtId of debtIds) {
-            const debt = await this.dataService.getDebt(debtId)
-            if (debt) {
-                this.debtsMap[debtId] = debt
+        if (debtIds.length > 0) {
+            const allDebts = await this.dataService.getDebts()
+            const debtSet = new Set(debtIds)
+            for (const debt of allDebts) {
+                if (debtSet.has(debt.id)) {
+                    this.debtsMap[debt.id] = debt
+                }
             }
         }
 
@@ -747,16 +751,16 @@ export class RecordsListManager {
                         </div>
                         <div class="flex flex-col justify-center min-w-0">
                             <div class="flex items-center gap-2">
-                                <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${name}</p>
+                                <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${escapeHTML(name)}</p>
                                 ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-sm cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
                                 ${hasDebt ? `
                                     <button class="debt-link-btn inline-flex items-center gap-1 text-xs ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
                                         <i class="fa-solid fa-handshake"></i>
-                                        <span>${statusLabel || '欠款'}</span>
+                                        <span>${escapeHTML(statusLabel || '欠款')}</span>
                                     </button>
                                 ` : ''}
                             </div>
-                            <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${record.description || '無備註'}</p>
+                            <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${escapeHTML(record.description || '無備註')}</p>
                         </div>
                     </div>
                         <div class="shrink-0 text-right">
@@ -776,7 +780,7 @@ export class RecordsListManager {
                                 </p>
                             `
                             }
-                            ${this.advancedModeEnabled ? `<p class="text-xs text-wabi-text-secondary">${accountName}</p>` : `<p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>`}
+                            ${this.advancedModeEnabled ? `<p class="text-xs text-wabi-text-secondary">${escapeHTML(accountName)}</p>` : `<p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>`}
                         </div>
                     </a>
                 `
@@ -806,63 +810,6 @@ export class RecordsListManager {
         });
     }
 
-    updateSummary(records) {
-        const transferRecords = records.filter(r => r.category === 'transfer')
-        const normalRecords = records.filter(r => r.category !== 'transfer')
-        const excludedTransferIds = new Set()
-
-        // Only proceed if there are potential pairs of transfers to analyze
-        if (transferRecords.length > 1) {
-            const expenseTransfers = transferRecords.filter(
-                r => r.type === 'expense'
-            )
-            // Create a mutable copy to splice from
-            const incomeTransfers = [
-                ...transferRecords.filter(r => r.type === 'income'),
-            ]
-
-            expenseTransfers.forEach(expense => {
-                // Find a matching income record within the currently visible records
-                const matchingIncomeIndex = incomeTransfers.findIndex(
-                    income =>
-                        income.amount === expense.amount &&
-                        income.date === expense.date
-                )
-
-                if (matchingIncomeIndex !== -1) {
-                    // A pair is found within the visible records. Exclude both.
-                    const income = incomeTransfers[matchingIncomeIndex]
-                    excludedTransferIds.add(expense.id)
-                    excludedTransferIds.add(income.id)
-
-                    // Remove the matched income so it can't be paired again
-                    incomeTransfers.splice(matchingIncomeIndex, 1)
-                }
-            })
-        }
-
-        // Records for summary are normal ones + any transfers that couldn't be paired
-        const recordsForSummary = normalRecords.concat(
-            transferRecords.filter(r => !excludedTransferIds.has(r.id))
-        )
-
-        const summary = recordsForSummary.reduce(
-            (acc, r) => {
-                if (r.type === 'income') acc.income += r.amount
-                else acc.expense += r.amount
-                return acc
-            },
-            { income: 0, expense: 0 }
-        )
-
-        this.container.querySelector('#record-count').textContent =
-            recordsForSummary.length
-        this.container.querySelector('#total-income').textContent =
-            formatCurrency(summary.income)
-        this.container.querySelector('#total-expense').textContent =
-            formatCurrency(summary.expense)
-    }
-
     showCategoryFilterModal() {
         const categoryNetTotals = this.records.reduce((acc, record) => {
             const { category, type, amount } = record
@@ -876,9 +823,9 @@ export class RecordsListManager {
         const allCategoryIds = [...new Set(this.records.map(r => r.category))]
 
         const modalHtml = `
-            <div id="category-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end">
+            <div id="category-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end" role="dialog" aria-modal="true" aria-labelledby="cat-filter-title">
                 <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh]">
-                    <h3 class="text-lg font-bold text-wabi-primary text-center mb-4">篩選類別</h3>
+                    <h3 id="cat-filter-title" class="text-lg font-bold text-wabi-primary text-center mb-4">篩選類別</h3>
                     <div class="overflow-y-auto space-y-2 mb-4">
                         ${allCategoryIds
                             .map(catId => {
@@ -912,7 +859,7 @@ export class RecordsListManager {
                                 <label class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
                                     <div class="flex items-center">
                                         <input type="checkbox" data-cat-id="${catId}" class="h-5 w-5 rounded text-wabi-primary focus:ring-wabi-primary/50" ${isChecked ? 'checked' : ''}>
-                                        <span class="ml-3 text-wabi-text-primary">${category.name}</span>
+                                        <span class="ml-3 text-wabi-text-primary">${escapeHTML(category.name)}</span>
                                     </div>
                                     <span class="text-sm font-medium ${amountClass}">${formattedAmount}</span>
                                 </label>
@@ -960,9 +907,9 @@ export class RecordsListManager {
 
     showAccountFilterModal() {
         const modalHtml = `
-            <div id="account-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end">
+            <div id="account-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end" role="dialog" aria-modal="true" aria-labelledby="acc-filter-title">
                 <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh]">
-                    <h3 class="text-lg font-bold text-wabi-primary text-center mb-4">篩選帳戶</h3>
+                    <h3 id="acc-filter-title" class="text-lg font-bold text-wabi-primary text-center mb-4">篩選帳戶</h3>
                     <div class="overflow-y-auto space-y-2 mb-4">
                         ${this.accounts
                             .map(account => {
@@ -973,7 +920,7 @@ export class RecordsListManager {
                                 <label class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
                                     <div class="flex items-center">
                                         <input type="checkbox" data-acc-id="${account.id}" class="h-5 w-5 rounded text-wabi-primary focus:ring-wabi-primary/50" ${isChecked ? 'checked' : ''}>
-                                        <span class="ml-3 text-wabi-text-primary">${account.name}</span>
+                                        <span class="ml-3 text-wabi-text-primary">${escapeHTML(account.name)}</span>
                                     </div>
                                 </label>
                             `

@@ -75,6 +75,7 @@ function createMockDataService() {
         getAccounts: vi.fn().mockResolvedValue([]),
         getRecords: vi.fn().mockResolvedValue([]),
         getDebt: vi.fn().mockResolvedValue(null),
+        getDebts: vi.fn().mockResolvedValue([]),
     }
 }
 
@@ -617,12 +618,14 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
             },
         ]
         dataService.getRecords.mockResolvedValueOnce(records)
-        dataService.getDebt.mockResolvedValueOnce({
-            id: 1,
-            type: 'receivable',
-            settled: false,
-            originalAmount: 200,
-        })
+        dataService.getDebts.mockResolvedValueOnce([
+            {
+                id: 1,
+                type: 'receivable',
+                settled: false,
+                originalAmount: 200,
+            }
+        ])
         await manager.init()
         expect(
             container.querySelector('#records-list-container').textContent
@@ -643,12 +646,14 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
             },
         ]
         dataService.getRecords.mockResolvedValueOnce(records)
-        dataService.getDebt.mockResolvedValueOnce({
-            id: 1,
-            type: 'receivable',
-            settled: true,
-            originalAmount: 200,
-        })
+        dataService.getDebts.mockResolvedValueOnce([
+            {
+                id: 1,
+                type: 'receivable',
+                settled: true,
+                originalAmount: 200,
+            }
+        ])
         await manager.init()
         expect(
             container.querySelector('#records-list-container').textContent
