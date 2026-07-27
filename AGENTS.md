@@ -3,11 +3,13 @@
 ```
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v11: 多帳本 + 攤提/分期)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── categories.js        # 分類常數與工具函數
 ├── categoryManager.js   # 分類管理 UI 邏輯
 ├── statistics.js        # 統計分析頁面
+├── comparisonReport.js   # 跨月比較報表與 CSV 匯出
+├── calendarCashFlow.js   # 行事曆金流檢視 (月曆網格、Top 3 支出標籤、每日明細 Modal)
 ├── recordsList.js       # 記帳紀錄列表
 ├── budgetManager.js     # 預算管理
 ├── quickSelectManager.js# 快速選擇管理
@@ -19,6 +21,7 @@ src/js/
 ├── syncService.js       # Google Drive 雲端備份&同步
 ├── rewardService.js     # 雙平台廣告服務 (見下方說明)
 ├── router.js            # 路由管理
+├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (含行事曆 Widget 資料提取)
 └── utils.js             # 共用工具函數 (格式化、Toast 等)
 
 src/js/pages/

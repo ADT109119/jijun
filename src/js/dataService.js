@@ -1518,7 +1518,7 @@ class DataService {
             const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
-            a.download = `記帳資料_${new Date().toISOString().split('T')[0]}.json`
+            a.download = `記帳資料_${formatDateToString(new Date())}.json`
             document.body.appendChild(a)
             a.click()
             document.body.removeChild(a)

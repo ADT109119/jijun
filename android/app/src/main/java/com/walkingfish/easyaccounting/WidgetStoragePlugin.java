@@ -45,11 +45,13 @@ public class WidgetStoragePlugin extends Plugin {
             editor.putInt("budget_progress_val", budgetProgressVal != null ? budgetProgressVal : 0);
             editor.putString("category_budget_status", categoryBudgetStatus);
             editor.putString("carrier_code", carrierCode);
-            // Calendar widget data
-            editor.putString("calendar_days", calendarDays);
-            editor.putString("calendar_month_label", calendarMonthLabel);
-            editor.putString("calendar_today", calendarToday);
-            editor.putInt("calendar_weekday_start", calendarWeekdayStart);
+            // Calendar widget data (only update if provided)
+            if (call.hasOption("calendarDays")) {
+                editor.putString("calendar_days", call.getString("calendarDays", ""));
+                editor.putString("calendar_month_label", call.getString("calendarMonthLabel", ""));
+                editor.putString("calendar_today", call.getString("calendarToday", ""));
+                editor.putInt("calendar_weekday_start", call.getInt("calendarWeekdayStart", 1));
+            }
             editor.apply();
 
             // 觸發所有 Widget 立即刷新

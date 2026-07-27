@@ -103,12 +103,13 @@
         <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="六" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
     </LinearLayout>
 
-    <!-- 5 週 x 7 天 網格 -->
-    <FrameLayout
+    <!-- 6 週 x 7 天 網格 -->
+    <LinearLayout
         android:id="@+id/cal_widget_grid"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:orientation="vertical">
 
         <!-- Week 1 -->
         <LinearLayout
@@ -184,5 +185,20 @@
             <TextView android:id="@+id/cal_day_33" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
             <TextView android:id="@+id/cal_day_34" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
         </LinearLayout>
-    </FrameLayout>
+
+        <!-- Week 6 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_35" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_36" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_37" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_38" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_39" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_40" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_41" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

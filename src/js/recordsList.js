@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate, getDateRange } from './utils.js'
+import { formatCurrency, formatDate, formatDateToString, getDateRange } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
 export class RecordsListManager {
@@ -311,13 +311,8 @@ export class RecordsListManager {
             )
         }
 
-        const formatLocal = d => {
-            const pad = n => String(n).padStart(2, '0')
-            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-        }
-
-        this.filters.customStartDate = formatLocal(newStart)
-        this.filters.customEndDate = formatLocal(newEnd)
+        this.filters.customStartDate = formatDateToString(newStart)
+        this.filters.customEndDate = formatDateToString(newEnd)
 
         // When using arrows, if we are in custom mode, we stay in custom mode.
         // If we were in month/year/week, we stay in that mode but the dates are shifted.

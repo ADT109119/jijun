@@ -76,8 +76,8 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
         views.setTextViewText(calExpenseId, "🛒 " + expenseDays + " 天");
         views.setTextViewText(calBalanceId, "結餘 " + monthBalance);
 
-        // 預設 35 個格子全部空白
-        for (int i = 0; i < 35; i++) {
+        // 預設 42 個格子全部空白
+        for (int i = 0; i < 42; i++) {
             int dayId = getResourceId(context, "cal_day_" + String.format("%02d", i));
             views.setTextViewText(dayId, "");
             views.setTextColor(dayId, Color.parseColor("#9CA3AF"));
@@ -100,7 +100,7 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
 
                         // 格子位置 = offset + (dayNum - 1)
                         int idx = gridOffset + (dayNum - 1);
-                        if (idx >= 0 && idx < 35) {
+                        if (idx >= 0 && idx < 42) {
                             int dayId = getResourceId(context, "cal_day_" + String.format("%02d", idx));
 
                             // 日期數字
