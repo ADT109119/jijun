@@ -96,9 +96,10 @@
 - MOZE 4.0 (2026/5/25 更新) — 捷徑記帳增加幣種選項、通知中心支援多筆完成提醒入帳、比較報表功能
 - MOZE v4.1.25 (2026/6/15 更新) — iOS 26.0/26.0.1 相容性修補；比較報表變化率顯示優化
 - MOZE v4.1.27+ (2026/6/30+) — 比較報表新增 MoM Δ / YoY Δ 絕對差額欄位；交易明細預覽統計面板 (平均、中位數、最高/最低)；搜尋支援輸入幣種篩選
-- MOZE 比較報表詳情 — 多維度表格分析，可交叉比對分類×時間段，支援變化率顯示
-- MOZE iPad 版 — 大螢幕重新設計，跨裝置即時同步
-- MOZE v4.1.28+ (2026/7/8 更新) — iOS 26.0/26.0.1 相容性修補、年度週期事件建立修復、明細報表折線圖餘額調整正負區分
+|- MOZE v4.2.1 (2026/7/23 更新) — FIX: 圖片記帳/發票歸帳多類別子項目備註; IMPROVE: 圖表讀取速度
+|- MOZE 比較報表詳情 — 多維度表格分析，可交叉比對分類×時間段，支援變化率顯示
+|- MOZE iPad 版 — 大螢幕重新設計，跨裝置即時同步
+|- MOZE v4.1.28+ (2026/7/8 更新) — iOS 26.0/26.0.1 相容性修補、年度週期事件建立修復、明細報表折線圖餘額調整正負區分
 - Firefly III v6.6.6 (2026-07-10 開發版) — 持續翻譯和修補更新
 - Actual Budget (2026-07 更新) — 多 dashboard 頁面、自訂主題、可設定平均範圍的月度支出報表、標籤顯示/隱藏支援
 - Actual Budget (2026-06-22 調研) — 2026 Roadmap: OIDC/multi-user、多新報表類型、schedules 可調時框、NPM sync package、年度預算差異報表
@@ -154,6 +155,7 @@
 
 ## 更新歷史
 
+- **2026-07-28**: Code Review recordsList.js — 發現 3 HIGH (H01: 全域缺少 escapeHTML 防護 description/account.name/category.name/statusLabel 直接嵌入 innerHTML、H02: 轉帳抵消邏輯未考慮跨帳本安全性、H03: 篩選彈窗 innerHTML 注入)、4 MEDIUM (M01: loadAndRenderRecords N+1 債務查詢、M02: updateSummary 死碼未使用、M03: 轉帳抵消邏輯 DRY 違反、M04: renderRecords 每次重新綁定事件監聽器)、4 LOW (日期推移強行 custom、硬編碼貨幣符號、搜尋邏輯可提取、缺少 aria-label 无障礙標籤)；產出 code-review-recordsList-2026-07-28.md；安全評分 5/10；832 tests 全過；GitHub: 79 stars (+1), 5 open issues (#53/#48/#14/#9/#8)；MOZE v4.2.1 (5天前: 圖表讀取速度優化、圖片記帳子項目備註修復)
 - **2026-07-27**: 修復 comparisonReport CSV export 測試回歸 (3 tests) — `42fcfdd` commit 將 CSV header 改為中文輸出（期間類型、全部/僅支出），但測試仍期望英文 key；修正 3 個 assertion：`比較類型→期間類型`、`篩選類型,all→全部`、`篩選類型,expense→僅支出`；832 tests 全過；ESLint 乾淨；GitHub: 78 stars, 5 open issues (新增 #53 iOS 靈動島問題，commit 8b3317d 已修相同問題)
 - **2026-07-26**: Code Review calendar cash flow redesign + Android widget (commit a657c98) — 發現 2H (catColor/catIcon XSS、records 檢查未用) / 4M (事件監聽器累積、N+1 getCategoryById、未用變數、渲染順序) / 3L (硬編碼 $、私有屬性、缺少鍵盤關閉)；已修復 H01 XSS 防護 (字元白名單消毒) + M03 移除 unused expenseSum + _formatShort 邊界保護；產出 code-review-calendar-widget-2026-07-26.md；832 tests 全過；ESLint 乾淨；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化
 - **2026-07-25**: ESLint 修復 — `.eslintrc.json` 補上 `__WEB_STORE_URL__` global 定義 (Vite define 注入但 ESLint 未知導致 no-undef 錯誤)；src/js ESLint 錯誤數 1→0；826 tests 全過；GitHub: 78 stars, 4 open issues (#48/#14/#9/#8) 無變化
