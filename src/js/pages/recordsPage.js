@@ -6,6 +6,10 @@ export class RecordsPage {
     }
 
     async render() {
+        // Destroy previous instance to prevent event listener memory leaks
+        if (this._recordsListManager) {
+            this._recordsListManager.destroy()
+        }
         this.app.appContainer.innerHTML = `
             <div class="page active p-4 pb-24 md:pb-8 max-w-3xl mx-auto">
                 <!-- Header -->
@@ -79,6 +83,7 @@ export class RecordsPage {
             this.app.categoryManager,
             pageElement
         )
+        this._recordsListManager = recordsListManager
         recordsListManager.init()
     }
 }

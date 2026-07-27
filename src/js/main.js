@@ -5,6 +5,7 @@ import {
     shouldSkipDate,
     calculateAmortizationDetails,
     showToast,
+    MAX_ITERATIONS,
 } from './utils.js'
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
@@ -274,12 +275,16 @@ class EasyAccountingApp {
             });
 
             // 初始化時更新一次 Widget 資料
-            updateAndroidWidget(this.dataService, this.categoryManager, this.budgetManager);
+            if (['home', 'records'].includes(window.location.hash.replace('#', '') || 'home')) {
+                updateAndroidWidget(this.dataService, this.budgetManager);
+            }
         }
 
         // 每次渲染頁面完成後，同步更新 Widget 資料
         this.pluginManager.registerHook('onPageRenderAfter', (pageName) => {
-            updateAndroidWidget(this.dataService, this.categoryManager, this.budgetManager);
+            if (['home', 'records'].includes(pageName)) {
+                updateAndroidWidget(this.dataService, this.budgetManager);
+            }
 
             // 處理小工具捷徑分類自動選取
             if (pageName === 'add' && this.pendingWidgetCategory) {
@@ -639,7 +644,7 @@ class EasyAccountingApp {
                             newWorker.state === 'installed' &&
                             navigator.serviceWorker.controller
                         ) {
-                            showToast('新版本可用，請重新整理頁面', 'info', 8000)
+                            showToast('新版本可用，請重新整理頁面', 'info')
                         }
                     })
                 })

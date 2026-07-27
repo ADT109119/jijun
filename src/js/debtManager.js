@@ -173,7 +173,7 @@ export class DebtManager {
       
       return `
         <tr class="border-b border-wabi-border last:border-b-0 hover:bg-wabi-bg cursor-pointer" data-contact-id="${contact.id}">
-          <td class="px-4 py-3 text-sm text-wabi-text-primary font-medium">${contact.name}</td>
+          <td class="px-4 py-3 text-sm text-wabi-text-primary font-medium">${escapeHTML(contact.name)}</td>
           <td class="px-4 py-3 text-sm text-wabi-income text-right">${summary.receivable > 0 ? formatCurrency(summary.receivable) : '-'}</td>
           <td class="px-4 py-3 text-sm text-wabi-expense text-right">${summary.payable > 0 ? formatCurrency(summary.payable) : '-'}</td>
           <td class="px-4 py-3 text-sm font-bold text-right ${net > 0 ? 'text-wabi-income' : net < 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${net > 0 ? '+' : ''}${formatCurrency(net)}</td>
@@ -1106,7 +1106,7 @@ export class DebtManager {
                 <div class="contact-avatar flex items-center justify-center rounded-full bg-wabi-primary/20 text-wabi-primary size-10 overflow-hidden" data-avatar-id="${contact.avatarFileId || ''}">
                   <i class="fa-solid fa-user"></i>
                 </div>
-                <span class="font-medium text-wabi-text-primary">${contact.name}</span>
+                <span class="font-medium text-wabi-text-primary">${escapeHTML(contact.name)}</span>
               </div>
               <div class="flex gap-2">
                 <button class="edit-contact-btn p-2" data-id="${contact.id}">

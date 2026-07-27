@@ -1,11 +1,11 @@
-import { getDateRange } from './utils.js'
+import { getDateRange, formatDateToString } from './utils.js'
 
 export function createDateRangeModal({
     initialStartDate,
     initialEndDate,
     onApply,
 }) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = formatDateToString(new Date())
 
     const modal = document.createElement('div')
     modal.id = 'date-range-modal'

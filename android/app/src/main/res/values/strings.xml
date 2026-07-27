@@ -7,4 +7,5 @@
     <string name="widget_description_main">顯示今日支出、本月結餘和預算進度，並可快速記帳</string>
     <string name="widget_description_carrier">在桌面顯示發票載具條碼，方便快速出示</string>
     <string name="widget_description_shortcut">快速選擇分類並記帳</string>
+    <string name="widget_description_calendar">桌面行事曆金流檢視，一覽當月收支</string>
 </resources>

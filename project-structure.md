@@ -13,6 +13,8 @@ src/js/
 ├── categories.js        # 分類常數與工具函數
 ├── categoryManager.js   # 分類管理 UI 邏輯
 ├── statistics.js        # 統計分析頁面 (包含跨月比較報表等功能)
+├── comparisonReport.js   # 跨月比較報表與 CSV 匯出 (包含結構比例、日均支出、儲蓄率)
+├── calendarCashFlow.js   # 行事曆金流檢視 (月曆網格、Top 3 支出標籤、每日明細 Modal)
 ├── recordsList.js       # 記帳紀錄列表
 ├── budgetManager.js     # 預算管理
 ├── quickSelectManager.js# 快速選擇管理
@@ -24,7 +26,7 @@ src/js/
 ├── syncService.js       # Google Drive 雲端備份&同步
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── router.js            # 路由管理
-├── widgetHelper.js      # Android Widget 資料計算與同步輔助
+├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取)
 └── utils.js             # 共用工具函數 (格式化、Toast 等)
 
 src/js/pages/
@@ -40,19 +42,22 @@ android/                 # Capacitor Android 原生專案
 │   ├── AndroidManifest.xml  # 含 AdMob App ID 與 Widget/DeepLink 配置
 │   ├── java/com/walkingfish/easyaccounting/
 │   │   ├── MainActivity.java           # 註冊 WidgetStoragePlugin
-│   │   ├── WidgetStoragePlugin.java     # 自訂儲存插件
+│   │   ├── WidgetStoragePlugin.java     # 自訂儲存插件 (保存桌面統計/載具/捷徑/行事曆 Widget 資料)
 │   │   ├── EasyAccountingWidgetProvider.java # 桌面統計小工具 Provider
-│   │   ├── InvoiceCarrierWidgetProvider.java # 發票載具小工具 Provider (Code 39 繪製)
-│   │   └── QuickCategoryWidgetProvider.java  # 快速分類捷徑小工具 Provider
+      ├── InvoiceCarrierWidgetProvider.java # 發票載具小工具 Provider (Code 39 繪製)
+│   │   ├── QuickCategoryWidgetProvider.java  # 快速分類捷徑小工具 Provider
+│   │   └── CalendarWidgetProvider.java       # 桌面行事曆金流小工具 Provider (42 格 6 週網格繪製)
 │   └── res/
 │       ├── layout/
 │       │   ├── widget_layout.xml       # 統計小工具佈局 XML
 │       │   ├── carrier_widget_layout.xml # 載具小工具佈局 XML
-│       │   └── shortcut_widget_layout.xml # 快速捷徑小工具佈局 XML
+│       │   ├── shortcut_widget_layout.xml # 快速捷徑小工具佈局 XML
+│       │   └── calendar_widget_layout.xml # 行事曆小工具佈局 XML
 │       ├── xml/
 │       │   ├── widget_info.xml         # 統計小工具設定 XML
 │       │   ├── carrier_widget_info.xml  # 載具小工具設定 XML
-│       │   └── shortcut_widget_info.xml # 快速捷徑小工具設定 XML
+│       │   ├── shortcut_widget_info.xml # 快速捷徑小工具設定 XML
+│       │   └── calendar_widget_info.xml # 行事曆小工具設定 XML
 │       └── drawable/                   # 小工具樣式與分類圓形背景、向量圖標 XML (ic_cat_food.xml 等)
 └── variables.gradle     # SDK 版本設定 (minSdk=23, targetSdk=35)
 
@@ -86,8 +91,10 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `categoryManager.test.js` # 測試分類管理邏輯
 - `changelog.test.js` # 測試更新日誌解析與渲染
 - `themeManager.test.js` # 測試主題管理 (含 SVG 消毒與 CSS 變數消毒)
-- `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化
+- `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
+- `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
+- `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含刪除帳本級聯清理)
-- ...等等（共有 24 個測試檔案，對應各主要模組的單元驗證）
+- ...等等（共有 25 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試

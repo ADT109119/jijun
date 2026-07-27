@@ -1,18 +1,22 @@
 import { StatisticsManager } from '../statistics.js'
+import { CalendarCashFlow } from '../calendarCashFlow.js'
+import { extractCalendarWidgetData } from '../widgetHelper.js'
 
 export class StatsPage {
     constructor(app) {
         this.app = app
+        this.calendarInstance = null
     }
 
     async render() {
+        this.destroy()
+
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <header class="sticky top-0 z-10 flex shrink-0 items-center justify-between p-4 bg-wabi-bg/80 backdrop-blur-sm border-b border-wabi-border">
                     <h1 class="text-lg font-bold text-wabi-primary flex-1 text-center">收支分析</h1>
                 </header>
                 <main class="flex-1 p-4 pb-24">
-                    <!-- 跨月比較入口 -->
                     <a href="#comparison" class="flex items-center gap-3 p-4 rounded-xl bg-wabi-accent/10 border border-wabi-accent/30 mb-6 hover:bg-wabi-accent/20 transition-colors">
                         <i class="fa-solid fa-chart-column text-wabi-accent text-lg"></i>
                         <div class="flex-1">
@@ -22,9 +26,31 @@ export class StatsPage {
                         <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                     </a>
                     <div id="stats-container"></div>
+                    <div id="stats-calendar-container" class="mt-6"></div>
                 </main>
             </div>
         `
+
+        const calendarContainer = this.app.appContainer.querySelector('#stats-calendar-container')
+        this.calendarInstance = new CalendarCashFlow(
+            this.app.dataService,
+            this.app.categoryManager,
+            calendarContainer,
+            this.app.debtManager
+        )
+        await this.calendarInstance.render()
+
+        // Sync calendar widget data
+        const calendarData = extractCalendarWidgetData(this.calendarInstance)
+        if (calendarData && typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform()) {
+            try {
+                const { updateAndroidWidget } = await import('../widgetHelper.js')
+                await updateAndroidWidget(this.app.dataService, this.app.budgetManager, calendarData)
+            } catch (e) {
+                console.warn('[Stats] Widget sync failed:', e)
+            }
+        }
+
         const statisticsManager = new StatisticsManager(
             this.app.dataService,
             this.app.categoryManager
@@ -32,5 +58,12 @@ export class StatsPage {
         statisticsManager.renderStatisticsPage(
             document.getElementById('stats-container')
         )
+    }
+
+    destroy() {
+        if (this.calendarInstance && typeof this.calendarInstance.destroy === 'function') {
+            this.calendarInstance.destroy()
+            this.calendarInstance = null
+        }
     }
 }

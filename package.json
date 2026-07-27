@@ -1,12 +1,13 @@
 {
     "name": "easy-accounting-pwa",
-    "version": "2.1.6.5",
+    "version": "2.1.6.6",
     "description": "現代化輕鬆記帳 PWA 應用程式",
     "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "vite build",
         "preview": "vite preview",
+        "test": "vitest run",
         "lint": "eslint . --ext js --report-unused-disable-directives",
         "format": "prettier --write ."
     },
@@ -28,7 +29,7 @@
     "dependencies": {
         "@capacitor-community/admob": "^7.2.0",
         "@capacitor/android": "^8.2.0",
-        "@capacitor/app": "^8.1.0",
+        "@capacitor/app": "^8.1.1",
         "@capacitor/cli": "^7.6.0",
         "@capacitor/core": "^8.2.0",
         "@capacitor/local-notifications": "^8.0.2",

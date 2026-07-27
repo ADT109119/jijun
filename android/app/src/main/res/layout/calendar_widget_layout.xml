@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  行事曆金流 Widget — Google Calendar 風格
+
+  結構:
+  ┌──────────────────────────────┐
+  │  <  2026 年 7 月  >          │  月份導航
+  ├──────────────────────────────┤
+  │  日 一 二 三 四 五 六        │  星期標頭
+  ├─┬─┬─┬─┬─┬─┬─┤
+  │ │ │ │ │ │ │ │  第 1 週
+  ├─┼─┼─┼─┼─┼─┼─┤
+  │ │ │ │ │ │ │ │  第 2 週
+  ├─┼─┼─┼─┼─┼─┼─┤
+  │ │ │ │ │ │ │ │  第 3 週
+  ├─┼─┼─┼─┼─┼─┼─┤
+  │ │ │ │ │ │ │ │  第 4 週
+  ├─┼─┼─┼─┼─┼─┼─┤
+  │ │ │ │ │ │ │ │  第 5 週
+  ├─┴─┴─┴─┴─┴─┴─┤
+  │ 💰+$0  🛒-$0  ╲$0           │  月總結
+  └──────────────────────────────┘
+
+  每個格子 (TextView) 顯示:
+  - 日期數字 (右上角對齊)
+  - 有交易: 底部小圓點 (綠=收入, 紅=支出)
+  - 今天: 藍色背景圈
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="@drawable/widget_bg">
+
+    <!-- 月份標題 + 總結 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="4dp">
+
+        <!-- 月份標題 -->
+        <TextView
+            android:id="@+id/cal_widget_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2026 年 7 月"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- 月總結行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/cal_widget_income"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="💰 +$0"
+                android:textColor="#A5D6A7"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/cal_widget_expense"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🛒 -$0"
+                android:textColor="#EF9A9A"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/cal_widget_balance"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="╲ $0"
+                android:textColor="#90CAF9"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 星期標頭 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingBottom="2dp">
+
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="日" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="一" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="二" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="三" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="四" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="五" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="六" android:textColor="#6B7280" android:textSize="9sp" android:gravity="center" />
+    </LinearLayout>
+
+    <!-- 6 週 x 7 天 網格 -->
+    <LinearLayout
+        android:id="@+id/cal_widget_grid"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Week 1 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_00" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_01" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_02" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_03" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_04" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_05" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_06" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+
+        <!-- Week 2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_07" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_08" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_09" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_10" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_11" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_12" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_13" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+
+        <!-- Week 3 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_14" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_15" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_16" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_17" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_18" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_19" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_20" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+
+        <!-- Week 4 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_21" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_22" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_23" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_24" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_25" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_26" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_27" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+
+        <!-- Week 5 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_28" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_29" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_30" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_31" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_32" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_33" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_34" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+
+        <!-- Week 6 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <TextView android:id="@+id/cal_day_35" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_36" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_37" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_38" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_39" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_40" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+            <TextView android:id="@+id/cal_day_41" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="top|end" android:padding="1dp" android:textSize="10sp" android:textColor="#9CA3AF" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

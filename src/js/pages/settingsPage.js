@@ -278,7 +278,7 @@ export class SettingsPage {
                         showToast('發票載具設定成功！', 'success')
                         
                         const { updateAndroidWidget } = await import('../widgetHelper.js')
-                        updateAndroidWidget(this.app.dataService, this.app.categoryManager, this.app.budgetManager)
+                        updateAndroidWidget(this.app.dataService, this.app.budgetManager)
                     }
                 )
             })

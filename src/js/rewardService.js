@@ -301,7 +301,7 @@ export class RewardService {
         `
 
         try {
-            ;(window.adsbygoogle = window.adsbygoogle || []).push({})
+            (window.adsbygoogle = window.adsbygoogle || []).push({})
         } catch (e) {
             console.warn('AdSense 廣告請求失敗:', e)
             container.innerHTML = ''

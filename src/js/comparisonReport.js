@@ -104,6 +104,7 @@ export class ComparisonReport {
             label,
             income: 0,
             expense: 0,
+            recordCount: 0,
             categories: {}, // categoryKey -> amount (signed: +income, -expense)
         }))
 
@@ -127,6 +128,8 @@ export class ComparisonReport {
             }
 
             if (matchIndex < 0) continue
+
+            periodData[matchIndex].recordCount++
 
             const amount = r.amount
             const cat = r.category
@@ -184,6 +187,7 @@ export class ComparisonReport {
                 label: pd.label,
                 income: pd.income,
                 expense: pd.expense,
+                recordCount: pd.recordCount,
             })),
             categoryComparisons,
             typeFilter,
@@ -280,31 +284,52 @@ export class ComparisonReport {
 
         const lines = []
 
-        // Header metadata
+        // ── Header metadata ──
         lines.push(`期間類型,${periodType === 'month' ? '月' : '年'}`)
-        lines.push(`比較類型,${periodLabels.join(', ')}`)
-        lines.push(`篩選類型,${typeFilter}`)
+        lines.push(`比較期間,${periodLabels.join(', ')}`)
+        lines.push(`篩選類型,${typeFilter === 'all' ? '全部' : typeFilter === 'income' ? '僅收入' : '僅支出'}`)
         lines.push('')
 
-        // Summary section
-        lines.push('期間,收入,支出,結餘')
+        // ── 期間摘要 ──
+        lines.push('▓ 期間摘要')
+        lines.push('期間,收入,支出,結餘,結餘率,紀錄筆數,天數,日均支出,儲蓄率')
+
         for (const pd of periodData) {
             const net = pd.income - pd.expense
+            const balanceRate = pd.income > 0 ? ((net / pd.income) * 100).toFixed(1) + '%' : '—'
+            const savingsRate = pd.income > 0 ? ((net / pd.income) * 100).toFixed(1) + '%' : '—'
+            const days = ComparisonReport.getDaysInPeriod(periodType, pd.label)
+            const dailyAvg = days > 0 ? (pd.expense / days).toFixed(2) : '0'
             lines.push(
-                `${pd.label},${pd.income.toFixed(2)},${pd.expense.toFixed(2)},${net.toFixed(2)}`
+                `${pd.label},${pd.income.toFixed(2)},${pd.expense.toFixed(2)},` +
+                `${net.toFixed(2)},${balanceRate},${pd.recordCount || 0},${days},${dailyAvg},${savingsRate}`
             )
         }
         lines.push('')
 
-        // Category comparison section
-        lines.push('分類')
+        // ── 分類比較表 ──
+        lines.push('▓ 分類比較')
+        const headerCells = ['分類', '收支類型']
         for (const lbl of periodLabels) {
-            lines[lines.length - 1] += `,${lbl}`
+            headerCells.push(lbl)
         }
-        lines[lines.length - 1] += ',變化率'
+        headerCells.push('變化率')
+        lines.push(headerCells.join(','))
+
+        // Resolve Chinese category name & type from the signed value
+        const getCatInfo = (categoryKey) => {
+            // Try expense first, then income — use categoryManager
+            const catExpense = this.categoryManager?.getCategoryById?.('expense', categoryKey)
+            if (catExpense) return { name: catExpense.name, type: 'expense' }
+            const catIncome = this.categoryManager?.getCategoryById?.('income', categoryKey)
+            if (catIncome) return { name: catIncome.name, type: 'income' }
+            return { name: categoryKey, type: '—' }
+        }
+
         for (const row of categoryComparisons) {
-            const escapedCategory = String(row.category).replace(/"/g, '""')
-            let csvLine = `"${escapedCategory}"`
+            const info = getCatInfo(row.category)
+            const escapedName = String(info.name).replace(/"/g, '""')
+            let csvLine = `"${escapedName}",${info.type === 'expense' ? '支出' : info.type === 'income' ? '收入' : '—'}`
             for (let i = 0; i < periodLabels.length; i++) {
                 csvLine += `,${(row[`period${i}`] || 0).toFixed(2)}`
             }
@@ -313,11 +338,69 @@ export class ComparisonReport {
             const last = row[`period${periodLabels.length - 1}`] || 0
             if (first > 0) {
                 const pct = (((last - first) / first) * 100).toFixed(1)
-                csvLine += `,${pct}%`
+                csvLine += `,${(last >= first ? '+' : '')}${pct}%`
             } else {
                 csvLine += ',—'
             }
             lines.push(csvLine)
+        }
+
+        lines.push('')
+
+        // ── 支出比例結構 ──
+        if (typeFilter !== 'income') {
+            lines.push('▓ 支出比例結構（各分類佔總支出百分比）')
+            const pctHeaderCells = ['分類']
+            for (const lbl of periodLabels) {
+                pctHeaderCells.push(lbl)
+            }
+            lines.push(pctHeaderCells.join(','))
+
+            const breakdown = ComparisonReport.calculatePercentageBreakdown(
+                data.periodData,
+                categoryComparisons
+            )
+            for (const row of breakdown) {
+                const info = getCatInfo(row.category)
+                const escapedName = String(info.name).replace(/"/g, '""')
+                let csvLine = `"${escapedName}"`
+                for (let i = 0; i < row.percentages.length; i++) {
+                    csvLine += `,${row.percentages[i].toFixed(1)}%`
+                }
+                lines.push(csvLine)
+            }
+            lines.push('')
+        }
+
+        // ── 日均支出 ──
+        if (typeFilter !== 'income') {
+            lines.push('▓ 日均支出')
+            lines.push('期間,天數,日均支出,vs 前一期間')
+            const dailyAvgs = ComparisonReport.calculateDailyAverages(
+                periodData, periodType, periodLabels
+            )
+            const trends = ComparisonReport.calculateTrends(dailyAvgs)
+            for (let i = 0; i < periodData.length; i++) {
+                const days = ComparisonReport.getDaysInPeriod(periodType, periodLabels[i])
+                const trendSymbol = trends[i] === '↑' ? '增加' : trends[i] === '↓' ? '減少' : '—'
+                lines.push(`${periodLabels[i]},${days},${dailyAvgs[i].toFixed(2)},${trendSymbol}`)
+            }
+            lines.push('')
+        }
+
+        // ── 儲蓄率 ──
+        lines.push('▓ 儲蓄率')
+        lines.push('期間,收入,支出,結餘,儲蓄率,vs 前一期間')
+        const rates = ComparisonReport.calculateSavingsRates(periodData)
+        const rateTrends = ComparisonReport.calculateTrends(rates.map(Math.abs))
+        for (let i = 0; i < periodData.length; i++) {
+            const net = periodData[i].income - periodData[i].expense
+            const rate = rates[i]
+            const trendSymbol = rateTrends[i] === '↑' ? '上升' : rateTrends[i] === '↓' ? '下降' : '—'
+            lines.push(
+                `${periodLabels[i]},${periodData[i].income.toFixed(2)},${periodData[i].expense.toFixed(2)},` +
+                `${net.toFixed(2)},${rate.toFixed(1)}%,${trendSymbol}`
+            )
         }
 
         return lines.join('\n')

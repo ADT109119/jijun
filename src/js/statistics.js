@@ -367,16 +367,16 @@ export class StatisticsManager {
                     {
                         label: '收入',
                         data: incomeValues,
-                        borderColor: '#6A9C89', // wabi-income
-                        backgroundColor: '#6A9C8933',
+                        borderColor: getComputedStyle(document.documentElement).getPropertyValue('--wabi-income').trim() || '#6A9C89',
+                        backgroundColor: (getComputedStyle(document.documentElement).getPropertyValue('--wabi-income').trim() || '#6A9C89') + '33',
                         fill: true,
                         tension: 0.3,
                     },
                     {
                         label: '支出',
                         data: expenseValues,
-                        borderColor: '#B95A5A', // wabi-expense
-                        backgroundColor: '#B95A5A33',
+                        borderColor: getComputedStyle(document.documentElement).getPropertyValue('--wabi-expense').trim() || '#B95A5A',
+                        backgroundColor: (getComputedStyle(document.documentElement).getPropertyValue('--wabi-expense').trim() || '#B95A5A') + '33',
                         fill: true,
                         tension: 0.3,
                     },
@@ -752,8 +752,11 @@ export class StatisticsManager {
                 continue
             }
 
-            const dateStr = currentDate.toISOString().split('T')[0]
-            const amount = dailyCounts[dateStr] || 0
+                const year = currentDate.getFullYear()
+                const month = String(currentDate.getMonth() + 1).padStart(2, '0')
+                const day = String(currentDate.getDate()).padStart(2, '0')
+                const dateStr = `${year}-${month}-${day}`
+                const amount = dailyCounts[dateStr] || 0
 
             const cell = document.createElement('div')
             // Default color
