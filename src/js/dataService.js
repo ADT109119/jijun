@@ -3432,15 +3432,19 @@ class DataService {
     async clearAllGroupMeta() {
         try {
             const records = await this.getRecords({ allLedgers: true })
-            const txR = this.db.transaction('records', 'readwrite')
-            for (const r of records) {
-                if (r.groupId) {
-                    r.groupId = null
-                    r.groupStatus = null
-                    await txR.store.put(r)
+            const needsUnlink = records.some(r => r.groupId)
+            if (needsUnlink) {
+                const txR = this.db.transaction('records', 'readwrite')
+                const store = txR.store
+                for (const r of records) {
+                    if (r.groupId) {
+                        r.groupId = null
+                        r.groupStatus = null
+                        await store.put(r)
+                    }
                 }
+                await txR.done
             }
-            await txR.done
             const tx = this.db.transaction('groupMeta', 'readwrite')
             await tx.store.clear()
             await tx.done
