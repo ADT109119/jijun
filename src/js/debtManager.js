@@ -943,28 +943,43 @@ export class DebtManager {
     }, 100);
 
     modal.querySelector('#confirm-partial-btn').addEventListener('click', async () => {
+      const btn = modal.querySelector('#confirm-partial-btn');
+      if (btn.disabled) return;
+      const originalText = btn.textContent.trim();
+      btn.disabled = true;
+      btn.textContent = '處理中...';
+      btn.style.opacity = '0.6';
+
       const amount = parseFloat(modal.querySelector('#partial-amount').value);
 
       if (!amount || amount <= 0) {
         customAlert('請輸入有效金額');
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
         return;
       }
 
       if (amount > remainingAmount) {
         customAlert(`金額不能超過剩餘金額 ${formatCurrency(remainingAmount)}`);
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
         return;
       }
 
       const accountSelect = modal.querySelector('#partial-account-select');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
 
-      await this.dataService.addPartialPayment(debtId, amount, {
-        accountId: selectedAccountId,
-      });
-      closeModal();
-      // Maintain current filter state instead of full re-render
-      await this.updateSummaryCards();
-      await this.loadDebtList();
+      try {
+        await this.dataService.addPartialPayment(debtId, amount, {
+          accountId: selectedAccountId,
+        });
+        closeModal();
+        // Maintain current filter state instead of full re-render
+        await this.updateSummaryCards();
+        await this.loadDebtList();
+      } catch (e) {
+        console.error('Failed to add partial payment:', e);
+        customAlert('操作失敗，請稍後再試');
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
+      }
     });
   }
 
@@ -1022,16 +1037,29 @@ export class DebtManager {
     });
 
     modal.querySelector('#confirm-settle-btn').addEventListener('click', async () => {
+      const btn = modal.querySelector('#confirm-settle-btn');
+      if (btn.disabled) return;
+      const originalText = btn.textContent.trim();
+      btn.disabled = true;
+      btn.textContent = '處理中...';
+      btn.style.opacity = '0.6';
+
       const accountSelect = modal.querySelector('#settle-account-select');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
 
-      await this.dataService.settleDebt(debtId, null, {
-        accountId: selectedAccountId,
-      });
-      closeModal();
-      showToast('已結清欠款並產生記帳紀錄', 'success');
-      await this.updateSummaryCards();
-      await this.loadDebtList();
+      try {
+        await this.dataService.settleDebt(debtId, null, {
+          accountId: selectedAccountId,
+        });
+        closeModal();
+        showToast('已結清欠款並產生記帳紀錄', 'success');
+        await this.updateSummaryCards();
+        await this.loadDebtList();
+      } catch (e) {
+        console.error('Failed to settle debt:', e);
+        customAlert('結清失敗，請稍後再試');
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
+      }
     });
   }
 
@@ -1703,6 +1731,13 @@ export class DebtManager {
     modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
     modal.querySelector('#confirm-settle-group').addEventListener('click', async () => {
+      const btn = modal.querySelector('#confirm-settle-group');
+      if (btn.disabled) return;
+      const originalText = btn.textContent.trim();
+      btn.disabled = true;
+      btn.textContent = '處理中...';
+      btn.style.opacity = '0.6';
+
       const accountSelect = modal.querySelector('#group-settle-account');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
       try {
@@ -1714,6 +1749,7 @@ export class DebtManager {
       } catch (e) {
         console.error('Failed to settle group:', e);
         customAlert('結清失敗，請稍後再試');
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
       }
     });
   }
