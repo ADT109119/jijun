@@ -105,6 +105,9 @@ export class AddPage {
                                 `
                                         : ''
                                 }
+                                <button id="toggle-group-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="加入群組">
+                                    <i class="fa-solid fa-layer-group text-lg"></i>
+                                </button>
                                 ${
                                     showInstallmentBtn
                                         ? `
@@ -193,6 +196,32 @@ export class AddPage {
                                 <span>每期金額：</span><strong id="installment-per-period" class="text-blue-600">--</strong>
                             </div>
                             <p class="text-xs text-wabi-text-secondary mt-2">金額/分類/日期由上方記帳欄位帶入，儲存時自動建立分期計畫。</p>
+                        </div>
+
+                        <!-- Group Panel (hidden by default) -->
+                        <div id="group-panel" class="hidden bg-emerald-500/10 rounded-lg p-4 mb-4 border border-emerald-500/30">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-emerald-600"><i class="fa-solid fa-layer-group mr-2"></i>明細群組</span>
+                                <button id="close-group-panel" class="text-wabi-text-secondary hover:text-emerald-600">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="flex h-9 w-full items-center justify-center rounded-lg bg-emerald-500/5 p-1 mb-3">
+                                <button id="group-action-select" class="group-action-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-emerald-500 text-white">選取已有</button>
+                                <button id="group-action-create" class="group-action-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">建立新群組</button>
+                            </div>
+                            <!-- Select existing group -->
+                            <div id="group-select-section">
+                                <select id="group-select" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-emerald-500">
+                                    <option value="">選擇群組...</option>
+                                </select>
+                                <p class="text-xs text-wabi-text-secondary mt-2">已結清的群組無法加入新紀錄</p>
+                            </div>
+                            <!-- Create new group -->
+                            <div id="group-create-section" class="hidden">
+                                <input type="text" id="group-name-input" maxlength="50" placeholder="群組名稱（如：7/15 台北出差）"
+                                    class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-emerald-500" />
+                            </div>
                         </div>
 
                         <!-- Type Switcher & Amount -->
@@ -626,7 +655,90 @@ export class AddPage {
             })
         }
 
-        // --- 計算機狀態（整合於小鍵盤）---
+        // --- Group Panel ---
+        const groupPanel = document.getElementById('group-panel')
+        const toggleGroupBtn = document.getElementById('toggle-group-btn')
+        let groupEnabled = false
+        let selectedGroupId = null
+        let groupAction = 'select' // 'select' | 'create'
+
+        if (toggleGroupBtn && groupPanel) {
+            // Toggle panel
+            toggleGroupBtn.addEventListener('click', async () => {
+                groupEnabled = !groupEnabled
+                groupPanel.classList.toggle('hidden', !groupEnabled)
+                toggleGroupBtn.classList.toggle('text-emerald-500', groupEnabled)
+                toggleGroupBtn.classList.toggle('bg-emerald-500/10', groupEnabled)
+                toggleGroupBtn.classList.toggle('text-wabi-text-secondary', !groupEnabled)
+                if (groupEnabled) {
+                    await loadGroupList()
+                }
+            })
+
+            // Close panel
+            document.getElementById('close-group-panel')?.addEventListener('click', () => {
+                groupEnabled = false
+                groupPanel.classList.add('hidden')
+                toggleGroupBtn.classList.remove('text-emerald-500', 'bg-emerald-500/10')
+                toggleGroupBtn.classList.add('text-wabi-text-secondary')
+                selectedGroupId = null
+            })
+
+            // Action toggle (select vs create)
+            document.querySelectorAll('.group-action-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    groupAction = btn.id === 'group-action-select' ? 'select' : 'create'
+                    document.querySelectorAll('.group-action-btn').forEach(b => {
+                        b.classList.remove('bg-emerald-500', 'text-white')
+                        b.classList.add('text-wabi-text-secondary')
+                    })
+                    btn.classList.remove('text-wabi-text-secondary')
+                    btn.classList.add('bg-emerald-500', 'text-white')
+                    document.getElementById('group-select-section').classList.toggle('hidden', groupAction === 'create')
+                    document.getElementById('group-create-section').classList.toggle('hidden', groupAction === 'select')
+                })
+            })
+
+            // Load groups (unsettled + settled for edit mode)
+            const loadGroupList = async () => {
+                try {
+                    const unsettledGroups = await this.app.groupManager.getUnsettledGroups()
+                    const select = document.getElementById('group-select')
+                    if (!select) return
+                    select.innerHTML = '<option value="">選擇群組...</option>' +
+                        unsettledGroups.map(g =>
+                            `<option value="${g.id}">${escapeHTML(g.name)} (${g.recordCount}筆, 淨額: ${g.netAmount >= 0 ? '+' : ''}${formatCurrency(g.netAmount)})</option>`
+                        ).join('')
+                    // If editing a record that belongs to a settled group, append it
+                    if (isEditMode && recordToEdit?.groupId) {
+                        const meta = await this.app.dataService.getGroupMeta(recordToEdit.groupId)
+                        if (meta && meta.settled && !unsettledGroups.find(g => g.id === recordToEdit.groupId)) {
+                            select.innerHTML += `<option value="${meta.id}" selected>[已結清] ${escapeHTML(meta.name)}</option>`
+                            selectedGroupId = recordToEdit.groupId
+                            groupEnabled = true
+                            toggleGroupBtn.classList.add('text-emerald-500', 'bg-emerald-500/10')
+                            toggleGroupBtn.classList.remove('text-wabi-text-secondary')
+                        } else {
+                            const existingGroup = unsettledGroups.find(g => g.id === recordToEdit.groupId)
+                            if (existingGroup) {
+                                select.value = recordToEdit.groupId
+                                selectedGroupId = recordToEdit.groupId
+                                groupEnabled = true
+                                toggleGroupBtn.classList.add('text-emerald-500', 'bg-emerald-500/10')
+                                toggleGroupBtn.classList.remove('text-wabi-text-secondary')
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to load groups:', e)
+                }
+            }
+
+            // Select change
+            document.getElementById('group-select')?.addEventListener('change', e => {
+                selectedGroupId = e.target.value || null
+            })
+        }
         let calcPrev = null // 運算前值
         let calcOp = null // 當前運算子
         let calcNew = true // 是否剛開始輸入新數字
@@ -954,6 +1066,17 @@ export class AddPage {
         }
 
         const saveRegularRecord = async amount => {
+            // If creating new group, create it first
+            if (groupEnabled && groupAction === 'create') {
+                const groupName = document.getElementById('group-name-input')?.value.trim()
+                if (!groupName) {
+                    showToast('請輸入群組名稱', 'error')
+                    return
+                }
+                const newGroupId = await this.app.groupManager.createGroup(groupName)
+                selectedGroupId = newGroupId
+            }
+
             const recordData = {
                 type: currentType,
                 category: selectedCategory,
@@ -961,6 +1084,8 @@ export class AddPage {
                 description: noteInput.value,
                 date: currentDate,
                 accountId: advancedModeEnabled ? selectedAccountId : null,
+                groupId: groupEnabled && selectedGroupId ? selectedGroupId : null,
+                groupStatus: (groupEnabled && selectedGroupId) ? 'active' : null,
             }
 
             if (isEditMode) {

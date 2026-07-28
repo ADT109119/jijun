@@ -12,6 +12,7 @@ import { CategoryManager } from './categoryManager.js'
 import { ChangelogManager } from './changelog.js'
 import { QuickSelectManager } from './quickSelectManager.js'
 import { DebtManager } from './debtManager.js'
+import { GroupManager } from './groupManager.js'
 import { LedgerManager } from './ledgerManager.js'
 import { PluginManager } from './pluginManager.js'
 import { SyncService } from './syncService.js'
@@ -58,6 +59,7 @@ class EasyAccountingApp {
         )
         this.quickSelectManager = new QuickSelectManager()
         this.debtManager = new DebtManager(this.dataService)
+        this.groupManager = new GroupManager(this.dataService, this)
         this.ledgerManager = new LedgerManager(this.dataService, this)
         this.pluginManager = new PluginManager(this.dataService, this)
         this.syncService = new SyncService(this.dataService)

@@ -39,6 +39,12 @@ export const CATEGORIES = {
             color: 'bg-orange-500',
         },
         {
+            id: 'group_settlement',
+            name: '群組結清',
+            icon: 'fas fa-users-gear',
+            color: 'bg-teal-500',
+        },
+        {
             id: 'another',
             name: '其他',
             icon: 'fas fa-box',
@@ -87,6 +93,12 @@ export const CATEGORIES = {
             name: '欠款回收',
             icon: 'fas fa-hand-holding-usd',
             color: 'bg-orange-500',
+        },
+        {
+            id: 'group_settlement',
+            name: '群組結清',
+            icon: 'fas fa-users-gear',
+            color: 'bg-teal-500',
         }, // Note: 此分類不計入統計（Issue #46 — 特別設計，非 bug）
         {
             id: 'another',

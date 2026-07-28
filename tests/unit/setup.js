@@ -39,6 +39,7 @@ const mockDb = {
                                 'status',
                             ],
                             amortizations: ['uuid', 'ledgerId', 'status'],
+                            groupMeta: ['ledgerId'],
                         }
                         return (indexes[storeName] || []).includes(name)
                     },
@@ -143,6 +144,8 @@ const mockDb = {
                     const idx = data.findIndex(item => item.id === itemData.id)
                     if (idx >= 0) {
                         data[idx] = { ...itemData }
+                    } else {
+                        data.push({ ...itemData })
                     }
                     return Promise.resolve()
                 },
@@ -225,6 +228,7 @@ for (const name of [
     'amortizations',
     'plugins',
     'credit_statements',
+    'groupMeta',
 ]) {
     mockDb.initStore(name)
 }

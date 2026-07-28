@@ -65,6 +65,9 @@ export class HomePage {
                 <!-- Debt Summary Widget -->
                 <div id="debt-summary-container"></div>
 
+                <!-- Group Balance Widget -->
+                <div id="group-balance-container"></div>
+
                 <!-- Plugin Widgets -->
                 <div class="flex items-center justify-between mb-2 mt-6">
                      <h3 class="text-sm font-bold text-wabi-text-secondary">小工具</h3>
@@ -250,6 +253,85 @@ export class HomePage {
 
         this.loadBudgetWidget()
         this.loadDebtSummary()
+        this.loadGroupBalance()
+    }
+
+    async loadGroupBalance() {
+        const container = document.getElementById('group-balance-container')
+        if (!container) return
+
+        // Only show if debt feature is enabled
+        const debtEnabledSetting = await this.app.dataService.getSetting(
+            'debtManagementEnabled'
+        )
+        const debtEnabled = !!debtEnabledSetting?.value
+        if (!debtEnabled) {
+            container.innerHTML = ''
+            return
+        }
+
+        try {
+            const groups = await this.app.dataService.getGroups()
+            const unsettled = groups.filter(g => !g.settled)
+            if (unsettled.length === 0) {
+                container.innerHTML = ''
+                return
+            }
+
+            const grandTotal = unsettled.reduce((s, g) => s + g.netAmount, 0)
+            const sign = grandTotal >= 0 ? '+' : '-'
+            const absTotal = Math.abs(grandTotal)
+
+            let html = `
+                <a href="#debts" class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-4 mb-6 flex items-center justify-between hover:border-emerald-500/30 transition-colors block">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 shrink-0 size-10">
+                            <i class="fa-solid fa-layer-group text-lg"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-wabi-text-secondary">未結清群組</p>
+                            <p class="text-xs text-wabi-text-secondary">${unsettled.length} 筆 · 點擊管理</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4 text-right">
+                        <div>
+                            <p class="text-xs text-wabi-text-secondary">群組淨額總計</p>
+                            <p class="text-sm font-bold ${grandTotal >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">${sign}${formatCurrency(absTotal)}</p>
+                        </div>
+                    </div>
+                </a>
+            `
+
+            // Show individual groups if 2-5 groups, otherwise just summary
+            if (unsettled.length >= 2 && unsettled.length <= 5) {
+                html += `
+                    <div class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-4 mb-6">
+                        <div class="space-y-2">
+                            ${unsettled.map(g => {
+                                const netSign = g.netAmount >= 0 ? '+' : '-'
+                                const netClass = g.netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'
+                                return `
+                                    <a href="#records?groupId=${g.id}" class="flex items-center justify-between py-2 border-b border-wabi-border last:border-0 hover:bg-wabi-bg rounded px-2 transition-colors">
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-wabi-text-primary truncate">${g.name}</p>
+                                            <p class="text-xs text-wabi-text-secondary">${g.recordCount}筆 · ${g.dateFrom} ~ ${g.dateTo}</p>
+                                        </div>
+                                        <div class="text-right shrink-0 ml-3">
+                                            <p class="text-sm font-bold ${netClass}">${netSign}${formatCurrency(Math.abs(g.netAmount))}</p>
+                                        </div>
+                                    </a>
+                                `
+                            }).join('')}
+                        </div>
+                    </div>
+                `
+            }
+
+            container.innerHTML = html
+        } catch (e) {
+            console.warn('Failed to load group balance:', e)
+            container.innerHTML = ''
+        }
     }
 
     async loadDebtSummary() {

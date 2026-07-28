@@ -5,7 +5,7 @@ export class RecordsPage {
         this.app = app
     }
 
-    async render() {
+    async render(params) {
         // Destroy previous instance to prevent event listener memory leaks
         if (this._recordsListManager) {
             this._recordsListManager.destroy()
@@ -84,6 +84,12 @@ export class RecordsPage {
             pageElement
         )
         this._recordsListManager = recordsListManager
+        if (params) {
+            const groupIdParam = params.get('groupId')
+            if (groupIdParam) {
+                recordsListManager.highlightGroupId = groupIdParam
+            }
+        }
         recordsListManager.init()
     }
 }
