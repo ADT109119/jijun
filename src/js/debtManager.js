@@ -459,7 +459,7 @@ export class DebtManager {
                 <i class="fa-solid fa-user"></i>
               </div>
               <div>
-                <p class="font-medium text-wabi-text-primary">${contactName}</p>
+                <p class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</p>
                 <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
               </div>
             </div>
@@ -469,7 +469,7 @@ export class DebtManager {
               <p class="text-xs text-wabi-text-secondary">${formatDate(debt.date, 'short')}</p>
             </div>
           </div>
-          ${debt.description ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${debt.description}</p>` : ''}
+          ${debt.description ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${escapeHTML(debt.description)}</p>` : ''}
           ${hasPartialPayments ? `
             <div class="mt-2">
               <div class="flex justify-between text-xs text-wabi-text-secondary mb-1">
@@ -553,7 +553,7 @@ export class DebtManager {
                 <i class="fa-solid fa-user"></i>
               </div>
               <div>
-                <p class="font-medium text-wabi-text-primary">${contactName}</p>
+                <p class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</p>
                 <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
               </div>
             </div>
@@ -563,7 +563,7 @@ export class DebtManager {
               <p class="text-xs text-wabi-text-secondary">${formatDate(debt.date, 'short')}</p>
             </div>
           </div>
-          ${debt.description ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${debt.description}</p>` : ''}
+          ${debt.description ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${escapeHTML(debt.description)}</p>` : ''}
           ${hasPartialPayments ? `
             <div class="mt-2">
               <div class="flex justify-between text-xs text-wabi-text-secondary mb-1">
@@ -898,7 +898,7 @@ export class DebtManager {
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
         <h3 class="text-lg font-semibold mb-4 text-wabi-primary">部分${isReceivable ? '收款' : '還款'}</h3>
-        <p class="text-sm text-wabi-text-secondary mb-4">${contactName} - ${debt.description || '無備註'}</p>
+        <p class="text-sm text-wabi-text-secondary mb-4">${escapeHTML(contactName)} - ${escapeHTML(debt.description || '無備註')}</p>
         <p class="text-sm text-wabi-text-secondary mb-2">剩餘金額：<span class="font-bold ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">${formatCurrency(remainingAmount)}</span></p>
         
         <div class="mb-4">
@@ -1003,7 +1003,7 @@ export class DebtManager {
         <h3 class="text-lg font-semibold mb-4 text-wabi-primary">
           <i class="fa-solid fa-handshake mr-2"></i>全額結清
         </h3>
-        <p class="text-sm text-wabi-text-secondary mb-2">${contactName} - ${debt.description || '無備註'}</p>
+        <p class="text-sm text-wabi-text-secondary mb-2">${escapeHTML(contactName)} - ${escapeHTML(debt.description || '無備註')}</p>
         <p class="text-sm text-wabi-text-secondary mb-4">
           結清金額：<span class="font-bold ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">${formatCurrency(remainingAmount)}</span>
         </p>
@@ -1095,7 +1095,7 @@ export class DebtManager {
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
         <h3 class="text-lg font-semibold mb-2 text-wabi-primary">${isReceivable ? '收款' : '還款'}歷程</h3>
-        <p class="text-sm text-wabi-text-secondary mb-4">${contactName} - ${debt.description || '無備註'}</p>
+        <p class="text-sm text-wabi-text-secondary mb-4">${escapeHTML(contactName)} - ${escapeHTML(debt.description || '無備註')}</p>
 
         <div class="space-y-3 mb-4">
           ${originalRecordHtml}
@@ -1333,9 +1333,9 @@ export class DebtManager {
     let message = '';
 
     if (isReceivable) {
-      message = `嗨 ${contactName}，提醒一下之前${debt.date}${debt.description ? `「${debt.description}」` : ''}的 ${formatCurrency(remainingAmount)} 還沒收到喔！方便的話再麻煩你轉給我，謝謝！`;
+      message = `嗨 ${escapeHTML(contactName)}，提醒一下之前${debt.date}${debt.description ? `「${escapeHTML(debt.description)}」` : ''}的 ${formatCurrency(remainingAmount)} 還沒收到喔！方便的話再麻煩你轉給我，謝謝！`;
     } else {
-      message = `嗨 ${contactName}，我還欠你${debt.date}${debt.description ? `「${debt.description}」` : ''} ${formatCurrency(remainingAmount)}，我會盡快還你的！`;
+      message = `嗨 ${escapeHTML(contactName)}，我還欠你${debt.date}${debt.description ? `「${escapeHTML(debt.description)}」` : ''} ${formatCurrency(remainingAmount)}，我會盡快還你的！`;
     }
 
     const modal = document.createElement('div');
