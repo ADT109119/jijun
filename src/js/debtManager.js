@@ -1762,6 +1762,9 @@ export class DebtManager {
     const totalExpense = nonSettlement.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
     const totalIncome = nonSettlement.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0);
     const netAmount = totalExpense - totalIncome;
+    // netAmount > 0: 支出多(代墊)→ 收款(拿回代墊款)
+    // netAmount < 0: 收入多(溢領)→ 退款(退還多拿的)
+    const isRefund = netAmount < 0;
 
     const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
     const isAdvancedMode = !!advancedModeSetting?.value;
@@ -1772,19 +1775,20 @@ export class DebtManager {
       if (accounts.length > 0) defaultAccountId = accounts[0].id;
     }
 
+    const actionLabel = isRefund ? '退款' : '收款';
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
     modal.innerHTML = `
       <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
         <h3 class="text-lg font-semibold mb-4 text-emerald-600">
-          <i class="fa-solid fa-layer-group mr-2"></i>群組部分退款
+          <i class="fa-solid fa-layer-group mr-2"></i>群組部分${actionLabel}
         </h3>
         <p class="text-sm text-wabi-text-secondary mb-2">${escapeHTML(groupMeta.name)}</p>
         <div class="bg-wabi-bg rounded-lg p-3 mb-4 space-y-1">
           <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">當前淨額</span><span class="font-bold">${formatCurrency(Math.abs(netAmount))}</span></div>
         </div>
         <div class="mb-4">
-          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">退款金額</label>
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${actionLabel}金額</label>
           <input type="number" id="group-partial-amount" min="1" max="${Math.abs(netAmount)}" step="1" placeholder="輸入金額"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
@@ -1809,20 +1813,28 @@ export class DebtManager {
     setTimeout(() => modal.querySelector('#group-partial-amount').focus(), 100);
 
     modal.querySelector('#confirm-partial-settle-group').addEventListener('click', async () => {
+      const btn = modal.querySelector('#confirm-partial-settle-group');
+      if (btn.disabled) return;
+      const originalText = btn.textContent.trim();
+      btn.disabled = true;
+      btn.textContent = '處理中...';
+      btn.style.opacity = '0.6';
+
       const amount = parseFloat(modal.querySelector('#group-partial-amount').value);
-      if (!amount || amount <= 0) { customAlert('請輸入有效金額'); return; }
-      if (amount > Math.abs(netAmount)) { customAlert(`金額不能超過淨額 ${formatCurrency(Math.abs(netAmount))}`); return; }
+      if (!amount || amount <= 0) { customAlert('請輸入有效金額'); btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1'; return; }
+      if (amount > Math.abs(netAmount)) { customAlert(`金額不能超過淨額 ${formatCurrency(Math.abs(netAmount))}`); btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1'; return; }
       const accountSelect = modal.querySelector('#group-partial-account');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
       try {
-        await this.dataService.partialSettleGroup(groupId, amount, selectedAccountId, new Date().toISOString().split('T')[0], '部分退款');
+        await this.dataService.partialSettleGroup(groupId, amount, selectedAccountId, new Date().toISOString().split('T')[0], `部分${actionLabel}`);
         closeModal();
-        showToast('部分退款已記錄', 'success');
+        showToast(`部分${actionLabel}已記錄`, 'success');
         await this.updateSummaryCards();
         await this.loadDebtList();
       } catch (e) {
         console.error('Failed to partial settle group:', e);
-        customAlert('部分退款失敗，請稍後再試');
+        customAlert('操作失敗，請稍後再試');
+        btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
       }
     });
   }
