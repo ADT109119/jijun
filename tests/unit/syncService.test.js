@@ -461,4 +461,117 @@ describe('SyncService', () => {
             expect(ds.addRecurringTransaction).not.toHaveBeenCalled()
         })
     })
+
+    // ── P01: _applyAdd for recurring_transactions ──
+    describe('P01: _applyAdd recurring_transactions', () => {
+        let ds, ss
+
+        beforeEach(() => {
+            vi.clearAllMocks()
+            ds = createMockDataService({
+                addRecurringTransaction: vi.fn(async () => 42),
+                getByUUID: vi.fn(async () => null),
+                getLedgers: vi.fn(async () => []),
+                getAccounts: vi.fn(async () => []),
+            })
+            ss = createSyncService(ds)
+        })
+
+        it('_applyAdd("recurring_transactions", data) 應呼叫 addRecurringTransaction', async () => {
+            await ss._applyAdd('recurring_transactions', {
+                type: 'expense',
+                amount: 100,
+                frequency: 'monthly',
+                interval: 1,
+                nextDueDate: '2026-08-01',
+                uuid: 'rt-uuid-add-1',
+            })
+
+            expect(ds.addRecurringTransaction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'expense',
+                    amount: 100,
+                    uuid: 'rt-uuid-add-1',
+                })
+            )
+        })
+
+        it('應先解析 ledgerId 和 accountId（透過 _resolveLedgerId 與 _resolveRecurringAccountId）', async () => {
+            ds.getLedgers = vi.fn(async () => [
+                { id: 5, uuid: 'ledger-uu-5', name: '工作帳本' },
+            ])
+            ds.getAccounts = vi.fn(async () => [
+                { id: 20, uuid: 'acc-uu-20', name: '銀行' },
+            ])
+
+            await ss._applyAdd('recurring_transactions', {
+                type: 'expense',
+                amount: 200,
+                frequency: 'weekly',
+                interval: 2,
+                nextDueDate: '2026-08-15',
+                ledgerUuid: 'ledger-uu-5',
+                accountUuid: 'acc-uu-20',
+                uuid: 'rt-uuid-add-2',
+            })
+
+            expect(ds.addRecurringTransaction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    ledgerId: 5,
+                    accountId: 20,
+                    amount: 200,
+                })
+            )
+        })
+    })
+
+    // ── P01: _applyDelete for recurring_transactions ──
+    describe('P01: _applyDelete recurring_transactions uses UUID lookup', () => {
+        let ds, ss
+
+        beforeEach(() => {
+            vi.clearAllMocks()
+        })
+
+        it('_applyDelete("recurring_transactions", id, {uuid}) 應透過 UUID 查找後刪除', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) => {
+                    if (storeName === 'recurring_transactions' && uuid === 'rt-uuid-del-1') {
+                        return { id: 77, uuid: 'rt-uuid-del-1' }
+                    }
+                    return null
+                }),
+                deleteRecurringTransaction: vi.fn(async () => true),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyDelete('recurring_transactions', 999, {
+                uuid: 'rt-uuid-del-1',
+            })
+
+            expect(ds.getByUUID).toHaveBeenCalledWith(
+                'recurring_transactions',
+                'rt-uuid-del-1'
+            )
+            expect(ds.deleteRecurringTransaction).toHaveBeenCalledWith(77, true)
+        })
+
+        it('UUID 不存在時應靜默跳過', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async () => null),
+                deleteRecurringTransaction: vi.fn(async () => true),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyDelete('recurring_transactions', 999, {
+                uuid: 'rt-uuid-nonexistent',
+            })
+
+            expect(ds.getByUUID).toHaveBeenCalledWith(
+                'recurring_transactions',
+                'rt-uuid-nonexistent'
+            )
+            expect(ds.deleteRecurringTransaction).not.toHaveBeenCalled()
+        })
+    })
 })

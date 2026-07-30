@@ -1364,3 +1364,192 @@ describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
         expect(await ds.needsDebtRepair()).toBe(true)
     })
 })
+
+describe('DataService — Recurring Transactions CRUD', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('addRecurringTransaction 應產生 uuid（若未提供）', async () => {
+        const id = await ds.addRecurringTransaction({
+            type: 'expense',
+            amount: 100,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-08-01',
+        }, true)
+
+        expect(typeof id).toBe('number')
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.uuid).toBeDefined()
+        expect(item.uuid).toHaveLength(36)
+    })
+
+    it('addRecurringTransaction 應自動補上 accountUuid（若提供 accountId）', async () => {
+        ds.db._storeData.accounts.push({
+            id: 50,
+            name: '現金',
+            uuid: 'acc-uuid-50',
+            ledgerId: 1,
+        })
+
+        const id = await ds.addRecurringTransaction({
+            type: 'expense',
+            amount: 200,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-09-01',
+            accountId: 50,
+        }, true)
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.accountUuid).toBe('acc-uuid-50')
+    })
+
+    it('addRecurringTransaction 應設定 ledgerId 預設值', async () => {
+        const id = await ds.addRecurringTransaction({
+            type: 'income',
+            amount: 500,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-09-01',
+        }, true)
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.ledgerId).toBe(1)
+    })
+
+    it('updateRecurringTransaction 應更新 accountUuid 當 accountId 改變', async () => {
+        ds.db._storeData.accounts.push({
+            id: 60,
+            name: '銀行',
+            uuid: 'acc-uuid-60',
+            ledgerId: 1,
+        })
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        const id = await tx.store.add({
+            type: 'expense',
+            amount: 300,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-10-01',
+            accountId: null,
+            accountUuid: null,
+            ledgerId: 1,
+            uuid: 'rt-uuid-upd',
+        })
+        await tx.done
+
+        await ds.updateRecurringTransaction(id, { accountId: 60 }, true)
+
+        const tx2 = ds.db.transaction('recurring_transactions', 'readonly')
+        const updated = await tx2.store.get(id)
+        await tx2.done
+
+        expect(updated.accountUuid).toBe('acc-uuid-60')
+    })
+
+    it('deleteRecurringTransaction 應正確刪除並回傳 true', async () => {
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        const id = await tx.store.add({
+            type: 'expense',
+            amount: 150,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-11-01',
+            ledgerId: 1,
+            uuid: 'rt-uuid-del',
+        })
+        await tx.done
+
+        const result = await ds.deleteRecurringTransaction(id, true)
+
+        expect(result).toBe(true)
+
+        const tx2 = ds.db.transaction('recurring_transactions', 'readonly')
+        const deleted = await tx2.store.get(id)
+        await tx2.done
+
+        expect(deleted).toBeNull()
+    })
+
+    it('getRecurringTransactions 應支援 allLedgers 過濾器', async () => {
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        await tx.store.add({
+            type: 'expense', amount: 100, frequency: 'monthly', interval: 1,
+            nextDueDate: '2026-12-01', ledgerId: 1, uuid: 'rt-uuid-1',
+        })
+        await tx.store.add({
+            type: 'income', amount: 200, frequency: 'monthly', interval: 1,
+            nextDueDate: '2026-12-01', ledgerId: 2, uuid: 'rt-uuid-2',
+        })
+        await tx.done
+
+        const all = await ds.getRecurringTransactions({ allLedgers: true })
+        expect(all).toHaveLength(2)
+
+        const filtered = await ds.getRecurringTransactions({})
+        expect(filtered).toHaveLength(1)
+        expect(filtered[0].ledgerId).toBe(1)
+    })
+})
+
+describe('DataService — logChange 外鍵補全', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        ds.db._storeData.ledgers.push({
+            id: 1,
+            name: '預設帳本',
+            uuid: 'ledger-uuid-1',
+        })
+        ds.db._storeData.accounts.push({
+            id: 70,
+            name: '信用卡',
+            uuid: 'acc-uuid-70',
+            ledgerId: 1,
+        })
+    })
+
+    it('logChange 對 recurring_transactions 應自動補全 accountUuid', async () => {
+        await ds.logChange('add', 'recurring_transactions', 99, {
+            accountId: 70,
+            ledgerId: 1,
+        })
+
+        const syncLog = ds.db._storeData['sync_log'] || []
+        expect(syncLog).toHaveLength(1)
+        expect(syncLog[0].data.accountUuid).toBe('acc-uuid-70')
+    })
+
+    it('logChange 對 recurring_transactions 應自動補全 ledgerUuid', async () => {
+        await ds.logChange('add', 'recurring_transactions', 99, {
+            ledgerId: 1,
+        })
+
+        const syncLog = ds.db._storeData['sync_log'] || []
+        expect(syncLog).toHaveLength(1)
+        expect(syncLog[0].data.ledgerUuid).toBe('ledger-uuid-1')
+    })
+})

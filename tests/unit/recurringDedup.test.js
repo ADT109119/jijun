@@ -485,4 +485,45 @@ describe('processRecurringTransactions', () => {
             expect(ds.updateRecurringTransaction).not.toHaveBeenCalled()
         })
     })
+
+    // ── db 訪問失敗 fallback ───────────────────────
+    describe('db 訪問失敗 fallback', () => {
+        it('當 db.getAll("records") 拋錯時，應跳過該期並推進 nextDueDate（而非崩潰）', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Monthly',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+            })
+            // Make getAll throw for 'records'
+            ds.db.getAll = vi.fn(async (store) => {
+                if (store === 'records') throw new Error('DB failure')
+                return []
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Should not create a record since it couldn't verify dedup
+            expect(ds.addRecord).not.toHaveBeenCalled()
+            // Should still advance nextDueDate
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-09-01',
+            })
+        })
+    })
 })
