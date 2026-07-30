@@ -759,17 +759,25 @@ export class RecordsListManager {
         const isTransfer = record.category === 'transfer'
         const isBalanceAdjustment =
             record.category === 'balance_adjustment'
+        const isGroupSettlement =
+            record.category === 'group_settlement'
         const icon = isBalanceAdjustment
             ? 'fa-solid fa-scale-balanced'
-            : category?.icon || 'fa-solid fa-question'
+            : isGroupSettlement
+              ? 'fa-solid fa-users-gear'
+              : category?.icon || 'fa-solid fa-question'
         const name = isTransfer
             ? '帳戶間轉帳'
             : isBalanceAdjustment
               ? '帳務差額'
-              : category?.name || '未分類'
+              : isGroupSettlement
+                ? '群組結清'
+                : category?.name || '未分類'
         const color = isBalanceAdjustment
             ? 'bg-purple-500'
-            : category?.color || 'bg-gray-400'
+            : isGroupSettlement
+              ? 'bg-emerald-500'
+              : category?.color || 'bg-gray-400'
         const hasDebt = !!record.debtId
         const hasAmortization = !!record.amortizationId
 

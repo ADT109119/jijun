@@ -646,7 +646,7 @@ export class DebtManager {
                 一鍵結清
               </button>
               <button class="partial-settle-group-btn px-4 py-2 text-sm font-medium text-emerald-600 border border-emerald-600 rounded-lg" data-id="${group.id}">
-                部分退款
+                ${group.netAmount >= 0 ? '部分收款' : '部分退款'}
               </button>
               <button class="view-group-records-btn px-4 py-2 text-sm font-medium text-wabi-primary border border-wabi-primary rounded-lg" data-id="${group.id}">
                 查看明細

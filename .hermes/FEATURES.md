@@ -142,7 +142,7 @@
 
 | Issue | 標題 | 狀態 | 備註 |
 |-------|------|------|------|
-| #53 | IOS介面錯誤回報 (Lucas-Weii) | Open ⚠️ (2026-07-24) | iOS 編輯紀錄時刪除鈕及欠款人彈到靈動島無法觸及 — commit 8b3317d 已修復相同問題，需確認是否為不同頁面或新版本回歸 |
+| #53 | IOS介面錯誤回報 (Lucas-Weii) | Closed ✅ (2026-07-30) | iOS 靈動島遮擋問題已修復 (commit e62d8f3)，使用者 2026-07-29 測試確認修復 |
 | #46 | 收入項目裡的 [欠款回收] (yabo-tw) | Closed ✅ (2026-06-12) | 特別設計非 bug，使用者已找到 workaround |
 | #51 | 擴充功能：小工具深色模式問題 (Maiagaru) | Closed ✅ (2026-07-09) | v2.1.6.2 已修復 (commit 9fa42d7) |
 | #49 | 手機 PWA 載入速度優化 (yanggu0413) | Closed ✅ (2026-07-25) | 骨架畫面 ✅ + 計算機式鍵盤 ✅，Owner 已關閉 |
@@ -155,6 +155,7 @@
 
 ## 更新歷史
 
+- **2026-07-30**: fix: group partial settlement — 群組部分結清時動態顯示「退款/收款」標籤（根據淨額方向判斷 isRefund），修正原本固定「退款」文案導致收款情境語意錯誤；commit 7701c40；854 tests 全過；GitHub: 79 stars, 5 open issues (#53/#48/#14/#9/#8) 無變化
 - **2026-07-29**: Security fix debtManager.js — 修復 7 個 XSS 注入點 (H01: contact.name 在 debt card 列表 L462/L556 未 escapeHTML、H02: debt.description 在 debt card L472/L566、partial payment modal L901、settle modal L1006、payment history modal L1098、reminder message L1336/L1338 未 escapeHTML)；commit 7034eeb；854 tests 全過；ESLint 既有 2E/8W 不影響；GitHub: 79 stars, 5 open issues (#53/#48/#14/#9/#8) 無變化；MOZE 無 7 月新更新
 - **2026-07-28**: Code Review recordsList.js — 發現 3 HIGH (H01: 全域缺少 escapeHTML 防護 description/account.name/category.name/statusLabel 直接嵌入 innerHTML、H02: 轉帳抵消邏輯未考慮跨帳本安全性、H03: 篩選彈窗 innerHTML 注入)、4 MEDIUM (M01: loadAndRenderRecords N+1 債務查詢、M02: updateSummary 死碼未使用、M03: 轉帳抵消邏輯 DRY 違反、M04: renderRecords 每次重新綁定事件監聽器)、4 LOW (日期推移強行 custom、硬編碼貨幣符號、搜尋邏輯可提取、缺少 aria-label 无障礙標籤)；產出 code-review-recordsList-2026-07-28.md；安全評分 5/10；832 tests 全過；GitHub: 79 stars (+1), 5 open issues (#53/#48/#14/#9/#8)；MOZE v4.2.1 (5天前: 圖表讀取速度優化、圖片記帳子項目備註修復)
 - **2026-07-27**: 修復 comparisonReport CSV export 測試回歸 (3 tests) — `42fcfdd` commit 將 CSV header 改為中文輸出（期間類型、全部/僅支出），但測試仍期望英文 key；修正 3 個 assertion：`比較類型→期間類型`、`篩選類型,all→全部`、`篩選類型,expense→僅支出`；832 tests 全過；ESLint 乾淨；GitHub: 78 stars, 5 open issues (新增 #53 iOS 靈動島問題，commit 8b3317d 已修相同問題)
