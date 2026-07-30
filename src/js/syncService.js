@@ -2253,11 +2253,28 @@ export class SyncService {
                 break
             }
             case 'recurring_transactions': {
+                // P01 修復：先用 UUID 查找本地 ID，避免遠端整數 ID 不匹配
+                let targetId = id
+                if (data?.uuid) {
+                    const existing = await this.dataService.getByUUID(
+                        'recurring_transactions',
+                        data.uuid
+                    )
+                    if (existing) {
+                        targetId = existing.id
+                    } else {
+                        console.log(
+                            '[SyncService] recurring_transactions update skipped (not found locally):',
+                            data.uuid
+                        )
+                        break
+                    }
+                }
                 let resolvedRecurring = await this._resolveLedgerId(data)
                 resolvedRecurring =
                     await this._resolveRecurringAccountId(resolvedRecurring)
                 await this.dataService.updateRecurringTransaction(
-                    id,
+                    targetId,
                     resolvedRecurring,
                     true
                 )

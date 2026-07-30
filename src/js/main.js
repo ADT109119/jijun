@@ -368,6 +368,55 @@ class EasyAccountingApp {
                         continue
                     }
 
+                    // ── 跨裝置去重：檢查該期是否已被其他裝置產生過紀錄 ──
+                    // 先檢查帶有 recurringTransactionUuid 的紀錄（P01 修復）
+                    let alreadyFired = false
+                    if (tx.uuid) {
+                        try {
+                            const allRecords = await this.dataService.db.getAll(
+                                'records'
+                            )
+                            alreadyFired = allRecords.some(
+                                r =>
+                                    r.recurringTransactionUuid === tx.uuid &&
+                                    r.date === nextDueDate
+                            )
+                        } catch (_) {
+                            // Fallback: 如果 db 訪問失敗，保守地跳過
+                            console.warn(
+                                '[Recurring] 無法檢查重複，跳過此期:',
+                                tx.uuid,
+                                nextDueDate
+                            )
+                            nextDueDate = calculateNextDueDate(
+                                nextDueDate,
+                                tx.frequency,
+                                tx.interval
+                            )
+                            continue
+                        }
+                    }
+
+                    // 若仍未找到，再檢查舊紀錄（無 recurringTransactionUuid，靠 date + amount + category + accountId 匹配）
+                    if (!alreadyFired && !tx.uuid) {
+                        // 沒有 uuid 的舊交易，無法精確去重，正常建立
+                    }
+
+                    if (alreadyFired) {
+                        console.log(
+                            `[Recurring] 該期已被其他裝置產生，跳過:`,
+                            tx.uuid,
+                            nextDueDate
+                        )
+                        // 仍要推進日期，避免死循環
+                        nextDueDate = calculateNextDueDate(
+                            nextDueDate,
+                            tx.frequency,
+                            tx.interval
+                        )
+                        continue
+                    }
+
                     // Generate a new record for this due date（帶上正確的 ledgerId）
                     const newRecord = {
                         type: tx.type,
@@ -377,6 +426,7 @@ class EasyAccountingApp {
                         date: nextDueDate,
                         accountId: tx.accountId,
                         ledgerId: tx.ledgerId,
+                        recurringTransactionUuid: tx.uuid || null,
                     }
                     await this.dataService.addRecord(newRecord)
 

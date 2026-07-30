@@ -408,4 +408,57 @@ describe('SyncService', () => {
             expect(refreshSpy).toHaveBeenCalled()
         })
     })
+
+    // ── P01: UUID-based update for recurring_transactions ──
+    describe('P01: _applyUpdate recurring_transactions uses UUID lookup', () => {
+        let ds, ss
+        const recurringUuid = 'rt-uuid-001'
+
+        beforeEach(() => {
+            vi.clearAllMocks()
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) => {
+                    // _applyUpdate 內部會查, 我的 fix 也會查 — 回傳相同的
+                    if (storeName === 'recurring_transactions' && uuid === recurringUuid) {
+                        return { id: 42, uuid: recurringUuid }
+                    }
+                    return null
+                }),
+                updateRecurringTransaction: vi.fn(async () => true),
+                addRecurringTransaction: vi.fn(async () => 1),
+                getAccounts: vi.fn(async () => []),
+                getLedgers: vi.fn(async () => []),
+            })
+            ss = createSyncService(ds)
+        })
+
+        it('當 UUID 存在時，用 getByUUID 找到本地 ID 並更新', async () => {
+            await ss._applyUpdate(
+                'recurring_transactions',
+                999, // 遠端 ID
+                { uuid: recurringUuid, amount: 200 }
+            )
+
+            // _applyUpdate 內部 getByUUID → _applyUpdateWithId(42) → 我的 fix getByUUID(42)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(
+                42,
+                expect.any(Object),
+                true
+            )
+            // 不應走 _applyAdd
+            expect(ds.addRecurringTransaction).not.toHaveBeenCalled()
+        })
+
+        it('沒有 UUID 的資料時，走 legacy fallback（不更新）', async () => {
+            await ss._applyUpdate(
+                'recurring_transactions',
+                55,
+                { amount: 300 } // 沒有 uuid
+            )
+
+            // Legacy: 沒有 UUID 就只是 console.warn，不執行更新
+            expect(ds.updateRecurringTransaction).not.toHaveBeenCalled()
+            expect(ds.addRecurringTransaction).not.toHaveBeenCalled()
+        })
+    })
 })
