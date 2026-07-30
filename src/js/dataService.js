@@ -3478,7 +3478,7 @@ class DataService {
             const records = await this.getRecords({ ledgerId })
             if (groupId === undefined) {
                 // Return all records that belong to any group
-                return records.filter(r => r.groupId != null)
+                return records.filter(r => r.groupId !== null)
             }
             return records.filter(r => r.groupId === groupId)
         } catch (e) {
@@ -3512,6 +3512,7 @@ class DataService {
                     .filter(r => r.type === 'income')
                     .reduce((s, r) => s + (r.amount || 0), 0)
                 const dates = groupRecs.map(r => r.date).filter(Boolean)
+                const sorted = [...dates].sort()
                 return {
                     ...meta,
                     recordCount: groupRecs.length,
@@ -3519,10 +3520,10 @@ class DataService {
                     totalIncome,
                     netAmount: totalIncome - totalExpense,
                     settled: meta.settled,
-                    dateFrom: dates.sort()[0] || null,
+                    dateFrom: sorted[0] || null,
                     dateTo:
-                        dates.length > 0
-                            ? dates.sort().pop()
+                        sorted.length > 0
+                            ? sorted[sorted.length - 1]
                             : null,
                     recordIds: groupRecs.map(r => r.id),
                 }
