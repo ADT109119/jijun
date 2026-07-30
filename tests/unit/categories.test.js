@@ -19,6 +19,38 @@ describe('CATEGORIES', () => {
         expect(CATEGORIES.income.length).toBeGreaterThan(0)
     })
 
+    it('expense 有恰好 9 個分類', () => {
+        expect(CATEGORIES.expense).toHaveLength(9)
+    })
+
+    it('income 有恰好 9 個分類', () => {
+        expect(CATEGORIES.income).toHaveLength(9)
+    })
+
+    it('expense 所有分類 ID 不重複', () => {
+        const ids = CATEGORIES.expense.map(c => c.id)
+        expect(new Set(ids).size).toBe(ids.length)
+    })
+
+    it('income 所有分類 ID 不重複', () => {
+        const ids = CATEGORIES.income.map(c => c.id)
+        expect(new Set(ids).size).toBe(ids.length)
+    })
+
+    it('所有 color 是合法的 Tailwind 類別 (bg-xxx-nnn)', () => {
+        const all = [...CATEGORIES.expense, ...CATEGORIES.income]
+        for (const cat of all) {
+            expect(cat.color).toMatch(/^bg-[a-z]+-\d{3}$/)
+        }
+    })
+
+    it('所有 icon 是合法的 FontAwesome 類別 (fas fa-xxx)', () => {
+        const all = [...CATEGORIES.expense, ...CATEGORIES.income]
+        for (const cat of all) {
+            expect(cat.icon).toMatch(/^fas\sfa-/)
+        }
+    })
+
     it('每個分類都有 id, name, icon, color', () => {
         for (const type of ['expense', 'income']) {
             for (const cat of CATEGORIES[type]) {
@@ -63,7 +95,6 @@ describe('getCategoryById', () => {
 
     it('window.app 不存在時不會拋錯', () => {
         const savedApp = globalThis.window?.app
-        // 確保 window.app 不存在（setup.js 沒有設定）
         if (globalThis.window) delete globalThis.window.app
 
         expect(() => getCategoryById('expense', 'food')).not.toThrow()
@@ -71,6 +102,16 @@ describe('getCategoryById', () => {
         if (savedApp) {
             globalThis.window.app = savedApp
         }
+    })
+
+    it('空字串 id 回傳 undefined', () => {
+        expect(getCategoryById('expense', '')).toBeUndefined()
+        expect(getCategoryById('income', '')).toBeUndefined()
+    })
+
+    it('null id 回傳 undefined', () => {
+        expect(getCategoryById('expense', null)).toBeUndefined()
+        expect(getCategoryById('income', null)).toBeUndefined()
     })
 })
 
@@ -83,6 +124,22 @@ describe('getCategoryName', () => {
     it('不存在的分類回傳未知分類', () => {
         expect(getCategoryName('expense', 'fake')).toBe('未知分類')
     })
+
+    it('空字串 id 回傳未知分類', () => {
+        expect(getCategoryName('expense', '')).toBe('未知分類')
+    })
+
+    it('null id 回傳未知分類', () => {
+        expect(getCategoryName('expense', null)).toBe('未知分類')
+    })
+
+    it('returns string for valid category', () => {
+        expect(typeof getCategoryName('expense', 'food')).toBe('string')
+    })
+
+    it('returns fallback string for undefined type', () => {
+        expect(getCategoryName(undefined, 'food')).toBe('未知分類')
+    })
 })
 
 describe('getCategoryIcon', () => {
@@ -93,5 +150,21 @@ describe('getCategoryIcon', () => {
 
     it('不存在的分類回傳預設 icon', () => {
         expect(getCategoryIcon('expense', 'fake')).toBe('fas fa-question')
+    })
+
+    it('空字串 id 回傳預設 icon', () => {
+        expect(getCategoryIcon('expense', '')).toBe('fas fa-question')
+    })
+
+    it('null id 回傳預設 icon', () => {
+        expect(getCategoryIcon('expense', null)).toBe('fas fa-question')
+    })
+
+    it('returns string for valid category', () => {
+        expect(typeof getCategoryIcon('expense', 'food')).toBe('string')
+    })
+
+    it('returns fallback for undefined type', () => {
+        expect(getCategoryIcon(undefined, 'food')).toBe('fas fa-question')
     })
 })

@@ -242,7 +242,7 @@ describe('processRecurringTransactions', () => {
                     {
                         id: 10,
                         date: '2026-08-01',
-                        recurringTransactionUuid: 'rt-uuid-999', // 不同 UUID
+                        recurringTransactionUuid: 'rt-uuid-999',
                         type: 'expense',
                         amount: 100,
                     },
@@ -281,7 +281,7 @@ describe('processRecurringTransactions', () => {
                         ledgerId: 1,
                     },
                 ],
-                records: [], // 空
+                records: [],
             })
 
             app = createMockApp(ds)
@@ -384,16 +384,13 @@ describe('processRecurringTransactions', () => {
                 ],
                 records: [
                     {
-                        // Device A 已產生 08/01
                         date: '2026-08-01',
                         recurringTransactionUuid: 'rt-uuid-001',
                     },
                     {
-                        // Device A 已產生 08/08
                         date: '2026-08-08',
                         recurringTransactionUuid: 'rt-uuid-001',
                     },
-                    // 08/15 尚未被任何裝置產生
                 ],
             })
 
@@ -438,7 +435,6 @@ describe('processRecurringTransactions', () => {
                     },
                 ],
                 records: [
-                    // 已被產生
                     {
                         date: '2026-08-01',
                         recurringTransactionUuid: 'rt-uuid-001',
@@ -523,6 +519,510 @@ describe('processRecurringTransactions', () => {
             // Should still advance nextDueDate
             expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
                 nextDueDate: '2026-09-01',
+            })
+        })
+    })
+
+    // ── MAX_ITERATIONS guard ─────────────────────────
+    describe('MAX_ITERATIONS guard', () => {
+        it('超過 MAX_ITERATIONS (24) 後停止，即使 nextDueDate 仍 <= today', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 10,
+                        category: 'Food',
+                        description: 'Daily coffee',
+                        nextDueDate: '2026-06-01',
+                        frequency: 'daily',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Should have created exactly 24 records (MAX_ITERATIONS)
+            expect(ds.addRecord).toHaveBeenCalledTimes(24)
+            // Check each record date is correct
+            for (let i = 0; i < 24; i++) {
+                const day = String(1 + i).padStart(2, '0')
+                expect(ds.addRecord).toHaveBeenCalledWith(
+                    expect.objectContaining({ date: `2026-06-${day}` })
+                )
+            }
+            // nextDueDate advanced by 24 days from 2026-06-01 → 2026-06-25
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-06-25',
+            })
+        })
+    })
+
+    // ── skipRules integration ────────────────────────
+    describe('skipRules integration', () => {
+        afterEach(() => {
+            vi.mocked(shouldSkipDate).mockRestore()
+        })
+
+        it('被跳過的日期不建立紀錄但正常推進 nextDueDate', async () => {
+            const today = '2026-08-02'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            vi.mocked(shouldSkipDate).mockImplementation((date) => {
+                const y = date.getFullYear()
+                const m = String(date.getMonth() + 1).padStart(2, '0')
+                const d = String(date.getDate()).padStart(2, '0')
+                return `${y}-${m}-${d}` === '2026-08-01'
+            })
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Daily',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'daily',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                        skipRules: [{ type: 'date', value: '2026-08-01' }],
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // 08/01 was skipped, but 08/02 should be created
+            expect(ds.addRecord).toHaveBeenCalledTimes(1)
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ date: '2026-08-02' })
+            )
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-08-03',
+            })
+        })
+
+        it('連續跳過多個日期後，下一個非跳過日期仍正常處理', async () => {
+            const today = '2026-08-05'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            vi.mocked(shouldSkipDate).mockImplementation((date) => {
+                const y = date.getFullYear()
+                const m = String(date.getMonth() + 1).padStart(2, '0')
+                const d = String(date.getDate()).padStart(2, '0')
+                const ds = `${y}-${m}-${d}`
+                return ds === '2026-08-01' || ds === '2026-08-02' || ds === '2026-08-03'
+            })
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Daily',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'daily',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                        skipRules: [{ type: 'date', value: '2026-08-01' }],
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // 08/04 and 08/05 are both <= today, both get processed
+            expect(ds.addRecord).toHaveBeenCalledTimes(2)
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ date: '2026-08-04' })
+            )
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ date: '2026-08-05' })
+            )
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-08-06',
+            })
+        })
+    })
+
+    // ── Error handling ──────────────────────────────
+    describe('Error handling', () => {
+        it('addRecord 拋錯時該筆交易被跳過（不崩潰）', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Monthly',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+            ds.addRecord = vi.fn().mockRejectedValue(new Error('DB write error'))
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // addRecord was called but threw
+            expect(ds.addRecord).toHaveBeenCalled()
+            // updateRecurringTransaction should NOT be called since the error was caught before reaching it
+            expect(ds.updateRecurringTransaction).not.toHaveBeenCalled()
+        })
+
+        it('updateRecurringTransaction 拋錯時不崩潰', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Monthly',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+            ds.updateRecurringTransaction = vi
+                .fn()
+                .mockRejectedValue(new Error('Update failed'))
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Record was created successfully
+            expect(ds.addRecord).toHaveBeenCalled()
+            // updateRecurringTransaction was called and threw (caught by try-catch)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalled()
+        })
+    })
+
+    // ── Multiple transactions ────────────────────────
+    describe('Multiple transactions', () => {
+        it('可獨立處理 2 筆以上的週期性交易', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-1',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Rent',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                    {
+                        id: 2,
+                        uuid: 'rt-2',
+                        type: 'expense',
+                        amount: 200,
+                        category: 'Transport',
+                        description: 'Bus pass',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            expect(ds.addRecord).toHaveBeenCalledTimes(2)
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ recurringTransactionUuid: 'rt-1' })
+            )
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ recurringTransactionUuid: 'rt-2' })
+            )
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledTimes(2)
+        })
+
+        it('一筆失敗不影響另一筆', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-1',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Rent',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                    {
+                        id: 2,
+                        uuid: 'rt-2',
+                        type: 'expense',
+                        amount: 200,
+                        category: 'Transport',
+                        description: 'Bus pass',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+            // First addRecord call fails, second succeeds
+            ds.addRecord = vi
+                .fn()
+                .mockRejectedValueOnce(new Error('fail'))
+                .mockResolvedValueOnce(2)
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Both addRecord calls were made
+            expect(ds.addRecord).toHaveBeenCalledTimes(2)
+            // Only the second transaction should have updateRecurringTransaction called
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledTimes(1)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(2, {
+                nextDueDate: '2026-09-01',
+            })
+        })
+    })
+
+    // ── Edge: nextDueDate 邊界 ──────────────────────
+    describe('nextDueDate 邊界條件', () => {
+        it('nextDueDate 等於 today 時建立紀錄', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Due today',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({ date: '2026-08-01' })
+            )
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-09-01',
+            })
+        })
+
+        it('nextDueDate 大於 today 時不建立紀錄', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Future',
+                        nextDueDate: '2026-08-02',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            expect(ds.addRecord).not.toHaveBeenCalled()
+            expect(ds.updateRecurringTransaction).not.toHaveBeenCalled()
+        })
+
+        it('空陣列的週期性交易不產生任何動作', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            expect(ds.addRecord).not.toHaveBeenCalled()
+            expect(ds.updateRecurringTransaction).not.toHaveBeenCalled()
+        })
+    })
+
+    // ── Frequency types ─────────────────────────────
+    describe('Frequency types', () => {
+        it('daily frequency 正確計算日期', async () => {
+            const today = '2026-08-03'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 50,
+                        category: 'Food',
+                        description: 'Daily snack',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'daily',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Records for 08/01, 08/02, 08/03
+            expect(ds.addRecord).toHaveBeenCalledTimes(3)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-08-04',
+            })
+        })
+
+        it('weekly frequency 正確計算日期', async () => {
+            const today = '2026-08-15'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 200,
+                        category: 'Transport',
+                        description: 'Weekly pass',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'weekly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Records for 08/01, 08/08, 08/15
+            expect(ds.addRecord).toHaveBeenCalledTimes(3)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-08-22',
+            })
+        })
+
+        it('yearly frequency 正確計算日期', async () => {
+            const today = '2028-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 1000,
+                        category: 'Insurance',
+                        description: 'Yearly insurance',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'yearly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Records for 2026-08-01, 2027-08-01, 2028-08-01
+            expect(ds.addRecord).toHaveBeenCalledTimes(3)
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2029-08-01',
             })
         })
     })
