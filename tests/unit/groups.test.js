@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import DataService from '../../src/js/dataService.js'
+import { formatDateToString } from '../../src/js/utils.js'
 
 function clearMockData() {
     if (globalThis.indexedDB && globalThis.indexedDB._storeData) {
@@ -434,6 +435,299 @@ describe('DataService — Record Groups', () => {
             const records = await ds.getRecords({ allLedgers: true })
             const linkedRecords = records.filter(r => r.groupId)
             expect(linkedRecords).toHaveLength(0)
+        })
+    })
+
+    describe('settleGroup() 進階', () => {
+        it('群組不存在時拋錯', async () => {
+            await expect(ds.settleGroup('nonexistent', null, null, '2024-06-01', '結清')).rejects.toThrow('Group not found')
+        })
+
+        it('未提供 date 時使用今日日期', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            await ds.settleGroup('g1', 300, null, null, '結清')
+
+            const records = await ds.getRecords({ allLedgers: true })
+            const settle = records.find(r => r.category === 'group_settlement')
+            expect(settle.date).toBe(formatDateToString(new Date()))
+        })
+
+        it('未提供 note 時自動生成群組結清描述', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            await ds.settleGroup('g1', 300, null, '2024-06-01')
+
+            const records = await ds.getRecords({ allLedgers: true })
+            const settle = records.find(r => r.category === 'group_settlement')
+            expect(settle.description).toBe('群組結清: 公款')
+        })
+
+        it('淨額為正（收入多）時產生 expense 紀錄', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'income', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const { record } = await ds.settleGroup('g1', null, null, '2024-06-01', '結清')
+            expect(record.type).toBe('expense')
+            expect(record.amount).toBe(300)
+        })
+
+        it('自訂 settleAmount 覆蓋預設金額並以 Math.abs 正規化', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'income', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const { record } = await ds.settleGroup('g1', -150, null, '2024-06-01', '結清')
+            expect(record.amount).toBe(150)
+        })
+
+        it('正確繼承 meta.ledgerId', async () => {
+            ds.activeLedgerId = 2
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 2 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 2 })
+            await tx.done
+
+            const { record } = await ds.settleGroup('g1', 300, null, '2024-06-01', '結清')
+            expect(record.ledgerId).toBe(2)
+        })
+
+        it('產生的紀錄 groupStatus 為 settled', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const { record } = await ds.settleGroup('g1', 300, null, '2024-06-01', '結清')
+            expect(record.groupStatus).toBe('settled')
+        })
+
+        it('保留 meta 原有欄位（name、createdAt）', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', createdAt: 1000, ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            await ds.settleGroup('g1', 300, null, '2024-06-01', '結清')
+
+            const meta = await ds.getGroupMeta('g1')
+            expect(meta.name).toBe('公款')
+            expect(meta.createdAt).toBe(1000)
+            expect(meta.settled).toBe(true)
+        })
+    })
+
+    describe('partialSettleGroup() 進階', () => {
+        it('群組不存在時拋錯', async () => {
+            await expect(ds.partialSettleGroup('nonexistent', 100, null, '2024-06-01', '退款')).rejects.toThrow('Group not found')
+        })
+
+        it('連續兩次部分退款，第二次淨額計算排除第一次的 group_settlement', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'income', amount: 100, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const first = await ds.partialSettleGroup('g1', 100, null, '2024-06-01', '退款1')
+            expect(first.type).toBe('income')
+
+            const second = await ds.partialSettleGroup('g1', 50, null, '2024-06-01', '退款2')
+            expect(second.type).toBe('income')
+            expect(second.amount).toBe(50)
+
+            const records = await ds.getRecords({ allLedgers: true })
+            const settlements = records.filter(r => r.category === 'group_settlement')
+            expect(settlements).toHaveLength(2)
+        })
+
+        it('未提供 date 時使用今日日期', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const record = await ds.partialSettleGroup('g1', 100, null, null, '退款')
+            expect(record.date).toBe(formatDateToString(new Date()))
+        })
+
+        it('未提供 note 時使用部分退款預設描述', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const record = await ds.partialSettleGroup('g1', 100, null, '2024-06-01')
+            expect(record.description).toBe('部分退款: 公款')
+        })
+
+        it('產生紀錄的 groupStatus 為 active（非 settled）', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const record = await ds.partialSettleGroup('g1', 100, null, '2024-06-01', '退款')
+            expect(record.groupStatus).toBe('active')
+        })
+
+        it('正確繼承 meta.ledgerId', async () => {
+            ds.activeLedgerId = 2
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 2 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 2 })
+            await tx.done
+
+            const record = await ds.partialSettleGroup('g1', 100, null, '2024-06-01', '退款')
+            expect(record.ledgerId).toBe(2)
+        })
+    })
+
+    describe('getGroups() dateFrom/dateTo/recordIds', () => {
+        it('dateFrom 等於最小日期、dateTo 等於最大日期', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-03', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const groups = await ds.getGroups()
+            expect(groups[0].dateFrom).toBe('2024-01-01')
+            expect(groups[0].dateTo).toBe('2024-01-03')
+        })
+
+        it('空群組 dateFrom/dateTo 為 null', async () => {
+            await ds.saveGroupMeta({ id: 'empty', name: '空群組', ledgerId: 1 })
+            const groups = await ds.getGroups()
+            expect(groups[0].dateFrom).toBeNull()
+            expect(groups[0].dateTo).toBeNull()
+        })
+
+        it('recordIds 陣列包含該群組所有紀錄 ID', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            const id1 = await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            const id2 = await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const groups = await ds.getGroups()
+            expect(groups[0].recordIds).toEqual([id1, id2])
+        })
+    })
+
+    describe('unlinkRecordsFromGroup()', () => {
+        it('呼叫後 record.groupId 和 groupStatus 都為 null', async () => {
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', groupStatus: 'active', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', groupId: 'g1', groupStatus: 'active', ledgerId: 1 })
+            await tx.done
+
+            await ds.unlinkRecordsFromGroup('g1')
+
+            const records = await ds.getRecords({ allLedgers: true })
+            expect(records).toHaveLength(2)
+            expect(records.every(r => r.groupId === null)).toBe(true)
+            expect(records.every(r => r.groupStatus === null)).toBe(true)
+        })
+
+        it('非存在群組的 unlink 呼叫不報錯', async () => {
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', ledgerId: 1 })
+            await tx.done
+
+            await expect(ds.unlinkRecordsFromGroup('nonexistent')).resolves.toBeUndefined()
+            const records = await ds.getRecords({ allLedgers: true })
+            expect(records).toHaveLength(1)
+        })
+    })
+
+    describe('群組生命周期整合', () => {
+        it('完整生命周期：建立 → 支出 → 部分退款 → 結清', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            let groups = await ds.getGroups()
+            expect(groups[0].netAmount).toBe(-500)
+
+            await ds.partialSettleGroup('g1', 100, null, '2024-06-01', '部分退款')
+
+            groups = await ds.getGroups()
+            expect(groups[0].netAmount).toBe(-500)
+            expect(groups[0].settled).toBe(false)
+
+            const { record } = await ds.settleGroup('g1', null, null, '2024-06-02', '結清')
+            expect(record.amount).toBe(500)
+
+            const meta = await ds.getGroupMeta('g1')
+            expect(meta.settled).toBe(true)
+        })
+
+        it('多筆 group_settlement 紀錄在 getGroups 中都被排除', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'income', amount: 100, date: '2024-01-05', groupId: 'g1', category: 'group_settlement', ledgerId: 1 })
+            await tx.store.add({ type: 'income', amount: 200, date: '2024-01-06', groupId: 'g1', category: 'group_settlement', ledgerId: 1 })
+            await tx.done
+
+            const groups = await ds.getGroups()
+            expect(groups[0].totalIncome).toBe(0)
+            expect(groups[0].totalExpense).toBe(500)
+            expect(groups[0].netAmount).toBe(-500)
+        })
+    })
+
+    describe('saveGroupMeta 更新', () => {
+        it('更新已有群組名稱，保留 createdAt', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '舊名稱', createdAt: 1000, ledgerId: 1 })
+
+            const meta = await ds.getGroupMeta('g1')
+            await ds.saveGroupMeta({ ...meta, name: '新名稱' })
+
+            const updated = await ds.getGroupMeta('g1')
+            expect(updated.name).toBe('新名稱')
+            expect(updated.createdAt).toBe(1000)
+            expect(updated.ledgerId).toBe(1)
+        })
+    })
+
+    describe('邊界情境', () => {
+        it('getGroupRecords 跨帳本隔離（預設使用 activeLedgerId，可指定 ledgerId）', async () => {
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-01', groupId: 'g1', ledgerId: 2 })
+            await tx.done
+
+            const defaultRecords = await ds.getGroupRecords('g1')
+            expect(defaultRecords).toHaveLength(1)
+            expect(defaultRecords[0].ledgerId).toBe(1)
+
+            const ledger2Records = await ds.getGroupRecords('g1', 2)
+            expect(ledger2Records).toHaveLength(1)
+            expect(ledger2Records[0].ledgerId).toBe(2)
+        })
+
+        it('getAllGroupMeta 無參數時回傳所有帳本群組', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '帳本1群組', ledgerId: 1 })
+            await ds.saveGroupMeta({ id: 'g2', name: '帳本2群組', ledgerId: 2 })
+
+            const all = await ds.getAllGroupMeta()
+            expect(all).toHaveLength(2)
         })
     })
 })
