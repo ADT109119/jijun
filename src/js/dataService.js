@@ -3455,6 +3455,26 @@ class DataService {
         }
     }
 
+    // --- Private helpers ---
+
+    /**
+     * 計算群組淨額（排除 group_settlement 紀錄）
+     * @param {Array} groupRecords
+     * @returns {{totalExpense: number, totalIncome: number, netAmount: number}}
+     */
+    _calculateGroupNet(groupRecords) {
+        const nonSettlement = groupRecords.filter(
+            r => r.category !== 'group_settlement'
+        )
+        const totalExpense = nonSettlement
+            .filter(r => r.type === 'expense')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+        const totalIncome = nonSettlement
+            .filter(r => r.type === 'income')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+        return { totalExpense, totalIncome, netAmount: totalIncome - totalExpense }
+    }
+
     async unlinkRecordsFromGroup(groupId) {
         try {
             const records = await this.getRecords({ allLedgers: true })
@@ -3502,15 +3522,7 @@ class DataService {
 
             return metas.map(meta => {
                 const groupRecs = byGroup.get(meta.id) || []
-                const nonSettlement = groupRecs.filter(
-                    r => r.category !== 'group_settlement'
-                )
-                const totalExpense = nonSettlement
-                    .filter(r => r.type === 'expense')
-                    .reduce((s, r) => s + (r.amount || 0), 0)
-                const totalIncome = nonSettlement
-                    .filter(r => r.type === 'income')
-                    .reduce((s, r) => s + (r.amount || 0), 0)
+                const { totalExpense, totalIncome, netAmount } = this._calculateGroupNet(groupRecs)
                 const dates = groupRecs.map(r => r.date).filter(Boolean)
                 const sorted = [...dates].sort()
                 return {
@@ -3541,16 +3553,7 @@ class DataService {
 
             // 計算淨額方向（排除已結清紀錄）
             const groupRecords = await this.getGroupRecords(groupId)
-            const nonSettlement = groupRecords.filter(
-                r => r.category !== 'group_settlement'
-            )
-            const totalExpense = nonSettlement
-                .filter(r => r.type === 'expense')
-                .reduce((s, r) => s + (r.amount || 0), 0)
-            const totalIncome = nonSettlement
-                .filter(r => r.type === 'income')
-                .reduce((s, r) => s + (r.amount || 0), 0)
-            const netAmount = totalIncome - totalExpense
+            const { netAmount } = this._calculateGroupNet(groupRecords)
 
             // 淨額 > 0（收入多，我拿多）→ 產生支出紀錄
             // 淨額 < 0（支出多，我代墊）→ 產生收入紀錄
@@ -3593,18 +3596,14 @@ class DataService {
             const meta = await this.getGroupMeta(groupId)
             if (!meta) throw new Error('Group not found')
 
+            // M01: 金額驗證
+            if (amount === null || amount === undefined || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
+                throw new Error(`部分退款金額無效: ${amount}`)
+            }
+
             // 計算淨額方向（排除已結清紀錄）
             const groupRecords = await this.getGroupRecords(groupId)
-            const nonSettlement = groupRecords.filter(
-                r => r.category !== 'group_settlement'
-            )
-            const totalExpense = nonSettlement
-                .filter(r => r.type === 'expense')
-                .reduce((s, r) => s + (r.amount || 0), 0)
-            const totalIncome = nonSettlement
-                .filter(r => r.type === 'income')
-                .reduce((s, r) => s + (r.amount || 0), 0)
-            const netAmount = totalIncome - totalExpense
+            const { netAmount } = this._calculateGroupNet(groupRecords)
 
             // 淨額 >= 0（收入多，我多拿）→ 退款是 expense（我退錢）
             // 淨額 < 0（支出多，我代墊）→ 退款是 income（有人還我）

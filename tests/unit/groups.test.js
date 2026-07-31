@@ -121,6 +121,69 @@ describe('DataService — Record Groups', () => {
         })
     })
 
+    describe('_calculateGroupNet()', () => {
+        it('M03: 基本淨額計算', () => {
+            const records = [
+                { type: 'expense', amount: 300 },
+                { type: 'income', amount: 500 },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(300)
+            expect(result.totalIncome).toBe(500)
+            expect(result.netAmount).toBe(200)
+        })
+
+        it('M03: 空陣列回傳零', () => {
+            const result = ds._calculateGroupNet([])
+            expect(result.totalExpense).toBe(0)
+            expect(result.totalIncome).toBe(0)
+            expect(result.netAmount).toBe(0)
+        })
+
+        it('M03: 排除 group_settlement 類別', () => {
+            const records = [
+                { type: 'expense', amount: 300 },
+                { type: 'income', amount: 100, category: 'group_settlement' },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(300)
+            expect(result.totalIncome).toBe(0)
+            expect(result.netAmount).toBe(-300)
+        })
+
+        it('M03: 金額為 null/undefined 時視為 0', () => {
+            const records = [
+                { type: 'expense', amount: 300 },
+                { type: 'expense', amount: null },
+                { type: 'income' },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(300)
+            expect(result.totalIncome).toBe(0)
+        })
+
+        it('M03: 純支出為負淨額', () => {
+            const records = [
+                { type: 'expense', amount: 500 },
+                { type: 'expense', amount: 200 },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(700)
+            expect(result.totalIncome).toBe(0)
+            expect(result.netAmount).toBe(-700)
+        })
+
+        it('M03: 純收入為正淨額', () => {
+            const records = [
+                { type: 'income', amount: 1000 },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(0)
+            expect(result.totalIncome).toBe(1000)
+            expect(result.netAmount).toBe(1000)
+        })
+    })
+
     describe('settleGroup()', () => {
         it('結清群組後產生 group_settlement 紀錄並標記 settled', async () => {
             await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
@@ -187,6 +250,42 @@ describe('DataService — Record Groups', () => {
             expect(record.type).toBe('expense')
             expect(record.category).toBe('group_settlement')
             expect(record.amount).toBe(80)
+        })
+
+        // M01: 金額驗證
+        it('M01: null 金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', null, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: undefined 金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', undefined, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: 負數金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', -100, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: 零金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', 0, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: NaN 金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', NaN, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: Infinity 金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', Infinity, null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: 字串金額拋出錯誤', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            await expect(ds.partialSettleGroup('g1', '100', null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
         })
     })
 
