@@ -157,25 +157,16 @@ export class DebtManager {
     // Load group summary (always independent of contact filter)
     let groupCardHtml = '';
     try {
-      if (typeof this.dataService.getAllGroupMeta === 'function') {
-        const allGroupMeta = await this.dataService.getAllGroupMeta();
-        const unsettledGroups = allGroupMeta.filter(gm => gm.settled !== true);
-        const groupRecords = await this.dataService.getGroupRecords();
-        let totalGroupNet = 0;
-        unsettledGroups.forEach(gm => {
-          const groupRecs = groupRecords.filter(r => r.groupId === gm.id);
-          const expense = groupRecs.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
-          const income = groupRecs.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0);
-          totalGroupNet += (expense - income);
-        });
-        groupCardHtml = `
-          <div class="bg-emerald-500/10 rounded-xl p-4 text-center border border-emerald-500/20">
-            <p class="text-sm text-emerald-600 font-medium">未結清群組</p>
-            <p class="text-lg font-bold text-emerald-600">${unsettledGroups.length} 個</p>
-            <p class="text-xs text-emerald-600/70 mt-1">淨額 ${formatCurrency(totalGroupNet)}</p>
-          </div>
-        `;
-      }
+      const groups = await this.dataService.getGroups();
+      const unsettledGroups = groups.filter(g => !g.settled);
+      const totalGroupNet = unsettledGroups.reduce((s, g) => s + g.netAmount, 0);
+      groupCardHtml = `
+        <div class="bg-emerald-500/10 rounded-xl p-4 text-center border border-emerald-500/20">
+          <p class="text-sm text-emerald-600 font-medium">未結清群組</p>
+          <p class="text-lg font-bold text-emerald-600">${unsettledGroups.length} 個</p>
+          <p class="text-xs text-emerald-600/70 mt-1">淨額 ${formatCurrency(totalGroupNet)}</p>
+        </div>
+      `;
     } catch (e) {
       console.warn('Failed to load group summary:', e);
     }
@@ -365,41 +356,18 @@ export class DebtManager {
 
     // Load groups if enabled
     let groups = [];
-    if (this.showGroups && typeof this.dataService.getAllGroupMeta === 'function') {
+    if (this.showGroups && typeof this.dataService.getGroups === 'function') {
       try {
-        const allGroupMeta = await this.dataService.getAllGroupMeta();
-        const allGroupRecords = await this.dataService.getGroupRecords();
-        
+        const allGroups = await this.dataService.getGroups();
+
         // Filter groups by settled status
-        let filteredGroups = allGroupMeta;
         if (this.currentFilter === 'unsettled') {
-          filteredGroups = allGroupMeta.filter(gm => gm.settled !== true);
+          groups = allGroups.filter(g => !g.settled);
         } else if (this.currentFilter === 'settled') {
-          filteredGroups = allGroupMeta.filter(gm => gm.settled === true);
+          groups = allGroups.filter(g => g.settled);
+        } else {
+          groups = allGroups;
         }
-        
-        // Build group entries with computed stats
-        groups = filteredGroups.map(gm => {
-          const groupRecs = allGroupRecords.filter(r => r.groupId === gm.id);
-          const totalExpense = groupRecs.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
-          const totalIncome = groupRecs.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0);
-          const netAmount = totalIncome - totalExpense;
-          const dates = groupRecs.map(r => r.date).sort();
-          return {
-            id: gm.id,
-            name: gm.name || `群組 ${gm.id.slice(0, 8)}`,
-            settled: gm.settled,
-            settledAt: gm.settledAt,
-            recordCount: groupRecs.length,
-            totalExpense,
-            totalIncome,
-            netAmount,
-            dateFrom: dates[0] || gm.createdAt,
-            dateTo: dates[dates.length - 1] || gm.createdAt,
-            recordIds: groupRecs.map(r => r.id),
-            isGroup: true,
-          };
-        });
       } catch (e) {
         console.warn('Failed to load groups for debt list:', e);
       }
@@ -620,7 +588,6 @@ export class DebtManager {
 
     // Build group card HTML
     const groupCardHtml = (group) => {
-      const netLabel = group.netAmount < 0 ? `公司欠我 ${formatCurrency(Math.abs(group.netAmount))}` : group.netAmount > 0 ? `我多拿 ${formatCurrency(group.netAmount)}` : '已平衡';
       const netClass = group.netAmount < 0 ? 'text-wabi-income' : group.netAmount > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary';
       const isGroupHighlighted = this.highlightGroupId === group.id;
       return `
@@ -1683,11 +1650,10 @@ export class DebtManager {
     const groupMeta = await this.dataService.getGroupMeta(groupId);
     if (!groupMeta) return;
     const groupRecords = await this.dataService.getGroupRecords(groupId);
-    const nonSettlement = groupRecords.filter(r => r.category !== 'group_settlement');
-    const totalExpense = nonSettlement.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
-    const totalIncome = nonSettlement.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0);
-    const netAmount = totalIncome - totalExpense;
-    const isNetPositive = netAmount < 0; // I paid more
+    const { netAmount, totalExpense, totalIncome } = this.dataService._calculateGroupNet(groupRecords);
+    // netAmount < 0: 支出多(代墊) → 群組欠我 → 結清產生收入
+    // netAmount > 0: 收入多(溢領) → 我欠群組 → 結清產生支出
+    const netDirection = netAmount < 0 ? `${escapeHTML(groupMeta.name)}欠我` : netAmount > 0 ? `我欠${escapeHTML(groupMeta.name)}` : '已平衡';
 
     const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
     const isAdvancedMode = !!advancedModeSetting?.value;
@@ -1709,11 +1675,11 @@ export class DebtManager {
         <div class="bg-wabi-bg rounded-lg p-3 mb-4 space-y-1">
           <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">支出總額</span><span class="font-medium text-wabi-expense">${formatCurrency(totalExpense)}</span></div>
           <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">收入總額</span><span class="font-medium text-wabi-income">${formatCurrency(totalIncome)}</span></div>
-          <div class="flex justify-between text-sm border-t border-wabi-border pt-1"><span class="text-wabi-text-secondary font-medium">淨額</span><span class="font-bold ${isNetPositive ? 'text-wabi-income' : 'text-wabi-expense'}">${isNetPositive ? '公司欠我' : '我多拿'} ${formatCurrency(Math.abs(netAmount))}</span></div>
+          <div class="flex justify-between text-sm border-t border-wabi-border pt-1"><span class="text-wabi-text-secondary font-medium">淨額</span><span class="font-bold ${netAmount < 0 ? 'text-wabi-income' : netAmount > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${netDirection} ${formatCurrency(Math.abs(netAmount))}</span></div>
         </div>
         ${isAdvancedMode ? `
         <div class="mb-4">
-          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${isNetPositive ? '入帳' : '出帳'}帳戶</label>
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${netAmount >= 0 ? '出帳' : '入帳'}帳戶</label>
           <select id="group-settle-account" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
             ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
           </select>
@@ -1758,13 +1724,11 @@ export class DebtManager {
     const groupMeta = await this.dataService.getGroupMeta(groupId);
     if (!groupMeta) return;
     const groupRecords = await this.dataService.getGroupRecords(groupId);
-    const nonSettlement = groupRecords.filter(r => r.category !== 'group_settlement');
-    const totalExpense = nonSettlement.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0);
-    const totalIncome = nonSettlement.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0);
-    const netAmount = totalIncome - totalExpense;
-    // netAmount < 0: 支出多(代墊)→ 收款(拿回代墊款)
-    // netAmount > 0: 收入多(溢領)→ 退款(退還多拿的)
+    const { netAmount } = this.dataService._calculateGroupNet(groupRecords);
+    // netAmount < 0: 支出多(代墊) → 收款(拿回代墊款)
+    // netAmount > 0: 收入多(溢領) → 退款(退還多拿的)
     const isRefund = netAmount > 0;
+    const netDirection = netAmount < 0 ? `${escapeHTML(groupMeta.name)}欠我` : netAmount > 0 ? `我欠${escapeHTML(groupMeta.name)}` : '已平衡';
 
     const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
     const isAdvancedMode = !!advancedModeSetting?.value;
@@ -1785,7 +1749,8 @@ export class DebtManager {
         </h3>
         <p class="text-sm text-wabi-text-secondary mb-2">${escapeHTML(groupMeta.name)}</p>
         <div class="bg-wabi-bg rounded-lg p-3 mb-4 space-y-1">
-          <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">當前淨額</span><span class="font-bold">${formatCurrency(Math.abs(netAmount))}</span></div>
+          <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">淨額方向</span><span class="font-medium">${netDirection}</span></div>
+          <div class="flex justify-between text-sm"><span class="text-wabi-text-secondary">待結清</span><span class="font-bold">${formatCurrency(Math.abs(netAmount))}</span></div>
         </div>
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">${actionLabel}金額</label>

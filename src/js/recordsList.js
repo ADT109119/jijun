@@ -666,10 +666,20 @@ export class RecordsListManager {
                 for (const [groupId, groupRecs] of Object.entries(byGroupId)) {
                     const meta = groupMetaCache[groupId] || {}
                     const groupName = meta.name || `群組 ${groupId.slice(0, 8)}`
+                    // 總額（含所有紀錄）
                     const totalExpense = groupRecs.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0)
                     const totalIncome = groupRecs.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0)
                     const netAmount = totalIncome - totalExpense
+                    // 待結清（排除 group_settlement）
+                    const nonSettlement = groupRecs.filter(r => r.category !== 'group_settlement')
+                    const pendingExpense = nonSettlement.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0)
+                    const pendingIncome = nonSettlement.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0)
+                    const pendingAmount = pendingIncome - pendingExpense
                     const isSettled = meta.settled === true
+
+                    const hasSettlement = groupRecs.length > nonSettlement.length
+                    const netLabel = netAmount >= 0 ? '+' : ''
+                    const pendingLabel = pendingAmount >= 0 ? '+' : ''
 
                     groupsHtml += `
                     <div class="group-block mb-2" data-group-id="${groupId}">
@@ -682,7 +692,9 @@ export class RecordsListManager {
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
                                 <span class="text-xs text-wabi-text-secondary">支 ${formatCurrency(totalExpense)} ｜ 收 ${formatCurrency(totalIncome)}</span>
-                                <span class="text-xs font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨 ${netAmount >= 0 ? '+' : ''}${formatCurrency(netAmount)}</span>
+                                <span class="text-xs font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨 ${netLabel}${formatCurrency(netAmount)}</span>
+                                ${!isSettled && hasSettlement ? `<span class="text-xs text-wabi-text-secondary" title="待結清（扣除退款）">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
+                                ${!isSettled && !hasSettlement ? `<span class="text-xs font-medium ${pendingAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}" title="待結清">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
                                 <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform"></i>
                             </div>
                         </div>
