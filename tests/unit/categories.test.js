@@ -140,7 +140,10 @@ describe('getCategoryName', () => {
         expect(getCategoryName('expense', null)).toBe('未知分類')
     })
 
+    it('undefined type 回傳未知分類', () => {
+        expect(getCategoryName(undefined, 'food')).toBe('未知分類')
     })
+})
 
 describe('getCategoryIcon', () => {
     it('存在的分類回傳 icon', () => {
@@ -158,5 +161,9 @@ describe('getCategoryIcon', () => {
 
     it('null id 回傳預設 icon', () => {
         expect(getCategoryIcon('expense', null)).toBe('fas fa-question')
+    })
+
+    it('undefined type 回傳預設 icon', () => {
+        expect(getCategoryIcon(undefined, 'food')).toBe('fas fa-question')
     })
 })
