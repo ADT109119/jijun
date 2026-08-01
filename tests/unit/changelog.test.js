@@ -404,5 +404,43 @@ describe('ChangelogManager', () => {
             expect(modal.textContent).toContain('v2.1.6.2')
             expect(modal.textContent).toContain('v2.1.6.0')
         })
+
+        it('按 Escape 鍵移除 modal', () => {
+            manager.showChangelogModal()
+            const event = new KeyboardEvent('keydown', { key: 'Escape' })
+            document.dispatchEvent(event)
+            expect(document.getElementById('changelog-modal')).toBeNull()
+        })
+
+        it('按非 Escape 鍵不移除 modal', () => {
+            manager.showChangelogModal()
+            const event = new KeyboardEvent('keydown', { key: 'Enter' })
+            document.dispatchEvent(event)
+            expect(document.getElementById('changelog-modal')).not.toBeNull()
+            // 手動關閉
+            document.getElementById('close-changelog-btn').click()
+        })
+
+        it('多次按 Escape 鍵不報錯', () => {
+            manager.showChangelogModal()
+            const event1 = new KeyboardEvent('keydown', { key: 'Escape' })
+            document.dispatchEvent(event1)
+            // 第二次按 Escape 不應報錯
+            const event2 = new KeyboardEvent('keydown', { key: 'Escape' })
+            document.dispatchEvent(event2)
+            expect(document.getElementById('changelog-modal')).toBeNull()
+        })
+
+        it('先按 Escape 關閉後，關閉按鈕的事件監聽器也已被清除', () => {
+            manager.showChangelogModal()
+            const event = new KeyboardEvent('keydown', { key: 'Escape' })
+            document.dispatchEvent(event)
+            // 確認 modal 已移除且不會殘留事件監聽器
+            expect(document.getElementById('changelog-modal')).toBeNull()
+            // 再次開啟應該正常運作
+            manager.showChangelogModal()
+            expect(document.getElementById('changelog-modal')).not.toBeNull()
+            document.getElementById('close-changelog-btn').click()
+        })
     })
 })
