@@ -576,4 +576,452 @@ describe('SyncService', () => {
             expect(ds.deleteRecurringTransaction).not.toHaveBeenCalled()
         })
     })
+
+    // ── P03: _applyUpdate upsert（UUID 不存在 → _applyAdd）──
+    describe('P03: _applyUpdate upsert branch', () => {
+        it('UUID 找不到時應轉為 _applyAdd（upsert）', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async () => null),
+            })
+            ss = createSyncService(ds)
+            const applyAddSpy = vi.spyOn(ss, '_applyAdd').mockResolvedValue()
+
+            await ss._applyUpdate('accounts', 999, {
+                uuid: 'acc-uuid-new-1',
+                name: '新帳戶',
+            })
+
+            expect(applyAddSpy).toHaveBeenCalledWith(
+                'accounts',
+                expect.objectContaining({ uuid: 'acc-uuid-new-1' })
+            )
+        })
+
+        it('UUID 存在時走 _applyUpdateWithId 而非 _applyAdd', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) =>
+                    uuid === 'acc-uuid-exist' ? { id: 42, uuid: 'acc-uuid-exist' } : null
+                ),
+            })
+            ss = createSyncService(ds)
+            const updateWithIdSpy = vi
+                .spyOn(ss, '_applyUpdateWithId')
+                .mockResolvedValue()
+            const applyAddSpy = vi.spyOn(ss, '_applyAdd').mockResolvedValue()
+
+            await ss._applyUpdate('accounts', 999, {
+                uuid: 'acc-uuid-exist',
+                name: '既有帳戶',
+            })
+
+            expect(updateWithIdSpy).toHaveBeenCalledWith(
+                'accounts',
+                42,
+                expect.objectContaining({ uuid: 'acc-uuid-exist' })
+            )
+            expect(applyAddSpy).not.toHaveBeenCalled()
+        })
+    })
+
+    // ── P03: refreshAccessToken（401 → signOut）──
+    describe('refreshAccessToken', () => {
+        const originalFetch = globalThis.fetch
+
+        beforeEach(() => {
+            ss.refreshToken = 'refresh_token_123'
+        })
+
+        afterEach(() => {
+            globalThis.fetch = originalFetch
+        })
+
+        it('沒有 refreshToken 時拋錯', async () => {
+            ss.refreshToken = null
+            await expect(ss.refreshAccessToken()).rejects.toThrow(
+                'No refresh token'
+            )
+        })
+
+        it('401 回應時呼叫 signOut 並拋出 Session expired', async () => {
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue({ ok: false, status: 401 })
+            const signOutSpy = vi.spyOn(ss, 'signOut').mockResolvedValue()
+
+            await expect(ss.refreshAccessToken()).rejects.toThrow(
+                'Session expired, please sign in again'
+            )
+            expect(signOutSpy).toHaveBeenCalledTimes(1)
+        })
+
+        it('400 回應時也呼叫 signOut', async () => {
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue({ ok: false, status: 400 })
+            const signOutSpy = vi.spyOn(ss, 'signOut').mockResolvedValue()
+
+            await expect(ss.refreshAccessToken()).rejects.toThrow(
+                'Session expired, please sign in again'
+            )
+            expect(signOutSpy).toHaveBeenCalledTimes(1)
+        })
+
+        it('其他狀態碼拋出 Token refresh failed 且不 signOut', async () => {
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue({ ok: false, status: 500 })
+            const signOutSpy = vi.spyOn(ss, 'signOut').mockResolvedValue()
+
+            await expect(ss.refreshAccessToken()).rejects.toThrow(
+                'Token refresh failed (500)'
+            )
+            expect(signOutSpy).not.toHaveBeenCalled()
+        })
+
+        it('成功時更新 accessToken 並呼叫 saveTokens', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                json: async () => ({
+                    access_token: 'new_access_token',
+                    expires_in: 7200,
+                }),
+            })
+            ss.saveTokens = vi.fn().mockResolvedValue()
+
+            await ss.refreshAccessToken()
+
+            expect(ss.accessToken).toBe('new_access_token')
+            expect(ss.tokenExpiresAt).toBeGreaterThan(Date.now())
+            expect(ss.saveTokens).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    // ── P03: init() 流程 ──
+    describe('init()', () => {
+        it('從設定還原 token 與 serverUrl', async () => {
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'restored_access',
+                            refresh_token: 'restored_refresh',
+                            expires_at: Date.now() + 3600000,
+                            user_info: { email: 'user@example.com' },
+                        },
+                    }
+                }
+                if (key === 'sync_server_url') {
+                    return { key, value: 'https://custom.server.com' }
+                }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+
+            await ss.init()
+
+            expect(ss.accessToken).toBe('restored_access')
+            expect(ss.refreshToken).toBe('restored_refresh')
+            expect(ss.tokenExpiresAt).toBeTruthy()
+            expect(ss.userInfo).toEqual({ email: 'user@example.com' })
+            expect(ss.getServerUrl()).toBe('https://custom.server.com')
+        })
+
+        it('已登入且 token 即將過期時自動刷新', async () => {
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'expiring_access',
+                            refresh_token: 'expiring_refresh',
+                            expires_at: Date.now() - 1000, // 已過期
+                        },
+                    }
+                }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+            const refreshSpy = vi
+                .spyOn(ss, 'refreshAccessToken')
+                .mockResolvedValue()
+
+            await ss.init()
+
+            expect(refreshSpy).toHaveBeenCalledTimes(1)
+        })
+
+        it('自動同步啟用且已登入時啟動 startAutoSync', async () => {
+            const startAutoSyncSpy = vi
+                .spyOn(ss, 'startAutoSync')
+                .mockImplementation(() => {})
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'acc',
+                            refresh_token: 'ref',
+                            expires_at: Date.now() + 3600000,
+                        },
+                    }
+                }
+                if (key === 'sync_auto_enabled') return { key, value: true }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+
+            await ss.init()
+
+            expect(startAutoSyncSpy).toHaveBeenCalledTimes(1)
+        })
+
+        it('未登入時即使自動同步啟用也不啟動', async () => {
+            const startAutoSyncSpy = vi
+                .spyOn(ss, 'startAutoSync')
+                .mockImplementation(() => {})
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_auto_enabled') return { key, value: true }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+
+            await ss.init()
+
+            expect(startAutoSyncSpy).not.toHaveBeenCalled()
+        })
+
+        it('自動備份啟用且已登入時啟動 startAutoBackup 並帶間隔', async () => {
+            const startAutoBackupSpy = vi
+                .spyOn(ss, 'startAutoBackup')
+                .mockImplementation(() => {})
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'acc',
+                            refresh_token: 'ref',
+                            expires_at: Date.now() + 3600000,
+                        },
+                    }
+                }
+                if (key === 'sync_auto_backup_enabled')
+                    return { key, value: true }
+                if (key === 'sync_auto_backup_interval')
+                    return { key, value: 'weekly' }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+
+            await ss.init()
+
+            expect(startAutoBackupSpy).toHaveBeenCalledWith('weekly')
+        })
+
+        it('有共用帳本且未設定 sync_drive_file_authorized 時補設為 true', async () => {
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'acc',
+                            refresh_token: 'ref',
+                            expires_at: Date.now() + 3600000,
+                        },
+                    }
+                }
+                if (key === 'sync_drive_file_authorized') return null
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, name: '共用帳本', isShared: true },
+            ])
+            const saveSpy = ds.saveSetting
+
+            await ss.init()
+
+            expect(saveSpy).toHaveBeenCalledWith({
+                key: 'sync_drive_file_authorized',
+                value: true,
+            })
+        })
+    })
+
+    // ── P03: cleanupOldBackups 保留策略 ──
+    describe('cleanupOldBackups', () => {
+        const day = 24 * 60 * 60 * 1000
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        it('沒有備份時直接返回', async () => {
+            ss.listBackups = vi.fn().mockResolvedValue([])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).not.toHaveBeenCalled()
+        })
+
+        it('近 7 天內的備份全部保留', async () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-06-15T00:00:00Z'))
+            ss.listBackups = vi.fn().mockResolvedValue([
+                { id: 'a', name: 'backup_a', createdTime: '2026-06-14T00:00:00Z' },
+                { id: 'b', name: 'backup_b', createdTime: '2026-06-10T00:00:00Z' },
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).not.toHaveBeenCalled()
+        })
+
+        it('7 天~1 年：同月份僅保留最早一筆', async () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-06-15T00:00:00Z'))
+            // 5 月兩筆備份（更晚的那筆 05-20 應被刪除，保留 05-05）
+            ss.listBackups = vi.fn().mockResolvedValue([
+                { id: 'later', createdTime: '2026-05-20T00:00:00Z' },
+                { id: 'earlier', createdTime: '2026-05-05T00:00:00Z' },
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).toHaveBeenCalledTimes(1)
+            expect(deleteSpy).toHaveBeenCalledWith('later')
+        })
+
+        it('7 天~1 年：不同月份各保留一筆', async () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-06-15T00:00:00Z'))
+            ss.listBackups = vi.fn().mockResolvedValue([
+                { id: 'may', createdTime: '2026-05-10T00:00:00Z' },
+                { id: 'apr', createdTime: '2026-04-10T00:00:00Z' },
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).not.toHaveBeenCalled()
+        })
+
+        it('超過 1 年的備份一律刪除', async () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-06-15T00:00:00Z'))
+            ss.listBackups = vi.fn().mockResolvedValue([
+                { id: 'old', createdTime: '2024-06-10T00:00:00Z' },
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).toHaveBeenCalledTimes(1)
+            expect(deleteSpy).toHaveBeenCalledWith('old')
+        })
+
+        it('混合情境：近 7 天保留 + 同月刪晚 + 跨月保留 + 逾 1 年刪除', async () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-06-15T00:00:00Z'))
+            ss.listBackups = vi.fn().mockResolvedValue([
+                { id: 'recent', createdTime: '2026-06-12T00:00:00Z' }, // 保留
+                { id: 'may-later', createdTime: '2026-05-20T00:00:00Z' }, // 刪除（同月晚）
+                { id: 'may-early', createdTime: '2026-05-02T00:00:00Z' }, // 保留（同月早）
+                { id: 'apr', createdTime: '2026-04-10T00:00:00Z' }, // 保留（不同月）
+                { id: 'year-old', createdTime: '2024-06-01T00:00:00Z' }, // 刪除（逾 1 年）
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).toHaveBeenCalledTimes(2)
+            const deletedIds = deleteSpy.mock.calls.map(c => c[0]).sort()
+            expect(deletedIds).toEqual(['may-later', 'year-old'])
+        })
+    })
+
+    // ── P03: applyRemoteChanges 排序 ──
+    describe('applyRemoteChanges 排序', () => {
+        it('空變更列表直接返回', async () => {
+            const addSpy = vi.spyOn(ss, '_applyAdd').mockResolvedValue()
+            await ss.applyRemoteChanges([])
+            expect(addSpy).not.toHaveBeenCalled()
+        })
+
+        it('依 timestamp 由舊到新套用', async () => {
+            const order = []
+            ss._applyAdd = vi.fn(async () => order.push('add'))
+            ss._applyUpdate = vi.fn(async () => order.push('update'))
+            ss._applyDelete = vi.fn(async () => order.push('delete'))
+
+            await ss.applyRemoteChanges([
+                { operation: 'update', storeName: 'records', recordId: 1, data: { id: 1 }, timestamp: 200 },
+                { operation: 'add', storeName: 'records', recordId: 2, data: { id: 2 }, timestamp: 100 },
+                { operation: 'delete', storeName: 'records', recordId: 3, data: { id: 3 }, timestamp: 300 },
+            ])
+
+            expect(order).toEqual(['add', 'update', 'delete'])
+        })
+
+        it('相同 timestamp 時依 add > update > delete 排序', async () => {
+            const order = []
+            ss._applyAdd = vi.fn(async () => order.push('add'))
+            ss._applyUpdate = vi.fn(async () => order.push('update'))
+            ss._applyDelete = vi.fn(async () => order.push('delete'))
+
+            await ss.applyRemoteChanges([
+                { operation: 'delete', storeName: 'records', recordId: 3, data: { id: 3 }, timestamp: 100 },
+                { operation: 'update', storeName: 'records', recordId: 2, data: { id: 2 }, timestamp: 100 },
+                { operation: 'add', storeName: 'records', recordId: 1, data: { id: 1 }, timestamp: 100 },
+            ])
+
+            expect(order).toEqual(['add', 'update', 'delete'])
+        })
+
+        it('相同 timestamp 與操作時依 topoOrder（ledgers 先於 accounts 先於 records）', async () => {
+            const order = []
+            ss._applyAdd = vi.fn(async (storeName) => order.push(storeName))
+
+            await ss.applyRemoteChanges([
+                { operation: 'add', storeName: 'records', recordId: 3, data: { id: 3 }, timestamp: 100 },
+                { operation: 'add', storeName: 'ledgers', recordId: 1, data: { id: 1 }, timestamp: 100 },
+                { operation: 'add', storeName: 'accounts', recordId: 2, data: { id: 2 }, timestamp: 100 },
+            ])
+
+            expect(order).toEqual(['ledgers', 'accounts', 'records'])
+        })
+
+        it('add 且 UUID 已存在時轉為 _applyUpdateWithId', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) =>
+                    uuid === 'existing-uuid' ? { id: 5, uuid: 'existing-uuid' } : null
+                ),
+            })
+            ss = createSyncService(ds)
+            const updateWithIdSpy = vi
+                .spyOn(ss, '_applyUpdateWithId')
+                .mockResolvedValue()
+            const addSpy = vi.spyOn(ss, '_applyAdd').mockResolvedValue()
+
+            await ss.applyRemoteChanges([
+                {
+                    operation: 'add',
+                    storeName: 'records',
+                    recordId: 999,
+                    data: { id: 999, uuid: 'existing-uuid' },
+                    timestamp: 100,
+                },
+            ])
+
+            expect(updateWithIdSpy).toHaveBeenCalledWith(
+                'records',
+                5,
+                expect.objectContaining({ uuid: 'existing-uuid' })
+            )
+            expect(addSpy).not.toHaveBeenCalled()
+        })
+    })
 })

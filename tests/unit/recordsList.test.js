@@ -700,4 +700,227 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
         )
         expect(container.querySelector('#total-income').textContent).toBe('$0')
     })
+
+    it('balance_adjustment 不計入摘要', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'balance_adjustment',
+                amount: 500,
+                date: '2026-06-15',
+                description: '',
+                debtId: null,
+                amortizationId: null,
+            },
+            {
+                id: 2,
+                type: 'expense',
+                category: 'food',
+                amount: 100,
+                date: '2026-06-15',
+                description: '',
+                debtId: null,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        await manager.init()
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$100'
+        )
+    })
+
+    // 欠款摘要 4 分支：未結清 vs 已結清
+    it('支出 + 別人欠我 (代墊) 未結清 → 計全額支出', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 500,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: false, originalAmount: 200 },
+        ])
+        await manager.init()
+        // 未結清代墊，計全額 $500
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$500'
+        )
+    })
+
+    it('支出 + 別人欠我 (代墊) 已結清 → 只計自己的份', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 500,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: true, originalAmount: 200 },
+        ])
+        await manager.init()
+        // 已結清代墊，計自己的份 $500 - $200 = $300
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$300'
+        )
+    })
+
+    it('收入 + 別人欠我 (收到款) 未結清 → 不計收入', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'income',
+                category: 'salary',
+                amount: 1000,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: false, originalAmount: 1000 },
+        ])
+        await manager.init()
+        // 未結清，收到款不計收入
+        expect(container.querySelector('#total-income').textContent).toBe(
+            '$0'
+        )
+    })
+
+    it('收入 + 別人欠我 (收到款) 已結清 → 計全額收入', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'income',
+                category: 'salary',
+                amount: 1000,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: true, originalAmount: 1000 },
+        ])
+        await manager.init()
+        // 已結清，計全額收入
+        expect(container.querySelector('#total-income').textContent).toBe(
+            '$1,000'
+        )
+    })
+
+    it('支出 + 我欠別人 (還款) 未結清 → 不計支出', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 800,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'payable', settled: false, originalAmount: 800 },
+        ])
+        await manager.init()
+        // 未結清，還款不計支出
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$0'
+        )
+    })
+
+    it('支出 + 我欠別人 (還款) 已結清 → 計全額支出', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 800,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'payable', settled: true, originalAmount: 800 },
+        ])
+        await manager.init()
+        // 已結清，計全額支出
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$800'
+        )
+    })
+
+    it('收入 + 我欠別人 (先收) 未結清 → 計全額收入', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'income',
+                category: 'bonus',
+                amount: 3000,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'payable', settled: false, originalAmount: 3000 },
+        ])
+        await manager.init()
+        // 未結清，先收計收入
+        expect(container.querySelector('#total-income').textContent).toBe(
+            '$3,000'
+        )
+    })
+
+    it('收入 + 我欠別人 (先收) 已結清 → 不計收入', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'income',
+                category: 'bonus',
+                amount: 3000,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'payable', settled: true, originalAmount: 3000 },
+        ])
+        await manager.init()
+        // 已結清（還回去了），不計收入
+        expect(container.querySelector('#total-income').textContent).toBe(
+            '$0'
+        )
+    })
 })
