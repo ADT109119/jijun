@@ -1084,8 +1084,14 @@ export class AddPage {
                 description: noteInput.value,
                 date: currentDate,
                 accountId: advancedModeEnabled ? selectedAccountId : null,
-                groupId: groupEnabled && selectedGroupId ? selectedGroupId : null,
-                groupStatus: (groupEnabled && selectedGroupId) ? 'active' : null,
+                // groupId: 若啟用群組面板 → 用使用者選的；編輯模式且未啟用 → 保留原始值；新增 → null
+                groupId: groupEnabled
+                    ? (selectedGroupId || null)
+                    : (isEditMode ? (recordToEdit?.groupId ?? null) : null),
+                // groupStatus: 若啟用群組面板 → 用使用者選的；編輯模式且未啟用 → 保留原始值；新增 → null
+                groupStatus: groupEnabled
+                    ? (selectedGroupId ? 'active' : null)
+                    : (isEditMode ? (recordToEdit?.groupStatus ?? null) : null),
             }
 
             if (isEditMode) {
