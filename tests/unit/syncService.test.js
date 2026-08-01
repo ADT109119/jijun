@@ -30,7 +30,9 @@ vi.mock('@capacitor/core', () => ({
 // 在 import SyncService 之前設定 globalThis.Capacitor
 globalThis.Capacitor = { isNativePlatform: () => false }
 
-// 覆寫 import.meta.env
+// 注意: vi.stubGlobal('import.meta.env') 對已載入模組無效（import.meta.env 是 Vite
+// build 時注入的常量）。此 stub 僅表意，實際 env 值取決於 .env.local 是否存在。
+// 若未來加入 .env.local 設定 VITE_SYNC_SERVER_URL，需要改用 vi.stubEnv。
 vi.stubGlobal('import.meta.env', {
     VITE_GOOGLE_CLIENT_ID: 'test-client-id',
     VITE_GOOGLE_API_KEY: 'test-api-key',

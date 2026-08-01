@@ -95,7 +95,7 @@ describe('RecordsListManager - 明細預設時間範圍', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('預設無任何設定與 Session 快取時，預設為本月', async () => {
@@ -224,7 +224,7 @@ describe('RecordsListManager - 轉帳抵消與摘要計算', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('轉帳配對成功時從摘要中排除', async () => {
@@ -347,7 +347,7 @@ describe('RecordsListManager - 搜尋與類型過濾', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('搜尋描述關鍵字會過濾紀錄', async () => {
@@ -427,7 +427,7 @@ describe('RecordsListManager - 日期區間推移', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('按下上一個月按鈕，日期往後退一個月', async () => {
@@ -472,7 +472,7 @@ describe('RecordsListManager - 標題顯示邏輯', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('顯示某月初到月底時格式為「YYYY年MM月」', () => {
@@ -528,7 +528,7 @@ describe('RecordsListManager - Session 過濾器管理', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('_saveSessionFilters 正確儲存至 sessionStorage', () => {
@@ -601,7 +601,7 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
     })
 
     afterEach(() => {
-        window.removeEventListener('beforeunload', manager._saveSessionFilters)
+        manager.destroy()
     })
 
     it('未結清欠款顯示待還款狀態', async () => {
