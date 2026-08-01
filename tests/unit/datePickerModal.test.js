@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createDateRangeModal } from '../../src/js/datePickerModal.js'
-import { getDateRange } from '../../src/js/utils.js'
+import { getDateRange, formatDateToString } from '../../src/js/utils.js'
 
 // ── createDateRangeModal ───────────────────────────────────────────
 describe('createDateRangeModal', () => {
@@ -79,7 +79,7 @@ describe('createDateRangeModal', () => {
         })
 
         it('initialStartDate 為 null 時使用今日日期', () => {
-            const today = new Date().toISOString().split('T')[0]
+            const today = formatDateToString(new Date())
             const modal = createDateRangeModal({
                 initialStartDate: null,
                 initialEndDate: '2026-06-30',
@@ -90,7 +90,7 @@ describe('createDateRangeModal', () => {
         })
 
         it('initialEndDate 為 null 時使用今日日期', () => {
-            const today = new Date().toISOString().split('T')[0]
+            const today = formatDateToString(new Date())
             const modal = createDateRangeModal({
                 initialStartDate: '2026-06-01',
                 initialEndDate: null,
