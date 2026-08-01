@@ -2314,8 +2314,14 @@ class DataService {
                         'readwrite'
                     )
                     for (const item of backup[storeName]) {
-                        delete item.id // Let DB generate new IDs to avoid conflicts
-                        await restoreTx.store.add(item)
+                        // groupMeta 使用 put 保留原始 id（keyPath: 'id'，無 autoIncrement）
+                        // 其他 store 刪除 id 並使用 add，讓資料庫自動產生新 ID
+                        if (storeName === 'groupMeta') {
+                            await restoreTx.store.put(item)
+                        } else {
+                            delete item.id // Let DB generate new IDs to avoid conflicts
+                            await restoreTx.store.add(item)
+                        }
                     }
                     await restoreTx.done
                 }
@@ -3498,7 +3504,7 @@ class DataService {
             const records = await this.getRecords({ ledgerId })
             if (groupId === undefined) {
                 // Return all records that belong to any group
-                return records.filter(r => r.groupId !== null)
+                return records.filter(r => r.groupId)
             }
             return records.filter(r => r.groupId === groupId)
         } catch (e) {

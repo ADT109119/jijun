@@ -43,7 +43,7 @@ import { ThemeStorePage } from './pages/themeStorePage.js'
 import { PrivacyPage } from './pages/privacyPage.js'
 import { LicensePage } from './pages/licensePage.js'
 
-class EasyAccountingApp {
+export class EasyAccountingApp {
     constructor() {
         const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
         if (isNative) {
