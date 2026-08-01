@@ -1,5 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { LedgerManager } from '../../src/js/ledgerManager.js'
+
+vi.mock('../../src/js/utils.js', () => ({
+    showToast: vi.fn(),
+}))
+
+const { showToast } = await import('../../src/js/utils.js')
 
 describe('LedgerManager', () => {
     let mockDataService
@@ -205,6 +211,7 @@ describe('LedgerManager', () => {
 
             await ledgerManager.switchLedger(99)
 
+            expect(showToast).toHaveBeenCalledWith('帳本不存在', 'error')
             expect(mockDataService.setActiveLedger).not.toHaveBeenCalled()
         })
 

@@ -183,6 +183,26 @@ describe('DataService — Record Groups', () => {
             expect(result.totalIncome).toBe(1000)
             expect(result.netAmount).toBe(1000)
         })
+
+        it('M03: 浮點數精度（100.99 + 0.01）', () => {
+            const records = [
+                { type: 'expense', amount: 100.99 },
+                { type: 'expense', amount: 0.01 },
+            ]
+            const result = ds._calculateGroupNet(records)
+            // 浮點數加法可能有精度問題，用 closeTo 驗證
+            expect(result.totalExpense).toBeCloseTo(101, 10)
+        })
+
+        it('M03: 金額為 0 時正常處理', () => {
+            const records = [
+                { type: 'expense', amount: 0 },
+                { type: 'income', amount: 0 },
+            ]
+            const result = ds._calculateGroupNet(records)
+            expect(result.totalExpense).toBe(0)
+            expect(result.totalIncome).toBe(0)
+        })
     })
 
     describe('settleGroup()', () => {
@@ -287,6 +307,18 @@ describe('DataService — Record Groups', () => {
         it('M01: 字串金額拋出錯誤', async () => {
             await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
             await expect(ds.partialSettleGroup('g1', '100', null, '2024-06-01', '退款')).rejects.toThrow('部分退款金額無效')
+        })
+
+        it('M01: 部分退款金額超過淨額仍可執行（不限制上限）', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '測試', ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            // 淨額 -100（我代墊 100），退款 200 超過淨額
+            const record = await ds.partialSettleGroup('g1', 200, null, '2024-06-01', '超額退款')
+            expect(record.amount).toBe(200)
+            expect(record.type).toBe('income')
         })
     })
 
@@ -728,6 +760,40 @@ describe('DataService — Record Groups', () => {
 
             const all = await ds.getAllGroupMeta()
             expect(all).toHaveLength(2)
+        })
+
+        it('getGroupRecords(undefined) 排除沒有 groupId 欄位的紀錄', async () => {
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            // 沒有 groupId 欄位的紀錄
+            await tx.store.add({ type: 'expense', amount: 200, date: '2024-01-02', ledgerId: 1 })
+            // groupId 為 null 的紀錄
+            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-03', groupId: null, ledgerId: 1 })
+            await tx.done
+
+            const records = await ds.getGroupRecords(undefined)
+            // 只有 groupId='g1' 的紀錄被納入
+            expect(records).toHaveLength(1)
+            expect(records[0].groupId).toBe('g1')
+        })
+
+        it('匯入還原後 groupMeta 保留原始 id', async () => {
+            await ds.saveGroupMeta({ id: 'g1', name: '公款', createdAt: 1000, ledgerId: 1 })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({ type: 'expense', amount: 100, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
+            await tx.done
+
+            const backup = await ds._exportFullBackup()
+            await ds._restoreFromBackup(backup)
+
+            // 還原後 groupMeta 'g1' 仍可取得
+            const meta = await ds.getGroupMeta('g1')
+            expect(meta).toBeDefined()
+            expect(meta.name).toBe('公款')
+            expect(meta.createdAt).toBe(1000)
+            // 紀錄仍關聯
+            const groupRecords = await ds.getGroupRecords('g1')
+            expect(groupRecords).toHaveLength(1)
         })
     })
 })

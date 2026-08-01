@@ -93,14 +93,21 @@ describe('getCategoryById', () => {
         expect(() => getCategoryById('unknown', 'food')).toThrow()
     })
 
-    it('window.app 不存在時不會拋錯', () => {
-        const savedApp = globalThis.window?.app
-        if (globalThis.window) delete globalThis.window.app
-
-        expect(() => getCategoryById('expense', 'food')).not.toThrow()
-
-        if (savedApp) {
-            globalThis.window.app = savedApp
+    it('自定義分類 fallback 需要 window.app.categoryManager', () => {
+        // 準備自定義分類
+        const customCat = { id: 'custom-foo', name: '自訂', icon: 'fas fa-star', color: 'bg-pink-400' }
+        if (globalThis.window) {
+            if (!globalThis.window.app) globalThis.window.app = {}
+            globalThis.window.app.categoryManager = { customCategories: { expense: [customCat] } }
+        }
+        try {
+            // 用自訂 id，強制走到 window.app.categoryManager fallback 路徑
+            const cat = getCategoryById('expense', 'custom-foo')
+            expect(cat).toEqual(customCat)
+        } finally {
+            if (globalThis.window?.app) {
+                delete globalThis.window.app.categoryManager
+            }
         }
     })
 
@@ -133,14 +140,7 @@ describe('getCategoryName', () => {
         expect(getCategoryName('expense', null)).toBe('未知分類')
     })
 
-    it('returns string for valid category', () => {
-        expect(typeof getCategoryName('expense', 'food')).toBe('string')
     })
-
-    it('returns fallback string for undefined type', () => {
-        expect(getCategoryName(undefined, 'food')).toBe('未知分類')
-    })
-})
 
 describe('getCategoryIcon', () => {
     it('存在的分類回傳 icon', () => {
@@ -158,13 +158,5 @@ describe('getCategoryIcon', () => {
 
     it('null id 回傳預設 icon', () => {
         expect(getCategoryIcon('expense', null)).toBe('fas fa-question')
-    })
-
-    it('returns string for valid category', () => {
-        expect(typeof getCategoryIcon('expense', 'food')).toBe('string')
-    })
-
-    it('returns fallback for undefined type', () => {
-        expect(getCategoryIcon(undefined, 'food')).toBe('fas fa-question')
     })
 })

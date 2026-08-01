@@ -1,52 +1,36 @@
 // ==================== processRecurringTransactions 單元測試 ====================
 // 測試重點：跨裝置去重（P01 修復）、recurringTransactionUuid 標記、日期推進
+// 直接使用真實 EasyAccountingApp.processRecurringTransactions，
+// 並使用真實 calculateNextDueDate / shouldSkipDate / MAX_ITERATIONS（utils.js）。
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { EasyAccountingApp } from '../../src/js/main.js'
+import { formatDateToString, MAX_ITERATIONS } from '../../src/js/utils.js'
 
 // ── Mocks ────────────────────────────────────────────
+// 只 mock 外部副作用（控制 "today"），日期計算邏輯全部保留真實實作
 
-vi.mock('../../src/js/utils.js', () => {
-    const formatDateToStringFn = vi.fn(d => {
-        if (typeof d === 'string') return d
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        const day = String(d.getDate()).padStart(2, '0')
-        return `${y}-${m}-${day}`
-    })
+vi.mock('../../src/js/utils.js', async () => {
+    const actual = await vi.importActual('../../src/js/utils.js')
 
     return {
-        formatDateToString: formatDateToStringFn,
-        showToast: vi.fn(),
-        customConfirm: vi.fn(() => Promise.resolve(true)),
-        customAlert: vi.fn(),
-        calculateNextDueDate: vi.fn((currentDate, frequency, interval) => {
-            const d = new Date(currentDate)
-            if (frequency === 'daily') d.setDate(d.getDate() + interval)
-            else if (frequency === 'weekly') d.setDate(d.getDate() + interval * 7)
-            else if (frequency === 'monthly') d.setMonth(d.getMonth() + interval)
-            else if (frequency === 'yearly') d.setFullYear(d.getFullYear() + interval)
+        ...actual,
+        formatDateToString: vi.fn(d => {
+            if (typeof d === 'string') return d
             const y = d.getFullYear()
             const m = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
             return `${y}-${m}-${day}`
         }),
-        shouldSkipDate: vi.fn(() => false),
-        formatCurrency: vi.fn(n => `$${n}`),
+        showToast: vi.fn(),
+        customConfirm: vi.fn(() => Promise.resolve(true)),
+        customAlert: vi.fn(),
     }
 })
 
-vi.mock('idb', () => ({
-    openDB: vi.fn(),
-    deleteDB: vi.fn(),
-}))
-
-// Mock main.js imports
-const { calculateNextDueDate, shouldSkipDate, formatDateToString } =
-    await import('../../src/js/utils.js')
-
 // ── Helpers ──────────────────────────────────────────
 
-/** 建立 mock DataService */
+/** 建立 mock DataService（符合真實 DataService 介面） */
 function createMockDataService(overrides = {}) {
     return {
         db: {
@@ -63,106 +47,11 @@ function createMockDataService(overrides = {}) {
     }
 }
 
-/** 建立 mock App 實例（只含 processRecurringTransactions） */
+/** 建立最小 App 實例：只掛上 dataService，呼叫真實的 processRecurringTransactions */
 function createMockApp(ds) {
-    return {
-        dataService: ds,
-        processRecurringTransactions: async function () {
-            // Inline the logic from main.js for testing
-            const today = formatDateToString(new Date())
-            const recurringTxs =
-                await this.dataService.getRecurringTransactions({
-                    allLedgers: true,
-                })
-
-            const MAX_ITERATIONS = 24
-
-            for (const tx of recurringTxs) {
-                try {
-                    let { nextDueDate } = tx
-
-                    let iterations = 0
-
-                    while (
-                        nextDueDate &&
-                        nextDueDate <= today &&
-                        iterations < MAX_ITERATIONS
-                    ) {
-                        iterations++
-                        const dateToCheck = new Date(nextDueDate)
-
-                        if (shouldSkipDate(dateToCheck, tx.skipRules)) {
-                            nextDueDate = calculateNextDueDate(
-                                nextDueDate,
-                                tx.frequency,
-                                tx.interval
-                            )
-                            continue
-                        }
-
-                        // P01 修復：跨裝置去重
-                        let alreadyFired = false
-                        if (tx.uuid) {
-                            try {
-                                const allRecords = await this.dataService.db.getAll(
-                                    'records'
-                                )
-                                alreadyFired = allRecords.some(
-                                    r =>
-                                        r.recurringTransactionUuid ===
-                                            tx.uuid &&
-                                        r.date === nextDueDate
-                                )
-                            } catch (_) {
-                                nextDueDate = calculateNextDueDate(
-                                    nextDueDate,
-                                    tx.frequency,
-                                    tx.interval
-                                )
-                                continue
-                            }
-                        }
-
-                        if (alreadyFired) {
-                            nextDueDate = calculateNextDueDate(
-                                nextDueDate,
-                                tx.frequency,
-                                tx.interval
-                            )
-                            continue
-                        }
-
-                        const newRecord = {
-                            type: tx.type,
-                            amount: tx.amount,
-                            category: tx.category,
-                            description: tx.description,
-                            date: nextDueDate,
-                            accountId: tx.accountId,
-                            ledgerId: tx.ledgerId,
-                            recurringTransactionUuid: tx.uuid || null,
-                        }
-                        await this.dataService.addRecord(newRecord)
-
-                        nextDueDate = calculateNextDueDate(
-                            nextDueDate,
-                            tx.frequency,
-                            tx.interval
-                        )
-                    }
-
-                    if (nextDueDate !== tx.nextDueDate) {
-                        await this.dataService.updateRecurringTransaction(
-                            tx.id,
-                            { nextDueDate }
-                        )
-                    }
-                } catch (error) {
-                    // silently skip
-                }
-            }
-        },
-    }
+    const app = Object.create(EasyAccountingApp.prototype)
+    app.dataService = ds
+    return app
 }
 
 // ── 測試 ─────────────────────────────────────────────
@@ -294,6 +183,78 @@ describe('processRecurringTransactions', () => {
                     amount: 100,
                 })
             )
+        })
+    })
+
+    // ── 跨帳本去重（不同 ledgerId 互不干擾）────────────
+    describe('跨帳本去重', () => {
+        it('不同 ledgerId 的交易各自獨立去重，互不阻擋', async () => {
+            const today = '2026-08-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-ledger1',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Ledger 1 rent',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                    {
+                        id: 2,
+                        uuid: 'rt-ledger2',
+                        type: 'expense',
+                        amount: 200,
+                        category: 'Transport',
+                        description: 'Ledger 2 bus pass',
+                        nextDueDate: '2026-08-01',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 2,
+                    },
+                ],
+                // Ledger 2 已建立過 08/01 的紀錄
+                records: [
+                    {
+                        id: 10,
+                        date: '2026-08-01',
+                        recurringTransactionUuid: 'rt-ledger2',
+                        ledgerId: 2,
+                    },
+                ],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // Ledger 1 的紀錄不受 Ledger 2 影響，正常建立
+            expect(ds.addRecord).toHaveBeenCalledTimes(1)
+            expect(ds.addRecord).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    recurringTransactionUuid: 'rt-ledger1',
+                    ledgerId: 1,
+                    date: '2026-08-01',
+                })
+            )
+            // Ledger 2 已存在相同 uuid + date，不重複建立
+            expect(ds.addRecord).not.toHaveBeenCalledWith(
+                expect.objectContaining({ recurringTransactionUuid: 'rt-ledger2' })
+            )
+            // 兩筆交易的 nextDueDate 都推進
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-09-01',
+            })
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(2, {
+                nextDueDate: '2026-09-01',
+            })
         })
     })
 
@@ -525,8 +486,8 @@ describe('processRecurringTransactions', () => {
 
     // ── MAX_ITERATIONS guard ─────────────────────────
     describe('MAX_ITERATIONS guard', () => {
-        it('超過 MAX_ITERATIONS (24) 後停止，即使 nextDueDate 仍 <= today', async () => {
-            const today = '2026-08-01'
+        it(`超過 MAX_ITERATIONS (${MAX_ITERATIONS}) 後停止，即使 nextDueDate 仍 <= today`, async () => {
+            const today = '2027-02-01'
             vi.mocked(formatDateToString).mockReturnValue(today)
 
             ds = createMockDataService({
@@ -538,7 +499,7 @@ describe('processRecurringTransactions', () => {
                         amount: 10,
                         category: 'Food',
                         description: 'Daily coffee',
-                        nextDueDate: '2026-06-01',
+                        nextDueDate: '2026-01-01',
                         frequency: 'daily',
                         interval: 1,
                         accountId: 1,
@@ -551,38 +512,27 @@ describe('processRecurringTransactions', () => {
             app = createMockApp(ds)
             await app.processRecurringTransactions()
 
-            // Should have created exactly 24 records (MAX_ITERATIONS)
-            expect(ds.addRecord).toHaveBeenCalledTimes(24)
-            // Check each record date is correct
-            for (let i = 0; i < 24; i++) {
-                const day = String(1 + i).padStart(2, '0')
-                expect(ds.addRecord).toHaveBeenCalledWith(
-                    expect.objectContaining({ date: `2026-06-${day}` })
-                )
-            }
-            // nextDueDate advanced by 24 days from 2026-06-01 → 2026-06-25
+            // Should have created exactly MAX_ITERATIONS records
+            expect(ds.addRecord).toHaveBeenCalledTimes(MAX_ITERATIONS)
+            // First record is the start date
+            expect(ds.addRecord.mock.calls[0][0]).toEqual(
+                expect.objectContaining({ date: '2026-01-01' })
+            )
+            // Last record is start + (MAX_ITERATIONS - 1) days → 2026-12-31
+            const lastDate = ds.addRecord.mock.calls[MAX_ITERATIONS - 1][0].date
+            expect(lastDate).toBe('2026-12-31')
+            // nextDueDate advanced by MAX_ITERATIONS days from 2026-01-01 → 2027-01-01
             expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
-                nextDueDate: '2026-06-25',
+                nextDueDate: '2027-01-01',
             })
         })
     })
 
     // ── skipRules integration ────────────────────────
     describe('skipRules integration', () => {
-        afterEach(() => {
-            vi.mocked(shouldSkipDate).mockRestore()
-        })
-
         it('被跳過的日期不建立紀錄但正常推進 nextDueDate', async () => {
             const today = '2026-08-02'
             vi.mocked(formatDateToString).mockReturnValue(today)
-
-            vi.mocked(shouldSkipDate).mockImplementation((date) => {
-                const y = date.getFullYear()
-                const m = String(date.getMonth() + 1).padStart(2, '0')
-                const d = String(date.getDate()).padStart(2, '0')
-                return `${y}-${m}-${d}` === '2026-08-01'
-            })
 
             ds = createMockDataService({
                 recurringTxs: [
@@ -598,7 +548,7 @@ describe('processRecurringTransactions', () => {
                         interval: 1,
                         accountId: 1,
                         ledgerId: 1,
-                        skipRules: [{ type: 'date', value: '2026-08-01' }],
+                        skipRules: [{ type: 'dayOfMonth', values: [1] }],
                     },
                 ],
                 records: [],
@@ -621,14 +571,6 @@ describe('processRecurringTransactions', () => {
             const today = '2026-08-05'
             vi.mocked(formatDateToString).mockReturnValue(today)
 
-            vi.mocked(shouldSkipDate).mockImplementation((date) => {
-                const y = date.getFullYear()
-                const m = String(date.getMonth() + 1).padStart(2, '0')
-                const d = String(date.getDate()).padStart(2, '0')
-                const ds = `${y}-${m}-${d}`
-                return ds === '2026-08-01' || ds === '2026-08-02' || ds === '2026-08-03'
-            })
-
             ds = createMockDataService({
                 recurringTxs: [
                     {
@@ -643,7 +585,7 @@ describe('processRecurringTransactions', () => {
                         interval: 1,
                         accountId: 1,
                         ledgerId: 1,
-                        skipRules: [{ type: 'date', value: '2026-08-01' }],
+                        skipRules: [{ type: 'dayOfMonth', values: [1, 2, 3] }],
                     },
                 ],
                 records: [],
@@ -662,6 +604,44 @@ describe('processRecurringTransactions', () => {
             )
             expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
                 nextDueDate: '2026-08-06',
+            })
+        })
+
+        it('當所有日期都被 skipRules 跳過時，迭代次數仍被消耗，不會無限迴圈', async () => {
+            const today = '2027-02-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            // 每天都是 dayOfMonth，等於全部跳過
+            const allDays = Array.from({ length: 31 }, (_, i) => i + 1)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-001',
+                        type: 'expense',
+                        amount: 100,
+                        category: 'Food',
+                        description: 'Never fires',
+                        nextDueDate: '2026-01-01',
+                        frequency: 'daily',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                        skipRules: [{ type: 'dayOfMonth', values: allDays }],
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // 沒有任何紀錄被建立（全部被跳過）
+            expect(ds.addRecord).not.toHaveBeenCalled()
+            // 但 nextDueDate 仍因迭代消耗被推進到 MAX_ITERATIONS 之後
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2027-01-01',
             })
         })
     })
