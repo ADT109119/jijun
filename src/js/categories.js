@@ -110,7 +110,7 @@ export const CATEGORIES = {
 }
 
 export function getCategoryById(type, id) {
-    if (type == null) return undefined
+    if (type === null || type === undefined) return undefined
     // 先檢查預設分類
     let category = CATEGORIES[type].find(cat => cat.id === id)
 

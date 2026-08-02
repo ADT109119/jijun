@@ -121,6 +121,7 @@
 - Moneybook (2026/7/1) — 發布聲明指控第三方冒用名義散布不實內容，已向警方報案
 - 叮咚AI記帳 (2026-08-01 調研) — 多模態大模型智能記帳，支援語音、拍照識圖、iOS 快捷指令自動化、智能歸類
 - Indexia 2026 記帳App推薦 — CWMoney（發票自動記帳+條碼）、記帳城市（遊戲化養成）、天天記帳（多帳本+iCloud/Google Drive）
+- Actual Budget 26.6.0 (2026-08 更新) — Balance Forecast Report, Enable Banking sync provider, NZ bank sync via Akahu, 標籤顯示/隱藏支援
 
 ---
 
@@ -155,6 +156,7 @@
 
 ## 更新歷史
 
+- **2026-08-02**: Code Review + fix pluginStorage.js — 審查 pluginStorage.js (216行) 插件沙箱儲存；發現 2 HIGH (**H01: _saveToDB pluginData 不存在時靜默跳過導致首次寫入資料遺失、H02: 缺少 flush() 方法，頁面關閉/debounce 未觸發時緩衝區資料遺失**)、3 MEDIUM (M01: _saveToDB 即使 DB 失敗仍 resolve Promise 掩蓋錯誤、M02: init() 遍歷全部 localStorage keys O(n) 效能浪費、M03: 沒有 destroy() 清理 pending timeouts)、1 LOW (L01: 缺少 destroy 方法)；已修復 H01 (pluginData 不存在時自動建立紀錄) + H02 (新增 flush() 同步寫入方法) + L01 (新增 destroy() 清理資源)；新增 6 個單元測試 (flush 直接寫入/清除 timer/pluginData 不存在時建立/DB 失敗拋錯 + destroy flush 後清理/空 cache 不 flush)；1101 tests 全過 (原 1095 +6)；ESLint 0 errors (修復 categories.js eqeqeq)；安全評分 7→8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；市場：Actual Budget 26.6.0 (Balance Forecast Report, Enable Banking sync, NZ bank sync)；叮咚AI記帳多模態大模型智能記帳趨勢
 - **2026-08-01**: Code Review changelog.js (1,090 行) — 發現 0 HIGH、2 MEDIUM (M01: getCurrentVersionInfo 版本不存在時回傳 undefined、M02: showChangelogModal 缺少 Escape 鍵關閉)、4 LOW (L01: renderCurrentVersionSummary 硬編碼顏色、L02: 殘留事件監聽器、L03: 缺少 destroy 方法、L04: CHANGELOG 資料無自動驗證)；已修復 M02 (Escape 鍵無障礙支援) + 新增 4 個單元測試；1095 tests 全過 (原 1091 +4)；ESLint 乾淨；安全評分 8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；MOZE 無 8 月新更新；市場趨勢：Moneybook 2026 全面收費後替代方案討論持續、開源記帳生態成長 (Actual Budget/Firefly III)、AI 記帳工具成熟化 (叮咚AI記帳)
 - **2026-07-30**: fix(H01+H02) group management — H01: 統一 debtManager.js netAmount 定義為 `totalIncome - totalExpense` 以匹配 dataService.js（3處計算 + 7處比較邏輯翻轉）、H02: 修復 getGroups() dates.sort() in-place 副作用改為 `[...dates].sort()` ；commits 7e6a4f2 + b76448a；與 OpenCode 協作；927 tests 全過（2 datePickerModal pre-existing failures）；ESLint 乾淨
 - **2026-07-30**: Code Review 群組管理系統 — 審查 groupManager.js (162行) + dataService.js (getGroups/settleGroup/partialSettleGroup) + debtManager.js (群組結清UI) + recordsList.js (group_settlement顯示)；發現 2 HIGH (**H01/H02 已修復** ✅)、4 MEDIUM (M01: partialSettleGroup 缺少金額驗證、M02: deleteGroup 未清除 records 的 groupId 導致孤兒關聯、M03: 淨額計算邏輯 5 處重複 DRY 違反、M04-RESOLVED: description XSS 經確認 recordsList.js L905 有 escapeHTML 防護)、3 LOW (L01: getGroupSummary 名稱與實作不符、L02: settleGroup 缺少 ledgerId 隔離驗證、L03: 缺少 destroy 方法)；產出 code-review-groupManager-2026-07-30.md；安全評分 7/10；927 tests 全過；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化

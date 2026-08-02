@@ -123,13 +123,15 @@ export class PluginStorage {
                     'plugins',
                     'readwrite'
                 )
-                const pluginData = await tx.store.get(this.pluginId)
+                let pluginData = await tx.store.get(this.pluginId)
 
-                if (pluginData) {
-                    pluginData.storage = { ...this.cache }
-                    await tx.store.put(pluginData)
-                    await tx.done
+                // FIX: Create plugin record if missing (prevents silent data loss on first write)
+                if (!pluginData) {
+                    pluginData = { id: this.pluginId, storage: {} }
                 }
+                pluginData.storage = { ...this.cache }
+                await tx.store.put(pluginData)
+                await tx.done
             } catch (e) {
                 console.error(
                     `[PluginStorage] Failed to save storage to DB for ${this.pluginId}`,
@@ -144,6 +146,65 @@ export class PluginStorage {
         }, 50)
 
         return this.savePromise
+    }
+
+    /**
+     * Force an immediate sync of pending writes to IndexedDB.
+     * Call this before plugin unload or page close to prevent data loss.
+     * @returns {Promise<void>}
+     */
+    async flush() {
+        // Clear pending debounce timer to prevent race
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout)
+            this.saveTimeout = null
+        }
+
+        // Reset promise state so a fresh write can be created
+        const staleResolve = this.savePromiseResolve
+        this.savePromise = null
+        this.savePromiseResolve = null
+
+        // Directly write to DB without debounce delay
+        try {
+            const tx = this.dataService.db.transaction('plugins', 'readwrite')
+            let pluginData = await tx.store.get(this.pluginId)
+
+            if (!pluginData) {
+                pluginData = { id: this.pluginId, storage: {} }
+            }
+            pluginData.storage = { ...this.cache }
+            await tx.store.put(pluginData)
+            await tx.done
+        } catch (e) {
+            console.error(
+                `[PluginStorage] Failed to flush storage to DB for ${this.pluginId}`,
+                e
+            )
+            throw e
+        } finally {
+            if (staleResolve) {
+                staleResolve()
+            }
+        }
+    }
+
+    /**
+     * Clean up pending timers and release resources.
+     * Call this when the plugin is being unloaded.
+     */
+    async destroy() {
+        // Flush any pending writes before cleanup
+        if (Object.keys(this.cache).length > 0) {
+            await this.flush()
+        }
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout)
+            this.saveTimeout = null
+        }
+        this.cache = Object.create(null)
+        this.savePromise = null
+        this.savePromiseResolve = null
     }
 
     /**
