@@ -195,14 +195,16 @@ export class SyncService {
     }
 
     /**
-     * 原生 App 登入：使用 @codetrix-studio/capacitor-google-auth
+     * 原生 App 登入：使用 @capgo/capacitor-social-login
      * @param {boolean} [requestSharing=false]
      */
     async _signInNative(requestSharing = false) {
         try {
-            const { GoogleAuth } = await import(
-                '@codetrix-studio/capacitor-google-auth'
+            const { SocialLogin } = await import(
+                '@capgo/capacitor-social-login'
             )
+
+            const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'
 
             const nativeScopes = requestSharing
                 ? [
@@ -217,20 +219,28 @@ export class SyncService {
                       'https://www.googleapis.com/auth/drive.appdata',
                   ]
 
-            await GoogleAuth.initialize({
-                scopes: nativeScopes,
-                grantOfflineAccess: true,
+            await SocialLogin.initialize({
+                google: {
+                    webClientId: GOOGLE_CLIENT_ID,
+                    mode: 'offline',
+                },
             })
 
-            const result = await GoogleAuth.signIn()
+            const res = await SocialLogin.login({
+                provider: 'google',
+                options: { scopes: nativeScopes },
+            })
 
-            if (!result.serverAuthCode) {
+            // res.result.serverAuthCode 在 offline mode
+            const serverAuthCode = res.result.serverAuthCode
+
+            if (!serverAuthCode) {
                 throw new Error(
-                    '未取得 serverAuthCode (請確認 Google Cloud Console 設定了正確的 Web Client ID 且 forceCodeForRefreshToken為true)'
+                    '未取得 serverAuthCode (請確認 Google Cloud Console 設定了正確的 Web Client ID 且 offline mode 生效)'
                 )
             }
 
-            await this.handleAuthCallback(result.serverAuthCode)
+            await this.handleAuthCallback(serverAuthCode)
             if (requestSharing) {
                 await this.dataService.saveSetting({
                     key: 'sync_drive_file_authorized',
@@ -381,12 +391,15 @@ export class SyncService {
         // 呼叫原生登出
         if (isNative) {
             try {
-                const { GoogleAuth } = await import(
-                    '@codetrix-studio/capacitor-google-auth'
+                const { SocialLogin } = await import(
+                    '@capgo/capacitor-social-login'
                 )
-                await GoogleAuth.signOut()
+                await SocialLogin.logout({ provider: 'google' })
             } catch (e) {
-                console.warn('[SyncService] Native signOut error:', e)
+                // offline mode 不支援 logout — 靜默忽略
+                console.warn(
+                    '[SyncService] Native logout not supported in offline mode'
+                )
             }
         }
 
