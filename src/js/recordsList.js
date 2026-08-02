@@ -695,10 +695,10 @@ export class RecordsListManager {
                                 <span class="text-xs font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨 ${netLabel}${formatCurrency(netAmount)}</span>
                                 ${!isSettled && hasSettlement ? `<span class="text-xs text-wabi-text-secondary" title="待結清（扣除退款）">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
                                 ${!isSettled && !hasSettlement ? `<span class="text-xs font-medium ${pendingAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}" title="待結清">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
-                                <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform"></i>
+                                <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform" style="transform: rotate(180deg)"></i>
                             </div>
                         </div>
-                        <div class="group-body hidden ml-4 mt-1 space-y-1">
+                        <div class="group-body ml-4 mt-1 space-y-1">
                     `
                     // Render each record within the group
                     groupsHtml += groupRecs.map(record => this._renderSingleRecord(record)).join('')
