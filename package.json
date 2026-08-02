@@ -21,11 +21,6 @@
         "vite": "^5.4.21",
         "vitest": "^4.1.5"
     },
-    "overrides": {
-        "@codetrix-studio/capacitor-google-auth": {
-            "@capacitor/core": "$@capacitor/core"
-        }
-    },
     "dependencies": {
         "@capacitor-community/admob": "^8.0.0",
         "@capacitor/android": "^8.5.0",
