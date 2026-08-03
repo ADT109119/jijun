@@ -8,7 +8,7 @@
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
 ├── themeManager.js      # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
-├── aiService.js         # AIService 端側 58M LLM 語意解析服務 (真實 wllama@3.5.1 WASM + OPFS 快取、ChatML 語意解析、離線規則引擎優雅回退、HEAD ETag 模型更新檢查與 12 小時冷卻)
+├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，包含對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── categories.js        # 分類常數與工具函數

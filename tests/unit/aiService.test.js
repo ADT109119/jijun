@@ -12,14 +12,14 @@ describe('AIService - generateSystemPrompt', () => {
         const prompt = aiService.generateSystemPrompt(categories, accounts, testDate)
 
         expect(prompt).toContain('今天是 2026-08-03（星期一）')
-        expect(prompt).toContain('你是一個實用的記帳助手')
+        expect(prompt).toContain('你是一個記帳助理。你被賦予了以下 tools:')
         expect(prompt).toContain('餐飲')
         expect(prompt).toContain('交通')
         expect(prompt).toContain('貓咪用品')
         expect(prompt).toContain('現金')
         expect(prompt).toContain('貓貓儲值卡')
         
-        const parsedJson = JSON.parse(prompt.split('被賦予的 tools 如下:')[1].trim())
+        const parsedJson = JSON.parse(prompt.split('被賦予了以下 tools:\n')[1].trim())
         expect(parsedJson.parameters.properties.category.enum).toEqual(categories)
         expect(parsedJson.parameters.properties.account.enum).toEqual(accounts)
         expect(parsedJson.parameters.properties.date).toBeDefined()
@@ -155,7 +155,7 @@ describe('AIService - 防呆機制 System Prompt 重構', () => {
         const accounts = ['現金', '信用卡']
 
         const prompt = aiService.generateSystemPrompt(expenseCategories, accounts, new Date('2026-08-03'))
-        const parsedJson = JSON.parse(prompt.split('被賦予的 tools 如下:')[1].trim())
+        const parsedJson = JSON.parse(prompt.split('被賦予了以下 tools:\n')[1].trim())
 
         expect(parsedJson.parameters.properties.category.enum).toEqual(expenseCategories)
         expect(parsedJson.parameters.properties.category.enum).not.toContain('薪水')
