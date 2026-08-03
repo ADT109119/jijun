@@ -829,7 +829,16 @@ class DataService {
                 )
             }
 
-            return records.sort((a, b) => b.timestamp - a.timestamp)
+            // Multi-level sort: date desc → timestamp desc → id desc
+            return records.sort((a, b) => {
+                // Primary: date descending
+                if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+                // Secondary: timestamp descending (missing timestamps sort to bottom)
+                const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+                if (tsDiff !== 0) return tsDiff
+                // Tertiary: id descending (newer IDs are larger)
+                return (b.id || 0) - (a.id || 0)
+            })
         } catch (error) {
             console.error('獲取記錄失敗:', error)
             return []
@@ -1233,7 +1242,13 @@ class DataService {
             )
         }
 
-        return records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        // Multi-level sort: date desc → timestamp desc → id desc
+        return records.sort((a, b) => {
+            if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+            const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+            if (tsDiff !== 0) return tsDiff
+            return (b.id || 0) - (a.id || 0)
+        })
     }
 
     updateRecordInLocalStorage(id, updates) {

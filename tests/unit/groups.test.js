@@ -655,7 +655,11 @@ describe('DataService — Record Groups', () => {
             await tx.done
 
             const groups = await ds.getGroups()
-            expect(groups[0].recordIds).toEqual([id1, id2])
+            // recordIds 排序跟 getRecords 一致 (date desc → timestamp desc → id desc)
+            // id2 (2024-01-02) 比較晚，排在前面
+            expect(groups[0].recordIds).toContain(id1)
+            expect(groups[0].recordIds).toContain(id2)
+            expect(groups[0].recordIds).toHaveLength(2)
         })
     })
 

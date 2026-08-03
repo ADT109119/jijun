@@ -2,7 +2,7 @@
 
 ## 專案資訊
 - **GitHub**: https://github.com/ADT109119/jijun
-- **當前版本**: v2.1.6.0
+- **當前版本**: v2.1.7.1
 - **技術棧**: Vanilla JS + IndexedDB (idb) + Vite + Vitest + Playwright + Capacitor Android
 - **CSS**: Tailwind CDN + FontAwesome + Chart.js
 - **Schema**: IndexedDB v13 (信用卡支援)
@@ -156,6 +156,7 @@
 
 ## 更新歷史
 
+- **2026-08-03**: fix: dataService.js getRecords sorting (date desc → timestamp desc → id desc multi-level) + sync merge conflict resolution + 16 failing tests fixed (changelog.test.js: UPDATED_VERSIONS, renderVersionInfo UI assertions, loose it() blocks wrapped in describe, changelogManager→manager; groups.test.js: recordIds order; dataService.test.js: sort order); fix: changelog.test.js EXPECTED_VERSIONS 新增 v2.1.6.7~v2.1.7.1；fix: changelog renderVersionInfo tests 匹配 v2.1.7.0 UI redesign (當前版本/新功能/改進與優化/amber CSS)；fix: dataService.getRecordsFromLocalStorage 也套用多層級排序；1126 tests 全過 (原 1122, -6 from merge)；ESLint 修改檔案 0 errors；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；遠端 owner 發布 v2.1.7.0 (wllama 端側 LLM) + v2.1.7.1 (明細搜尋清空+主題SVG優化)
 - **2026-08-02**: Code Review + fix pluginStorage.js — 審查 pluginStorage.js (216行) 插件沙箱儲存；發現 2 HIGH (**H01: _saveToDB pluginData 不存在時靜默跳過導致首次寫入資料遺失、H02: 缺少 flush() 方法，頁面關閉/debounce 未觸發時緩衝區資料遺失**)、3 MEDIUM (M01: _saveToDB 即使 DB 失敗仍 resolve Promise 掩蓋錯誤、M02: init() 遍歷全部 localStorage keys O(n) 效能浪費、M03: 沒有 destroy() 清理 pending timeouts)、1 LOW (L01: 缺少 destroy 方法)；已修復 H01 (pluginData 不存在時自動建立紀錄) + H02 (新增 flush() 同步寫入方法) + L01 (新增 destroy() 清理資源)；新增 6 個單元測試 (flush 直接寫入/清除 timer/pluginData 不存在時建立/DB 失敗拋錯 + destroy flush 後清理/空 cache 不 flush)；1101 tests 全過 (原 1095 +6)；ESLint 0 errors (修復 categories.js eqeqeq)；安全評分 7→8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；市場：Actual Budget 26.6.0 (Balance Forecast Report, Enable Banking sync, NZ bank sync)；叮咚AI記帳多模態大模型智能記帳趨勢
 - **2026-08-01**: Code Review changelog.js (1,090 行) — 發現 0 HIGH、2 MEDIUM (M01: getCurrentVersionInfo 版本不存在時回傳 undefined、M02: showChangelogModal 缺少 Escape 鍵關閉)、4 LOW (L01: renderCurrentVersionSummary 硬編碼顏色、L02: 殘留事件監聽器、L03: 缺少 destroy 方法、L04: CHANGELOG 資料無自動驗證)；已修復 M02 (Escape 鍵無障礙支援) + 新增 4 個單元測試；1095 tests 全過 (原 1091 +4)；ESLint 乾淨；安全評分 8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；MOZE 無 8 月新更新；市場趨勢：Moneybook 2026 全面收費後替代方案討論持續、開源記帳生態成長 (Actual Budget/Firefly III)、AI 記帳工具成熟化 (叮咚AI記帳)
 - **2026-07-30**: fix(H01+H02) group management — H01: 統一 debtManager.js netAmount 定義為 `totalIncome - totalExpense` 以匹配 dataService.js（3處計算 + 7處比較邏輯翻轉）、H02: 修復 getGroups() dates.sort() in-place 副作用改為 `[...dates].sort()` ；commits 7e6a4f2 + b76448a；與 OpenCode 協作；927 tests 全過（2 datePickerModal pre-existing failures）；ESLint 乾淨
