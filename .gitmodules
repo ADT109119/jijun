@@ -1,0 +1,3 @@
+[submodule "tools/jijun-ai-training"]
+	path = tools/jijun-ai-training
+	url = https://github.com/ADT109119/jijun-ai-training

@@ -9,16 +9,21 @@ import {
     customAlert,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
+import { AIService } from '../aiService.js'
 
 export class AddPage {
     constructor(app) {
         this.app = app
+        this.aiService = this.app.aiService
         this._keypadListener = null
     }
 
     async render(params) {
         const recordId = params.get('id')
         const isEditMode = !!recordId
+        if (this.app.updateNavAddIcon) {
+            this.app.updateNavAddIcon(isEditMode)
+        }
         const debtEnabled = await this.app.dataService.getSetting(
             'debtManagementEnabled'
         )
@@ -110,6 +115,15 @@ export class AddPage {
                                         ? `
                                     <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
                                         <i class="fa-solid fa-credit-card text-lg"></i>
+                                    </button>
+                                `
+                                        : ''
+                                }
+                                ${
+                                    !isEditMode
+                                        ? `
+                                    <button id="ai-entry-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-primary/10" title="AI 語音/文字記帳">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
                                     </button>
                                 `
                                         : ''
@@ -1571,6 +1585,45 @@ export class AddPage {
         toggleKeypadGrid(true)
         // 初始化儲存按鈕 UI 狀態
         updateSaveButtonUI()
+
+        // --- AI 語意記帳整合 (在新增模式下啟用) ---
+        const openGeminiModal = () => {
+            this.showGeminiVoiceModal({
+                currentType,
+                accounts,
+                updateTypeUI,
+                updateSelectedCategoryUI,
+                renderCategories,
+                updateAccountSelectorUI,
+                advancedModeEnabled,
+                getAmountDisplay: () => amountDisplay,
+                getNoteInput: () => noteInput,
+                getDateInput: () => document.getElementById('add-date-input'),
+                getDateDisplay: () => document.getElementById('date-display'),
+                setSelectedCategory: (catId) => { selectedCategory = catId },
+                setSelectedAccount: (accId) => { selectedAccountId = accId },
+                setCurrentType: (type) => { currentType = type },
+                setCurrentAmount: (amt) => { currentAmount = amt }
+            })
+        }
+
+        const aiBtn = document.getElementById('ai-entry-btn')
+        if (aiBtn) {
+            aiBtn.addEventListener('click', openGeminiModal)
+        }
+
+        // 監聽底部導覽列按鈕：僅當使用者「已在記帳新增頁面」且為新增模式時，點擊底部麥克風按鈕觸發語音 Modal
+        const navAddBtn = document.querySelector('a[data-page="add"]')
+        if (navAddBtn && !isEditMode) {
+            navAddBtn.onclick = (e) => {
+                const currentHash = window.location.hash || '#home'
+                const isAddPage = currentHash === '#add' || currentHash.startsWith('#add')
+                if (isAddPage && this.aiService && this.aiService.isExperimentalEnabled()) {
+                    e.preventDefault()
+                    openGeminiModal()
+                }
+            }
+        }
     }
 
     createKeypadButton(key, isEditMode = false, calculatorModeEnabled = false) {
@@ -1612,6 +1665,263 @@ export class AddPage {
                 ${content}
             </button>
         `
+    }
+
+    showGeminiVoiceModal({
+        currentType,
+        accounts,
+        updateTypeUI,
+        updateSelectedCategoryUI,
+        renderCategories,
+        updateAccountSelectorUI,
+        advancedModeEnabled,
+        getAmountDisplay,
+        getNoteInput,
+        getDateInput,
+        getDateDisplay,
+        setSelectedCategory,
+        setSelectedAccount,
+        setCurrentType,
+        setCurrentAmount
+    }) {
+        const aiService = this.aiService || this.app.aiService
+        const modal = document.createElement('div')
+        modal.id = 'gemini-voice-modal'
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in'
+
+        modal.innerHTML = `
+            <div class="gemini-rainbow-glow-container max-w-md w-full shadow-2xl">
+                <div class="gemini-rainbow-modal-body p-6 border border-white/60 dark:border-slate-700/60 rounded-3xl text-wabi-text-primary space-y-4">
+                    <div class="flex items-center justify-between border-b border-wabi-border/60 pb-3">
+                        <div class="flex items-center gap-3">
+                            <div id="gemini-mic-pulse" class="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center animate-pulse text-lg shadow-md shrink-0">
+                                <i class="fa-solid fa-microphone"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-wabi-text-primary">AI 語音轉錄記帳</h3>
+                                <p id="gemini-status-hint" class="text-xs text-wabi-text-secondary">正在聆聽您的口述內容...</p>
+                            </div>
+                        </div>
+                        <button id="close-gemini-modal" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1 text-lg">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-3 rounded-2xl bg-wabi-bg/70 border border-wabi-border/60 text-sm font-medium leading-relaxed">
+                        <textarea id="gemini-live-transcript" rows="3" placeholder="請開始說話，或在此手動輸入/修改記帳描述..." class="w-full bg-transparent resize-none outline-none text-wabi-text-primary placeholder:text-wabi-text-secondary/70 text-sm font-medium leading-relaxed"></textarea>
+                    </div>
+
+                    <div class="flex items-center gap-3 pt-1">
+                        <button id="gemini-toggle-mic-btn" class="size-12 rounded-2xl bg-red-500 text-white flex items-center justify-center text-lg hover:opacity-90 transition-opacity shrink-0" title="停止/重新錄音">
+                            <i class="fa-solid fa-stop"></i>
+                        </button>
+                        <button id="gemini-parse-btn" class="flex-1 h-12 bg-wabi-primary text-wabi-surface rounded-2xl font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 text-sm shadow-md">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span id="gemini-parse-btn-text">AI 語意分析</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `
+        document.body.appendChild(modal)
+
+        const closeBtn = modal.querySelector('#close-gemini-modal')
+        const transcriptInput = modal.querySelector('#gemini-live-transcript')
+        const statusHint = modal.querySelector('#gemini-status-hint')
+        const micPulse = modal.querySelector('#gemini-mic-pulse')
+        const toggleMicBtn = modal.querySelector('#gemini-toggle-mic-btn')
+        const parseBtn = modal.querySelector('#gemini-parse-btn')
+        const parseBtnText = modal.querySelector('#gemini-parse-btn-text')
+
+        let recognition = null
+        let isRecording = false
+        let finalTranscript = ''
+
+        const closeModal = () => {
+            if (recognition && isRecording) {
+                try { recognition.stop() } catch (e) {}
+            }
+            modal.remove()
+        }
+
+        closeBtn.addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
+            recognition = new SpeechRec()
+            recognition.continuous = true
+            recognition.interimResults = true
+            recognition.lang = 'zh-TW'
+
+            recognition.onstart = () => {
+                isRecording = true
+                micPulse.className = 'w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center animate-pulse text-lg shadow-md shrink-0'
+                toggleMicBtn.className = 'size-12 rounded-2xl bg-red-500 text-white flex items-center justify-center text-lg hover:opacity-90 transition-opacity shrink-0'
+                toggleMicBtn.innerHTML = '<i class="fa-solid fa-stop"></i>'
+                statusHint.textContent = '正在聆聽您的口述內容（可直接點擊下方輸入框手動修改）...'
+            }
+
+            recognition.onend = () => {
+                isRecording = false
+                micPulse.className = 'w-10 h-10 rounded-full bg-wabi-primary text-wabi-surface flex items-center justify-center text-lg shadow-md shrink-0'
+                toggleMicBtn.className = 'size-12 rounded-2xl bg-wabi-primary/10 text-wabi-primary flex items-center justify-center text-lg hover:bg-wabi-primary/20 transition-colors shrink-0'
+                toggleMicBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>'
+                if (transcriptInput.value.trim()) {
+                    statusHint.textContent = '可手動編輯文字，點擊「AI 語意分析」開始自動填單'
+                } else {
+                    statusHint.textContent = '可直接在此手動輸入，或點擊麥克風開始錄音'
+                }
+            }
+
+            recognition.onresult = event => {
+                let interim = ''
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript
+                    } else {
+                        interim += event.results[i][0].transcript
+                    }
+                }
+                const display = (finalTranscript + ' ' + interim).trim()
+                if (display) {
+                    transcriptInput.value = display
+                }
+            }
+
+            recognition.onerror = event => {
+                isRecording = false
+                micPulse.className = 'w-10 h-10 rounded-full bg-wabi-primary text-wabi-surface flex items-center justify-center text-lg shadow-md shrink-0'
+                toggleMicBtn.className = 'size-12 rounded-2xl bg-wabi-primary/10 text-wabi-primary flex items-center justify-center text-lg hover:bg-wabi-primary/20 transition-colors shrink-0'
+                toggleMicBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>'
+
+                if (event.error === 'network') {
+                    statusHint.textContent = '無法連線至語音辨識伺服器（請確認網路連線），您仍可在此手動輸入文字'
+                } else if (event.error === 'not-allowed') {
+                    statusHint.textContent = '未取得麥克風存取權限，請授權後重試，或直接在此手動輸入'
+                } else if (event.error === 'no-speech') {
+                    statusHint.textContent = '未偵測到聲音，可點擊麥克風重試，或直接在此手動輸入'
+                } else {
+                    statusHint.textContent = `語音服務暫時無法使用 (${event.error})，您可直接在此手動輸入文字`
+                }
+            }
+
+            try { recognition.start() } catch (e) {}
+        } else {
+            statusHint.textContent = '您的瀏覽器不支援 Web Speech 語音輸入，請直接手動輸入'
+        }
+
+        toggleMicBtn.addEventListener('click', () => {
+            if (!recognition) return
+            if (isRecording) {
+                recognition.stop()
+            } else {
+                recognition.start()
+            }
+        })
+
+        parseBtn.addEventListener('click', async () => {
+            const text = transcriptInput.value.trim()
+            if (!text) {
+                showToast('請先口述或手動輸入記帳描述內容！', 'warning')
+                return
+            }
+
+            if (recognition && isRecording) {
+                try { recognition.stop() } catch (e) {}
+            }
+
+            parseBtn.disabled = true
+            parseBtnText.textContent = 'AI 解析中...'
+            statusHint.textContent = 'AI 正在分析金額、分類、帳戶與日期...'
+
+            try {
+                const categoryManager = this.app.categoryManager
+                const accountNames = accounts.map(a => a.name)
+                const allCatNames = categoryManager.getAllCategories().map(c => c.name)
+
+                // 首次推論：提供全部分類供模型參考
+                let parsed = await aiService.parseRecord(text, allCatNames, accountNames, new Date())
+
+                // 防呆機制：驗證收支類型與分類相符度
+                const recognizedType = parsed.type === 'income' ? 'income' : 'expense'
+                const targetCatNames = categoryManager.getAllCategories(recognizedType).map(c => c.name)
+                const oppositeType = recognizedType === 'income' ? 'expense' : 'income'
+                const oppositeCatNames = categoryManager.getAllCategories(oppositeType).map(c => c.name)
+
+                // 若生成的類別不存在，或者辨識出來的類別其實屬於相反收支類型的分類中：
+                if (parsed.category && (!targetCatNames.includes(parsed.category) || oppositeCatNames.includes(parsed.category))) {
+                    console.warn(`[AI 防呆驗證] 分類 "${parsed.category}" 未能在 ${recognizedType} 分類中匹配，移除無關收支類型的分類重新執行 AI 解析...`)
+                    // 移除無關收支類型的分類，只把目標收支類型的分類放進 System Prompt 重跑一次
+                    parsed = await aiService.parseRecord(text, targetCatNames, accountNames, new Date())
+                }
+
+                // 1. 套用收支類型 (Income/Expense)
+                if (parsed.type && parsed.type !== currentType) {
+                    setCurrentType(parsed.type)
+                    updateTypeUI()
+                }
+
+                // 2. 套用金額
+                if (parsed.amount) {
+                    setCurrentAmount(parsed.amount.toString())
+                    const amountDisplay = getAmountDisplay()
+                    if (amountDisplay) {
+                        amountDisplay.textContent = formatCurrency(parsed.amount.toString())
+                    }
+                }
+
+                // 3. 套用描述與備註
+                if (parsed.description) {
+                    const noteInput = getNoteInput()
+                    if (noteInput) noteInput.value = parsed.description
+                }
+
+                // 4. 套用日期
+                if (parsed.date) {
+                    const dateInput = getDateInput()
+                    const dateDisplay = getDateDisplay()
+                    if (dateInput) {
+                        dateInput.value = parsed.date
+                        if (dateDisplay) dateDisplay.textContent = formatDate(parsed.date)
+                    }
+                }
+
+                // 5. 分類防呆：若重試後依然找不到匹配分類，留預設選定分類
+                if (parsed.category) {
+                    const currentTypeCats = categoryManager.getAllCategories(currentType)
+                    const matchedCat = currentTypeCats.find(c => c.name === parsed.category)
+                    if (matchedCat) {
+                        setSelectedCategory(matchedCat.id)
+                        updateSelectedCategoryUI(matchedCat)
+                        renderCategories()
+                    } else {
+                        console.warn(`[AI 防呆驗證] 重新解析後分類 "${parsed.category}" 仍無法與系統分類匹配，保留預設分類`)
+                    }
+                }
+
+                // 6. 帳戶防呆：若辨識出來的帳戶不存在，留預設選定帳戶
+                if (parsed.account && advancedModeEnabled) {
+                    const matchedAcc = accounts.find(a => a.name === parsed.account)
+                    if (matchedAcc) {
+                        setSelectedAccount(matchedAcc.id)
+                        updateAccountSelectorUI()
+                    } else {
+                        console.warn(`[AI 防呆驗證] AI 解析之帳戶 "${parsed.account}" 不存在於帳戶清單，保留預設帳戶`)
+                    }
+                }
+
+                showToast('AI 記帳解析成功！已自動填妥欄位。', 'success')
+                closeModal()
+            } catch (err) {
+                console.error('AI 解析失敗:', err)
+                showToast('AI 解析發生錯誤: ' + err.message, 'error')
+                parseBtn.disabled = false
+                parseBtnText.textContent = 'AI 語意分析'
+            }
+        })
     }
 
     showAccountSelectionModal(accounts, currentAccountId, onSelect) {

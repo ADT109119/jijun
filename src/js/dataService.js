@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 14 // Schema version 14: Migrate legacy debt payments to records for correct balances
+        this.dbVersion = 15 // Schema version 15: Upgraded to support version 15 compatibility & legacy debt payments migration
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -403,6 +403,7 @@ class DataService {
                                 stmtStore.createIndex('status', 'status')
                             }
                         }
+<<<<<<< HEAD
                         // Schema version 14: Migrate legacy debt payments to records for correct balances
                         if (oldVersion < 14) {
                             const debtsStore = transaction.objectStore('debts')
@@ -490,6 +491,10 @@ class DataService {
                                 }
                                 cursor = await cursor.continue()
                             }
+                        }
+                        // Schema version 15: Compatibility placeholder
+                        if (oldVersion < 15) {
+                            // Version 15 migration placeholder
                         }
                     },
                 })
