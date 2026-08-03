@@ -70,6 +70,15 @@ public/                  # 靜態資源目錄
 ├── screenshots/         # PWA 螢幕截圖目錄 (用於應用商店預覽)
 └── widgets/             # PWA 桌面小工具定義檔 (包含 template.json 與 data.json)
 
+tools/jijun-ai-training/  # 離線 AI 模型 (jijun-LM) 數據生成與訓練管線
+├── generate_dataset.py # 訓練資料集批量生成腳本 (含極簡短語 Ultra-Short 強化與 --short_ratio 參數)
+├── filter_dataset.py   # 資料集語意對齊過濾器
+├── split_dataset.py    # 訓練集/測試集分割腳本 (80/20)
+├── train_custom_sft.py # PyTorch 微調 SFT 腳本
+├── evaluate_benchmark.py # 基準評測腳本
+├── demo_gguf.py        # Gradio/CLI GGUF 推論測試 Demo
+└── jijun-LM-GGUF/      # 導出的 GGUF 量化模型權重
+
 capacitor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
 index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, IDB, GIS)
 ```

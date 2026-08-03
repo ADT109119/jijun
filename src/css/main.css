@@ -427,6 +427,24 @@ select option {
     animation: modalPopDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* AI Token 實時逐字淡入浮現動畫 */
+@keyframes tokenFadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(2px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-token-appear {
+    animation: tokenFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 /* Gemini Rainbow Glow Modal Style */
 @keyframes gemini-rainbow-spin {
     0% {

@@ -435,18 +435,29 @@ export class AIService {
                 `<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
             let responseText = '';
             try {
-                const response = await this.wllama.createCompletion({
+                const isStreaming = typeof onToken === 'function';
+                const completionOpts = {
                     prompt: promptText,
                     temperature: 0.1,
                     max_tokens: 128,
-                    stop: ['<|im_end|>', '</tool_call>'],
-                    onNewToken: (_token, piece, currentText) => {
-                        if (typeof onToken === 'function') {
-                            onToken(piece, currentText);
+                    stop: ['<|im_end|>', '</tool_call>']
+                };
+
+                if (isStreaming) {
+                    completionOpts.stream = true;
+                    completionOpts.onData = (chunk) => {
+                        const piece = chunk?.choices?.[0]?.text || chunk?.choices?.[0]?.delta?.content || (typeof chunk === 'string' ? chunk : '');
+                        if (piece) {
+                            responseText += piece;
+                            onToken(piece, responseText);
                         }
-                    }
-                });
-                responseText = response?.choices?.[0]?.text || '';
+                    };
+                }
+
+                const response = await this.wllama.createCompletion(completionOpts);
+                if (!responseText && response?.choices?.[0]?.text) {
+                    responseText = response.choices[0].text;
+                }
             } catch (error) {
                 this.lastErrorStage = 'inference';
                 throw error;
