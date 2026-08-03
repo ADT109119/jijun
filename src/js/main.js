@@ -768,7 +768,8 @@ class EasyAccountingApp {
         if (!navAddIcon) return
 
         const currentHash = window.location.hash || '#home'
-        const isAddPage = currentHash === '#add' || currentHash.startsWith('#add')
+        const isEditUrl = currentHash.includes('editRecordId=')
+        const isAddPage = (currentHash === '#add' || currentHash.startsWith('#add')) && !isEditUrl
         const isAiEnabled = this.aiService ? this.aiService.isExperimentalEnabled() : false
 
         if (isAddPage && isAiEnabled && !isEditMode) {

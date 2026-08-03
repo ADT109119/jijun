@@ -1,5 +1,14 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.6.8': {
+        date: '2026-08-03',
+        title: '語音流式辨識無縫體驗與升級彈窗機制修復',
+        bugfixes: [
+            '修復語音辨識未即時顯示與文字重複拼接問題：重構 Web Speech API 即時渲染與段落組合邏輯，支援口述內容動態即時顯示與鍵盤手動編輯無縫融合，並徹底消除歷史段落重複拼接問題。',
+            '修復編輯模式下點擊底部導覽列 + 按鈕誤觸發語音 Modal 的問題：確保於編輯既有紀錄時點擊 + 號可正常切換至全新記帳新增頁面。',
+            '修復舊用戶版本升級彈窗未顯示問題：強化 Changelog Modal 版本追蹤演算法，精準識別舊版用戶升級情境並於重開 App 時自動呈現最新版本功能亮點。',
+        ],
+    },
     '2.1.6.7': {
         date: '2026-08-03',
         title: '全新 AI 離線語音記帳助手 & 端側 GGUF LLM 工具呼叫',
@@ -1109,18 +1118,25 @@ export class ChangelogManager {
         const latestVersionInfo = this.getAllVersions()[0]
         if (!latestVersionInfo) return
 
-        const lastSeenVersion = localStorage.getItem('app-last-seen-version')
         const currentVersion = latestVersionInfo.version
+        const lastSeenVersion = localStorage.getItem('app-last-seen-version')
+        const previousAppVersion = localStorage.getItem('app-current-version')
 
+        // 判斷是否為「版本升級」：
+        // 情況 A：lastSeenVersion 存在且 != currentVersion
+        // 情況 B：lastSeenVersion 未曾設定 (新功能引入)，但 previousAppVersion 存在且 != currentVersion
+        // 情況 C：已有舊 App 資料 (如 activeLedgerId)，且上一版紀錄未與 currentVersion 對齊
+        const isExistingUser = !!(previousAppVersion || localStorage.getItem('activeLedgerId') || localStorage.getItem('ledgers'))
+        const isVersionUpgraded = lastSeenVersion
+            ? (lastSeenVersion !== currentVersion)
+            : (isExistingUser && previousAppVersion !== currentVersion)
+
+        // 更新儲存的版本號標記
         localStorage.setItem('app-current-version', currentVersion)
+        localStorage.setItem('app-last-seen-version', currentVersion)
 
-        // 若曾經有過記錄，且最新版本與歷史紀錄不同 (代表應用程式升級更新)
-        if (lastSeenVersion && lastSeenVersion !== currentVersion) {
-            localStorage.setItem('app-last-seen-version', currentVersion)
+        if (isVersionUpgraded) {
             this.showUpdateChangelogModal(latestVersionInfo)
-        } else if (!lastSeenVersion) {
-            // 首次使用預先記錄目前最新版本
-            localStorage.setItem('app-last-seen-version', currentVersion)
         }
     }
 

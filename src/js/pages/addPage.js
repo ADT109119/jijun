@@ -1612,15 +1612,20 @@ export class AddPage {
             aiBtn.addEventListener('click', openGeminiModal)
         }
 
-        // 監聽底部導覽列按鈕：僅當使用者「已在記帳新增頁面」且為新增模式時，點擊底部麥克風按鈕觸發語音 Modal
+        // 監聽底部導覽列按鈕：僅當使用者「已在全新記帳新增頁面」且非編輯模式時，點擊底部麥克風按鈕觸發語音 Modal
         const navAddBtn = document.querySelector('a[data-page="add"]')
-        if (navAddBtn && !isEditMode) {
-            navAddBtn.onclick = (e) => {
-                const currentHash = window.location.hash || '#home'
-                const isAddPage = currentHash === '#add' || currentHash.startsWith('#add')
-                if (isAddPage && this.aiService && this.aiService.isExperimentalEnabled()) {
-                    e.preventDefault()
-                    openGeminiModal()
+        if (navAddBtn) {
+            if (isEditMode) {
+                navAddBtn.onclick = null
+            } else {
+                navAddBtn.onclick = (e) => {
+                    const currentHash = window.location.hash || '#home'
+                    const isEditUrl = currentHash.includes('editRecordId=')
+                    const isAddPage = (currentHash === '#add' || currentHash.startsWith('#add')) && !isEditUrl
+                    if (isAddPage && this.aiService && this.aiService.isExperimentalEnabled()) {
+                        e.preventDefault()
+                        openGeminiModal()
+                    }
                 }
             }
         }
