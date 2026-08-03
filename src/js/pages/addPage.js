@@ -1735,7 +1735,7 @@ export class AddPage {
 
         let recognition = null
         let isRecording = false
-        let finalTranscript = ''
+        let baseText = ''
 
         const closeModal = () => {
             if (recognition && isRecording) {
@@ -1758,6 +1758,7 @@ export class AddPage {
 
             recognition.onstart = () => {
                 isRecording = true
+                baseText = transcriptInput.value.trim()
                 micPulse.className = 'w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center animate-pulse text-lg shadow-md shrink-0'
                 toggleMicBtn.className = 'size-12 rounded-2xl bg-red-500 text-white flex items-center justify-center text-lg hover:opacity-90 transition-opacity shrink-0'
                 toggleMicBtn.innerHTML = '<i class="fa-solid fa-stop"></i>'
@@ -1766,6 +1767,7 @@ export class AddPage {
 
             recognition.onend = () => {
                 isRecording = false
+                baseText = transcriptInput.value.trim()
                 micPulse.className = 'w-10 h-10 rounded-full bg-wabi-primary text-wabi-surface flex items-center justify-center text-lg shadow-md shrink-0'
                 toggleMicBtn.className = 'size-12 rounded-2xl bg-wabi-primary/10 text-wabi-primary flex items-center justify-center text-lg hover:bg-wabi-primary/20 transition-colors shrink-0'
                 toggleMicBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>'
@@ -1777,17 +1779,24 @@ export class AddPage {
             }
 
             recognition.onresult = event => {
-                let interim = ''
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript
+                let currentFinal = ''
+                let currentInterim = ''
+
+                for (let i = 0; i < event.results.length; i++) {
+                    const res = event.results[i]
+                    if (res.isFinal) {
+                        currentFinal += res[0].transcript
                     } else {
-                        interim += event.results[i][0].transcript
+                        currentInterim += res[0].transcript
                     }
                 }
-                const display = (finalTranscript + ' ' + interim).trim()
-                if (display) {
-                    transcriptInput.value = display
+
+                const speechText = (currentFinal + currentInterim).trim()
+                const fullDisplay = baseText ? `${baseText} ${speechText}` : speechText
+
+                if (fullDisplay) {
+                    transcriptInput.value = fullDisplay
+                    transcriptInput.scrollTop = transcriptInput.scrollHeight
                 }
             }
 
