@@ -295,3 +295,72 @@ select option {
     filter: brightness(1.2);
 }
 
+/* Gemini Rainbow Glow Modal Style */
+@keyframes gemini-rainbow-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.gemini-rainbow-glow-container {
+    position: relative;
+    padding: 3px;
+    border-radius: 1.5rem; /* rounded-3xl */
+    overflow: hidden;
+}
+
+.gemini-rainbow-glow-container::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+        from 0deg,
+        #4285f4,
+        #9b51e0,
+        #ea4335,
+        #fbbc05,
+        #34a853,
+        #4285f4
+    );
+    animation: gemini-rainbow-spin 4s linear infinite;
+    z-index: 0;
+}
+
+.gemini-rainbow-glow-container::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+    background: conic-gradient(
+        from 0deg,
+        #4285f4,
+        #9b51e0,
+        #ea4335,
+        #fbbc05,
+        #34a853,
+        #4285f4
+    );
+    animation: gemini-rainbow-spin 4s linear infinite;
+    filter: blur(14px);
+    opacity: 0.7;
+    z-index: -1;
+}
+
+.gemini-rainbow-modal-body {
+    position: relative;
+    z-index: 1;
+    border-radius: 1.35rem;
+    background-color: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .gemini-rainbow-modal-body {
+    background-color: rgba(30, 41, 59, 0.92);
+}
+

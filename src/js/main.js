@@ -16,6 +16,7 @@ import { SyncService } from './syncService.js'
 import { RewardService } from './rewardService.js'
 import { NotificationService } from './notificationService.js'
 import { ThemeManager } from './themeManager.js'
+import { AIService } from './aiService.js'
 import { Router } from './router.js'
 import { escapeHTML } from './utils.js'
 
@@ -42,6 +43,7 @@ import { LicensePage } from './pages/licensePage.js'
 class EasyAccountingApp {
     constructor() {
         this.dataService = new DataService()
+        this.aiService = new AIService(this.dataService)
         this.categoryManager = new CategoryManager(this.dataService)
         this.changelogManager = new ChangelogManager()
         this.budgetManager = new BudgetManager(
@@ -552,6 +554,25 @@ class EasyAccountingApp {
                 this.updateSidebarLedger()
             })
         })
+    }
+
+    /**
+     * 動態切換底部工作列中央新增按鈕之圖標 (AI 實驗功能開啟時切換為麥克風，編輯模式/關閉時為加號)
+     * @param {boolean} [isEditMode=false]
+     */
+    updateNavAddIcon(isEditMode = false) {
+        const navAddIcon = document.getElementById('nav-add-icon')
+        if (!navAddIcon) return
+
+        const currentHash = window.location.hash || '#home'
+        const isAddPage = currentHash === '#add' || currentHash.startsWith('#add')
+        const isAiEnabled = this.aiService ? this.aiService.isExperimentalEnabled() : false
+
+        if (isAddPage && isAiEnabled && !isEditMode) {
+            navAddIcon.className = 'fa-solid fa-microphone text-2xl md:text-xl'
+        } else {
+            navAddIcon.className = 'fa-solid fa-plus text-2xl md:text-xl'
+        }
     }
 }
 

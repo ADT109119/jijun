@@ -97,5 +97,8 @@ export class Router {
                 item.classList.remove('active')
             }
         })
+        if (this.app && typeof this.app.updateNavAddIcon === 'function') {
+            this.app.updateNavAddIcon()
+        }
     }
 }

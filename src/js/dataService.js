@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 13 // Schema version 13: Credit card support (type, creditLimit, statementDay, dueDay)
+        this.dbVersion = 15 // Schema version 15: Upgraded to support version 15 compatibility
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -402,6 +402,13 @@ class DataService {
                                 stmtStore.createIndex('period', 'period')
                                 stmtStore.createIndex('status', 'status')
                             }
+                        }
+                        // Schema version 14 & 15: Compatibility placeholders
+                        if (oldVersion < 14) {
+                            // Version 14 migration placeholder
+                        }
+                        if (oldVersion < 15) {
+                            // Version 15 migration placeholder
                         }
                     },
                 })

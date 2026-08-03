@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js'
+import { showToast, customConfirm } from '../utils.js'
 import { DARK_THEME_ID } from '../themeManager.js'
 
 export class SettingsPage {
@@ -149,6 +149,24 @@ export class SettingsPage {
                         </div>
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
+                        </div>
+
+                        <!-- AI Offline Voice Assistant Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-microchip"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">AI 離線記帳語音助手</p>
+                                    <p class="text-xs text-wabi-text-secondary">使用端側 58M LLM 解析口語與語音記帳</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="ai-experimental-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
                         </div>
 
                         <!-- Calculator Mode Toggle -->
@@ -588,6 +606,42 @@ export class SettingsPage {
             })
         }
 
+        // AI Experimental Feature Toggle
+        const aiExperimentalToggle = document.getElementById('ai-experimental-toggle')
+        if (aiExperimentalToggle) {
+            const isEnabled = this.app.aiService.isExperimentalEnabled()
+            aiExperimentalToggle.checked = isEnabled
+
+            aiExperimentalToggle.addEventListener('change', async e => {
+                const wantEnable = e.target.checked
+                if (wantEnable) {
+                    if (this.app.aiService.isModelDownloaded()) {
+                        this.app.aiService.setExperimentalEnabled(true)
+                        if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+                        showToast('已開啟 AI 離線記帳語音助手', 'success')
+                    } else {
+                        e.target.checked = false // Wait for modal completion
+                        this.showAIDownloadModal(aiExperimentalToggle)
+                    }
+                } else {
+                    this.app.aiService.setExperimentalEnabled(false)
+                    if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+
+                    const shouldDeleteModel = await customConfirm(
+                        '已關閉 AI 離線記帳助手。請問是否一併刪除已下載的 AI 模型檔案以釋放裝置儲存空間？',
+                        '刪除模型檔案確認'
+                    )
+
+                    if (shouldDeleteModel) {
+                        this.app.aiService.deleteModel()
+                        showToast('已關閉 AI 助手並刪除離線模型檔案', 'info')
+                    } else {
+                        showToast('已關閉 AI 助手（保留離線模型檔）', 'info')
+                    }
+                }
+            })
+        }
+
         const manageDebtsBtn = document.getElementById('manage-debts-btn')
         if (manageDebtsBtn) {
             manageDebtsBtn.addEventListener('click', () => {
@@ -1008,5 +1062,134 @@ export class SettingsPage {
             console.log('Record migration complete.')
             showToast(`${recordsToUpdate.length} 筆舊紀錄已歸入預設帳戶`)
         }
+    }
+
+    showAIDownloadModal(toggleElement) {
+        const aiService = this.app.aiService
+        const currentQuant = aiService.getQuantization()
+
+        const modal = document.createElement('div')
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in'
+        modal.innerHTML = `
+            <div class="bg-wabi-surface rounded-2xl p-6 max-w-md w-full border border-wabi-border shadow-2xl space-y-5 relative">
+                <div class="flex items-center gap-3 border-b border-wabi-border/60 pb-3">
+                    <div class="w-10 h-10 rounded-xl bg-wabi-accent/20 text-wabi-primary flex items-center justify-center text-xl shrink-0">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-wabi-text-primary">下載 AI 離線記帳模型</h3>
+                        <p class="text-xs text-wabi-text-secondary">使用端側輕量化 LLM，無須連網保障隱私</p>
+                    </div>
+                </div>
+
+                <div class="text-sm text-wabi-text-primary space-y-2">
+                    <p>開啟此功能需下載離線 AI 模型檔至您的裝置中。請選擇適合您的量化版本：</p>
+                    <div class="space-y-2 pt-1" id="quant-options">
+                        <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
+                            <div class="flex items-center gap-3">
+                                <input type="radio" name="quant-choice" value="q4_0" ${currentQuant === 'q4_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <div>
+                                    <p class="font-bold text-sm text-wabi-text-primary">Q4_0 量化版 (推薦)</p>
+                                    <p class="text-xs text-wabi-text-secondary">推論極快、低記憶體消耗</p>
+                                </div>
+                            </div>
+                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~35.2 MB</span>
+                        </label>
+
+                        <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
+                            <div class="flex items-center gap-3">
+                                <input type="radio" name="quant-choice" value="q8_0" ${currentQuant === 'q8_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <div>
+                                    <p class="font-bold text-sm text-wabi-text-primary">Q8_0 量化版</p>
+                                    <p class="text-xs text-wabi-text-secondary">高精確度、對複雜語意理解佳</p>
+                                </div>
+                            </div>
+                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~65.4 MB</span>
+                        </label>
+
+                        <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
+                            <div class="flex items-center gap-3">
+                                <input type="radio" name="quant-choice" value="fp16" ${currentQuant === 'fp16' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <div>
+                                    <p class="font-bold text-sm text-wabi-text-primary">FP16 全精度版</p>
+                                    <p class="text-xs text-wabi-text-secondary">無損耗原生浮點精度</p>
+                                </div>
+                            </div>
+                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~116.2 MB</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Download Progress Container -->
+                <div id="ai-download-progress-box" class="hidden space-y-2 bg-wabi-bg/60 p-4 rounded-xl border border-wabi-border/60">
+                    <div class="flex justify-between text-xs font-bold text-wabi-text-primary">
+                        <span id="ai-download-status-text">正在下載模型檔案...</span>
+                        <span id="ai-download-percent-text">0%</span>
+                    </div>
+                    <div class="w-full h-3 bg-wabi-border/60 rounded-full overflow-hidden">
+                        <div id="ai-download-bar" class="h-full bg-wabi-primary transition-all duration-150" style="width: 0%"></div>
+                    </div>
+                    <p id="ai-download-size-text" class="text-xs text-right text-wabi-text-secondary">0.0 MB / 35.2 MB</p>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button id="cancel-ai-download-btn" class="flex-1 py-2.5 rounded-xl border border-wabi-border text-wabi-text-secondary font-bold text-sm hover:bg-wabi-bg transition-colors">
+                        取消
+                    </button>
+                    <button id="start-ai-download-btn" class="flex-1 py-2.5 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-opacity">
+                        <i class="fa-solid fa-download mr-1"></i> 開始下載
+                    </button>
+                </div>
+            </div>
+        `
+        document.body.appendChild(modal)
+
+        const cancelBtn = modal.querySelector('#cancel-ai-download-btn')
+        const startBtn = modal.querySelector('#start-ai-download-btn')
+        const progressBox = modal.querySelector('#ai-download-progress-box')
+        const percentText = modal.querySelector('#ai-download-percent-text')
+        const bar = modal.querySelector('#ai-download-bar')
+        const sizeText = modal.querySelector('#ai-download-size-text')
+        const quantOptions = modal.querySelector('#quant-options')
+
+        const closeModal = () => {
+            modal.remove()
+            if (toggleElement && !aiService.isExperimentalEnabled()) {
+                toggleElement.checked = false
+            }
+        }
+
+        cancelBtn.addEventListener('click', closeModal)
+
+        startBtn.addEventListener('click', async () => {
+            const selectedRadio = modal.querySelector('input[name="quant-choice"]:checked')
+            const selectedQuant = selectedRadio ? selectedRadio.value : 'q4_0'
+
+            startBtn.disabled = true
+            cancelBtn.disabled = true
+            quantOptions.classList.add('pointer-events-none', 'opacity-60')
+            progressBox.classList.remove('hidden')
+
+            try {
+                await aiService.downloadModel(selectedQuant, ({ loadedBytes, totalBytes, percent }) => {
+                    const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(1)
+                    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1)
+                    bar.style.width = `${percent}%`
+                    percentText.textContent = `${percent}%`
+                    sizeText.textContent = `${loadedMB} MB / ${totalMB} MB`
+                })
+
+                aiService.setExperimentalEnabled(true)
+                if (toggleElement) toggleElement.checked = true
+                if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+
+                showToast('AI 離線記帳模型下載成功！已啟用 AI 功能', 'success')
+                modal.remove()
+            } catch (err) {
+                console.error('模型下載失敗:', err);
+                showToast('模型下載失敗: ' + err.message, 'error')
+                closeModal()
+            }
+        })
     }
 }
