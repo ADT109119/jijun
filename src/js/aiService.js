@@ -159,17 +159,26 @@ export class AIService {
         return localStorage.getItem(`ai_model_downloaded_${targetQuant}`) === 'true';
     }
 
+    /** 私有：安全釋放既有 wllama 實例以避免 Module is already initialized 錯誤 */
+    async _ensureUnloaded() {
+        if (this.wllama) {
+            try {
+                if (typeof this.wllama.exit === 'function') {
+                    await this.wllama.exit();
+                }
+            } catch (e) {
+                /* ignore */
+            }
+            this.wllama = null;
+            this.isLoaded = false;
+        }
+    }
+
     /**
      * 刪除已下載的模型檔案與紀錄
      */
     async deleteModel() {
-        try {
-            if (this.wllama && this.wllama.cacheManager) {
-                await this.wllama.cacheManager.clear();
-            }
-        } catch (e) {
-            console.warn('清除模型快取失敗:', e);
-        }
+        await this._ensureUnloaded();
         if (typeof window !== 'undefined') {
             Object.keys(QUANTIZATION_MODELS).forEach(q => {
                 localStorage.removeItem(`ai_model_downloaded_${q}`);
@@ -178,11 +187,6 @@ export class AIService {
                 localStorage.removeItem(`ai_model_last_check_time_${q}`);
             });
         }
-        if (this.wllama && typeof this.wllama.exit === 'function') {
-            try { await this.wllama.exit(); } catch (e) { /* ignore */ }
-        }
-        this.isLoaded = false;
-        this.wllama = null;
         this.lastMode = 'llm';
         this.lastErrorStage = '';
     }
@@ -195,7 +199,8 @@ export class AIService {
      */
     async downloadModel(quant, onProgress) {
         const modelInfo = QUANTIZATION_MODELS[quant] || QUANTIZATION_MODELS.q4_0;
-        if (!this.wllama) this.wllama = await this._createWllama();
+        await this._ensureUnloaded();
+        this.wllama = await this._createWllama();
         const report = this._normalizeProgress(onProgress);
         try {
             await this.wllama.loadModelFromUrl(modelInfo.url, {
@@ -337,7 +342,10 @@ export class AIService {
                 throw new Error('AI 模型尚未設定，請先到設定下載模型');
             }
             if (onProgress) onProgress({ loadedBytes: 0, totalBytes: 0, percent: 5 });
-            if (!this.wllama) this.wllama = await this._createWllama();
+            if (!this.wllama) {
+                await this._ensureUnloaded();
+                this.wllama = await this._createWllama();
+            }
             const report = this._normalizeProgress(onProgress);
             await this.wllama.loadModelFromUrl(modelInfo.url, {
                 useCache: true,
@@ -373,74 +381,47 @@ export class AIService {
     }
 
     /**
-     * 生成包含動態分類、帳戶與日期錨定的 System Prompt
+     * 生成包含動態分類、帳戶與日期錨定的 System Prompt (對齊 demo_gguf.py 訓練規範)
      * @param {string[]} categories - 分類清單
      * @param {string[]} accounts - 帳戶清單
      * @param {Date} [currentDate] - 當前錨定日期
      * @returns {string} - 組裝好的 System Prompt
      */
     generateSystemPrompt(categories, accounts, currentDate) {
-        const cleanCategories = Array.isArray(categories) && categories.length > 0 ? categories : ['餐飲', '交通', '娛樂', '生活'];
-        const cleanAccounts = Array.isArray(accounts) && accounts.length > 0 ? accounts : ['現金', '信用卡', '銀行帳戶'];
-        const { formattedStr, YYYYMMDD } = this.getCurrentDateAnchor(currentDate);
+        const cleanCategories = Array.isArray(categories) && categories.length > 0 ? categories : ['餐飲', '日常', '交通', '娛樂', '醫療', '教育', '還款', '薪水', '獎金', '零用錢', '兼職', '投資', '利息', '欠款回收', '其他'];
+        const cleanAccounts = Array.isArray(accounts) && accounts.length > 0 ? accounts : ['現金', '信用卡', '悠遊卡', '一卡通', '街口支付', 'LINE Pay', 'Apple Pay', 'Google Pay', '郵局帳戶', '銀行存款', '外幣帳戶', '加密貨幣', '悠遊付', 'icash'];
+        const { formattedStr } = this.getCurrentDateAnchor(currentDate);
 
-        const tool = {
+        const toolDef = {
             name: "add_record",
-            description: "新增一筆記帳記錄（支出或收入）",
+            description: "新增一筆記帳記錄",
             parameters: {
                 type: "object",
                 properties: {
-                    amount: { 
-                        type: "number", 
-                        description: "記帳的數值金額，必須大於零。" 
-                    },
-                    category: { 
-                        type: "string", 
-                        enum: cleanCategories,
-                        description: "記帳的分類，必須從給定的清單中選擇一個最合適的。" 
-                    },
-                    account: { 
-                        type: "string", 
-                        enum: cleanAccounts,
-                        description: "交易的帳戶或支付媒介，必須從給定的清單中選擇一個。" 
-                    },
-                    description: { 
-                        type: "string", 
-                        description: "消費說明或備註（例如: 麥當勞、大美式、搭計程車）。" 
-                    },
-                    type: { 
-                        type: "string", 
-                        enum: ["expense", "income"], 
-                        description: "記帳類型：expense 代表支出，income 代表收入。" 
-                    },
-                    date: {
-                        type: "string",
-                        description: "記帳日期，格式為 YYYY-MM-DD。"
-                    }
+                    amount: { type: "number" },
+                    category: { type: "string", enum: cleanCategories },
+                    account: { type: "string", enum: cleanAccounts },
+                    description: { type: "string" },
+                    type: { type: "string", enum: ["expense", "income"] },
+                    date: { type: "string", description: "ISO 8601 格式日期，例如 YYYY-MM-DD" }
                 },
-                required: ["amount", "category", "account", "type"]
+                required: ["amount", "category", "account", "type", "date"]
             }
         };
 
-        return `${formattedStr}。你是一個實用的記帳助手。請根據使用者的輸入，調用 add_record 工具。你只能調用這一個工具。
-你必須輸出符合 XML 標籤格式的 tool call，例如標準 JSON 格式：
-<tool_call>{"name": "add_record", "args": {"amount": 100, "category": "餐飲", "account": "現金", "description": "午餐", "type": "expense", "date": "${YYYYMMDD}"}}</tool_call>
-或特殊 Token 壓縮格式：
-<tool_call>[AMT]100[CAT]餐飲[ACC]現金[DESC]午餐[DATE]${YYYYMMDD}[TYPE]expense</tool_call>
-
-被賦予的 tools 如下:
-${JSON.stringify(tool, null, 2)}`;
+        return `${formattedStr}。你是一個記帳助理。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
     }
 
     /**
-     * 解析使用者口語記帳文字
+     * 解析使用者口語記帳文字 (支援流式 Token 回呼)
      * @param {string} text - 使用者的口語輸入 (例如: "昨天中午吃火鍋刷信用卡花了400元")
      * @param {string[]} categories - 當前帳本的分類清單
      * @param {string[]} accounts - 當前帳本的帳戶清單
      * @param {Date} [currentDate] - 當前錨定日期
+     * @param {function} [onToken] - 即時流式生成回呼 (piece, currentText) => void
      * @returns {Promise<object>} - 解析後的結構化記帳物件
      */
-    async parseRecord(text, categories, accounts, currentDate) {
+    async parseRecord(text, categories, accounts, currentDate, onToken) {
         if (!text || !text.trim()) {
             throw new Error('請輸入記帳內容');
         }
@@ -457,8 +438,13 @@ ${JSON.stringify(tool, null, 2)}`;
                 const response = await this.wllama.createCompletion({
                     prompt: promptText,
                     temperature: 0.1,
-                    max_tokens: 256,
-                    stop: ['<|im_end|>', '</tool_call>']
+                    max_tokens: 128,
+                    stop: ['<|im_end|>', '</tool_call>'],
+                    onNewToken: (_token, piece, currentText) => {
+                        if (typeof onToken === 'function') {
+                            onToken(piece, currentText);
+                        }
+                    }
                 });
                 responseText = response?.choices?.[0]?.text || '';
             } catch (error) {

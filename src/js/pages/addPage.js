@@ -1851,6 +1851,15 @@ export class AddPage {
                         <textarea id="gemini-live-transcript" rows="3" placeholder="請開始說話，或在此手動輸入/修改記帳描述..." class="w-full bg-transparent resize-none outline-none text-wabi-text-primary placeholder:text-wabi-text-secondary/70 text-sm font-medium leading-relaxed"></textarea>
                     </div>
 
+                    <!-- AI 實時串流輸出面板 -->
+                    <div id="gemini-ai-stream-box" class="hidden p-3 rounded-2xl bg-slate-900/90 border border-wabi-primary/30 text-xs font-mono text-emerald-400 space-y-1.5 overflow-hidden transition-all duration-300">
+                        <div class="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-700/60 pb-1">
+                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-terminal text-wabi-primary"></i> AI 實時推論輸出 (Token Streaming)</span>
+                            <span id="gemini-stream-live-tag" class="animate-pulse text-emerald-400 font-bold">● LIVE</span>
+                        </div>
+                        <div id="gemini-ai-stream-text" class="whitespace-pre-wrap break-all max-h-24 overflow-y-auto leading-relaxed pt-1 text-[11px] font-mono text-emerald-300"></div>
+                    </div>
+
                     <div class="flex items-center gap-3 pt-1">
                         <button id="gemini-toggle-mic-btn" class="size-12 rounded-2xl bg-red-500 text-white flex items-center justify-center text-lg hover:opacity-90 transition-opacity shrink-0" title="停止/重新錄音">
                             <i class="fa-solid fa-stop"></i>
@@ -1999,17 +2008,31 @@ export class AddPage {
                 try { recognition.stop() } catch (e) { /* ignore */ }
             }
 
+            const streamBox = modal.querySelector('#gemini-ai-stream-box')
+            const streamText = modal.querySelector('#gemini-ai-stream-text')
+            if (streamBox && streamText) {
+                streamBox.classList.remove('hidden')
+                streamText.textContent = ''
+            }
+
             parseBtn.disabled = true
             parseBtnText.textContent = 'AI 解析中...'
             statusHint.textContent = 'AI 正在分析金額、分類、帳戶與日期...'
+
+            const onTokenCallback = (_piece, currentText) => {
+                if (streamText) {
+                    streamText.textContent = currentText
+                    streamText.scrollTop = streamText.scrollHeight
+                }
+            }
 
             try {
                 const categoryManager = this.app.categoryManager
                 const accountNames = accounts.map(a => a.name)
                 const allCatNames = categoryManager.getAllCategories().map(c => c.name)
 
-                // 首次推論：提供全部分類供模型參考
-                let parsed = await aiService.parseRecord(text, allCatNames, accountNames, new Date())
+                // 首次推論：提供全部分類供模型參考 (含流式輸出)
+                let parsed = await aiService.parseRecord(text, allCatNames, accountNames, new Date(), onTokenCallback)
 
                 // 防呆機制：驗證收支類型與分類相符度
                 const recognizedType = parsed.type === 'income' ? 'income' : 'expense'
@@ -2020,8 +2043,9 @@ export class AddPage {
                 // 若生成的類別不存在，或者辨識出來的類別其實屬於相反收支類型的分類中：
                 if (parsed.category && (!targetCatNames.includes(parsed.category) || oppositeCatNames.includes(parsed.category))) {
                     console.warn(`[AI 防呆驗證] 分類 "${parsed.category}" 未能在 ${recognizedType} 分類中匹配，移除無關收支類型的分類重新執行 AI 解析...`)
+                    if (streamText) streamText.textContent = ''
                     // 移除無關收支類型的分類，只把目標收支類型的分類放進 System Prompt 重跑一次
-                    parsed = await aiService.parseRecord(text, targetCatNames, accountNames, new Date())
+                    parsed = await aiService.parseRecord(text, targetCatNames, accountNames, new Date(), onTokenCallback)
                 }
 
                 // 1. 套用收支類型 (Income/Expense)
