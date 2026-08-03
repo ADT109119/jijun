@@ -167,11 +167,18 @@ export class SettingsPage {
                                     <p class="text-xs text-wabi-text-secondary">使用端側 58M LLM 解析口語與語音記帳</p>
                                 </div>
                             </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="ai-experimental-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button id="ai-model-select-btn" class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-wabi-primary/10 text-wabi-primary hover:bg-wabi-primary/20 transition-colors cursor-pointer" title="點擊設定或更新 AI 模型量化版本">
+                                    <i class="fa-solid fa-layer-group text-[10px]"></i>
+                                    <span id="ai-model-badge-text">Q4_0</span>
+                                    <span id="ai-model-update-tag" class="hidden px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white rounded-full">新版本</span>
+                                </button>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="ai-experimental-toggle" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                    <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                                </label>
+                            </div>
                         </div>
                         <!-- Calculator Mode Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
@@ -626,8 +633,33 @@ export class SettingsPage {
             });
         }
 
-        // AI Experimental Feature Toggle
+        // AI Experimental Feature Toggle & Model Select Button
         const aiExperimentalToggle = document.getElementById('ai-experimental-toggle')
+        const aiModelSelectBtn = document.getElementById('ai-model-select-btn')
+        const aiModelBadgeText = document.getElementById('ai-model-badge-text')
+        const aiModelUpdateTag = document.getElementById('ai-model-update-tag')
+
+        if (aiModelBadgeText) {
+            const currentQuant = this.app.aiService.getQuantization()
+            aiModelBadgeText.textContent = currentQuant.toUpperCase()
+        }
+
+        if (this.app.aiService.hasModelUpdate() && aiModelUpdateTag) {
+            aiModelUpdateTag.classList.remove('hidden')
+        } else if (this.app.aiService.isModelDownloaded()) {
+            this.app.aiService.checkForModelUpdate().then(res => {
+                if (res && res.hasUpdate && aiModelUpdateTag) {
+                    aiModelUpdateTag.classList.remove('hidden')
+                }
+            }).catch(() => {})
+        }
+
+        if (aiModelSelectBtn) {
+            aiModelSelectBtn.addEventListener('click', () => {
+                this.showAIDownloadModal(aiExperimentalToggle)
+            })
+        }
+
         if (aiExperimentalToggle) {
             const isEnabled = this.app.aiService.isExperimentalEnabled()
             aiExperimentalToggle.checked = isEnabled
@@ -653,7 +685,8 @@ export class SettingsPage {
                     )
 
                     if (shouldDeleteModel) {
-                        this.app.aiService.deleteModel()
+                        await this.app.aiService.deleteModel()
+                        if (aiModelUpdateTag) aiModelUpdateTag.classList.add('hidden')
                         showToast('已關閉 AI 助手並刪除離線模型檔案', 'info')
                     } else {
                         showToast('已關閉 AI 助手（保留離線模型檔）', 'info')
@@ -943,7 +976,7 @@ export class SettingsPage {
                 try {
                     if ('serviceWorker' in navigator) {
                         const registrations = await navigator.serviceWorker.getRegistrations()
-                        for (let registration of registrations) {
+                        for (const registration of registrations) {
                             await registration.unregister()
                         }
                     }
@@ -1142,20 +1175,42 @@ export class SettingsPage {
     showAIDownloadModal(toggleElement) {
         const aiService = this.app.aiService
         const currentQuant = aiService.getQuantization()
+        const hasUpdate = aiService.hasModelUpdate(currentQuant)
+        const isCurrentDownloaded = aiService.isModelDownloaded(currentQuant)
+
+        const getQuantBadge = quant => {
+            const downloaded = aiService.isModelDownloaded(quant)
+            if (downloaded) {
+                return '<span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md">已下載</span>'
+            }
+            return ''
+        }
 
         const modal = document.createElement('div')
         modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in'
         modal.innerHTML = `
-            <div class="bg-wabi-surface rounded-2xl p-6 max-w-md w-full border border-wabi-border shadow-2xl space-y-5 relative">
-                <div class="flex items-center gap-3 border-b border-wabi-border/60 pb-3">
-                    <div class="w-10 h-10 rounded-xl bg-wabi-accent/20 text-wabi-primary flex items-center justify-center text-xl shrink-0">
-                        <i class="fa-solid fa-microchip"></i>
+            <div class="bg-wabi-surface rounded-3xl p-6 max-w-md w-full border border-wabi-border shadow-2xl space-y-5 relative animate-modal-pop">
+                <div class="flex items-center justify-between border-b border-wabi-border/60 pb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-wabi-accent/20 text-wabi-primary flex items-center justify-center text-xl shrink-0">
+                            <i class="fa-solid fa-microchip"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-wabi-text-primary">${hasUpdate ? '更新 AI 離線記帳模型' : (isCurrentDownloaded ? '管理 AI 離線模型' : '下載 AI 離線記帳模型')}</h3>
+                            <p class="text-xs text-wabi-text-secondary">使用端側輕量化 LLM，無須連網保障隱私</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-wabi-text-primary">下載 AI 離線記帳模型</h3>
-                        <p class="text-xs text-wabi-text-secondary">使用端側輕量化 LLM，無須連網保障隱私</p>
-                    </div>
+                    <button id="close-ai-download-modal-btn" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1 text-lg shrink-0 cursor-pointer" title="關閉">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
+
+                ${hasUpdate ? `
+                    <div class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-arrow-down text-amber-500 text-sm shrink-0"></i>
+                        <div>發現新版本模型！點擊下方按鈕即可重新下載並更新至最新版。</div>
+                    </div>
+                ` : ''}
 
                 <div class="text-sm text-wabi-text-primary space-y-2">
                     <p>開啟此功能需下載離線 AI 模型檔至您的裝置中。請選擇適合您的量化版本：</p>
@@ -1168,7 +1223,10 @@ export class SettingsPage {
                                     <p class="text-xs text-wabi-text-secondary">推論極快、低記憶體消耗</p>
                                 </div>
                             </div>
-                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~35.2 MB</span>
+                            <div class="flex items-center gap-2">
+                                ${getQuantBadge('q4_0')}
+                                <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~35.2 MB</span>
+                            </div>
                         </label>
 
                         <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
@@ -1179,7 +1237,10 @@ export class SettingsPage {
                                     <p class="text-xs text-wabi-text-secondary">高精確度、對複雜語意理解佳</p>
                                 </div>
                             </div>
-                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~65.4 MB</span>
+                            <div class="flex items-center gap-2">
+                                ${getQuantBadge('q8_0')}
+                                <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~65.4 MB</span>
+                            </div>
                         </label>
 
                         <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
@@ -1190,7 +1251,10 @@ export class SettingsPage {
                                     <p class="text-xs text-wabi-text-secondary">無損耗原生浮點精度</p>
                                 </div>
                             </div>
-                            <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~116.2 MB</span>
+                            <div class="flex items-center gap-2">
+                                ${getQuantBadge('fp16')}
+                                <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~116.2 MB</span>
+                            </div>
                         </label>
                     </div>
                 </div>
@@ -1220,6 +1284,7 @@ export class SettingsPage {
         document.body.appendChild(modal)
 
         const cancelBtn = modal.querySelector('#cancel-ai-download-btn')
+        const closeXBtn = modal.querySelector('#close-ai-download-modal-btn')
         const startBtn = modal.querySelector('#start-ai-download-btn')
         const progressBox = modal.querySelector('#ai-download-progress-box')
         const percentText = modal.querySelector('#ai-download-percent-text')
@@ -1227,14 +1292,48 @@ export class SettingsPage {
         const sizeText = modal.querySelector('#ai-download-size-text')
         const quantOptions = modal.querySelector('#quant-options')
 
-        const closeModal = () => {
-            modal.remove()
-            if (toggleElement && !aiService.isExperimentalEnabled()) {
-                toggleElement.checked = false
+        const updateBtnLabel = selectedQuant => {
+            const downloaded = aiService.isModelDownloaded(selectedQuant)
+            const modelUpdate = aiService.hasModelUpdate(selectedQuant)
+
+            if (modelUpdate) {
+                startBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-1"></i> 更新模型'
+            } else if (downloaded) {
+                startBtn.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i> 重新下載'
+            } else {
+                startBtn.innerHTML = '<i class="fa-solid fa-download mr-1"></i> 開始下載'
             }
         }
 
+        updateBtnLabel(currentQuant)
+
+        quantOptions.querySelectorAll('input[name="quant-choice"]').forEach(radio => {
+            radio.addEventListener('change', e => {
+                updateBtnLabel(e.target.value)
+            })
+        })
+
+        const closeModal = () => {
+            const card = modal.querySelector('.animate-modal-pop')
+            if (card) {
+                card.classList.remove('animate-modal-pop')
+                card.classList.add('animate-modal-pop-down')
+            }
+            modal.classList.add('animate-fade-out')
+
+            setTimeout(() => {
+                modal.remove()
+                if (toggleElement && !aiService.isExperimentalEnabled()) {
+                    toggleElement.checked = false
+                }
+            }, 180)
+        }
+
         cancelBtn.addEventListener('click', closeModal)
+        if (closeXBtn) closeXBtn.addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
 
         startBtn.addEventListener('click', async () => {
             const selectedRadio = modal.querySelector('input[name="quant-choice"]:checked')
@@ -1257,6 +1356,11 @@ export class SettingsPage {
                 aiService.setExperimentalEnabled(true)
                 if (toggleElement) toggleElement.checked = true
                 if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+
+                const badgeTextEl = document.getElementById('ai-model-badge-text')
+                const updateTagEl = document.getElementById('ai-model-update-tag')
+                if (badgeTextEl) badgeTextEl.textContent = selectedQuant.toUpperCase()
+                if (updateTagEl) updateTagEl.classList.add('hidden')
 
                 showToast('AI 離線記帳模型下載成功！已啟用 AI 功能', 'success')
                 modal.remove()

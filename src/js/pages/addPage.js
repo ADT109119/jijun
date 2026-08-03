@@ -9,7 +9,6 @@ import {
     customAlert,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
-import { AIService } from '../aiService.js'
 
 export class AddPage {
     constructor(app) {
@@ -1712,6 +1711,11 @@ export class AddPage {
                         </button>
                     </div>
 
+                    <div id="ai-modal-update-banner" class="${aiService && aiService.hasModelUpdate() ? '' : 'hidden'} p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between gap-2">
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-cloud-arrow-down text-amber-500 shrink-0"></i><span>發現新版本 AI 模型，可前往設定更新</span></span>
+                        <button id="go-to-ai-settings-btn" class="px-2.5 py-1 text-[11px] font-bold bg-amber-500 text-white rounded-lg shrink-0 hover:bg-amber-600 transition-colors cursor-pointer">前往更新</button>
+                    </div>
+
                     <div class="p-3 rounded-2xl bg-wabi-bg/70 border border-wabi-border/60 text-sm font-medium leading-relaxed">
                         <textarea id="gemini-live-transcript" rows="3" placeholder="請開始說話，或在此手動輸入/修改記帳描述..." class="w-full bg-transparent resize-none outline-none text-wabi-text-primary placeholder:text-wabi-text-secondary/70 text-sm font-medium leading-relaxed"></textarea>
                     </div>
@@ -1744,7 +1748,7 @@ export class AddPage {
 
         const closeModal = () => {
             if (recognition && isRecording) {
-                try { recognition.stop() } catch (e) {}
+                try { recognition.stop() } catch (e) { /* ignore */ }
             }
             modal.remove()
         }
@@ -1753,6 +1757,23 @@ export class AddPage {
         modal.addEventListener('click', e => {
             if (e.target === modal) closeModal()
         })
+
+        const goToSettingsBtn = modal.querySelector('#go-to-ai-settings-btn')
+        const updateBanner = modal.querySelector('#ai-modal-update-banner')
+        if (goToSettingsBtn) {
+            goToSettingsBtn.addEventListener('click', () => {
+                closeModal()
+                window.location.hash = '#settings'
+            })
+        }
+
+        if (aiService && typeof aiService.checkForModelUpdate === 'function') {
+            aiService.checkForModelUpdate().then(res => {
+                if (res && res.hasUpdate && updateBanner) {
+                    updateBanner.classList.remove('hidden')
+                }
+            }).catch(() => {})
+        }
 
         if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
             const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -1822,7 +1843,7 @@ export class AddPage {
                 }
             }
 
-            try { recognition.start() } catch (e) {}
+            try { recognition.start() } catch (e) { /* ignore */ }
         } else {
             statusHint.textContent = '您的瀏覽器不支援 Web Speech 語音輸入，請直接手動輸入'
         }
@@ -1844,7 +1865,7 @@ export class AddPage {
             }
 
             if (recognition && isRecording) {
-                try { recognition.stop() } catch (e) {}
+                try { recognition.stop() } catch (e) { /* ignore */ }
             }
 
             parseBtn.disabled = true
@@ -1927,7 +1948,11 @@ export class AddPage {
                     }
                 }
 
-                showToast('AI 記帳解析成功！已自動填妥欄位。', 'success')
+                if (aiService.lastMode === 'rules') {
+                    showToast('AI 已用離線規則模式解析（模型未就緒），分類/日期可能不準', 'warning')
+                } else {
+                    showToast('AI 記帳解析成功！已自動填妥欄位。', 'success')
+                }
                 closeModal()
             } catch (err) {
                 console.error('AI 解析失敗:', err)
