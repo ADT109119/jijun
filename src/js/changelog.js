@@ -1,5 +1,15 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.1': {
+        date: '2026-08-03',
+        title: '明細搜尋清空功能與主題 SVG 解析優化',
+        features: [
+            '新增明細搜尋欄位一鍵清空按鈕：於明細頁面搜尋框右側添加清空 (叉叉) 按鈕，當輸入框含有文字時自動顯示，點擊即可一鍵清空搜尋條件並即時重置列表，提升檢索操作便利性。',
+        ],
+        bugfixes: [
+            '修復主題商店與主題列表 SVG 預覽圖渲染機制：升級 ThemeManager 的 SVG 消毒解析器，改採 HTML5 解析模式 (text/html) 自動補全命名空間與標籤規範，並新增 sanitizeSVGToString 方法，徹底解決自訂主題（如 Sakura 櫻花主題）SVG 預覽圖無法顯示的問題，同時確保防止 SVG 腳本與 CSS 注入攻擊。',
+        ],
+    },
     '2.1.7.0': {
         date: '2026-08-03',
         title: '真實 wllama 端側 LLM 推論整合、開源授權聲明與 Changelog UI 升級',
@@ -915,6 +925,11 @@ export class ChangelogManager {
             version: this.currentVersion,
             ...CHANGELOG[this.currentVersion],
         }
+    }
+
+    // 獲取最新版本資訊
+    getLatestVersion() {
+        return this.getAllVersions()[0] || null
     }
 
     // 獲取所有版本歷史

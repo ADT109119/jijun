@@ -170,25 +170,28 @@ export class ThemeManager {
         if (typeof svgString !== 'string' || !svgString.trim()) return null
         let doc
         try {
+            // 使用 text/html 解析，能完美處理未帶 xmlns 或包含 HTML 標籤格式的 SVG
             doc = new DOMParser().parseFromString(
                 svgString.trim(),
-                'image/svg+xml'
+                'text/html'
             )
         } catch {
             return null
         }
-        const parseError = doc.querySelector('parsererror')
-        const svg = doc.documentElement
-        if (parseError || !svg || svg.nodeName.toLowerCase() !== 'svg') {
-            return null
+        const svg = doc.querySelector('svg')
+        if (!svg) return null
+
+        // 補上 xmlns 屬性確保標準 SVG 命名空間
+        if (!svg.hasAttribute('xmlns')) {
+            svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
         }
 
-        // 移除可嵌入 HTML/腳本的元素
-        svg.querySelectorAll('script, foreignObject').forEach(el =>
-            el.remove()
-        )
+        // 移除可嵌入 HTML/腳本/樣式的可疑元素
+        svg.querySelectorAll(
+            'script, foreignObject, iframe, embed, object, style, link'
+        ).forEach(el => el.remove())
 
-        // 遍歷所有節點，移除事件屬性與 javascript: 連結
+        // 遍歷所有節點，移除事件屬性與危險連結 (javascript:, data:text/html, vbscript:)
         const nodes = [svg, ...svg.querySelectorAll('*')]
         for (const el of nodes) {
             for (const attr of Array.from(el.attributes)) {
@@ -197,14 +200,28 @@ export class ThemeManager {
                 if (name.startsWith('on')) {
                     el.removeAttribute(attr.name)
                 } else if (
-                    (name === 'href' || name === 'xlink:href') &&
-                    value.startsWith('javascript:')
+                    ['href', 'xlink:href', 'src', 'data', 'action'].includes(
+                        name
+                    ) &&
+                    (value.startsWith('javascript:') ||
+                        value.startsWith('data:text/html') ||
+                        value.startsWith('vbscript:'))
                 ) {
                     el.removeAttribute(attr.name)
                 }
             }
         }
         return svg
+    }
+
+    /**
+     * 將 SVG 字串消毒後回傳乾淨的 HTML 字串，方便用於 DOM 樣板字串 (例如主題商店與主題列表預覽)。
+     * @param {string} svgString
+     * @returns {string|null} 消毒後的 SVG HTML 字串
+     */
+    sanitizeSVGToString(svgString) {
+        const svg = this.sanitizeSVG(svgString)
+        return svg ? svg.outerHTML : null
     }
 
     applyIconReplacements(iconsConfig) {
@@ -246,14 +263,14 @@ export class ThemeManager {
                     replacementNode = this.sanitizeSVG(replacementInfo.svg)
                     if (replacementNode) {
                         replacementNode.classList.add('theme-icon-replacement')
-                    }
-                    if (replacementNode && replacementInfo.className) {
-                        replacementNode.setAttribute(
-                            'class',
-                            replacementNode.getAttribute('class') +
-                                ' ' +
-                                replacementInfo.className
-                        )
+                        if (replacementInfo.className) {
+                            replacementInfo.className
+                                .split(' ')
+                                .filter(Boolean)
+                                .forEach(cls =>
+                                    replacementNode.classList.add(cls)
+                                )
+                        }
                     }
                 }
 

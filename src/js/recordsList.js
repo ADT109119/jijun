@@ -137,8 +137,16 @@ export class RecordsListManager {
         const searchInput = this.container.querySelector(
             '#records-search-input'
         )
-        if (searchInput && this.filters.searchQuery) {
-            searchInput.value = this.filters.searchQuery
+        const clearBtn = this.container.querySelector(
+            '#records-clear-search-btn'
+        )
+        if (searchInput) {
+            if (this.filters.searchQuery) {
+                searchInput.value = this.filters.searchQuery
+            }
+            if (clearBtn) {
+                clearBtn.classList.toggle('hidden', !searchInput.value.trim())
+            }
         }
     }
 
@@ -225,9 +233,33 @@ export class RecordsListManager {
         const searchInput = this.container.querySelector(
             '#records-search-input'
         )
+        const clearBtn = this.container.querySelector(
+            '#records-clear-search-btn'
+        )
+
+        const updateClearBtn = () => {
+            if (clearBtn && searchInput) {
+                clearBtn.classList.toggle('hidden', !searchInput.value.trim())
+            }
+        }
+
         if (searchInput) {
             searchInput.addEventListener('input', e => {
                 this.filters.searchQuery = e.target.value.trim().toLowerCase()
+                updateClearBtn()
+                this._saveSessionFilters()
+                this.applyFiltersAndRender()
+            })
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if (searchInput) {
+                    searchInput.value = ''
+                    searchInput.focus()
+                }
+                this.filters.searchQuery = ''
+                updateClearBtn()
                 this._saveSessionFilters()
                 this.applyFiltersAndRender()
             })

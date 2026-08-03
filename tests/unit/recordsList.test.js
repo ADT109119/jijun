@@ -38,6 +38,7 @@ function createDOMContainer() {
             <h1 id="records-header-title"></h1>
             <button id="next-period-btn"></button>
             <input type="text" id="records-search-input">
+            <button id="records-clear-search-btn" class="hidden"></button>
             <div id="records-period-filter">
                 <button class="period-btn" data-period="week">週</button>
                 <button class="period-btn" data-period="month">月</button>
@@ -196,6 +197,30 @@ describe('RecordsListManager - 明細預設時間範圍', () => {
         await manager.init()
         expect(manager.filters.period).toBe('week')
         expect(manager.filters.searchQuery).toBe('測試')
+        const clearBtn = container.querySelector('#records-clear-search-btn')
+        expect(clearBtn.classList.contains('hidden')).toBe(false)
+    })
+
+    test('輸入搜尋文字時顯示清除按鈕，點擊清除按鈕時清空搜尋欄位', async () => {
+        await manager.init()
+        const searchInput = container.querySelector('#records-search-input')
+        const clearBtn = container.querySelector('#records-clear-search-btn')
+
+        expect(clearBtn.classList.contains('hidden')).toBe(true)
+
+        // 輸入文字
+        searchInput.value = '午餐'
+        searchInput.dispatchEvent(new Event('input'))
+
+        expect(manager.filters.searchQuery).toBe('午餐')
+        expect(clearBtn.classList.contains('hidden')).toBe(false)
+
+        // 點擊清除按鈕
+        clearBtn.click()
+
+        expect(searchInput.value).toBe('')
+        expect(manager.filters.searchQuery).toBe('')
+        expect(clearBtn.classList.contains('hidden')).toBe(true)
     })
 })
 

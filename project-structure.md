@@ -95,13 +95,13 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 
 所有的單元測試位於 `tests/unit/` 目錄下：
 
-- `recordsList.test.js` # 測試明細紀錄列表與預設時間範圍設定
+- `recordsList.test.js` # 測試明細紀錄列表、預設時間範圍設定與搜尋清空按鈕
 - `amortization.test.js` # 測試折舊攤提分期邏輯
 - `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal
 - `budgetManager.test.js` # 測試預算管理邏輯
 - `categoryManager.test.js` # 測試分類管理邏輯
 - `changelog.test.js` # 測試更新日誌解析與渲染
-- `themeManager.test.js` # 測試主題管理 (含 SVG 消毒與 CSS 變數消毒)
+- `themeManager.test.js` # 測試主題管理 (含 HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
 - `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
