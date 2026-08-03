@@ -1,4 +1,4 @@
-import { getDateRange, formatDateToString } from './utils.js'
+import { getDateRange, formatDateToString, closeModalWithAnimation } from './utils.js'
 
 export function createDateRangeModal({
     initialStartDate,
@@ -10,12 +10,12 @@ export function createDateRangeModal({
     const modal = document.createElement('div')
     modal.id = 'date-range-modal'
     modal.className =
-        'fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4'
+        'fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 animate-fade-in'
     modal.setAttribute('role', 'dialog')
     modal.setAttribute('aria-modal', 'true')
 
     modal.innerHTML = `
-    <div class="bg-wabi-bg w-full max-w-sm rounded-2xl shadow-xl p-6">
+    <div class="bg-wabi-bg w-full max-w-sm rounded-2xl shadow-xl p-6 animate-modal-pop">
         <h3 class="text-lg font-bold text-wabi-primary mb-4">自訂日期範圍</h3>
         
         <!-- Quick Select Buttons -->
@@ -55,7 +55,7 @@ export function createDateRangeModal({
     const startDateInput = modal.querySelector('#custom-start-date')
     const endDateInput = modal.querySelector('#custom-end-date')
 
-    const closeModal = () => modal.remove()
+    const closeModal = (onComplete) => closeModalWithAnimation(modal, modal.firstElementChild, onComplete)
 
     modal.querySelectorAll('.quick-date-btn').forEach(button => {
         button.addEventListener('click', () => {

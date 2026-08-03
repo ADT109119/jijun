@@ -6,8 +6,9 @@
 
 ```
 src/js/
-├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations)
-├── themeManager.js       # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
+├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
+├── themeManager.js      # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
+├── aiService.js         # AIService 端側 58M LLM 語意解析服務 (雙軌 JSON + 特殊 Token 壓縮格式解析、日期錨定、量化下載管理)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── categories.js        # 分類常數與工具函數
@@ -51,7 +52,7 @@ src/js/pages/
 └── licensePage.js       # 授權條款
 
 src/css/
-└── main.css             # 主樣式表
+└── main.css             # 主樣式表 (包含 Modal 滑入/滑出與淡入淡出動畫關鍵影格 animate-slide-up / animate-fade-in / animate-modal-pop)
 
 android/                 # Capacitor Android 原生專案
 ├── app/src/main/
@@ -161,6 +162,7 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
-- `dataService.test.js` # 測試 IndexedDB 資料層 (含刪除帳本級聯清理)
-- ...等等（共有 25 個測試檔案，對應各主要模組的單元驗證）
+- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
+- ...等等（共有 26 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試
+

@@ -1,4 +1,4 @@
-import { showToast, customConfirm } from '../utils.js'
+import { showToast, customConfirm, closeModalWithAnimation } from '../utils.js'
 
 export class SyncSettingsPage {
     constructor(app) {
@@ -277,7 +277,7 @@ export class SyncSettingsPage {
 
                     const modal = document.createElement('div')
                     modal.className =
-                        'fixed inset-0 z-50 flex items-end justify-center bg-black/40'
+                        'fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in'
                     modal.innerHTML = `
                         <div class="bg-wabi-surface w-full max-w-lg rounded-t-2xl p-4 max-h-[70vh] overflow-y-auto animate-slide-up">
                             <div class="flex justify-between items-center mb-4">
@@ -291,11 +291,13 @@ export class SyncSettingsPage {
                     `
                     document.body.appendChild(modal)
 
+                    const closeModal = (cb) => closeModalWithAnimation(modal, modal.firstElementChild, cb)
+
                     modal
                         .querySelector('#close-restore-modal')
-                        .addEventListener('click', () => modal.remove())
+                        .addEventListener('click', () => closeModal())
                     modal.addEventListener('click', e => {
-                        if (e.target === modal) modal.remove()
+                        if (e.target === modal) closeModal()
                     })
 
                     modal
@@ -309,46 +311,45 @@ export class SyncSettingsPage {
                                 )
                                     return
                                 const fileId = btn.dataset.fileId
-                                modal.remove()
-                                try {
-                                    const backupData =
-                                        await this.app.syncService.restoreFromDrive(
-                                            fileId
+                                closeModal(async () => {
+                                    try {
+                                        const backupData =
+                                            await this.app.syncService.restoreFromDrive(fileId)
+                                        // Use the import logic — create a temporary blob
+                                        const blob = new Blob(
+                                            [JSON.stringify(backupData)],
+                                            {
+                                                type: 'application/json',
+                                            }
                                         )
-                                    // Use the import logic — create a temporary blob
-                                    const blob = new Blob(
-                                        [JSON.stringify(backupData)],
-                                        {
-                                            type: 'application/json',
-                                        }
-                                    )
-                                    const file = new File(
-                                        [blob],
-                                        'restore.json',
-                                        {
-                                            type: 'application/json',
-                                        }
-                                    )
-                                    const result =
-                                        await this.app.dataService.importData(
-                                            file
+                                        const file = new File(
+                                            [blob],
+                                            'restore.json',
+                                            {
+                                                type: 'application/json',
+                                            }
                                         )
-                                    showToast(
-                                        result.message,
-                                        result.success ? 'success' : 'error'
-                                    )
-                                    if (result.success) {
-                                        // Reset sync history to avoid replaying old changes
-                                        await this.app.syncService.markAllRemoteChangesAsPulled()
-                                        this.app.currentHash = null
-                                        window.location.hash = '#home'
+                                        const result =
+                                            await this.app.dataService.importData(
+                                                file
+                                            )
+                                        showToast(
+                                            result.message,
+                                            result.success ? 'success' : 'error'
+                                        )
+                                        if (result.success) {
+                                            // Reset sync history to avoid replaying old changes
+                                            await this.app.syncService.markAllRemoteChangesAsPulled()
+                                            this.app.currentHash = null
+                                            window.location.hash = '#home'
+                                        }
+                                    } catch (err) {
+                                        showToast(
+                                            '還原失敗：' + err.message,
+                                            'error'
+                                        )
                                     }
-                                } catch (err) {
-                                    showToast(
-                                        '還原失敗：' + err.message,
-                                        'error'
-                                    )
-                                }
+                                })
                             })
                         })
                 } catch (err) {

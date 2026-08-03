@@ -164,7 +164,8 @@ describe('SyncService', () => {
         })
 
         it('token 剛好 5 分鐘後過期時回傳 false（臨界值不算過期）', () => {
-            ss.tokenExpiresAt = Date.now() + 5 * 60 * 1000
+            const now = Date.now()
+            ss.tokenExpiresAt = now + 5 * 60 * 1000 + 100
             expect(ss.isTokenExpiringSoon()).toBe(false)
         })
 

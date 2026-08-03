@@ -1,4 +1,4 @@
-import { formatCurrency, escapeHTML, formatDateToString } from './utils.js'
+import { formatCurrency, escapeHTML, formatDateToString, closeModalWithAnimation } from './utils.js'
 
 export class CalendarCashFlow {
     constructor(dataService, categoryManager, container, debtManager) {
@@ -358,7 +358,7 @@ export class CalendarCashFlow {
         const netColor = net >= 0 ? 'text-wabi-income' : 'text-wabi-expense'
 
         modalContainer.innerHTML = `
-            <div id="cal-details-modal" class="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div id="cal-details-modal" class="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
                 <div class="bg-wabi-surface w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-xl overflow-hidden animate-slide-up">
                     <div class="flex items-center justify-between px-4 py-3 border-b border-wabi-border shrink-0">
                         <h3 class="text-base font-semibold text-wabi-primary">${escapeHTML(formattedDateTitle)}</h3>
@@ -381,9 +381,10 @@ export class CalendarCashFlow {
 
         const modal = modalContainer.querySelector('#cal-details-modal')
         const closeBtn = modalContainer.querySelector('#cal-modal-close')
+        const card = modal?.querySelector('.animate-slide-up')
 
         const closeModal = () => {
-            if (modal) modal.remove()
+            if (modal) closeModalWithAnimation(modal, card)
         }
 
         if (closeBtn) closeBtn.addEventListener('click', closeModal)

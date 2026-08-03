@@ -340,3 +340,158 @@ select option {
     background-color: #334155;
 }
 
+/* ==================== Modal & Slide Window Animations ==================== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0.8;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+}
+
+@keyframes modalPopUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes modalPopDown {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-out {
+    animation: fadeOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-slide-up {
+    animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-down {
+    animation: slideDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-modal-pop {
+    animation: modalPopUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modal-pop-down {
+    animation: modalPopDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Gemini Rainbow Glow Modal Style */
+@keyframes gemini-rainbow-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.gemini-rainbow-glow-container {
+    position: relative;
+    padding: 3px;
+    border-radius: 1.5rem; /* rounded-3xl */
+    overflow: hidden;
+}
+
+.gemini-rainbow-glow-container::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+        from 0deg,
+        #4285f4,
+        #9b51e0,
+        #ea4335,
+        #fbbc05,
+        #34a853,
+        #4285f4
+    );
+    animation: gemini-rainbow-spin 4s linear infinite;
+    z-index: 0;
+}
+
+.gemini-rainbow-glow-container::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+    background: conic-gradient(
+        from 0deg,
+        #4285f4,
+        #9b51e0,
+        #ea4335,
+        #fbbc05,
+        #34a853,
+        #4285f4
+    );
+    animation: gemini-rainbow-spin 4s linear infinite;
+    filter: blur(14px);
+    opacity: 0.7;
+    z-index: -1;
+}
+
+.gemini-rainbow-modal-body {
+    position: relative;
+    z-index: 1;
+    border-radius: 1.35rem;
+    background-color: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .gemini-rainbow-modal-body {
+    background-color: rgba(30, 41, 59, 0.92);
+}
