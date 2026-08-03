@@ -96,6 +96,7 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
-- `dataService.test.js` # 測試 IndexedDB 資料層 (含刪除帳本級聯清理)
-- ...等等（共有 25 個測試檔案，對應各主要模組的單元驗證）
+- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
+- ...等等（共有 26 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試
+

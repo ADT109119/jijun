@@ -818,7 +818,21 @@ class DataService {
                 )
             }
 
-            return records.sort((a, b) => b.timestamp - a.timestamp)
+            return records.sort((a, b) => {
+                const dateA = a.date || ''
+                const dateB = b.date || ''
+                if (dateA !== dateB) {
+                    return dateB.localeCompare(dateA)
+                }
+                const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
+                const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
+                if (timeA !== timeB) {
+                    return timeB - timeA
+                }
+                const idA = typeof a.id === 'number' ? a.id : 0
+                const idB = typeof b.id === 'number' ? b.id : 0
+                return idB - idA
+            })
         } catch (error) {
             console.error('獲取記錄失敗:', error)
             return []
@@ -1222,7 +1236,21 @@ class DataService {
             )
         }
 
-        return records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        return records.sort((a, b) => {
+            const dateA = a.date || ''
+            const dateB = b.date || ''
+            if (dateA !== dateB) {
+                return dateB.localeCompare(dateA)
+            }
+            const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
+            const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
+            if (timeA !== timeB) {
+                return timeB - timeA
+            }
+            const idA = typeof a.id === 'number' ? a.id : 0
+            const idB = typeof b.id === 'number' ? b.id : 0
+            return idB - idA
+        })
     }
 
     updateRecordInLocalStorage(id, updates) {

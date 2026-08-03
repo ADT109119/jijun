@@ -275,6 +275,27 @@ describe('DataService — getRecords / getAllRecords', () => {
         const allRecords = await ds.getAllRecords()
         expect(allRecords).toHaveLength(2)
     })
+
+    it('getRecords 正確按日期降序、timestamp 降序、ID 降序排序，缺少 timestamp 不會導致排序損毀', async () => {
+        const mockDb = ds.db
+
+        const tx = mockDb.transaction('records', 'readwrite')
+        // 舊紀錄 (無 timestamp)
+        await tx.store.add({ type: 'expense', amount: 100, date: '2026-08-01' })
+        await tx.store.add({ type: 'expense', amount: 200, date: '2026-08-02' })
+        // 新紀錄 (有 timestamp，當天新增)
+        await tx.store.add({ type: 'expense', amount: 300, date: '2026-08-03', timestamp: 1000 })
+        await tx.store.add({ type: 'expense', amount: 400, date: '2026-08-03', timestamp: 2000 })
+        await tx.done
+
+        const records = await ds.getRecords({ allLedgers: true })
+        expect(records).toHaveLength(4)
+        // 第一筆應為最新日期 2026-08-03 且 timestamp 較大的 400
+        expect(records[0].amount).toBe(400)
+        expect(records[1].amount).toBe(300)
+        expect(records[2].amount).toBe(200)
+        expect(records[3].amount).toBe(100)
+    })
 })
 
 describe('DataService — addRecord / getRecords filtering', () => {

@@ -229,6 +229,16 @@ export class HomePage {
                         : ''
                     const colorClass = !color.startsWith('#') ? color : ''
 
+                    const isTransfer =
+                        record.category === 'transfer' ||
+                        record.type === 'transfer'
+                    const amountColor = isTransfer
+                        ? 'text-wabi-text-secondary'
+                        : isIncome
+                          ? 'text-wabi-income'
+                          : 'text-wabi-expense'
+                    const amountPrefix = isTransfer ? '' : isIncome ? '+' : '-'
+
                     return `
                     <div class="flex items-center gap-4 bg-wabi-surface px-4 py-3 rounded-lg border border-wabi-border">
                         <div class="flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
@@ -236,10 +246,10 @@ export class HomePage {
                         </div>
                         <div class="flex-1 min-w-0">
                             <p class="font-medium text-wabi-text-primary truncate">${name}</p>
-                            <p class="text-sm text-wabi-text-secondary line-clamp-2 break-all">${record.description || formatDate(record.date, 'short')}</p>
+                            <p class="text-sm text-wabi-text-secondary line-clamp-2 break-all">${record.description || '無備註'}</p>
                         </div>
                         <div class="text-right">
-                            <p class="font-medium ${isIncome ? 'text-wabi-income' : 'text-wabi-expense'}">${isIncome ? '+' : '-'} ${formatCurrency(record.amount)}</p>
+                            <p class="font-medium ${amountColor}">${amountPrefix} ${formatCurrency(record.amount)}</p>
                             <p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>
                         </div>
                     </div>
