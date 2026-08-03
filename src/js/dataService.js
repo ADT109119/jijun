@@ -403,7 +403,6 @@ class DataService {
                                 stmtStore.createIndex('status', 'status')
                             }
                         }
-<<<<<<< HEAD
                         // Schema version 14: Migrate legacy debt payments to records for correct balances
                         if (oldVersion < 14) {
                             const debtsStore = transaction.objectStore('debts')
