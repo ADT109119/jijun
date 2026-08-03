@@ -169,7 +169,24 @@ export function formatCurrency(amount) {
  * @returns {string} 格式化後的日期字串
  */
 export function formatDate(date, format = 'short') {
-    const dateObj = typeof date === 'string' ? new Date(date) : date
+    let dateObj
+    if (typeof date === 'string') {
+        const parts = date.split('-')
+        if (parts.length === 3) {
+            dateObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+        } else {
+            dateObj = new Date(date)
+        }
+    } else {
+        dateObj = date
+    }
+
+    if (!dateObj || isNaN(dateObj.getTime())) {
+        return typeof date === 'string' ? date : ''
+    }
+
+    const weekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六']
+    const weekdayName = weekdays[dateObj.getDay()]
 
     switch (format) {
         case 'short':
@@ -183,6 +200,16 @@ export function formatDate(date, format = 'short') {
                 month: '2-digit',
                 day: '2-digit',
             })
+        case 'long-weekday':
+        case 'long-with-weekday':
+            const formattedLong = dateObj.toLocaleDateString('zh-TW', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+            })
+            return `${formattedLong} ${weekdayName}`
+        case 'weekday':
+            return weekdayName
         case 'month-day':
             return dateObj.toLocaleDateString('zh-TW', {
                 month: 'short',

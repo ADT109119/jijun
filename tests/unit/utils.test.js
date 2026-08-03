@@ -405,6 +405,11 @@ describe('formatDate', () => {
         expect(result).toMatch(/\d{4}\/\d{2}\/\d{2}/)
     })
 
+    it('long-weekday 格式：YYYY/MM/DD 週幾', () => {
+        const result = formatDate('2026-08-03', 'long-weekday')
+        expect(result).toContain('2026/08/03 週一')
+    })
+
     it('month-day 格式：3月 15', () => {
         const result = formatDate('2024-03-15', 'month-day')
         expect(result).toContain('3月')

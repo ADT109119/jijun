@@ -597,7 +597,7 @@ export class RecordsListManager {
             .sort((a, b) => new Date(b) - new Date(a))
             .map(date => {
                 const recordsOnDate = groupedByDate[date]
-                const dateHeader = `<h3 class="font-semibold text-wabi-text-primary px-2 pt-4 pb-2">${formatDate(date, 'long')}</h3>`
+                const dateHeader = `<h3 class="font-semibold text-wabi-text-primary px-2 pt-4 pb-2">${formatDate(date, 'long-weekday')}</h3>`
                 const recordsHtml = recordsOnDate
                     .map(record => {
                         const isIncome = record.type === 'income'

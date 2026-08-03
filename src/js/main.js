@@ -146,6 +146,9 @@ class EasyAccountingApp {
         this.processAmortizations()
         this.processCreditCardStatements()
 
+        // 檢查版本升級並自動彈出最新 Changelog Modal
+        this.changelogManager.checkAndShowVersionUpdateModal()
+
         // Connect DataService hooks to PluginManager & NotificationService
         this.dataService.setHookProvider(async (hookName, payload) => {
             if (hookName === 'afterAddRecord') {

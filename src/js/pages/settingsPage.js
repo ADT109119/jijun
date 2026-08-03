@@ -941,6 +941,12 @@ export class SettingsPage {
             async () => {
                 showToast('強制更新中...')
                 try {
+                    if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations()
+                        for (let registration of registrations) {
+                            await registration.unregister()
+                        }
+                    }
                     const keys = await caches.keys()
                     await Promise.all(keys.map(key => caches.delete(key)))
                     window.location.reload(true)

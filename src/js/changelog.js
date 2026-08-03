@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.6.7': {
+        date: '2026-08-03',
+        title: '全新 AI 離線語音記帳助手 & 端側 GGUF LLM 工具呼叫',
+        features: [
+            '新增 AI 離線語音記帳助手：支援在端側 (PWA/WASM) 免連網執行 58M 端側 LLM，輸入口述中文即可自動語意解析金額、收支類型、動態分類、帳戶與日期並自動填單。',
+            '新增 AI 語音轉錄 Modal 介面：具備高質感霧面玻璃、圓角與 Gemini 彩虹霓虹動態光罩，即時呈現語音轉錄文字，並支援隨時點擊輸入框進行手動鍵盤編輯與修改。',
+            '新增多規格 GGUF 模型支援：提供 Q4_0 (~34.1MB)、Q5_0, Q6_K, Q8_0 與 FP16 等多種量化版本，可在實驗設定中自訂開關與隨時切換與清理。',
+            '新增版本更新彈窗通知 (Changelog Modal)：當應用程式更新至最新版本時，自動彈窗展示新功能亮點與改進細節。',
+        ],
+        improvements: [
+            '優化明細紀錄頁面日期標頭：日期標題新增顯示「週幾」（例如 2026/08/03 週一），提升瀏覽明細時的日期感知與辨識度。',
+            '優化底部導覽列按鈕跳轉：修正當開啟 AI 語音助手時非記帳頁面點擊加號圖標無反應的問題，確保於其他頁面時能流暢跳轉至記帳頁。',
+        ],
+    },
     '2.1.6.6': {
         date: '2026-07-27',
         title:
@@ -1086,5 +1100,150 @@ export class ChangelogManager {
                 modal.remove()
             }
         })
+    }
+
+    /**
+     * 檢查版本升級並自動彈出最新 Changelog Modal
+     */
+    checkAndShowVersionUpdateModal() {
+        const latestVersionInfo = this.getAllVersions()[0]
+        if (!latestVersionInfo) return
+
+        const lastSeenVersion = localStorage.getItem('app-last-seen-version')
+        const currentVersion = latestVersionInfo.version
+
+        localStorage.setItem('app-current-version', currentVersion)
+
+        // 若曾經有過記錄，且最新版本與歷史紀錄不同 (代表應用程式升級更新)
+        if (lastSeenVersion && lastSeenVersion !== currentVersion) {
+            localStorage.setItem('app-last-seen-version', currentVersion)
+            this.showUpdateChangelogModal(latestVersionInfo)
+        } else if (!lastSeenVersion) {
+            // 首次使用預先記錄目前最新版本
+            localStorage.setItem('app-last-seen-version', currentVersion)
+        }
+    }
+
+    /**
+     * 顯示最新一筆版本更新亮點 Modal
+     * @param {object} [versionInfo]
+     */
+    showUpdateChangelogModal(versionInfo = null) {
+        const targetVersionInfo = versionInfo || this.getAllVersions()[0]
+        if (!targetVersionInfo) return
+
+        const existingModal = document.getElementById('update-changelog-modal')
+        if (existingModal) {
+            existingModal.remove()
+        }
+
+        const modal = document.createElement('div')
+        modal.id = 'update-changelog-modal'
+        modal.className =
+            'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in'
+
+        const {
+            version,
+            date,
+            title,
+            features = [],
+            bugfixes = [],
+            improvements = [],
+            note,
+        } = targetVersionInfo
+
+        modal.innerHTML = `
+      <div class="bg-wabi-surface border border-wabi-border rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-modal-pop">
+        <!-- Header -->
+        <div class="p-6 bg-gradient-to-r from-wabi-primary/10 via-wabi-accent/10 to-transparent border-b border-wabi-border/60 flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="size-11 rounded-2xl bg-wabi-primary text-wabi-surface flex items-center justify-center text-xl shadow-md shrink-0">
+              <i class="fa-solid fa-gift"></i>
+            </div>
+            <div>
+              <span class="px-2.5 py-0.5 text-xs font-bold bg-wabi-primary text-wabi-surface rounded-full">全新版本更新</span>
+              <h3 class="text-xl font-extrabold text-wabi-text-primary mt-0.5">v${version} 登場！</h3>
+            </div>
+          </div>
+          <button id="close-update-changelog-btn" class="text-wabi-text-secondary hover:text-wabi-text-primary p-2 text-lg rounded-full transition-colors">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4 text-left">
+          <div class="border-b border-wabi-border/40 pb-3">
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="text-lg font-bold text-wabi-primary">${title}</h4>
+              <span class="text-xs text-wabi-text-secondary shrink-0 ml-2">${date}</span>
+            </div>
+          </div>
+
+          ${note ? `<div class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2"><i class="fa-solid fa-circle-info text-amber-500 mt-0.5 shrink-0"></i><div>${note}</div></div>` : ''}
+          
+          ${features.length > 0
+                ? `
+            <div>
+              <h5 class="text-sm font-bold text-wabi-income mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> ✨ 新功能</h5>
+              <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
+                ${features.map(f => `<li class="flex items-start gap-2"><span class="text-wabi-income font-bold shrink-0">•</span><span>${f}</span></li>`).join('')}
+              </ul>
+            </div>
+          `
+                : ''
+            }
+          
+          ${improvements.length > 0
+                ? `
+            <div>
+              <h5 class="text-sm font-bold text-wabi-primary mb-2 flex items-center gap-1.5"><i class="fa-solid fa-sliders"></i> 🔧 改進與優化</h5>
+              <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
+                ${improvements.map(imp => `<li class="flex items-start gap-2"><span class="text-wabi-primary font-bold shrink-0">•</span><span>${imp}</span></li>`).join('')}
+              </ul>
+            </div>
+          `
+                : ''
+            }
+
+          ${bugfixes.length > 0
+                ? `
+            <div>
+              <h5 class="text-sm font-bold text-wabi-expense mb-2 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 🐛 錯誤修復</h5>
+              <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
+                ${bugfixes.map(fix => `<li class="flex items-start gap-2"><span class="text-wabi-expense font-bold shrink-0">•</span><span>${fix}</span></li>`).join('')}
+              </ul>
+            </div>
+          `
+                : ''
+            }
+        </div>
+        
+        <!-- Footer -->
+        <div class="p-4 bg-wabi-bg/50 border-t border-wabi-border/60 flex items-center justify-between gap-3">
+          <button id="view-full-changelog-btn" class="text-xs font-semibold text-wabi-primary hover:underline px-2">查看歷史日誌</button>
+          <button id="confirm-update-changelog-btn" class="px-6 py-2.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md">
+            開始體驗
+          </button>
+        </div>
+      </div>
+    `
+
+        document.body.appendChild(modal)
+
+        const closeModal = () => modal.remove()
+
+        document.getElementById('close-update-changelog-btn').addEventListener('click', closeModal)
+        document.getElementById('confirm-update-changelog-btn').addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        const fullLogBtn = document.getElementById('view-full-changelog-btn')
+        if (fullLogBtn) {
+            fullLogBtn.addEventListener('click', () => {
+                closeModal()
+                this.showChangelogModal()
+            })
+        }
     }
 }
