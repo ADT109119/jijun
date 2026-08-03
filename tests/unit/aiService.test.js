@@ -84,7 +84,7 @@ describe('AIService - extractToolCall', () => {
 })
 
 describe('AIService - parseRecord與日期計算', () => {
-    it('在 mock 模式下能解析「昨天」並推算出正確的日期字串', async () => {
+    it('在規則回退模式下能解析「昨天」並推算出正確的日期字串', async () => {
         const dataServiceMock = {}
         const aiService = new AIService(dataServiceMock)
         const categories = ['餐飲', '交通']
@@ -99,14 +99,51 @@ describe('AIService - parseRecord與日期計算', () => {
         expect(result.type).toBe('expense')
         expect(result.date).toBe('2026-08-02') // 2026-08-03 扣除一天為 2026-08-02
     })
+
+    it('當引擎未就緒時，parseRecord 回退規則引擎並標記 lastMode=rules', async () => {
+        const dataServiceMock = {}
+        const aiService = new AIService(dataServiceMock)
+        const categories = ['餐飲', '交通']
+        const accounts = ['現金', '信用卡']
+
+        const result = await aiService.parseRecord('今天吃火鍋花了600元', categories, accounts, new Date('2026-08-03T12:00:00'))
+
+        expect(aiService.lastMode).toBe('rules')
+        expect(result.amount).toBe(600)
+        expect(result.type).toBe('expense')
+    })
 })
 
 describe('AIService - 量化模型管理', () => {
     it('提供正常的量化模型選項列表與正確的 HuggingFace 直連網址', () => {
         expect(QUANTIZATION_MODELS.q4_0.sizeMB).toBe(34.1)
+        expect(QUANTIZATION_MODELS.q5_0.sizeMB).toBe(41.6)
+        expect(QUANTIZATION_MODELS.q6_k.sizeMB).toBe(240.3)
         expect(QUANTIZATION_MODELS.q8_0.sizeMB).toBe(64.1)
         expect(QUANTIZATION_MODELS.fp16.sizeMB).toBe(120.3)
         expect(QUANTIZATION_MODELS.q4_0.url).toBe('https://huggingface.co/the-walking-fish/jijun-LM-GGUF/resolve/main/bookkeeping_model_q4_0.gguf')
+    })
+
+    it('在離線狀態下 checkForModelUpdate 回傳 hasUpdate: false 且不拋錯', async () => {
+        const aiService = new AIService({})
+        localStorage.setItem('ai_model_downloaded_q4_0', 'true')
+        
+        const originalOnLine = navigator.onLine
+        Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
+
+        const res = await aiService.checkForModelUpdate('q4_0')
+        expect(res.hasUpdate).toBe(false)
+
+        Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true })
+    })
+
+    it('hasModelUpdate 能正確反映 localStorage 的更新狀態標記', () => {
+        const aiService = new AIService({})
+        localStorage.removeItem('ai_model_update_available_q4_0')
+        expect(aiService.hasModelUpdate('q4_0')).toBe(false)
+
+        localStorage.setItem('ai_model_update_available_q4_0', 'true')
+        expect(aiService.hasModelUpdate('q4_0')).toBe(true)
     })
 })
 

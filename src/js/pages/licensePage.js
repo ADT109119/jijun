@@ -35,6 +35,26 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
                     <h2 class="text-lg font-bold text-wabi-primary mt-6 mb-4">第三方開源函式庫聲明</h2>
                     <ul class="space-y-4">
                         <li>
+                            <strong class="text-wabi-text-primary">wllama</strong> (MIT License)<br>
+                            Copyright (c) 2024 wllama contributors / Ngoc Binh<br>
+                            <a href="https://github.com/nglieu/wllama" target="_blank" class="text-wabi-accent text-sm underline">License & Repository</a>
+                        </li>
+                        <li>
+                            <strong class="text-wabi-text-primary">SortableJS</strong> (MIT License)<br>
+                            Copyright (c) 2013-2024 Lebedev Konstantin<br>
+                            <a href="https://github.com/SortableJS/Sortable/blob/master/LICENSE" target="_blank" class="text-wabi-accent text-sm underline">License</a>
+                        </li>
+                        <li>
+                            <strong class="text-wabi-text-primary">QRCode.js</strong> (MIT License)<br>
+                            Copyright (c) 2012 sangminshim<br>
+                            <a href="https://github.com/davidshimjs/qrcodejs/blob/master/LICENSE" target="_blank" class="text-wabi-accent text-sm underline">License</a>
+                        </li>
+                        <li>
+                            <strong class="text-wabi-text-primary">html5-qrcode</strong> (Apache License 2.0)<br>
+                            Copyright (c) Minhaz<br>
+                            <a href="https://github.com/scanapp-org/html5-qrcode/blob/master/LICENSE" target="_blank" class="text-wabi-accent text-sm underline">License</a>
+                        </li>
+                        <li>
                             <strong class="text-wabi-text-primary">Tailwind CSS</strong> (MIT License)<br>
                             Copyright (c) Tailwind Labs, Inc.<br>
                             <a href="https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE" target="_blank" class="text-wabi-accent text-sm underline">License</a>

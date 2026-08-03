@@ -8,7 +8,7 @@
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
 ├── themeManager.js      # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
-├── aiService.js         # AIService 端側 58M LLM 語意解析服務 (雙軌 JSON + 特殊 Token 壓縮格式解析、日期錨定、量化下載管理)
+├── aiService.js         # AIService 端側 58M LLM 語意解析服務 (真實 wllama@3.5.1 WASM + OPFS 快取、ChatML 語意解析、離線規則引擎優雅回退、HEAD ETag 模型更新檢查與 12 小時冷卻)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── categories.js        # 分類常數與工具函數
@@ -81,6 +81,7 @@ android/                 # Capacitor Android 原生專案
 public/                  # 靜態資源目錄
 ├── manifest.json        # PWA 設定檔 (包含唯一 id、主題顏色與應用資訊)
 ├── serviceWorker.js     # 離線快取 Service Worker
+├── vendor/wllama/       # wllama v3.5.1 本地端側 LLM 引擎檔 (esm/index.js + esm/wasm/wllama.wasm)
 ├── icon/                # 圖示目錄 (包含 icon.png 192px 與 icon-512.png 512px)
 ├── screenshots/         # PWA 螢幕截圖目錄 (用於應用商店預覽)
 └── widgets/             # PWA 桌面小工具定義檔 (包含 template.json 與 data.json)

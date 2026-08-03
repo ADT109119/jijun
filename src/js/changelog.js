@@ -1,5 +1,16 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.0': {
+        date: '2026-08-03',
+        title: '真實 wllama 端側 LLM 推論整合、開源授權聲明與 Changelog UI 升級',
+        features: [
+            '新增真實 wllama 端側 LLM 離線推論引擎：整合 wllama@3.5.1 WASM 引擎與 HuggingFace GGUF 模型，實現真正的端側自然語言語意記帳解析；模型會自動離線快取於瀏覽器 OPFS 中，連網下載後可完全離線使用，並保留規則引擎作為模型未就緒時的優雅降級機制。',
+        ],
+        improvements: [
+            '重構版本更新日誌彈窗 UI (Changelog Modal)：將歷史更新日誌彈窗升級為高質感毛玻璃遮罩、圓角容器、漸層 Header 與精緻圖示標頭（包含 fa-wrench 扳手圖示等），帶來更加現代化的視覺互動體驗。',
+            '補齊第三方開源授權聲明 (#license)：在授權條款頁面全面盤點並補齊 wllama (MIT)、SortableJS (MIT)、QRCode.js (MIT) 與 html5-qrcode (Apache 2.0) 等第三方開源函式庫條款與連結。',
+        ],
+    },
     '2.1.6.9': {
         date: '2026-08-03',
         title: '首頁最近紀錄排序與 UI 呈現優化',
@@ -939,37 +950,25 @@ export class ChangelogManager {
         } = versionInfo
 
         return `
-      <div class="mb-6 p-4 border rounded-lg ${isCurrentVersion ? 'border-wabi-accent/50 bg-wabi-accent/10' : 'border-wabi-border bg-wabi-surface'}">
-        <div class="flex items-center justify-between mb-3">
+      <div class="mb-5 p-5 border rounded-2xl transition-all ${isCurrentVersion ? 'border-wabi-primary/40 bg-gradient-to-br from-wabi-primary/5 via-wabi-accent/5 to-transparent shadow-sm' : 'border-wabi-border/60 bg-wabi-surface'}">
+        <div class="flex items-center justify-between mb-2">
           <div class="flex items-center space-x-2">
-            <h3 class="text-lg font-bold text-wabi-primary">v${version}</h3>
-            ${isCurrentVersion ? '<span class="px-2 py-1 text-xs bg-wabi-accent text-wabi-primary rounded-full">目前版本</span>' : ''}
+            <h4 class="text-lg font-extrabold text-wabi-primary">v${version}</h4>
+            ${isCurrentVersion ? '<span class="px-2.5 py-0.5 text-xs font-bold bg-wabi-accent text-wabi-primary rounded-full shadow-xs">當前版本</span>' : ''}
           </div>
-          <span class="text-sm text-wabi-text-secondary">${date}</span>
+          <span class="text-xs text-wabi-text-secondary shrink-0 font-medium">${date}</span>
         </div>
         
-        <h4 class="text-md font-semibold text-wabi-text-primary mb-3">${title}</h4>
+        <h5 class="text-sm font-bold text-wabi-text-primary mb-3">${title}</h5>
         
-        ${note ? `<div class="mb-3 p-2 bg-yellow-100/50 border border-yellow-300/30 rounded text-sm text-yellow-800">${note}</div>` : ''}
+        ${note ? `<div class="mb-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2"><i class="fa-solid fa-circle-info text-amber-500 mt-0.5 shrink-0"></i><div>${note}</div></div>` : ''}
         
         ${features.length > 0
                 ? `
           <div class="mb-3">
-            <h5 class="text-sm font-semibold text-wabi-income mb-2">✨ 新功能</h5>
-            <ul class="text-sm text-wabi-text-secondary space-y-1">
-              ${features.map(feature => `<li class="flex items-start"><span class="text-wabi-income mr-2">•</span>${feature}</li>`).join('')}
-            </ul>
-          </div>
-        `
-                : ''
-            }
-        
-        ${bugfixes.length > 0
-                ? `
-          <div class="mb-3">
-            <h5 class="text-sm font-semibold text-wabi-expense mb-2">🐛 錯誤修復</h5>
-            <ul class="text-sm text-wabi-text-secondary space-y-1">
-              ${bugfixes.map(fix => `<li class="flex items-start"><span class="text-wabi-expense mr-2">•</span>${fix}</li>`).join('')}
+            <h6 class="text-xs font-bold text-wabi-income mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> 新功能</h6>
+            <ul class="text-xs text-wabi-text-primary space-y-1.5 bg-wabi-bg/60 p-3 rounded-2xl border border-wabi-border/40">
+              ${features.map(feature => `<li class="flex items-start gap-2"><span class="text-wabi-income font-bold shrink-0">•</span><span>${feature}</span></li>`).join('')}
             </ul>
           </div>
         `
@@ -979,9 +978,21 @@ export class ChangelogManager {
         ${improvements.length > 0
                 ? `
           <div class="mb-3">
-            <h5 class="text-sm font-semibold text-wabi-primary mb-2">🔧 改進優化</h5>
-            <ul class="text-sm text-wabi-text-secondary space-y-1">
-              ${improvements.map(improvement => `<li class="flex items-start"><span class="text-wabi-primary mr-2">•</span>${improvement}</li>`).join('')}
+            <h6 class="text-xs font-bold text-wabi-primary mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-wrench"></i> 改進與優化</h6>
+            <ul class="text-xs text-wabi-text-primary space-y-1.5 bg-wabi-bg/60 p-3 rounded-2xl border border-wabi-border/40">
+              ${improvements.map(imp => `<li class="flex items-start gap-2"><span class="text-wabi-primary font-bold shrink-0">•</span><span>${imp}</span></li>`).join('')}
+            </ul>
+          </div>
+        `
+                : ''
+            }
+
+        ${bugfixes.length > 0
+                ? `
+          <div class="mb-1">
+            <h6 class="text-xs font-bold text-wabi-expense mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 錯誤修復</h6>
+            <ul class="text-xs text-wabi-text-primary space-y-1.5 bg-wabi-bg/60 p-3 rounded-2xl border border-wabi-border/40">
+              ${bugfixes.map(fix => `<li class="flex items-start gap-2"><span class="text-wabi-expense font-bold shrink-0">•</span><span>${fix}</span></li>`).join('')}
             </ul>
           </div>
         `
@@ -1075,20 +1086,30 @@ export class ChangelogManager {
         const modal = document.createElement('div')
         modal.id = 'changelog-modal'
         modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in'
 
         const allVersions = this.getAllVersions()
 
         modal.innerHTML = `
-      <div class="bg-wabi-bg rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
-        <div class="flex items-center justify-between p-4 border-b border-wabi-border">
-          <h3 class="text-xl font-semibold text-wabi-primary">版本更新日誌</h3>
-          <button id="close-changelog-btn" class="text-wabi-text-secondary hover:text-wabi-primary">
-            <i class="fas fa-times text-xl"></i>
+      <div class="bg-wabi-surface border border-wabi-border rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-modal-pop">
+        <!-- Header -->
+        <div class="p-6 bg-gradient-to-r from-wabi-primary/10 via-wabi-accent/10 to-transparent border-b border-wabi-border/60 flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="size-11 rounded-2xl bg-wabi-primary text-wabi-surface flex items-center justify-center text-xl shadow-md shrink-0">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <div>
+              <span class="px-2.5 py-0.5 text-xs font-bold bg-wabi-primary text-wabi-surface rounded-full">歷史紀錄</span>
+              <h3 class="text-xl font-extrabold text-wabi-text-primary mt-0.5">版本更新日誌</h3>
+            </div>
+          </div>
+          <button id="close-changelog-btn" class="text-wabi-text-secondary hover:text-wabi-text-primary p-2 text-lg rounded-full transition-colors">
+            <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
         
-        <div class="flex-1 overflow-y-auto p-4">
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4 text-left">
           ${allVersions
                 .map((version, index) =>
                     this.renderVersionInfo(version, index === 0)
@@ -1096,15 +1117,18 @@ export class ChangelogManager {
                 .join('')}
         </div>
         
-        <div class="p-4 border-t border-wabi-border text-center">
-          <p class="text-sm text-wabi-text-secondary">感謝您使用輕鬆記帳！</p>
+        <!-- Footer -->
+        <div class="p-4 bg-wabi-bg/50 border-t border-wabi-border/60 flex items-center justify-end">
+          <button id="confirm-changelog-btn" class="px-6 py-2.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md">
+            關閉
+          </button>
         </div>
       </div>
     `
 
         document.body.appendChild(modal)
 
-        // Escape 鍵關閉 (無障礙支援)
+// Escape 鍵關閉 (無障礙支援)
         const escapeHandler = e => {
             if (e.key === 'Escape') {
                 closeChangelogModal()
@@ -1120,9 +1144,11 @@ export class ChangelogManager {
         }
 
         // 事件監聽
-        document
-            .getElementById('close-changelog-btn')
-            .addEventListener('click', closeChangelogModal)
+        const closeBtn = document.getElementById('close-changelog-btn')
+        if (closeBtn) closeBtn.addEventListener('click', closeChangelogModal)
+
+        const confirmBtn = document.getElementById('confirm-changelog-btn')
+        if (confirmBtn) confirmBtn.addEventListener('click', closeChangelogModal)
 
         // 點擊背景關閉
         modal.addEventListener('click', e => {
@@ -1221,7 +1247,7 @@ export class ChangelogManager {
           ${features.length > 0
                 ? `
             <div>
-              <h5 class="text-sm font-bold text-wabi-income mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> ✨ 新功能</h5>
+              <h5 class="text-sm font-bold text-wabi-income mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> 新功能</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
                 ${features.map(f => `<li class="flex items-start gap-2"><span class="text-wabi-income font-bold shrink-0">•</span><span>${f}</span></li>`).join('')}
               </ul>
@@ -1233,7 +1259,7 @@ export class ChangelogManager {
           ${improvements.length > 0
                 ? `
             <div>
-              <h5 class="text-sm font-bold text-wabi-primary mb-2 flex items-center gap-1.5"><i class="fa-solid fa-sliders"></i> 🔧 改進與優化</h5>
+              <h5 class="text-sm font-bold text-wabi-primary mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wrench"></i> 改進與優化</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
                 ${improvements.map(imp => `<li class="flex items-start gap-2"><span class="text-wabi-primary font-bold shrink-0">•</span><span>${imp}</span></li>`).join('')}
               </ul>
@@ -1245,7 +1271,7 @@ export class ChangelogManager {
           ${bugfixes.length > 0
                 ? `
             <div>
-              <h5 class="text-sm font-bold text-wabi-expense mb-2 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 🐛 錯誤修復</h5>
+              <h5 class="text-sm font-bold text-wabi-expense mb-2 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 錯誤修復</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
                 ${bugfixes.map(fix => `<li class="flex items-start gap-2"><span class="text-wabi-expense font-bold shrink-0">•</span><span>${fix}</span></li>`).join('')}
               </ul>
