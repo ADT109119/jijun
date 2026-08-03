@@ -89,8 +89,12 @@ export class ThemeStorePage {
                 let thumbnailHtml = ''
                 const bgColor = t.colorsPreview?.bg || '#fff'
                 const primaryColor = t.colorsPreview?.primary || '#334A52'
-                if (t.svgPreview) {
-                    thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0 overflow-hidden" style="background-color:${primaryColor}"><div class="size-9 flex items-center justify-center" style="color:white">${t.svgPreview}</div></div>`
+                const sanitizedSvg = t.svgPreview
+                    ? this.app.themeManager?.sanitizeSVGToString(t.svgPreview)
+                    : null
+
+                if (sanitizedSvg) {
+                    thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0 overflow-hidden" style="background-color:${primaryColor}"><div class="size-9 flex items-center justify-center text-white">${sanitizedSvg}</div></div>`
                 } else if (t.iconPreview) {
                     thumbnailHtml = `<div class="size-14 rounded-xl flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color:${bgColor}"><i class="${t.iconPreview} text-2xl" style="color:${primaryColor}"></i></div>`
                 } else {

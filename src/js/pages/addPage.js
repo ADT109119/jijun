@@ -1851,13 +1851,12 @@ export class AddPage {
                         <textarea id="gemini-live-transcript" rows="3" placeholder="請開始說話，或在此手動輸入/修改記帳描述..." class="w-full bg-transparent resize-none outline-none text-wabi-text-primary placeholder:text-wabi-text-secondary/70 text-sm font-medium leading-relaxed"></textarea>
                     </div>
 
-                    <!-- AI 實時串流輸出面板 -->
-                    <div id="gemini-ai-stream-box" class="hidden p-3 rounded-2xl bg-slate-900/90 border border-wabi-primary/30 text-xs font-mono text-emerald-400 space-y-1.5 overflow-hidden transition-all duration-300">
-                        <div class="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-700/60 pb-1">
-                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-terminal text-wabi-primary"></i> AI 實時推論輸出 (Token Streaming)</span>
-                            <span id="gemini-stream-live-tag" class="animate-pulse text-emerald-400 font-bold">● LIVE</span>
+                    <!-- AI 實時淡入生成輸出視窗 (低調簡約灰色風) -->
+                    <div id="gemini-ai-stream-box" class="hidden p-2.5 rounded-xl bg-wabi-bg/60 border border-wabi-border/40 text-xs font-mono space-y-1 overflow-hidden transition-all duration-300">
+                        <div class="flex items-center justify-between text-[11px] text-wabi-text-secondary/60 pb-0.5">
+                            <span class="flex items-center gap-1.5"><i class="fa-solid fa-sparkles text-amber-500/70 text-[10px] animate-pulse"></i> AI 思考生成中...</span>
                         </div>
-                        <div id="gemini-ai-stream-text" class="whitespace-pre-wrap break-all max-h-24 overflow-y-auto leading-relaxed pt-1 text-[11px] font-mono text-emerald-300"></div>
+                        <div id="gemini-ai-stream-text" class="max-h-20 overflow-y-auto leading-relaxed text-[11px] text-wabi-text-secondary/70 dark:text-slate-400 font-mono tracking-wide"></div>
                     </div>
 
                     <div class="flex items-center gap-3 pt-1">
@@ -2012,16 +2011,19 @@ export class AddPage {
             const streamText = modal.querySelector('#gemini-ai-stream-text')
             if (streamBox && streamText) {
                 streamBox.classList.remove('hidden')
-                streamText.textContent = ''
+                streamText.innerHTML = ''
             }
 
             parseBtn.disabled = true
             parseBtnText.textContent = 'AI 解析中...'
             statusHint.textContent = 'AI 正在分析金額、分類、帳戶與日期...'
 
-            const onTokenCallback = (_piece, currentText) => {
+            const onTokenCallback = (piece) => {
                 if (streamText) {
-                    streamText.textContent = currentText
+                    const span = document.createElement('span')
+                    span.className = 'animate-token-appear inline'
+                    span.textContent = piece
+                    streamText.appendChild(span)
                     streamText.scrollTop = streamText.scrollHeight
                 }
             }

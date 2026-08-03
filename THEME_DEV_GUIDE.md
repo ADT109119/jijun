@@ -83,10 +83,10 @@
 - **svg**: 完整的 SVG 標籤字串 (如果包含引號，請在 JSON 中轉義 `\"`)。
 - **className** (可選): 您想加在 `<svg>` 標籤上的 class。
 
-> **⚠️ 安全性限制（v2.1.6.4 起）**：系統會對 `svg` 字串進行消毒，下列內容會被**自動移除**，請勿依賴它們：
-> - `<script>` 與 `<foreignObject>` 元素
-> - 所有 `on*` 事件屬性（如 `onload`、`onclick`）
-> - `href` / `xlink:href` 中的 `javascript:` 協定連結
+> **⚠️ 安全性限制（v2.1.7.1 升級）**：系統會對 `svg` 與 `svgPreview` 字串透過 HTML5 DOMParser (`text/html`) 進行徹底消毒與標準化（自動補全 `xmlns="http://www.w3.org/2000/svg"` 命名空間）：
+> - 下列危險元素會被**自動移除**：`<script>`, `<foreignObject>`, `<iframe>`, `<embed>`, `<object>`, `<style>`, `<link>`
+> - 所有 `on*` 事件屬性（如 `onload`、`onclick`）與危險 URI 連結（`javascript:`, `data:text/html`, `vbscript:`）會被自動清理
+> - `ThemeManager` 提供 `sanitizeSVG` (回傳 `SVGElement` 物件) 與 `sanitizeSVGToString` (回傳乾淨 SVG HTML 字串) 兩種介面供 DOM 替換與樣板渲染使用。
 >
 > 僅允許靜態 SVG 標記（路徑、形狀、漸層等）。此措施是防範惡意主題執行跨網站腳本 (XSS) 的必要處理，消毒失敗的 SVG 將不會被套用。
 

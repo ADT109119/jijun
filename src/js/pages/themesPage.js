@@ -75,12 +75,28 @@ export class ThemesPage {
                                   .map(t => {
                                       const updatable = hasUpdate(t)
                                       const store = storeMap.get(t.id)
+
+                                      let thumbnailHtml = ''
+                                      const bgColor = t.colors?.['wabi-bg'] || '#fff'
+                                      const primaryColor = t.colors?.['wabi-primary'] || '#334A52'
+                                      const rawSvgPreview = t.svgPreview || store?.svgPreview
+                                      const iconPreview = t.iconPreview || store?.iconPreview
+                                      const sanitizedSvg = rawSvgPreview
+                                          ? this.app.themeManager?.sanitizeSVGToString(rawSvgPreview)
+                                          : null
+
+                                      if (sanitizedSvg) {
+                                          thumbnailHtml = `<div class="size-12 rounded-lg flex items-center justify-center border border-wabi-border shadow-sm shrink-0 overflow-hidden" style="background-color:${primaryColor}"><div class="size-7 flex items-center justify-center text-white">${sanitizedSvg}</div></div>`
+                                      } else if (iconPreview) {
+                                          thumbnailHtml = `<div class="size-12 rounded-lg flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color:${bgColor}"><i class="${iconPreview} text-xl" style="color:${primaryColor}"></i></div>`
+                                      } else {
+                                          thumbnailHtml = `<div class="size-12 rounded-lg flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color:${bgColor}"><div class="size-6 rounded-full shrink-0" style="background-color:${primaryColor}"></div></div>`
+                                      }
+
                                       return `
                         <div class="bg-wabi-surface p-4 rounded-xl border ${activeThemeId === t.id ? 'border-wabi-primary shadow-md' : 'border-wabi-border'} flex justify-between items-center transition-all cursor-pointer theme-item relative overflow-hidden group" data-id="${t.id}">
                             <div class="flex items-center gap-4 z-10 min-w-0">
-                                <div class="size-12 rounded-lg flex items-center justify-center border border-wabi-border shadow-sm shrink-0" style="background-color: ${t.colors?.['wabi-bg'] || '#fff'}">
-                                    <div class="size-6 rounded-full shrink-0" style="background-color: ${t.colors?.['wabi-primary'] || '#334A52'}"></div>
-                                </div>
+                                ${thumbnailHtml}
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <h4 class="font-bold text-wabi-text-primary group-hover:text-wabi-primary transition-colors">${t.name}</h4>

@@ -241,6 +241,52 @@ describe('applyIconReplacements', () => {
     })
 })
 
+// ── sanitizeSVG & sanitizeSVGToString ─────────────────────────────
+describe('sanitizeSVG & sanitizeSVGToString', () => {
+    let tm
+    beforeEach(() => {
+        tm = new ThemeManager(createMockDataService())
+    })
+
+    it('sanitizes SVG without xmlns and adds default xmlns', () => {
+        const svgStr = '<svg viewBox="0 0 24 24"><circle r="5"/></svg>'
+        const el = tm.sanitizeSVG(svgStr)
+        expect(el).not.toBeNull()
+        expect(el.getAttribute('xmlns')).toBe('http://www.w3.org/2000/svg')
+
+        const str = tm.sanitizeSVGToString(svgStr)
+        expect(str).toContain('xmlns="http://www.w3.org/2000/svg"')
+        expect(str).toContain('<circle')
+    })
+
+    it('strips script, foreignObject, on* attributes, and javascript: links', () => {
+        const malicious = `<svg viewBox="0 0 24 24" onload="alert('xss')">
+            <script>alert('xss')</script>
+            <foreignObject><div>xss</div></foreignObject>
+            <a href="javascript:alert(1)"><circle r="5" onclick="alert(2)"/></a>
+        </svg>`
+        const el = tm.sanitizeSVG(malicious)
+        expect(el.querySelector('script')).toBeNull()
+        expect(el.querySelector('foreignObject')).toBeNull()
+        expect(el.hasAttribute('onload')).toBe(false)
+
+        const a = el.querySelector('a')
+        expect(a.hasAttribute('href')).toBe(false)
+
+        const circle = el.querySelector('circle')
+        expect(circle.hasAttribute('onclick')).toBe(false)
+    })
+
+    it('returns null for non-svg input or invalid input', () => {
+        expect(tm.sanitizeSVG('<div>not svg</div>')).toBeNull()
+        expect(tm.sanitizeSVG('')).toBeNull()
+        expect(tm.sanitizeSVG(null)).toBeNull()
+
+        expect(tm.sanitizeSVGToString('<div>not svg</div>')).toBeNull()
+        expect(tm.sanitizeSVGToString('')).toBeNull()
+    })
+})
+
 // ── clearReplacedIcons ─────────────────────────────────────────────
 describe('clearReplacedIcons', () => {
     let tm
