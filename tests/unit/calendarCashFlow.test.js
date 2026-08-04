@@ -252,13 +252,16 @@ describe('CalendarCashFlow 單元測試', () => {
         const cal = new CalendarCashFlow(mockDataService, mockCategoryManager, container)
 
         // Mock categoryManager returning unsafe color/icon
-        cal.categoryManager = {
+        const maliciousCm = {
             getCategoryById: () => ({
                 name: '<script>alert(1)</script>',
                 color: 'bg-red-500"><img src=x onerror=alert(1)>',
                 icon: 'fa-question"><img src=x>',
             }),
         }
+        cal.categoryManager = maliciousCm
+        // Also update the cached reference
+        cal._getCategory = maliciousCm.getCategoryById.bind(maliciousCm)
 
         const r = { type: 'expense', amount: 100, category: 'food' }
         const html = cal._buildRecordHTML(r)
