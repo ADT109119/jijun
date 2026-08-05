@@ -144,7 +144,11 @@ export class AIService {
     setQuantization(quant) {
         if (typeof window === 'undefined') return;
         if (QUANTIZATION_MODELS[quant]) {
+            const prevQuant = localStorage.getItem('ai_model_quantization');
             localStorage.setItem('ai_model_quantization', quant);
+            if (prevQuant && prevQuant !== quant) {
+                this._ensureUnloaded().catch(() => {});
+            }
         }
     }
 

@@ -11,7 +11,7 @@
         "start": "node src/standalone.js"
     },
     "devDependencies": {
-        "wrangler": "^4.63.0"
+        "wrangler": "^4.119.0"
     },
     "keywords": [
         "cloudflare-worker",

@@ -1885,6 +1885,44 @@ export class AddPage {
         let isRecording = false
         let baseText = ''
 
+        // 智慧融合兩段文字，自動消除 str1 尾部與 str2 首部的重疊/重複內容
+        const mergeOverlappingText = (str1, str2) => {
+            if (!str1) return str2 || ''
+            if (!str2) return str1 || ''
+
+            const s1 = str1.trim()
+            const s2 = str2.trim()
+            if (!s1) return s2
+            if (!s2) return s1
+
+            // 1. 若 s2 完全以 s1 開頭 -> 直接返回 s2
+            if (s2.startsWith(s1)) return s2
+
+            // 2. 若 s1 完全包含 s2 結尾 -> 直接返回 s1
+            if (s1.endsWith(s2)) return s1
+
+            // 3. 尋找 s1 尾部與 s2 首部的最大重疊子字串
+            const maxOverlap = Math.min(s1.length, s2.length)
+            for (let len = maxOverlap; len > 0; len--) {
+                const tail = s1.slice(-len)
+                const head = s2.slice(0, len)
+                if (tail === head) {
+                    return s1 + s2.slice(len)
+                }
+            }
+
+            // 4. 無重疊時的自然拼接：若皆為中文則直接相連，否則加空格
+            const isS1Chinese = /[\u4e00-\u9fa5]$/.test(s1)
+            const isS2Chinese = /^[\u4e00-\u9fa5]/.test(s2)
+            const separator = (isS1Chinese && isS2Chinese) ? '' : ' '
+            return `${s1}${separator}${s2}`
+        }
+
+        // 手動輸入即時同步至 baseText，避免語音辨識蓋過手動塗改
+        transcriptInput.addEventListener('input', () => {
+            baseText = transcriptInput.value.trim()
+        })
+
         const closeModal = () => {
             if (recognition && isRecording) {
                 try { recognition.stop() } catch (e) { /* ignore */ }
@@ -1944,20 +1982,20 @@ export class AddPage {
             }
 
             recognition.onresult = event => {
-                let currentFinal = ''
-                let currentInterim = ''
+                let speechText = ''
 
+                // 遍歷當前辨識到的所有結果片段並進行重疊融合
                 for (let i = 0; i < event.results.length; i++) {
-                    const res = event.results[i]
-                    if (res.isFinal) {
-                        currentFinal += res[0].transcript
-                    } else {
-                        currentInterim += res[0].transcript
-                    }
+                    const transcript = event.results[i][0]?.transcript || ''
+                    if (!transcript) continue
+                    speechText = mergeOverlappingText(speechText, transcript)
                 }
 
-                const speechText = (currentFinal + currentInterim).trim()
-                const fullDisplay = baseText ? `${baseText} ${speechText}` : speechText
+                // 過濾連續出現的重複短語 (如 "便當便當" -> "便當")
+                speechText = speechText.replace(/(.{2,15}?)(?:\s*|,|，|\+)\1+/g, '$1')
+
+                // 智慧融合初始/手動基準文字與語音辨識文字
+                const fullDisplay = mergeOverlappingText(baseText, speechText)
 
                 if (fullDisplay) {
                     transcriptInput.value = fullDisplay
