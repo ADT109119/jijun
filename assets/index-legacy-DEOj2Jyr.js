@@ -1,0 +1,1 @@
+System.register(["./main-legacy-CHUoLD__.js","./index-legacy-BSTaaiRB.js"],function(e,t){"use strict";var i,n;return{setters:[e=>{i=e._},e=>{n=e.registerPlugin}],execute:function(){e("App",n("App",{web:()=>i(()=>t.import("./web-legacy-BwosOG2z.js"),void 0).then(e=>new e.AppWeb)}))}}});
