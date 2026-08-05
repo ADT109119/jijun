@@ -1174,14 +1174,18 @@ export class SettingsPage {
 
     showAIDownloadModal(toggleElement) {
         const aiService = this.app.aiService
-        const currentQuant = aiService.getQuantization()
-        const hasUpdate = aiService.hasModelUpdate(currentQuant)
-        const isCurrentDownloaded = aiService.isModelDownloaded(currentQuant)
+        let activeQuant = aiService.getQuantization()
+        const hasUpdate = aiService.hasModelUpdate(activeQuant)
+        const isCurrentDownloaded = aiService.isModelDownloaded(activeQuant)
 
         const getQuantBadge = quant => {
             const downloaded = aiService.isModelDownloaded(quant)
+            const isActive = (quant === activeQuant)
+            if (isActive) {
+                return '<span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-md flex items-center gap-1"><i class="fa-solid fa-circle-check text-[10px]"></i> 使用中</span>'
+            }
             if (downloaded) {
-                return '<span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md">已下載</span>'
+                return '<span class="text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-500/10 border border-slate-500/20 px-2 py-0.5 rounded-md">已下載</span>'
             }
             return ''
         }
@@ -1217,42 +1221,42 @@ export class SettingsPage {
                     <div class="space-y-2 pt-1" id="quant-options">
                         <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
                             <div class="flex items-center gap-3">
-                                <input type="radio" name="quant-choice" value="q4_0" ${currentQuant === 'q4_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <input type="radio" name="quant-choice" value="q4_0" ${activeQuant === 'q4_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
                                 <div>
                                     <p class="font-bold text-sm text-wabi-text-primary">Q4_0 量化版 (推薦)</p>
                                     <p class="text-xs text-wabi-text-secondary">推論極快、低記憶體消耗</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
-                                ${getQuantBadge('q4_0')}
+                                <span id="badge-q4_0">${getQuantBadge('q4_0')}</span>
                                 <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~35.2 MB</span>
                             </div>
                         </label>
 
                         <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
                             <div class="flex items-center gap-3">
-                                <input type="radio" name="quant-choice" value="q8_0" ${currentQuant === 'q8_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <input type="radio" name="quant-choice" value="q8_0" ${activeQuant === 'q8_0' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
                                 <div>
                                     <p class="font-bold text-sm text-wabi-text-primary">Q8_0 量化版</p>
                                     <p class="text-xs text-wabi-text-secondary">高精確度、對複雜語意理解佳</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
-                                ${getQuantBadge('q8_0')}
+                                <span id="badge-q8_0">${getQuantBadge('q8_0')}</span>
                                 <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~65.4 MB</span>
                             </div>
                         </label>
 
                         <label class="flex items-center justify-between p-3 rounded-xl border border-wabi-border hover:bg-wabi-bg/50 cursor-pointer transition-colors">
                             <div class="flex items-center gap-3">
-                                <input type="radio" name="quant-choice" value="fp16" ${currentQuant === 'fp16' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
+                                <input type="radio" name="quant-choice" value="fp16" ${activeQuant === 'fp16' ? 'checked' : ''} class="text-wabi-primary focus:ring-wabi-primary">
                                 <div>
                                     <p class="font-bold text-sm text-wabi-text-primary">FP16 全精度版</p>
                                     <p class="text-xs text-wabi-text-secondary">無損耗原生浮點精度</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
-                                ${getQuantBadge('fp16')}
+                                <span id="badge-fp16">${getQuantBadge('fp16')}</span>
                                 <span class="text-xs font-bold text-wabi-primary bg-wabi-primary/10 px-2 py-1 rounded-md">~116.2 MB</span>
                             </div>
                         </label>
@@ -1272,11 +1276,16 @@ export class SettingsPage {
                 </div>
 
                 <div class="flex gap-3 pt-2">
-                    <button id="cancel-ai-download-btn" class="flex-1 py-2.5 rounded-xl border border-wabi-border text-wabi-text-secondary font-bold text-sm hover:bg-wabi-bg transition-colors">
+                    <button id="cancel-ai-download-btn" class="flex-1 py-2.5 rounded-xl border border-wabi-border text-wabi-text-secondary font-bold text-sm hover:bg-wabi-bg transition-colors cursor-pointer">
                         取消
                     </button>
-                    <button id="start-ai-download-btn" class="flex-1 py-2.5 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-opacity">
+                    <button id="start-ai-download-btn" class="flex-1 py-2.5 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-all cursor-pointer">
                         <i class="fa-solid fa-download mr-1"></i> 開始下載
+                    </button>
+                </div>
+                <div id="re-download-container" class="hidden text-center pt-1">
+                    <button id="re-download-btn" class="text-xs text-wabi-text-secondary hover:text-wabi-primary underline cursor-pointer transition-colors">
+                        檔案損壞或需要重下載？點此重新下載
                     </button>
                 </div>
             </div>
@@ -1286,30 +1295,56 @@ export class SettingsPage {
         const cancelBtn = modal.querySelector('#cancel-ai-download-btn')
         const closeXBtn = modal.querySelector('#close-ai-download-modal-btn')
         const startBtn = modal.querySelector('#start-ai-download-btn')
+        const reDownloadContainer = modal.querySelector('#re-download-container')
+        const reDownloadBtn = modal.querySelector('#re-download-btn')
         const progressBox = modal.querySelector('#ai-download-progress-box')
         const percentText = modal.querySelector('#ai-download-percent-text')
         const bar = modal.querySelector('#ai-download-bar')
         const sizeText = modal.querySelector('#ai-download-size-text')
         const quantOptions = modal.querySelector('#quant-options')
 
-        const updateBtnLabel = selectedQuant => {
+        const refreshQuantBadges = () => {
+            ['q4_0', 'q8_0', 'fp16'].forEach(q => {
+                const el = modal.querySelector(`#badge-${q}`)
+                if (el) el.innerHTML = getQuantBadge(q)
+            })
+        }
+
+        const updateBtnState = selectedQuant => {
             const downloaded = aiService.isModelDownloaded(selectedQuant)
             const modelUpdate = aiService.hasModelUpdate(selectedQuant)
+            const isActive = (selectedQuant === activeQuant)
 
             if (modelUpdate) {
-                startBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-1"></i> 更新模型'
-            } else if (downloaded) {
-                startBtn.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i> 重新下載'
-            } else {
+                startBtn.disabled = false
+                startBtn.className = 'flex-1 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition-all cursor-pointer shadow-md'
+                startBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down mr-1"></i> 下載更新模型'
+                if (reDownloadContainer) reDownloadContainer.classList.add('hidden')
+            } else if (!downloaded) {
+                startBtn.disabled = false
+                startBtn.className = 'flex-1 py-2.5 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-all cursor-pointer shadow-md'
                 startBtn.innerHTML = '<i class="fa-solid fa-download mr-1"></i> 開始下載'
+                if (reDownloadContainer) reDownloadContainer.classList.add('hidden')
+            } else if (isActive) {
+                // 已下載 且 目前作用中 (無法重複切換 -> disabled、變淡、打勾標示)
+                startBtn.disabled = true
+                startBtn.className = 'flex-1 py-2.5 rounded-xl bg-wabi-primary/10 text-wabi-primary/50 font-bold text-sm cursor-not-allowed border border-wabi-primary/20 opacity-60 transition-all flex items-center justify-center gap-1.5'
+                startBtn.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500 text-base"></i> 目前使用中'
+                if (reDownloadContainer) reDownloadContainer.classList.remove('hidden')
+            } else {
+                // 已下載 且 非作用中 (可點擊切換)
+                startBtn.disabled = false
+                startBtn.className = 'flex-1 py-2.5 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5'
+                startBtn.innerHTML = '<i class="fa-solid fa-right-left mr-1"></i> 切換使用此模型'
+                if (reDownloadContainer) reDownloadContainer.classList.remove('hidden')
             }
         }
 
-        updateBtnLabel(currentQuant)
+        updateBtnState(activeQuant)
 
         quantOptions.querySelectorAll('input[name="quant-choice"]').forEach(radio => {
             radio.addEventListener('change', e => {
-                updateBtnLabel(e.target.value)
+                updateBtnState(e.target.value)
             })
         })
 
@@ -1335,12 +1370,11 @@ export class SettingsPage {
             if (e.target === modal) closeModal()
         })
 
-        startBtn.addEventListener('click', async () => {
-            const selectedRadio = modal.querySelector('input[name="quant-choice"]:checked')
-            const selectedQuant = selectedRadio ? selectedRadio.value : 'q4_0'
-
+        const executeModelDownload = async selectedQuant => {
             startBtn.disabled = true
             cancelBtn.disabled = true
+            if (reDownloadBtn) reDownloadBtn.disabled = true
+            if (reDownloadContainer) reDownloadContainer.classList.add('hidden')
             quantOptions.classList.add('pointer-events-none', 'opacity-60')
             progressBox.classList.remove('hidden')
 
@@ -1353,6 +1387,8 @@ export class SettingsPage {
                     sizeText.textContent = `${loadedMB} MB / ${totalMB} MB`
                 })
 
+                aiService.setQuantization(selectedQuant)
+                activeQuant = selectedQuant
                 aiService.setExperimentalEnabled(true)
                 if (toggleElement) toggleElement.checked = true
                 if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
@@ -1369,6 +1405,50 @@ export class SettingsPage {
                 showToast('模型下載失敗: ' + err.message, 'error')
                 closeModal()
             }
+        }
+
+        startBtn.addEventListener('click', async () => {
+            const selectedRadio = modal.querySelector('input[name="quant-choice"]:checked')
+            const selectedQuant = selectedRadio ? selectedRadio.value : 'q4_0'
+            const downloaded = aiService.isModelDownloaded(selectedQuant)
+            const modelUpdate = aiService.hasModelUpdate(selectedQuant)
+
+            // 若選擇的模型已下載且無更新，直接進行模型切換，無須重複下載
+            if (downloaded && !modelUpdate) {
+                aiService.setQuantization(selectedQuant)
+                aiService.setExperimentalEnabled(true)
+                activeQuant = selectedQuant
+
+                // 更新 UI 狀態：重新整理清單 Badges 並將按鈕轉為「目前使用中」(Disabled + 打勾)
+                refreshQuantBadges()
+                updateBtnState(selectedQuant)
+
+                if (toggleElement) toggleElement.checked = true
+                if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+
+                const badgeTextEl = document.getElementById('ai-model-badge-text')
+                const updateTagEl = document.getElementById('ai-model-update-tag')
+                if (badgeTextEl) badgeTextEl.textContent = selectedQuant.toUpperCase()
+                if (updateTagEl) updateTagEl.classList.add('hidden')
+
+                showToast(`已成功切換至 ${selectedQuant.toUpperCase()} AI 離線模型`, 'success')
+
+                // 短暫展示切換後打勾狀態再自動關閉視窗
+                setTimeout(() => {
+                    closeModal()
+                }, 400)
+                return
+            }
+
+            await executeModelDownload(selectedQuant)
         })
+
+        if (reDownloadBtn) {
+            reDownloadBtn.addEventListener('click', async () => {
+                const selectedRadio = modal.querySelector('input[name="quant-choice"]:checked')
+                const selectedQuant = selectedRadio ? selectedRadio.value : 'q4_0'
+                await executeModelDownload(selectedQuant)
+            })
+        }
     }
 }
