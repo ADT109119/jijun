@@ -31,9 +31,25 @@ src/js/
 └── utils.js             # 共用工具函數 (格式化、Toast 等)
 
 src/js/pages/
+├── homePage.js          # 首頁：收支摘要、小工具、快速記帳
+├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提
+├── recordsPage.js       # 明細列表：篩選、搜尋、日期範圍、分頁
+├── statsPage.js         # 統計報表：圖表、類別分析、趨勢
+├── settingsPage.js      # 設定：主題、進階模式、匯入匯出、通知
+├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶
+├── debtsPage.js         # 欠款管理頁面（前端路由）
+├── contactsPage.js      # 聯絡人管理
+├── recurringPage.js     # 定期收支管理
+├── comparisonPage.js    # 跨月比較報表
 ├── ledgersPage.js       # 帳本管理頁面 (新增/編輯/刪除/切換帳本，含圖示搜尋與自訂顏色)
 ├── amortizationsPage.js # 攤提/折舊/分期管理頁面 (新增/編輯/刪除，進度追蹤，首付+利息計算)
-└── ...                  # 其他頁面
+├── pluginsPage.js       # 外掛管理：安裝、啟用、設定
+├── themesPage.js        # 主題管理
+├── themeStorePage.js    # 主題商店
+├── storePage.js         # 商店頁面
+├── syncSettingsPage.js  # 同步設定
+├── privacyPage.js       # 隱私權政策
+└── licensePage.js       # 授權條款
 
 src/css/
 └── main.css             # 主樣式表 (包含 Modal 滑入/滑出與淡入淡出動畫關鍵影格 animate-slide-up / animate-fade-in / animate-modal-pop)
@@ -90,6 +106,56 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
 - `syncService.js` → `dataService.js`
 - `pluginManager.js` → `dataService.js`, `pluginStorage.js`
+
+## 路由 (src/js/router.js)
+
+| 路由 | 頁面 | 說明 |
+|------|------|------|
+| `#home` | HomePage | 首頁 |
+| `#records` | RecordsPage | 明細列表 |
+| `#add` | AddPage | 新增/編輯紀錄 |
+| `#stats` | StatsPage | 統計 |
+| `#settings` | SettingsPage | 設定 |
+| `#accounts` | AccountsPage | 帳戶 |
+| `#recurring` | RecurringPage | 定期收支 |
+| `#debts` | DebtsPage | 欠款 |
+| `#amortizations` | AmortizationsPage | 攤提 |
+| `#comparison` | ComparisonPage | 比較報表 |
+| `#contacts` | ContactsPage | 聯絡人 |
+| `#ledgers` | LedgersPage | 帳本 |
+| `#plugins` | PluginsPage | 外掛 |
+| `#themes` | ThemesPage | 主題 |
+| `#themeStore` | ThemeStorePage | 主題商店 |
+| `#store` | StorePage | 商店 |
+| `#sync` | SyncSettingsPage | 同步設定 |
+| `#privacy` | PrivacyPage | 隱私權 |
+| `#license` | LicensePage | 授權 |
+
+## IndexedDB Schema
+
+**Database**: `easy-accounting-db`
+
+| Store | KeyPath | 說明 |
+|-------|---------|------|
+| `records` | `id` (autoIncrement) | 收支明細 |
+| `accounts` | `id` (autoIncrement) | 帳戶 |
+| `categories` | `id` | 分類 |
+| `settings` | `key` | 設定鍵值對 |
+| `contacts` | `id` (autoIncrement) | 聯絡人 |
+| `debts` | `id` (autoIncrement) | 欠款 |
+| `amortizations` | `id` (autoIncrement) | 攤提計畫 |
+| `ledgers` | `id` (autoIncrement) | 帳本 |
+| `theme` | `id` | 主題 |
+| `pluginState` | `id` | 外掛狀態 |
+
+## 程式碼慣例
+
+- **語法**: 不使用分號 (no semicolons)，ES Module
+- **縮排**: 4 個空格
+- **命名**: camelCase（函數/變數）、PascalCase（class）、snake_case（資料庫欄位）
+- **XSS 防護**: 使用者輸入嵌入 innerHTML 時必須使用 `escapeHTML()`（import from `utils.js`）
+- **批次查詢**: 避免 N+1 查詢，使用 `getDebts()`、`getRecords()` 批次載入
+- **無障礙**: Modal 使用 `role="dialog"`、`aria-modal="true"`、`aria-labelledby`
 
 ## 測試結構
 

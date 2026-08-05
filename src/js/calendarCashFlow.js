@@ -14,6 +14,10 @@ export class CalendarCashFlow {
         this._nextHandler = null
         this._cellHandler = null
         this._todayHandler = null
+        // Cache getCategoryById reference once
+        this._getCategory = typeof categoryManager?.getCategoryById === 'function'
+            ? categoryManager.getCategoryById.bind(categoryManager)
+            : () => null
     }
 
     async render() {
@@ -59,9 +63,11 @@ export class CalendarCashFlow {
 
         let totalIncome = 0
         let totalExpense = 0
-        for (const r of this.records) {
-            if (r.type === 'income') totalIncome += r.amount
-            else if (r.type === 'expense') totalExpense += r.amount
+        for (const dateRecords of Object.values(grouped)) {
+            for (const r of dateRecords) {
+                if (r.type === 'income') totalIncome += r.amount
+                else if (r.type === 'expense') totalExpense += r.amount
+            }
         }
         const netBalance = totalIncome - totalExpense
 
@@ -198,20 +204,15 @@ export class CalendarCashFlow {
             .slice(0, 3)
 
         // Get category info for display
-        const getCat = (type, catId) => {
-            if (this.categoryManager && typeof this.categoryManager.getCategoryById === 'function') {
-                return this.categoryManager.getCategoryById(type, catId)
-            }
-            return null
+        const label = (catId) => {
+            const cat = this._getCategory('expense', catId)
+            return cat ? escapeHTML(cat.name || catId) : escapeHTML(catId)
         }
 
         let barsHTML = ''
         if (expenseRecords.length > 0) {
             for (const r of expenseRecords) {
-                const cat = getCat(r.type, r.category)
-                const label = cat
-                    ? escapeHTML(cat.name || r.category)
-                    : escapeHTML(r.category)
+                const catLabel = label(r.category)
                 const shortAmount = this._formatShort(r.amount)
 
                 // Debt badge for debt-linked records
@@ -227,7 +228,7 @@ export class CalendarCashFlow {
 
                 // Fix: min-w-0 on label so truncate works in flex child; max-w-[60%] to prevent overflow
                 barsHTML += `<div class="flex items-center justify-between text-[10px] leading-tight overflow-hidden">
-                    <span class="truncate text-wabi-text-secondary font-medium min-w-0 max-w-[60%]">${label}${debtBadge}</span>
+                    <span class="truncate text-wabi-text-secondary font-medium min-w-0 max-w-[60%]">${catLabel}${debtBadge}</span>
                     <span class="ml-1 text-wabi-expense shrink-0 font-semibold whitespace-nowrap">$${shortAmount}</span>
                 </div>`
             }
@@ -236,9 +237,9 @@ export class CalendarCashFlow {
         // Income indicator (if only income, no expenses)
         if (expenseRecords.length === 0 && incomeSum > 0) {
             const incomeRecords = dayRecords.filter(r => r.type === 'income')
-            const label = incomeRecords.length > 1 ? `${incomeRecords.length} 筆收入` : '💰 收入'
+            const incomeLabel = incomeRecords.length > 1 ? `${incomeRecords.length} 筆收入` : '💰 收入'
             barsHTML = `<div class="flex items-center justify-between text-[10px] leading-tight">
-                <span class="text-wabi-income font-medium">${label}</span>
+                <span class="text-wabi-income font-medium">${incomeLabel}</span>
                 <span class="ml-1 text-wabi-income shrink-0 font-semibold">+$${this._formatShort(incomeSum)}</span>
             </div>`
         }
@@ -268,11 +269,8 @@ export class CalendarCashFlow {
         const sign = isInc ? '+' : '-'
         const colorClass = isInc ? 'text-wabi-income' : 'text-wabi-expense'
 
-        // Get category info via CategoryManager
-        const category = this.categoryManager
-            && typeof this.categoryManager.getCategoryById === 'function'
-            ? this.categoryManager.getCategoryById(r.type, r.category)
-            : null
+        // Get category info via cached reference
+        const category = this._getCategory(r.type, r.category)
 
         const isTransfer = r.category === 'transfer'
         const isBalanceAdj = r.category === 'balance_adjustment'
@@ -386,6 +384,15 @@ export class CalendarCashFlow {
         const closeModal = () => {
             if (modal) closeModalWithAnimation(modal, card)
         }
+
+        // Keyboard support: Escape to close modal
+        const onEscape = (e) => {
+            if (e.key === 'Escape') {
+                closeModal()
+                document.removeEventListener('keydown', onEscape)
+            }
+        }
+        document.addEventListener('keydown', onEscape)
 
         if (closeBtn) closeBtn.addEventListener('click', closeModal)
         if (modal) {

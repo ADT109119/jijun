@@ -250,11 +250,23 @@ describe('showAmortizationModal', () => {
             expect(showToast).toHaveBeenCalledWith('請輸入有效的期數', 'error')
         })
 
+        it('未選擇分類時顯示錯誤並中止', async () => {
+            const { showToast } = await import('../../src/js/utils.js')
+            showAmortizationModal(app)
+            document.querySelector('#amort-name').value = '測試分期'
+            document.querySelector('#amort-total').value = '10000'
+            document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = ''
+            document.querySelector('#amort-save-btn').click()
+            expect(showToast).toHaveBeenCalledWith('請選擇分類', 'error')
+        })
+
         it('成功儲存時呼叫 addAmortization 並移除 modal', async () => {
             showAmortizationModal(app)
             document.querySelector('#amort-name').value = 'MacBook Pro 分期'
             document.querySelector('#amort-total').value = '54000'
             document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = 'shopping'
             document.querySelector('#amort-save-btn').click()
 
             // 等待非同步儲存完成（click handler 是 async）
@@ -270,6 +282,7 @@ describe('showAmortizationModal', () => {
             document.querySelector('#amort-name').value = '測試儲存'
             document.querySelector('#amort-total').value = '3000'
             document.querySelector('#amort-periods').value = '3'
+            document.querySelector('#amort-category').value = 'food'
             document.querySelector('#amort-save-btn').click()
 
             await vi.waitFor(() => {
@@ -489,6 +502,7 @@ describe('showAmortizationModal', () => {
             document.querySelector('#amort-name').value = 'onSaved 測試'
             document.querySelector('#amort-total').value = '100'
             document.querySelector('#amort-periods').value = '1'
+            document.querySelector('#amort-category').value = 'food'
             document.querySelector('#amort-save-btn').click()
 
             await vi.waitFor(() => {

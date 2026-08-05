@@ -38,7 +38,7 @@ public class QuickCategoryWidgetProvider extends AppWidgetProvider {
         Intent intent = new Intent(context, MainActivity.class);
         intent.setAction(Intent.ACTION_VIEW);
         
-        String url = "easyaccounting://home?widget_action=quick_add";
+        String url = "easyaccounting://app/home?widget_action=quick_add";
         if (!category.isEmpty()) {
             url += "&category=" + category;
         }

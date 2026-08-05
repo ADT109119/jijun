@@ -1143,19 +1143,32 @@ export class ChangelogManager {
 
         document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove()
+// Escape 鍵關閉 (無障礙支援)
+        const escapeHandler = e => {
+            if (e.key === 'Escape') {
+                closeChangelogModal()
+            }
+        }
+        document.addEventListener('keydown', escapeHandler)
+
+        const closeChangelogModal = () => {
+            if (document.contains(modal)) {
+                modal.remove()
+                document.removeEventListener('keydown', escapeHandler)
+            }
+        }
 
         // 事件監聽
         const closeBtn = document.getElementById('close-changelog-btn')
-        if (closeBtn) closeBtn.addEventListener('click', closeModal)
+        if (closeBtn) closeBtn.addEventListener('click', closeChangelogModal)
 
         const confirmBtn = document.getElementById('confirm-changelog-btn')
-        if (confirmBtn) confirmBtn.addEventListener('click', closeModal)
+        if (confirmBtn) confirmBtn.addEventListener('click', closeChangelogModal)
 
         // 點擊背景關閉
         modal.addEventListener('click', e => {
             if (e.target === modal) {
-                closeModal()
+                closeChangelogModal()
             }
         })
     }

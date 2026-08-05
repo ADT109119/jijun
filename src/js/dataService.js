@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 15 // Schema version 15: Upgraded to support version 15 compatibility & legacy debt payments migration
+        this.dbVersion = 15 // Schema v15: Record Groups (groupMeta store)
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -491,9 +491,20 @@ class DataService {
                                 cursor = await cursor.continue()
                             }
                         }
-                        // Schema version 15: Compatibility placeholder
+                        // Schema version 15: Record Groups (groupMeta store)
                         if (oldVersion < 15) {
-                            // Version 15 migration placeholder
+                            if (!db.objectStoreNames.contains('groupMeta')) {
+                                const groupStore = db.createObjectStore(
+                                    'groupMeta',
+                                    { keyPath: 'id' }
+                                )
+                                groupStore.createIndex('uuid', 'uuid', {
+                                    unique: true,
+                                })
+                                groupStore.createIndex('ledgerId', 'ledgerId', {
+                                    unique: false,
+                                })
+                            }
                         }
                     },
                 })
@@ -818,20 +829,15 @@ class DataService {
                 )
             }
 
+            // Multi-level sort: date desc → timestamp desc → id desc
             return records.sort((a, b) => {
-                const dateA = a.date || ''
-                const dateB = b.date || ''
-                if (dateA !== dateB) {
-                    return dateB.localeCompare(dateA)
-                }
-                const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
-                const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
-                if (timeA !== timeB) {
-                    return timeB - timeA
-                }
-                const idA = typeof a.id === 'number' ? a.id : 0
-                const idB = typeof b.id === 'number' ? b.id : 0
-                return idB - idA
+                // Primary: date descending
+                if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+                // Secondary: timestamp descending (missing timestamps sort to bottom)
+                const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+                if (tsDiff !== 0) return tsDiff
+                // Tertiary: id descending (newer IDs are larger)
+                return (b.id || 0) - (a.id || 0)
             })
         } catch (error) {
             console.error('獲取記錄失敗:', error)
@@ -1236,20 +1242,12 @@ class DataService {
             )
         }
 
+        // Multi-level sort: date desc → timestamp desc → id desc
         return records.sort((a, b) => {
-            const dateA = a.date || ''
-            const dateB = b.date || ''
-            if (dateA !== dateB) {
-                return dateB.localeCompare(dateA)
-            }
-            const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
-            const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
-            if (timeA !== timeB) {
-                return timeB - timeA
-            }
-            const idA = typeof a.id === 'number' ? a.id : 0
-            const idB = typeof b.id === 'number' ? b.id : 0
-            return idB - idA
+            if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+            const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+            if (tsDiff !== 0) return tsDiff
+            return (b.id || 0) - (a.id || 0)
         })
     }
 
@@ -1513,6 +1511,7 @@ class DataService {
                 recurring_transactions: recurring_transactions,
                 amortizations: amortizations,
                 credit_statements: credit_statements,
+                groupMeta: await this.getAllGroupMeta(),
                 files: files,
                 customCategories: customCategoriesMap,
                 categoryOrder: categoryOrderMap,
@@ -1600,6 +1599,7 @@ class DataService {
                     await this.clearAllContacts()
                     await this.clearAllDebts()
                     await this.clearAllCreditStatements()
+                    await this.clearAllGroupMeta()
                     if (!this.useLocalStorage) {
                         try {
                             const txR = this.db.transaction(
@@ -1886,6 +1886,18 @@ class DataService {
                     // 6. 匯入欠款 (Phase 1: Insert & Map IDs)
                     // We use direct DB insertion instead of addDebt to preserve imported state (amounts, payments, etc.)
                     const oldDebtIdToNewIdMap = new Map()
+
+                    // 5.5 匯入 Group Meta (在 debt 之前，因為 groupId 不需要 remap)
+                    if (data.groupMeta && Array.isArray(data.groupMeta)) {
+                        const txGM = this.db.transaction('groupMeta', 'readwrite')
+                        for (const gm of data.groupMeta) {
+                            const { id, ...gmData } = gm
+                            gmData.ledgerId = getMappedLedgerId(gmData.ledgerId)
+                            if (!gmData.uuid) gmData.uuid = this.generateUUID()
+                            await txGM.store.put({ id, ...gmData })
+                        }
+                        await txGM.done
+                    }
                     const debtsToUpdate = [] // Keep track for Phase 2 linking
 
                     if (data.debts && Array.isArray(data.debts)) {
@@ -2247,6 +2259,7 @@ class DataService {
             'recurring_transactions',
             'amortizations',
             'credit_statements',
+            'groupMeta',
         ]
         for (const storeName of stores) {
             try {
@@ -2300,6 +2313,7 @@ class DataService {
             'amortizations',
             'credit_statements',
             'ledgers',
+            'groupMeta',
         ]
         for (const storeName of stores) {
             try {
@@ -2315,8 +2329,14 @@ class DataService {
                         'readwrite'
                     )
                     for (const item of backup[storeName]) {
-                        delete item.id // Let DB generate new IDs to avoid conflicts
-                        await restoreTx.store.add(item)
+                        // groupMeta 使用 put 保留原始 id（keyPath: 'id'，無 autoIncrement）
+                        // 其他 store 刪除 id 並使用 add，讓資料庫自動產生新 ID
+                        if (storeName === 'groupMeta') {
+                            await restoreTx.store.put(item)
+                        } else {
+                            delete item.id // Let DB generate new IDs to avoid conflicts
+                            await restoreTx.store.add(item)
+                        }
                     }
                     await restoreTx.done
                 }
@@ -2582,6 +2602,9 @@ class DataService {
         const credit_statements = (
             await this.getCreditStatements({ allLedgers: true })
         ).filter(s => validLedgerIds.has(s.ledgerId))
+        const groupMetaList = (
+            await this.getAllGroupMeta()
+        ).filter(g => validLedgerIds.has(g.ledgerId))
 
         // 建立帳戶/聯絡人/欠款 UUID 查找表
         const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]))
@@ -2645,6 +2668,7 @@ class DataService {
             recurring_transactions,
             amortizations,
             credit_statements,
+            groupMeta: groupMetaList,
             ...(isSharedSync
                 ? {}
                 : {
@@ -3348,6 +3372,281 @@ class DataService {
         } catch (error) {
             console.error('Failed to clear debts:', error)
             throw error
+        }
+    }
+
+    // --- Group Meta Methods ---
+    async getGroupMeta(groupId) {
+        try {
+            return await this.db.get('groupMeta', groupId)
+        } catch (error) {
+            console.error(`Failed to get groupMeta ${groupId}:`, error)
+            return null
+        }
+    }
+
+    async getAllGroupMeta(ledgerId = null) {
+        try {
+            if (ledgerId !== null) {
+                const tx = this.db.transaction('groupMeta', 'readonly')
+                const index = tx.objectStore('groupMeta').index('ledgerId')
+                return await index.getAll(ledgerId)
+            }
+            return await this.db.getAll('groupMeta')
+        } catch (error) {
+            console.error('Failed to get all groupMeta:', error)
+            return []
+        }
+    }
+
+    async saveGroupMeta(groupMeta, skipLog = false) {
+        try {
+            const uuid =
+                groupMeta.uuid || this.generateUUID()
+            const data = {
+                id: groupMeta.id || uuid,
+                uuid,
+                name: groupMeta.name || '',
+                createdAt: groupMeta.createdAt || Date.now(),
+                settled: groupMeta.settled || false,
+                settledAt: groupMeta.settledAt || null,
+                ledgerId:
+                    groupMeta.ledgerId || this.activeLedgerId,
+            }
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            const id = await tx.store.put(data)
+            await tx.done
+            if (!skipLog) {
+                await this.logChange('update', 'groupMeta', id, {
+                    uuid: data.uuid,
+                    ledgerId: data.ledgerId,
+                })
+            }
+            return id
+        } catch (error) {
+            console.error('Failed to save groupMeta:', error)
+            throw error
+        }
+    }
+
+    async deleteGroupMeta(id, skipLog = false) {
+        try {
+            // 先 unlink records，避免 meta 已刪但 records 仍指向孤立 group
+            await this.unlinkRecordsFromGroup(id)
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            let itemData = null
+            if (!skipLog) itemData = await tx.store.get(id)
+            await tx.store.delete(id)
+            await tx.done
+            if (!skipLog && itemData)
+                await this.logChange('delete', 'groupMeta', id, {
+                    uuid: itemData.uuid,
+                    ledgerId: itemData.ledgerId,
+                })
+            return true
+        } catch (error) {
+            console.error(`Failed to delete groupMeta ${id}:`, error)
+            throw error
+        }
+    }
+
+    async clearAllGroupMeta() {
+        try {
+            const records = await this.getRecords({ allLedgers: true })
+            const needsUnlink = records.some(r => r.groupId)
+            if (needsUnlink) {
+                const txR = this.db.transaction('records', 'readwrite')
+                const store = txR.store
+                for (const r of records) {
+                    if (r.groupId) {
+                        r.groupId = null
+                        r.groupStatus = null
+                        await store.put(r)
+                    }
+                }
+                await txR.done
+            }
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            await tx.store.clear()
+            await tx.done
+            return true
+        } catch (error) {
+            console.error('Failed to clear groupMeta:', error)
+            throw error
+        }
+    }
+
+    // --- Private helpers ---
+
+    /**
+     * 計算群組淨額（排除 group_settlement 紀錄）
+     * @param {Array} groupRecords
+     * @returns {{totalExpense: number, totalIncome: number, netAmount: number}}
+     */
+    _calculateGroupNet(groupRecords) {
+        const nonSettlement = groupRecords.filter(
+            r => r.category !== 'group_settlement'
+        )
+        const totalExpense = nonSettlement
+            .filter(r => r.type === 'expense')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+        const totalIncome = nonSettlement
+            .filter(r => r.type === 'income')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+        return { totalExpense, totalIncome, netAmount: totalIncome - totalExpense }
+    }
+
+    async unlinkRecordsFromGroup(groupId) {
+        try {
+            const records = await this.getRecords({ allLedgers: true })
+            const tx = this.db.transaction('records', 'readwrite')
+            for (const r of records) {
+                if (r.groupId === groupId) {
+                    r.groupId = null
+                    r.groupStatus = null
+                    await tx.store.put(r)
+                }
+            }
+            await tx.done
+        } catch (error) {
+            console.error(`Failed to unlink records from group ${groupId}:`, error)
+        }
+    }
+
+    // --- Group Aggregation Methods ---
+    async getGroupRecords(groupId, ledgerId = null) {
+        try {
+            const records = await this.getRecords({ ledgerId })
+            if (groupId === undefined) {
+                // Return all records that belong to any group
+                return records.filter(r => r.groupId)
+            }
+            return records.filter(r => r.groupId === groupId)
+        } catch (e) {
+            return []
+        }
+    }
+
+    async getGroups(ledgerId = null) {
+        try {
+            const metas = await this.getAllGroupMeta(ledgerId)
+            const allRecords = await this.getRecords({
+                ledgerId,
+            })
+
+            // O(n) Map 預先分群，避免 metas.map() 內層 filter 造成 O(n×m)
+            const byGroup = new Map()
+            allRecords.filter(r => r.groupId).forEach(r => {
+                if (!byGroup.has(r.groupId)) byGroup.set(r.groupId, [])
+                byGroup.get(r.groupId).push(r)
+            })
+
+            return metas.map(meta => {
+                const groupRecs = byGroup.get(meta.id) || []
+                const { totalExpense, totalIncome, netAmount } = this._calculateGroupNet(groupRecs)
+                const dates = groupRecs.map(r => r.date).filter(Boolean)
+                const sorted = [...dates].sort()
+                return {
+                    ...meta,
+                    recordCount: groupRecs.length,
+                    totalExpense,
+                    totalIncome,
+                    netAmount: totalIncome - totalExpense,
+                    settled: meta.settled,
+                    dateFrom: sorted[0] || null,
+                    dateTo:
+                        sorted.length > 0
+                            ? sorted[sorted.length - 1]
+                            : null,
+                    recordIds: groupRecs.map(r => r.id),
+                }
+            })
+        } catch (e) {
+            console.error('Failed to get groups:', e)
+            return []
+        }
+    }
+
+    async settleGroup(groupId, settleAmount, accountId, date, note) {
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) throw new Error('Group not found')
+
+            // 計算淨額方向（排除已結清紀錄）
+            const groupRecords = await this.getGroupRecords(groupId)
+            const { netAmount } = this._calculateGroupNet(groupRecords)
+
+            // 淨額 > 0（收入多，我拿多）→ 產生支出紀錄
+            // 淨額 < 0（支出多，我代墊）→ 產生收入紀錄
+            const record = {
+                type: netAmount >= 0 ? 'expense' : 'income',
+                category: 'group_settlement',
+                amount: Math.abs(settleAmount) || Math.abs(netAmount),
+                date:
+                    date ||
+                    formatDateToString(new Date()),
+                description: note || `群組結清: ${meta.name}`,
+                groupId: meta.id,
+                groupStatus: 'settled',
+                ledgerId: meta.ledgerId,
+                ...(accountId ? { accountId } : {}),
+            }
+            await this.addRecord(record)
+
+            // 標記群組結清
+            await this.saveGroupMeta(
+                { ...meta, settled: true, settledAt: Date.now() },
+                true
+            )
+
+            return { meta, record }
+        } catch (e) {
+            console.error('Failed to settle group:', e)
+            throw e
+        }
+    }
+
+    async partialSettleGroup(
+        groupId,
+        amount,
+        accountId,
+        date,
+        note
+    ) {
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) throw new Error('Group not found')
+
+            // M01: 金額驗證
+            if (amount === null || amount === undefined || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
+                throw new Error(`部分退款金額無效: ${amount}`)
+            }
+
+            // 計算淨額方向（排除已結清紀錄）
+            const groupRecords = await this.getGroupRecords(groupId)
+            const { netAmount } = this._calculateGroupNet(groupRecords)
+
+            // 淨額 >= 0（收入多，我多拿）→ 退款是 expense（我退錢）
+            // 淨額 < 0（支出多，我代墊）→ 退款是 income（有人還我）
+            const record = {
+                type: netAmount >= 0 ? 'expense' : 'income',
+                category: 'group_settlement',
+                amount,
+                date:
+                    date ||
+                    formatDateToString(new Date()),
+                description:
+                    note || `部分退款: ${meta.name}`,
+                groupId: meta.id,
+                groupStatus: 'active',
+                ledgerId: meta.ledgerId,
+                ...(accountId ? { accountId } : {}),
+            }
+            await this.addRecord(record)
+            return record
+        } catch (e) {
+            console.error('Failed to partial settle group:', e)
+            throw e
         }
     }
 

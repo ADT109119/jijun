@@ -308,4 +308,128 @@ describe('PluginStorage', () => {
             expect(storage.cache.migratedKey).toBe('migratedValue')
         })
     })
+
+    describe('flush', () => {
+        beforeEach(() => {
+            vi.useFakeTimers()
+            const existingPluginData = { id: 'test-plugin', storage: {} }
+            const txMock = {
+                store: {
+                    get: vi.fn().mockResolvedValue(existingPluginData),
+                    put: vi.fn().mockResolvedValue(undefined),
+                },
+                done: Promise.resolve(),
+            }
+            mockDataService.db.transaction = vi.fn(() => txMock)
+            storage = new PluginStorage('test-plugin', mockDataService)
+        })
+
+        afterEach(() => {
+            vi.restoreAllMocks()
+        })
+
+        it('直接寫入 DB，不經過 debounce delay', async () => {
+            storage.cache.key1 = 'val1'
+
+            await storage.flush()
+
+            // 不應需要推進時間
+            expect(mockDataService.db.transaction).toHaveBeenCalled()
+            expect(mockDataService.db.transaction).toHaveBeenCalledWith(
+                'plugins',
+                'readwrite'
+            )
+        })
+
+        it('清除 pending debounce timer', async () => {
+            // 先觸發 _saveToDB 建立 timer
+            storage.setItem('before', 'value')
+            expect(storage.saveTimeout).not.toBeNull()
+
+            await storage.flush()
+
+            // timer 應被清除
+            expect(storage.saveTimeout).toBeNull()
+        })
+
+        it('pluginData 不存在時也建立紀錄', async () => {
+            const txMock = {
+                store: {
+                    get: vi.fn().mockResolvedValue(null),
+                    put: vi.fn().mockResolvedValue(undefined),
+                },
+                done: Promise.resolve(),
+            }
+            mockDataService.db.transaction = vi.fn(() => txMock)
+
+            storage.cache.newKey = 'newValue'
+            await storage.flush()
+
+            expect(txMock.store.put).toHaveBeenCalled()
+        })
+
+        it('DB 失敗時拋出錯誤', async () => {
+            const txMock = {
+                store: {
+                    get: vi.fn().mockResolvedValue({ id: 'test-plugin', storage: {} }),
+                    put: vi.fn().mockRejectedValue(new Error('DB error')),
+                },
+                done: Promise.resolve(),
+            }
+            const errorSpy = vi
+                .spyOn(console, 'error')
+                .mockImplementation(() => {})
+
+            mockDataService.db.transaction = vi.fn(() => txMock)
+
+            await expect(storage.flush()).rejects.toThrow('DB error')
+            expect(errorSpy).toHaveBeenCalled()
+
+            errorSpy.mockRestore()
+        })
+    })
+
+    describe('destroy', () => {
+        beforeEach(() => {
+            vi.useFakeTimers()
+            const existingPluginData = { id: 'test-plugin', storage: {} }
+            const txMock = {
+                store: {
+                    get: vi.fn().mockResolvedValue(existingPluginData),
+                    put: vi.fn().mockResolvedValue(undefined),
+                },
+                done: Promise.resolve(),
+            }
+            mockDataService.db.transaction = vi.fn(() => txMock)
+            storage = new PluginStorage('test-plugin', mockDataService)
+        })
+
+        afterEach(() => {
+            vi.restoreAllMocks()
+        })
+
+        it('flush 緩衝區後清理資源', async () => {
+            storage.cache.data1 = 'value1'
+            storage.cache.data2 = 'value2'
+
+            await storage.destroy()
+
+            expect(mockDataService.db.transaction).toHaveBeenCalled()
+            expect(storage.saveTimeout).toBeNull()
+            expect(storage.savePromise).toBeNull()
+            expect(storage.savePromiseResolve).toBeNull()
+        })
+
+        it('空 cache 時只清理不 flush', async () => {
+            // 清空 cache
+            storage.cache = Object.create(null)
+
+            await storage.destroy()
+
+            // 不應呼叫 DB transaction
+            expect(mockDataService.db.transaction).not.toHaveBeenCalled()
+            expect(storage.saveTimeout).toBeNull()
+            expect(storage.cache).toEqual(Object.create(null))
+        })
+    })
 })

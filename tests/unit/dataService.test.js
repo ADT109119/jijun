@@ -1385,3 +1385,668 @@ describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
         expect(await ds.needsDebtRepair()).toBe(true)
     })
 })
+
+describe('DataService — Recurring Transactions CRUD', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('addRecurringTransaction 應產生 uuid（若未提供）', async () => {
+        const id = await ds.addRecurringTransaction({
+            type: 'expense',
+            amount: 100,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-08-01',
+        }, true)
+
+        expect(typeof id).toBe('number')
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.uuid).toBeDefined()
+        expect(item.uuid).toHaveLength(36)
+    })
+
+    it('addRecurringTransaction 應自動補上 accountUuid（若提供 accountId）', async () => {
+        ds.db._storeData.accounts.push({
+            id: 50,
+            name: '現金',
+            uuid: 'acc-uuid-50',
+            ledgerId: 1,
+        })
+
+        const id = await ds.addRecurringTransaction({
+            type: 'expense',
+            amount: 200,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-09-01',
+            accountId: 50,
+        }, true)
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.accountUuid).toBe('acc-uuid-50')
+    })
+
+    it('addRecurringTransaction 應設定 ledgerId 預設值', async () => {
+        const id = await ds.addRecurringTransaction({
+            type: 'income',
+            amount: 500,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-09-01',
+        }, true)
+
+        const tx = ds.db.transaction('recurring_transactions', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.ledgerId).toBe(1)
+    })
+
+    it('updateRecurringTransaction 應更新 accountUuid 當 accountId 改變', async () => {
+        ds.db._storeData.accounts.push({
+            id: 60,
+            name: '銀行',
+            uuid: 'acc-uuid-60',
+            ledgerId: 1,
+        })
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        const id = await tx.store.add({
+            type: 'expense',
+            amount: 300,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-10-01',
+            accountId: null,
+            accountUuid: null,
+            ledgerId: 1,
+            uuid: 'rt-uuid-upd',
+        })
+        await tx.done
+
+        await ds.updateRecurringTransaction(id, { accountId: 60 }, true)
+
+        const tx2 = ds.db.transaction('recurring_transactions', 'readonly')
+        const updated = await tx2.store.get(id)
+        await tx2.done
+
+        expect(updated.accountUuid).toBe('acc-uuid-60')
+    })
+
+    it('deleteRecurringTransaction 應正確刪除並回傳 true', async () => {
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        const id = await tx.store.add({
+            type: 'expense',
+            amount: 150,
+            frequency: 'monthly',
+            interval: 1,
+            nextDueDate: '2026-11-01',
+            ledgerId: 1,
+            uuid: 'rt-uuid-del',
+        })
+        await tx.done
+
+        const result = await ds.deleteRecurringTransaction(id, true)
+
+        expect(result).toBe(true)
+
+        const tx2 = ds.db.transaction('recurring_transactions', 'readonly')
+        const deleted = await tx2.store.get(id)
+        await tx2.done
+
+        expect(deleted).toBeNull()
+    })
+
+    it('getRecurringTransactions 應支援 allLedgers 過濾器', async () => {
+        const tx = ds.db.transaction('recurring_transactions', 'readwrite')
+        await tx.store.add({
+            type: 'expense', amount: 100, frequency: 'monthly', interval: 1,
+            nextDueDate: '2026-12-01', ledgerId: 1, uuid: 'rt-uuid-1',
+        })
+        await tx.store.add({
+            type: 'income', amount: 200, frequency: 'monthly', interval: 1,
+            nextDueDate: '2026-12-01', ledgerId: 2, uuid: 'rt-uuid-2',
+        })
+        await tx.done
+
+        const all = await ds.getRecurringTransactions({ allLedgers: true })
+        expect(all).toHaveLength(2)
+
+        const filtered = await ds.getRecurringTransactions({})
+        expect(filtered).toHaveLength(1)
+        expect(filtered[0].ledgerId).toBe(1)
+    })
+})
+
+// 模擬 FileReader 讀取 JSON 內容，用於測試 importData（不依賴真實檔案）
+function stubFileReader(content) {
+    const OriginalFileReader = globalThis.FileReader
+    globalThis.FileReader = class {
+        readAsText() {
+            this.result = content
+            if (this.onload) this.onload({ target: this })
+        }
+    }
+    return () => {
+        globalThis.FileReader = OriginalFileReader
+    }
+}
+
+describe('DataService — importData (匯入) groupMeta ID 處理', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    afterEach(() => {
+        // stubFileReader 的回復函式在每個測試內呼叫
+    })
+
+    it('匯入時 groupMeta 保留原始 ID（keyPath: id，非 autoIncrement）', async () => {
+        // 開始時無任何紀錄，故不會觸發 customConfirm
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+            },
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '原帳本', uuid: 'ledger-uuid-1' }],
+            records: [
+                {
+                    id: 10,
+                    type: 'expense',
+                    amount: 100,
+                    date: '2024-01-01',
+                    category: '餐飲',
+                    ledgerId: 1,
+                    uuid: 'rec-uuid-1',
+                },
+            ],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [
+                { id: 'gm-1', name: '群組A', ledgerId: 1, uuid: 'gm-uuid-1' },
+            ],
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+
+            expect(result.success).toBe(true)
+
+            // 帳本被重新指派 ID，activeLedgerId 指向新帳本
+            const ledgers = await ds.getLedgers()
+            expect(ledgers).toHaveLength(1)
+            const newLedgerId = ledgers[0].id
+            expect(ds.activeLedgerId).toBe(newLedgerId)
+
+            // 關鍵：groupMeta 應保留原始 id 'gm-1'，不會被重新指派
+            const gm = await ds.getGroupMeta('gm-1')
+            expect(gm).not.toBeNull()
+            expect(gm.id).toBe('gm-1')
+            expect(gm.name).toBe('群組A')
+            expect(gm.uuid).toBe('gm-uuid-1')
+            // ledgerId 需對應至新帳本 ID
+            expect(gm.ledgerId).toBe(newLedgerId)
+
+            // 紀錄：id 重新產生（不再是 10），uuid 保留，ledgerId 對應新帳本
+            const records = await ds.getRecords({ allLedgers: true })
+            expect(records).toHaveLength(1)
+            expect(records[0].id).not.toBe(10)
+            expect(records[0].uuid).toBe('rec-uuid-1')
+            expect(records[0].ledgerId).toBe(newLedgerId)
+        } finally {
+            restore()
+        }
+    })
+
+    it('匯入時 groupMeta 無 uuid 會自動產生', async () => {
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+            },
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '原帳本', uuid: 'ledger-uuid-1' }],
+            records: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [{ id: 'gm-2', name: '無UUID群組', ledgerId: 1 }],
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            await ds.importData({ name: 'backup.json' })
+
+            const gm = await ds.getGroupMeta('gm-2')
+            expect(gm).not.toBeNull()
+            expect(gm.id).toBe('gm-2')
+            expect(gm.uuid).toBeDefined()
+            expect(gm.uuid).toHaveLength(36)
+        } finally {
+            restore()
+        }
+    })
+
+    it('匯入後 records 與 groupMeta 的 ledgerId 一致（ID 重新對映）', async () => {
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+            },
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '工作帳本', uuid: 'ledger-uuid-2' }],
+            records: [
+                {
+                    id: 20,
+                    type: 'expense',
+                    amount: 250,
+                    date: '2024-02-01',
+                    category: '交通',
+                    ledgerId: 1,
+                    uuid: 'rec-uuid-2',
+                },
+            ],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [
+                { id: 'gm-3', name: '公款', ledgerId: 1, uuid: 'gm-uuid-3' },
+            ],
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            await ds.importData({ name: 'backup.json' })
+
+            const gm = await ds.getGroupMeta('gm-3')
+            const records = await ds.getRecords({ allLedgers: true })
+            // 兩者皆應指向匯入後重新對映的同一帳本
+            expect(gm.ledgerId).toBe(records[0].ledgerId)
+            expect(gm.ledgerId).toBe(ds.activeLedgerId)
+        } finally {
+            restore()
+        }
+    })
+})
+
+describe('DataService — 匯出/備份結構完整性', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('_exportFullBackup 包含 groupMeta store', async () => {
+        await ds.saveGroupMeta({ id: 'gx-1', name: '備份群組', ledgerId: 1 })
+
+        const backup = await ds._exportFullBackup()
+
+        expect(backup.groupMeta).toBeDefined()
+        expect(backup.groupMeta).toHaveLength(1)
+        expect(backup.groupMeta[0].id).toBe('gx-1')
+    })
+
+    it('_exportFullBackup 包含所有核心 store 與 _settings', async () => {
+        const tx = ds.db.transaction('records', 'readwrite')
+        await tx.store.add({ type: 'expense', amount: 50, date: '2024-01-01' })
+        await tx.done
+        localStorage.setItem('easy_accounting_custom_key', 'abc')
+
+        const backup = await ds._exportFullBackup()
+
+        expect(backup.records).toHaveLength(1)
+        expect(backup.ledgers).toEqual([])
+        expect(backup.accounts).toEqual([])
+        expect(backup.contacts).toEqual([])
+        expect(backup.debts).toEqual([])
+        expect(backup.recurring_transactions).toEqual([])
+        expect(backup.amortizations).toEqual([])
+        expect(backup.credit_statements).toEqual([])
+        expect(backup.groupMeta).toEqual([])
+        expect(backup._settings['easy_accounting_custom_key']).toBe('abc')
+    })
+
+    it('_restoreFromBackup 還原 groupMeta 時保留原始 id', async () => {
+        await ds.saveGroupMeta({ id: 'gkeep', name: '保留群組', ledgerId: 1 })
+
+        const backup = await ds._exportFullBackup()
+
+        // 模擬先清空再還原
+        await ds._restoreFromBackup(backup)
+
+        const restored = await ds.getGroupMeta('gkeep')
+        expect(restored).not.toBeNull()
+        expect(restored.id).toBe('gkeep')
+        expect(restored.name).toBe('保留群組')
+    })
+
+    it('_restoreFromBackup 還原 records 時重新指派 ID 但保留 uuid', async () => {
+        const backup = {
+            records: [
+                {
+                    id: 999,
+                    type: 'expense',
+                    amount: 300,
+                    date: '2024-03-01',
+                    category: '餐飲',
+                    uuid: 'backup-rec-uuid',
+                    ledgerId: 1,
+                },
+            ],
+            ledgers: [],
+            accounts: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [],
+        }
+
+        await ds._restoreFromBackup(backup)
+
+        const records = await ds.getRecords({ allLedgers: true })
+        expect(records).toHaveLength(1)
+        expect(records[0].id).not.toBe(999)
+        expect(records[0].uuid).toBe('backup-rec-uuid')
+    })
+})
+
+describe('DataService — 帳本切換與邊界情境', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('setActiveLedger 更新 activeLedgerId 並寫入 localStorage', () => {
+        ds.setActiveLedger(3)
+        expect(ds.activeLedgerId).toBe(3)
+        expect(localStorage.getItem('activeLedgerId')).toBe('3')
+    })
+
+    it('addLedger 使用預設 icon / color / type', async () => {
+        const id = await ds.addLedger({ name: '新帳本' })
+        const ledger = await ds.getLedger(id)
+        expect(ledger.icon).toBe('fa-solid fa-book')
+        expect(ledger.color).toBe('#334A52')
+        expect(ledger.type).toBe('personal')
+        expect(ledger.uuid).toBeDefined()
+    })
+
+    it('updateLedger 更新不存在的帳本時拋錯', async () => {
+        await expect(ds.updateLedger(999, { name: 'X' })).rejects.toThrow(
+            'Ledger not found'
+        )
+    })
+
+    it('deleteLedger 不可刪除預設帳本 (id=1)', async () => {
+        await expect(ds.deleteLedger(1)).rejects.toThrow('不可刪除預設帳本')
+    })
+
+    it('deleteLedger 連帶刪除該帳本的紀錄與帳戶', async () => {
+        // 準備帳本 2 的資料
+        ds.db._storeData.ledgers.push({ id: 2, name: '帳本二', uuid: 'l2' })
+        ds.db._storeData.records.push({
+            id: 1,
+            type: 'expense',
+            amount: 100,
+            ledgerId: 2,
+        })
+        ds.db._storeData.records.push({
+            id: 2,
+            type: 'expense',
+            amount: 50,
+            ledgerId: 1,
+        })
+        ds.db._storeData.accounts.push({
+            id: 1,
+            name: '帳本二帳戶',
+            ledgerId: 2,
+        })
+        ds.db._storeData.accounts.push({
+            id: 2,
+            name: '帳本一帳戶',
+            ledgerId: 1,
+        })
+
+        await ds.deleteLedger(2)
+
+        // 帳本 2 的資料被清除，帳本 1 的資料保留
+        const records = await ds.getRecords({ allLedgers: true })
+        expect(records).toHaveLength(1)
+        expect(records[0].ledgerId).toBe(1)
+        const accounts = await ds.getAccounts({ allLedgers: true })
+        expect(accounts).toHaveLength(1)
+        expect(accounts[0].ledgerId).toBe(1)
+    })
+
+    it('刪除目前使用的帳本後自動切回預設帳本', async () => {
+        ds.db._storeData.ledgers.push({ id: 5, name: '進行中帳本', uuid: 'l5' })
+        ds.setActiveLedger(5)
+
+        await ds.deleteLedger(5)
+
+        expect(ds.activeLedgerId).toBe(1)
+        expect(localStorage.getItem('activeLedgerId')).toBe('1')
+    })
+})
+
+describe('DataService — 帳戶 CRUD 驗證', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('addAccount 未指定 type 時預設為 wallet', async () => {
+        const id = await ds.addAccount({ name: '現金' })
+        const account = await ds.getAccount(id)
+        expect(account.type).toBe('wallet')
+    })
+
+    it('addAccount 自動產生 uuid', async () => {
+        const id = await ds.addAccount({ name: '測試帳戶' })
+        const account = await ds.getAccount(id)
+        expect(account.uuid).toBeDefined()
+        expect(account.uuid).toHaveLength(36)
+    })
+
+    it('updateAccount 更新不存在的帳戶時拋錯', async () => {
+        await expect(ds.updateAccount(999, { name: 'X' })).rejects.toThrow(
+            'Account not found'
+        )
+    })
+
+    it('updateAccount 在 skipLog 模式鎖定 uuid 不被覆寫', async () => {
+        const id = await ds.addAccount({ name: '原帳戶', uuid: 'acc-uuid-1' })
+        await ds.updateAccount(
+            id,
+            { name: '新帳戶', uuid: 'tampered-uuid' },
+            true
+        )
+        const account = await ds.getAccount(id)
+        expect(account.name).toBe('新帳戶')
+        expect(account.uuid).toBe('acc-uuid-1')
+    })
+
+    it('deleteAccount 刪除不存在的帳戶不會拋錯', async () => {
+        const result = await ds.deleteAccount(9999)
+        expect(result).toBe(true)
+    })
+})
+
+describe('DataService — 重複紀錄預防與 UUID 去重', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('addRecord 未提供 uuid 時自動產生唯一 uuid', async () => {
+        const id1 = await ds.addRecord({
+            type: 'expense',
+            amount: 100,
+            date: '2024-01-01',
+        })
+        const id2 = await ds.addRecord({
+            type: 'expense',
+            amount: 200,
+            date: '2024-01-02',
+        })
+
+        const r1 = await ds.getRecord(id1)
+        const r2 = await ds.getRecord(id2)
+        expect(r1.uuid).toBeDefined()
+        expect(r2.uuid).toBeDefined()
+        expect(r1.uuid).not.toBe(r2.uuid)
+    })
+
+    it('addRecord 保留呼叫端提供的 uuid（用於同步去重）', async () => {
+        const id = await ds.addRecord({
+            type: 'expense',
+            amount: 300,
+            date: '2024-01-03',
+            uuid: 'provided-uuid',
+        })
+        const record = await ds.getRecord(id)
+        expect(record.uuid).toBe('provided-uuid')
+    })
+
+    it('getByUUID 可依 uuid 找到紀錄', async () => {
+        await ds.addRecord({
+            type: 'expense',
+            amount: 400,
+            date: '2024-01-04',
+            uuid: 'findable-uuid',
+        })
+        const found = await ds.getByUUID('records', 'findable-uuid')
+        expect(found).not.toBeNull()
+        expect(found.uuid).toBe('findable-uuid')
+    })
+
+    it('getByUUID 找不到時回傳 null', async () => {
+        const found = await ds.getByUUID('records', 'nonexistent-uuid')
+        expect(found).toBeNull()
+    })
+
+    it('_restoreFromBackup 保留 uuid 供跨裝置去重', async () => {
+        const backup = {
+            records: [
+                {
+                    id: 123,
+                    type: 'expense',
+                    amount: 500,
+                    date: '2024-05-01',
+                    category: '其他',
+                    uuid: 'restored-uuid',
+                    ledgerId: 1,
+                },
+            ],
+            ledgers: [],
+            accounts: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [],
+        }
+
+        await ds._restoreFromBackup(backup)
+
+        const found = await ds.getByUUID('records', 'restored-uuid')
+        expect(found).not.toBeNull()
+    })
+})
+
+describe('DataService — logChange 外鍵補全', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        ds.db._storeData.ledgers.push({
+            id: 1,
+            name: '預設帳本',
+            uuid: 'ledger-uuid-1',
+        })
+        ds.db._storeData.accounts.push({
+            id: 70,
+            name: '信用卡',
+            uuid: 'acc-uuid-70',
+            ledgerId: 1,
+        })
+    })
+
+    it('logChange 對 recurring_transactions 應自動補全 accountUuid', async () => {
+        await ds.logChange('add', 'recurring_transactions', 99, {
+            accountId: 70,
+            ledgerId: 1,
+        })
+
+        const syncLog = ds.db._storeData['sync_log'] || []
+        expect(syncLog).toHaveLength(1)
+        expect(syncLog[0].data.accountUuid).toBe('acc-uuid-70')
+    })
+
+    it('logChange 對 recurring_transactions 應自動補全 ledgerUuid', async () => {
+        await ds.logChange('add', 'recurring_transactions', 99, {
+            ledgerId: 1,
+        })
+
+        const syncLog = ds.db._storeData['sync_log'] || []
+        expect(syncLog).toHaveLength(1)
+        expect(syncLog[0].data.ledgerUuid).toBe('ledger-uuid-1')
+    })
+})
