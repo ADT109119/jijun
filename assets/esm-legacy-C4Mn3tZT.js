@@ -1,0 +1,1 @@
+(function(){System.register([`./main-legacy-DIdIwJow.js`,`./dist-legacy-DLgVq5dn.js`],function(e,t){var n,r;return{setters:[function(e){n=e.t},function(e){r=e.registerPlugin}],execute:function(){e(`GoogleAuth`,r(`GoogleAuth`,{web:()=>n(()=>t.import(`./web-legacy-NYKvqkOb.js`).then(e=>new e.GoogleAuthWeb),void 0)}))}}})})();

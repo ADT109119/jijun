@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-FgamKSHW.js","assets/dist-B2tx0jly.js"])))=>i.map(i=>d[i]);
+import{t as e}from"./main-BDdAt6Km.js";import{registerPlugin as t}from"./dist-B2tx0jly.js";var n=t(`GoogleAuth`,{web:()=>e(()=>import(`./web-FgamKSHW.js`).then(e=>new e.GoogleAuthWeb),__vite__mapDeps([0,1]))});export{n as GoogleAuth};

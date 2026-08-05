@@ -1,1 +1,0 @@
-System.register(["./main-legacy-CHUoLD__.js","./index-legacy-BSTaaiRB.js"],function(e,t){"use strict";var i,n;return{setters:[e=>{i=e._},e=>{n=e.registerPlugin}],execute:function(){e("GoogleAuth",n("GoogleAuth",{web:()=>i(()=>t.import("./web-legacy-gm340Xf_.js"),void 0).then(e=>new e.GoogleAuthWeb)}))}}});
