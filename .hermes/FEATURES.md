@@ -50,6 +50,11 @@
 - [ ] **#U03 多幣種帳戶支援** — 每個帳戶可設定獨立幣別，支援即時匯率換算與顯示 ⏳ 規劃中 (PLAN-U03-MULTI-CURRENCY.md, v2.2.x, Schema v14)
 - [ ] **#P01 週期性交易跨裝置同步問題** — 多裝置修改/刪除週期性交易時會互相覆蓋設定，導致重複紀錄和大量自動記帳記錄（需調查 recurring_transactions 的 UUID 同步機制與衝突處理）
 
+### 信用卡功能修復 (P0)
+- [x] **#B05-1 記帳頁面帳戶選擇缺少信用卡圖標** — `addPage.js` 的 `showAccountSelectionModal` 已加入 `fa-credit-card` badge (2026-08-05)
+- [ ] **#B05-2 沒有手動繳款功能** — 用戶沒有入口可以手動繳納信用卡帳單，僅依賴自動扣繳
+- [ ] **#B05-3 自動繳款觸發時機問題** — `autoPayCreditStatements()` 只在 app 啟動時呼叫，不是 background 排程；用戶繳款日沒打開 app 就錯過執行，下次打開才補抓逾期帳單
+
 ### 中優先級 (P2)
 - ✅ **#U04 信用卡特別帳戶** — 信用卡帳單日、循環信用、分期還款等信用卡專屬功能 (2026-06-28 v2.1.5.7)
 - ✅ **信用卡基礎資料層 (Schema v13)** — dataService.js 已實作 credit_statements store、信用卡帳戶欄位、帳單計算與自動產生 (2026-06-11)
@@ -62,6 +67,9 @@
 ### 低優先級 (P3)
 - [ ] **#U05 更多顏色主題** — 擴充預設主題數量 (目前已有 Ocean Blue、Cyberpunk、Matrix、Sakura 等)
 - [ ] **#8 疑問與建議** — 包含：匯出 PDF 報表、遊戲化存錢、AI 預測性理財、AI 掃描發票、Edge/Capacitor Widget 等 (需逐項確認)
+
+### 使用者體驗 (UX)
+- [ ] **#U08 導覽功能 (Onboarding & Feature Tour)** — 初次開啟歡迎 Modal (可右翻頁) + 導覽教學/開始使用選擇 + 對話氣泡式逐步引導 + 特定功能開啟時觸發導覽 (欠款、多帳戶等) + 版本更新時可設定新導覽 + 模組化檔案架構 (2026-08-05)
 
 ---
 
@@ -122,6 +130,9 @@
 - 叮咚AI記帳 (2026-08-01 調研) — 多模態大模型智能記帳，支援語音、拍照識圖、iOS 快捷指令自動化、智能歸類
 - Indexia 2026 記帳App推薦 — CWMoney（發票自動記帳+條碼）、記帳城市（遊戲化養成）、天天記帳（多帳本+iCloud/Google Drive）
 - Actual Budget 26.6.0 (2026-08 更新) — Balance Forecast Report, Enable Banking sync provider, NZ bank sync via Akahu, 標籤顯示/隱藏支援
+- MOZE v4.1.16 (2026-08 更新) — 金流非工作日處理：信用卡扣款遇週末提前/延後、分期入帳遇假日跳過、薪資發放提前偵測，可設定「提前」或「延後」處理
+- Pursenal (Flutter 開源記帳) — 跨平台、複式記帳系統、完全離線、多設定檔、多幣別、預算管理與視覺化報表
+- Indexia 2026 記帳App推薦 — CWMoney（發票自動記帳+條碼）、記帳城市（遊戲化養成）、天天記帳（多帳本+iCloud/Google Drive）
 
 ---
 
@@ -156,6 +167,7 @@
 
 ## 更新歷史
 
+- **2026-08-05**: fix #B05-1 信用卡圖標徽章 — `addPage.js` `showAccountSelectionModal` 加入信用卡 `fa-credit-card` badge（與 `accountsPage.js` 一致）；1126 tests 全過；ESLint 乾淨；GitHub: 80 stars, 4 open issues (#48/#14/#9/#8) 無變化；市場：MOZE v4.1.16 (非工作日金流處理)；Pursenal (Flutter 開源記帳)
 - **2026-08-04**: Code Review + fix calendarCashFlow.js — 審查 calendarCashFlow.js (429行) 行事曆金流檢視；發現 0 HIGH、2 MEDIUM (M01: Modal 缺少 Escape 鍵關閉、M02: renderCell 內閉包函數效能浪費)、4 LOW (L01: _formatAmount 重覆邏輯、L02: 硬編碼 $、L03: 雙重遍歷、L04: sort 已確認安全)；已修復 M01 (新增 Escape 鍵無障礙支援) + M02 (constructor 快取 _getCategory 參考、renderCell 移除閉包、_buildRecordHTML 改用快取 + L03 (合併 double iteration))；修正 calendarCashFlow.test.js XSS 測試 (mock 需同步更新 _getCategory 快取)；1126 tests 全過；ESLint 乾淨；安全評分 8/10；GitHub: 80 stars (+1), 4 open issues (#48/#14/#9/#8) 無變化；市場：Actual Budget 26.8.0 (Age of Money, Payee Locations 穩定版, 銀行同步 CLI)
 - **2026-08-02**: Code Review + fix pluginStorage.js — 審查 pluginStorage.js (216行) 插件沙箱儲存；發現 2 HIGH (**H01: _saveToDB pluginData 不存在時靜默跳過導致首次寫入資料遺失、H02: 缺少 flush() 方法，頁面關閉/debounce 未觸發時緩衝區資料遺失**)、3 MEDIUM (M01: _saveToDB 即使 DB 失敗仍 resolve Promise 掩蓋錯誤、M02: init() 遍歷全部 localStorage keys O(n) 效能浪費、M03: 沒有 destroy() 清理 pending timeouts)、1 LOW (L01: 缺少 destroy 方法)；已修復 H01 (pluginData 不存在時自動建立紀錄) + H02 (新增 flush() 同步寫入方法) + L01 (新增 destroy() 清理資源)；新增 6 個單元測試 (flush 直接寫入/清除 timer/pluginData 不存在時建立/DB 失敗拋錯 + destroy flush 後清理/空 cache 不 flush)；1101 tests 全過 (原 1095 +6)；ESLint 0 errors (修復 categories.js eqeqeq)；安全評分 7→8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；市場：Actual Budget 26.6.0 (Balance Forecast Report, Enable Banking sync, NZ bank sync)；叮咚AI記帳多模態大模型智能記帳趨勢
 - **2026-08-01**: Code Review changelog.js (1,090 行) — 發現 0 HIGH、2 MEDIUM (M01: getCurrentVersionInfo 版本不存在時回傳 undefined、M02: showChangelogModal 缺少 Escape 鍵關閉)、4 LOW (L01: renderCurrentVersionSummary 硬編碼顏色、L02: 殘留事件監聽器、L03: 缺少 destroy 方法、L04: CHANGELOG 資料無自動驗證)；已修復 M02 (Escape 鍵無障礙支援) + 新增 4 個單元測試；1095 tests 全過 (原 1091 +4)；ESLint 乾淨；安全評分 8/10；GitHub: 79 stars, 4 open issues (#48/#14/#9/#8) 無變化；MOZE 無 8 月新更新；市場趨勢：Moneybook 2026 全面收費後替代方案討論持續、開源記帳生態成長 (Actual Budget/Firefly III)、AI 記帳工具成熟化 (叮咚AI記帳)

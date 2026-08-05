@@ -2130,8 +2130,9 @@ export class AddPage {
             .map(
                 account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg ${escapeHTML(account.color || 'bg-gray-500')} text-white shrink-0 size-10">
+                <div class="relative flex items-center justify-center rounded-lg ${escapeHTML(account.color || 'bg-gray-500')} text-white shrink-0 size-10">
                     <i class="${escapeHTML(account.icon || 'fa-solid fa-wallet')} text-xl"></i>
+                    ${account.type === 'credit_card' ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
                 </div>
                 <span class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</span>
             </button>
