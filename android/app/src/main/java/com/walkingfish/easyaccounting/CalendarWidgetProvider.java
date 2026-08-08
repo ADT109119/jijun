@@ -147,7 +147,7 @@ public class CalendarWidgetProvider extends AppWidgetProvider {
         // 點擊 Widget 開啟 App 並跳到統計頁
         Intent intent = new Intent(context, MainActivity.class);
         intent.setAction(Intent.ACTION_VIEW);
-        intent.setData(Uri.parse("easyaccounting://stats"));
+        intent.setData(Uri.parse("easyaccounting://app/stats"));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(

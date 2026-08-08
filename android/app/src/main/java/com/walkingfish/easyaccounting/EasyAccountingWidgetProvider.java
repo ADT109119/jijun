@@ -59,7 +59,7 @@ public class EasyAccountingWidgetProvider extends AppWidgetProvider {
         // 設定快速記帳快捷鍵 (帶入 action=quick_add 參數)
         Intent intent = new Intent(context, MainActivity.class);
         intent.setAction(Intent.ACTION_VIEW);
-        intent.setData(Uri.parse("easyaccounting://home?widget_action=quick_add"));
+        intent.setData(Uri.parse("easyaccounting://app/home?widget_action=quick_add"));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         
         PendingIntent pendingIntent = PendingIntent.getActivity(

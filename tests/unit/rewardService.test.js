@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { RewardService } from '../../src/js/rewardService.js'
+
+// Mock window.location.reload to prevent 'Not implemented' warning
+vi.stubGlobal('location', { reload: vi.fn() })
 
 describe('RewardService', () => {
     let service
@@ -163,6 +166,35 @@ describe('RewardService', () => {
         it('_grantAdFree 後 isAdFree 回傳 true', () => {
             service._grantAdFree()
             expect(service.isAdFree()).toBe(true)
+        })
+    })
+
+    describe('邊界值', () => {
+        it('getAdFreeRemaining 過期時間 → 0', () => {
+            // 設定已過期的時間
+            localStorage.setItem('adFreeUntil', '1000000000000')
+            expect(service.getAdFreeRemaining()).toBe(0)
+        })
+
+        it('formatRemaining 恰 60 分鐘 → 剩 60 分鐘', () => {
+            const until = Date.now() + 60 * 60 * 1000
+            localStorage.setItem('adFreeUntil', until.toString())
+            // 60 分鐘整
+            const remaining = service.getAdFreeRemaining()
+            expect(remaining).toBeGreaterThan(59 * 60 * 1000)
+            expect(remaining).toBeLessThanOrEqual(60 * 60 * 1000)
+        })
+
+        it('localStorage 讀取拋錯 → isAdFree 回傳 false', () => {
+            const original = Storage.prototype.getItem
+            Storage.prototype.getItem = vi.fn().mockImplementation(() => {
+                throw new Error('QuotaExceededError')
+            })
+            try {
+                expect(service.isAdFree()).toBe(false)
+            } finally {
+                Storage.prototype.getItem = original
+            }
         })
     })
 })

@@ -322,6 +322,12 @@ export function showAmortizationModal(
                 return
             }
 
+            const category = categorySelect.value
+            if (!category) {
+                showToast('請選擇分類', 'error')
+                return
+            }
+
             const downPayment = parseFloat(downPaymentInput.value) || 0
             const annualRate = parseFloat(interestInput.value) || 0
             const principal = Math.max(0, total - downPayment)
@@ -343,7 +349,7 @@ export function showAmortizationModal(
                 name,
                 type: typeInput.value,
                 recordType: recordTypeSelect.value,
-                category: categorySelect.value,
+                category,
                 totalAmount: total,
                 downPayment: downPayment || 0,
                 interestRate: annualRate || 0,
