@@ -1,5 +1,6 @@
 // 欠款管理模組
 import { formatCurrency, formatDate, formatDateToString, showToast, customConfirm, customAlert, escapeHTML } from './utils.js';
+import { getCategoryById } from './categories.js';
 
 export class DebtManager {
   constructor(dataService) {
@@ -88,16 +89,6 @@ export class DebtManager {
           <button data-filter="all" class="debt-filter-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${this.currentFilter === 'all' ? 'bg-wabi-surface text-wabi-primary shadow-sm' : 'text-wabi-text-secondary hover:text-wabi-text-primary'}">全部</button>
         </div>
 
-        <!-- Group/Personal Filter Toggle -->
-        <div class="flex gap-2 mb-4">
-          <button id="show-groups-btn" class="flex-1 py-2 text-sm font-medium rounded-lg ${this.showGroups ? 'bg-wabi-primary text-wabi-surface' : 'bg-wabi-surface text-wabi-text-secondary border border-wabi-border'}">
-            <i class="fa-solid fa-layer-group mr-1"></i>群組
-          </button>
-          <button id="show-personal-btn" class="flex-1 py-2 text-sm font-medium rounded-lg ${!this.showGroups ? 'bg-wabi-primary text-wabi-surface' : 'bg-wabi-surface text-wabi-text-secondary border border-wabi-border'}">
-            <i class="fa-solid fa-user mr-1"></i>個人
-          </button>
-        </div>
-
         <!-- Contact Filter -->
         <div class="mb-4">
           <select id="contact-filter-select" class="w-full p-3 bg-wabi-surface rounded-lg border border-wabi-border text-wabi-text-primary">
@@ -158,7 +149,7 @@ export class DebtManager {
     let groupCardHtml = '';
     try {
       const groups = await this.dataService.getGroups();
-      const unsettledGroups = groups.filter(g => !g.settled);
+      const unsettledGroups = groups.filter(g => !g.settled && g.netAmount !== 0);
       const totalGroupNet = unsettledGroups.reduce((s, g) => s + g.netAmount, 0);
       groupCardHtml = `
         <div class="bg-emerald-500/10 rounded-xl p-4 text-center border border-emerald-500/20">
@@ -317,23 +308,6 @@ export class DebtManager {
       await this.loadDebtList();
     });
 
-    // Group/Personal filter toggle
-    this.container.querySelector('#show-groups-btn')?.addEventListener('click', async (e) => {
-      this.showGroups = true;
-      await this.updateSummaryCards();
-      await this.loadDebtList();
-      // Update button styles
-      this.container.querySelector('#show-groups-btn').className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-wabi-primary text-wabi-surface';
-      this.container.querySelector('#show-personal-btn').className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-wabi-surface text-wabi-text-secondary border border-wabi-border';
-    });
-    this.container.querySelector('#show-personal-btn')?.addEventListener('click', async (e) => {
-      this.showGroups = false;
-      await this.updateSummaryCards();
-      await this.loadDebtList();
-      // Update button styles
-      this.container.querySelector('#show-personal-btn').className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-wabi-primary text-wabi-surface';
-      this.container.querySelector('#show-groups-btn').className = 'flex-1 py-2 text-sm font-medium rounded-lg bg-wabi-surface text-wabi-text-secondary border border-wabi-border';
-    });
   }
 
   async loadDebtList() {
@@ -348,6 +322,18 @@ export class DebtManager {
 
     let allDebts = await this.dataService.getDebts(filters);
     const contacts = await this.dataService.getContacts();
+    const allRecords = await this.dataService.getRecords();
+    const recordsMap = new Map(allRecords.map(r => [r.id, r]));
+
+    // 過濾掉屬於群組的個人欠款（若該欠款已在群組中，只呈現群組卡片）
+    allDebts = allDebts.filter(d => {
+      if (d.groupId) return false;
+      if (d.recordId) {
+        const rec = recordsMap.get(d.recordId);
+        if (rec && rec.groupId) return false;
+      }
+      return true;
+    });
 
     // Apply contact filter (only for personal debts, not groups)
     if (this.currentContactFilter) {
@@ -360,13 +346,13 @@ export class DebtManager {
       try {
         const allGroups = await this.dataService.getGroups();
 
-        // Filter groups by settled status
+        // Filter groups by settled status and netAmount
         if (this.currentFilter === 'unsettled') {
-          groups = allGroups.filter(g => !g.settled);
+          groups = allGroups.filter(g => !g.settled && g.netAmount !== 0);
         } else if (this.currentFilter === 'settled') {
           groups = allGroups.filter(g => g.settled);
         } else {
-          groups = allGroups;
+          groups = allGroups.filter(g => g.netAmount !== 0 || g.settled);
         }
       } catch (e) {
         console.warn('Failed to load groups for debt list:', e);
@@ -513,6 +499,12 @@ export class DebtManager {
       const hasPaymentHistory = debt.payments && debt.payments.length > 0;
       const isHighlighted = this.highlightDebtId === debt.id;
       
+      const record = debt.recordId ? recordsMap.get(debt.recordId) : null;
+      const catId = record?.category || debt.category || debt.description;
+      const recType = record?.type || (debt.type === 'receivable' ? 'expense' : 'income');
+      const categoryObj = catId ? (getCategoryById(recType, catId) || getCategoryById(recType === 'expense' ? 'income' : 'expense', catId)) : null;
+      const hasCustomDescription = debt.description && debt.description !== catId && (!categoryObj || debt.description !== categoryObj.id);
+
       debtHtmlMap[debt.id] = `
         <div id="debt-item-${debt.id}" class="bg-wabi-surface rounded-lg border ${isHighlighted ? 'border-wabi-primary ring-2 ring-wabi-primary/20' : 'border-wabi-border'} p-4 ${debt.settled ? 'opacity-60' : ''}" data-debt-id="${debt.id}">
           <div class="flex items-start justify-between">
@@ -522,7 +514,15 @@ export class DebtManager {
               </div>
               <div>
                 <p class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</p>
-                <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
+                <div class="flex items-center gap-2 mt-0.5">
+                  <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
+                  ${categoryObj ? `
+                    <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-wabi-bg border border-wabi-border text-wabi-text-primary font-medium">
+                      <i class="${categoryObj.icon} text-[10px]"></i>
+                      <span>${escapeHTML(categoryObj.name)}</span>
+                    </span>
+                  ` : ''}
+                </div>
               </div>
             </div>
             <div class="text-right">
@@ -531,7 +531,7 @@ export class DebtManager {
               <p class="text-xs text-wabi-text-secondary">${formatDate(debt.date, 'short')}</p>
             </div>
           </div>
-          ${debt.description ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${escapeHTML(debt.description)}</p>` : ''}
+          ${hasCustomDescription ? `<p class="text-sm text-wabi-text-secondary mt-2 pl-13">${escapeHTML(debt.description)}</p>` : ''}
           ${hasPartialPayments ? `
             <div class="mt-2">
               <div class="flex justify-between text-xs text-wabi-text-secondary mb-1">
@@ -762,6 +762,25 @@ export class DebtManager {
       });
     });
 
+    // Bind view group records buttons
+    listContainer.querySelectorAll('.view-group-records-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const groupId = btn.dataset.id;
+        await this.showGroupDetailsModal(groupId);
+      });
+    });
+
+    // Bind group card click to view details modal
+    listContainer.querySelectorAll('.group-card').forEach(card => {
+      card.addEventListener('click', async (e) => {
+        if (e.target.closest('button')) return;
+        const groupId = card.dataset.groupId;
+        if (groupId) {
+          await this.showGroupDetailsModal(groupId);
+        }
+      });
+    });
+
     // Bind settle group buttons
     listContainer.querySelectorAll('.settle-group-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -775,14 +794,6 @@ export class DebtManager {
       btn.addEventListener('click', async () => {
         const groupId = btn.dataset.id;
         await this.showPartialSettleGroupModal(groupId);
-      });
-    });
-
-    // Bind view group records buttons
-    listContainer.querySelectorAll('.view-group-records-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const groupId = btn.dataset.id;
-        window.location.hash = `#records?groupId=${groupId}`;
       });
     });
 
@@ -1800,6 +1811,201 @@ export class DebtManager {
         console.error('Failed to partial settle group:', e);
         customAlert('操作失敗，請稍後再試');
         btn.disabled = false; btn.textContent = originalText; btn.style.opacity = '1';
+      }
+    });
+  }
+
+  async showGroupDetailsModal(groupId) {
+    const groupMeta = await this.dataService.getGroupMeta(groupId);
+    if (!groupMeta) return;
+
+    const groupRecords = await this.dataService.getGroupRecords(groupId);
+    const { netAmount, totalExpense, totalIncome } = this.dataService._calculateGroupNet(groupRecords);
+
+    const netDirection = netAmount < 0 ? `${escapeHTML(groupMeta.name)}欠我` : netAmount > 0 ? `我欠${escapeHTML(groupMeta.name)}` : '已平衡';
+
+    const modal = document.createElement('div');
+    modal.id = 'group-details-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+
+    const recordItemsHtml = groupRecords.length === 0 ? `
+      <p class="text-center py-6 text-wabi-text-secondary">此群組尚無交易明細</p>
+    ` : groupRecords.map(r => {
+      const cat = getCategoryById(r.type || 'expense', r.category) || { name: r.category || '未分類', icon: 'fa-regular fa-note-sticky', color: 'bg-gray-500' };
+      const isSettlement = r.category === 'group_settlement';
+      const isSettled = r.groupStatus === 'settled';
+      const isIncome = r.type === 'income';
+      const isHexColor = cat.color && cat.color.startsWith('#');
+      const colorStyle = isHexColor ? `style="background-color: ${cat.color};"` : '';
+      const colorClass = isHexColor ? '' : (cat.color || 'bg-gray-500');
+
+      return `
+        <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center justify-center rounded-full size-9 text-white text-sm ${colorClass}" ${colorStyle}>
+              <i class="${cat.icon || 'fa-solid fa-receipt'}"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <p class="font-medium text-wabi-text-primary text-sm">${escapeHTML(r.description || cat.name)}</p>
+                ${isSettled ? `<span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium">已結清</span>` : ''}
+              </div>
+              <p class="text-xs text-wabi-text-secondary">${formatDate(r.date, 'short')} · ${cat.name}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <p class="font-bold text-sm ${isIncome ? 'text-wabi-income' : 'text-wabi-expense'}">
+                ${isIncome ? '+' : '-'}${formatCurrency(r.amount)}
+              </p>
+            </div>
+            ${(!isSettled && !groupMeta.settled) ? `
+              <button class="settle-record-btn px-2.5 py-1 text-xs font-medium text-emerald-600 border border-emerald-600 rounded hover:bg-emerald-50 transition-colors" data-record-id="${r.id}">
+                個別還
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-lg w-full p-6 max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between pb-3 border-b border-wabi-border mb-3">
+          <div>
+            <h3 class="text-lg font-bold text-wabi-primary flex items-center gap-2">
+              <i class="fa-solid fa-layer-group text-emerald-600"></i>
+              ${escapeHTML(groupMeta.name)}
+            </h3>
+            <p class="text-xs text-wabi-text-secondary mt-0.5">群組明細細部內容 (${groupRecords.length} 筆)</p>
+          </div>
+          <button id="close-group-details" class="text-wabi-text-secondary hover:text-wabi-primary p-1">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <div class="bg-wabi-surface rounded-lg p-3 mb-3 border border-wabi-border flex justify-between items-center text-sm">
+          <div>
+            <span class="text-wabi-text-secondary">待結清淨額：</span>
+            <span class="font-bold ${netAmount < 0 ? 'text-wabi-income' : netAmount > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${netDirection} ${formatCurrency(Math.abs(netAmount))}</span>
+          </div>
+          <div class="text-xs text-wabi-text-secondary">
+            支 ${formatCurrency(totalExpense)} | 收 ${formatCurrency(totalIncome)}
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4">
+          ${recordItemsHtml}
+        </div>
+
+        <div class="pt-3 border-t border-wabi-border flex space-x-2">
+          ${!groupMeta.settled ? `
+            <button id="modal-settle-group-btn" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-lg transition-colors">
+              一鍵結清整組
+            </button>
+            <button id="modal-partial-settle-btn" class="px-4 py-2.5 border border-emerald-600 text-emerald-600 font-medium text-sm rounded-lg hover:bg-emerald-50 transition-colors">
+              ${netAmount >= 0 ? '部分退款' : '部分收款'}
+            </button>
+          ` : `
+            <div class="flex-1 text-center py-2 text-sm text-wabi-income font-medium bg-wabi-income/10 rounded-lg">
+              <i class="fa-solid fa-check-circle mr-1"></i>此群組已全部結清
+            </div>
+          `}
+          <button id="modal-close-group-btn" class="px-5 py-2.5 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary text-sm rounded-lg transition-colors">
+            關閉
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+    modal.querySelector('#close-group-details').addEventListener('click', closeModal);
+    modal.querySelector('#modal-close-group-btn').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    modal.querySelectorAll('.settle-record-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const recordId = parseInt(btn.dataset.recordId) || btn.dataset.recordId;
+        await this.showSettleGroupRecordModal(recordId, groupId, modal);
+      });
+    });
+
+    modal.querySelector('#modal-settle-group-btn')?.addEventListener('click', async () => {
+      closeModal();
+      await this.showSettleGroupModal(groupId);
+    });
+
+    modal.querySelector('#modal-partial-settle-btn')?.addEventListener('click', async () => {
+      closeModal();
+      await this.showPartialSettleGroupModal(groupId);
+    });
+  }
+
+  async showSettleGroupRecordModal(recordId, groupId, parentModal = null) {
+    const records = await this.dataService.getRecords({ allLedgers: true });
+    const record = records.find(r => r.id === recordId);
+    if (!record) return;
+
+    const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
+    const isAdvancedMode = !!advancedModeSetting?.value;
+    let accounts = [];
+    let defaultAccountId = null;
+    if (isAdvancedMode) {
+      accounts = await this.dataService.getAccounts();
+      if (accounts.length > 0) defaultAccountId = accounts[0].id;
+    }
+
+    const isExpense = record.type === 'expense';
+    const actionText = isExpense ? '收回款項 (入帳)' : '退還款項 (出帳)';
+
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4';
+    modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6">
+        <h3 class="text-lg font-semibold mb-3 text-emerald-600">
+          <i class="fa-solid fa-handshake mr-2"></i>單筆明細個別還款
+        </h3>
+        <div class="bg-wabi-surface p-3 rounded-lg border border-wabi-border mb-4">
+          <p class="font-medium text-wabi-text-primary text-sm">${escapeHTML(record.description || '單筆紀錄')}</p>
+          <p class="text-xs text-wabi-text-secondary mt-1">${formatDate(record.date, 'short')} · 金額：<span class="font-bold ${isExpense ? 'text-wabi-expense' : 'text-wabi-income'}">${formatCurrency(record.amount)}</span></p>
+        </div>
+        <p class="text-xs text-wabi-text-secondary mb-4">這將建立一筆「${actionText}」沖銷紀錄，並標記此明細為已結清。</p>
+        ${isAdvancedMode ? `
+        <div class="mb-4">
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">結清帳戶</label>
+          <select id="record-settle-account" class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+            ${accounts.map(acc => `<option value="${acc.id}" ${acc.id === defaultAccountId ? 'selected' : ''}>${escapeHTML(acc.name)}</option>`).join('')}
+          </select>
+        </div>
+        ` : ''}
+        <div class="flex space-x-3">
+          <button id="confirm-settle-record" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition-colors">確認還款</button>
+          <button id="cancel-settle-record" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">取消</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    const closeModal = () => modal.remove();
+    modal.querySelector('#cancel-settle-record').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+    modal.querySelector('#confirm-settle-record').addEventListener('click', async () => {
+      const accountSelect = modal.querySelector('#record-settle-account');
+      const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
+      try {
+        await this.dataService.settleGroupRecord(recordId, selectedAccountId);
+        closeModal();
+        if (parentModal) parentModal.remove();
+        showToast('該筆明細已完成個別還款並產生結清紀錄', 'success');
+        await this.updateSummaryCards();
+        await this.loadDebtList();
+        await this.showGroupDetailsModal(groupId);
+      } catch (e) {
+        console.error('Failed to settle group record:', e);
+        customAlert('個別還款失敗，請稍後再試');
       }
     });
   }

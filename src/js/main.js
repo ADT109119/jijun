@@ -37,6 +37,7 @@ import { ComparisonPage } from './pages/comparisonPage.js'
 import { DebtsPage } from './pages/debtsPage.js'
 import { ContactsPage } from './pages/contactsPage.js'
 import { LedgersPage } from './pages/ledgersPage.js'
+import { GroupsPage } from './pages/groupsPage.js'
 import { AmortizationsPage } from './pages/amortizationsPage.js'
 import { StorePage } from './pages/storePage.js'
 import { ThemesPage } from './pages/themesPage.js'
@@ -188,6 +189,7 @@ export class EasyAccountingApp {
         this.router.register('accounts', new AccountsPage(this))
         this.router.register('recurring', new RecurringPage(this))
         this.router.register('debts', new DebtsPage(this))
+        this.router.register('groups', new GroupsPage(this))
         this.router.register('contacts', new ContactsPage(this))
         this.router.register('ledgers', new LedgersPage(this))
         this.router.register('amortizations', new AmortizationsPage(this))

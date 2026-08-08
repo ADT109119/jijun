@@ -9,8 +9,9 @@ src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
 ├── themeManager.js      # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，包含對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v13: 多帳本 + 攤提/分期 + 信用卡支援)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援 + 群組分帳與單筆個別還款)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
+├── groupManager.js      # 群組分帳管理商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數
 ├── categoryManager.js   # 分類管理 UI 邏輯
 ├── statistics.js        # 統計分析頁面 (包含跨月比較報表等功能)
@@ -19,7 +20,7 @@ src/js/
 ├── recordsList.js       # 記帳紀錄列表
 ├── budgetManager.js     # 預算管理
 ├── quickSelectManager.js# 快速選擇管理
-├── debtManager.js       # 欠款管理
+├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人管理、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款)
 ├── changelog.js         # 更新日誌
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
@@ -37,7 +38,8 @@ src/js/pages/
 ├── statsPage.js         # 統計報表：圖表、類別分析、趨勢
 ├── settingsPage.js      # 設定：主題、進階模式、匯入匯出、通知
 ├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶
-├── debtsPage.js         # 欠款管理頁面（前端路由）
+├── debtsPage.js         # 欠款管理頁面（極簡直觀顯示個人欠款與待結清群組，前端路由）
+├── groupsPage.js        # 獨立群組與專案管理頁面（建立/重命名/刪除/檢視專案與分帳群組）
 ├── contactsPage.js      # 聯絡人管理
 ├── recurringPage.js     # 定期收支管理
 ├── comparisonPage.js    # 跨月比較報表

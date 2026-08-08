@@ -715,25 +715,28 @@ export class RecordsListManager {
 
                     groupsHtml += `
                     <div class="group-block mb-2" data-group-id="${groupId}">
-                        <div class="group-header flex items-center justify-between bg-wabi-primary/5 px-3 py-2 rounded-lg border border-wabi-primary/20 cursor-pointer hover:bg-wabi-primary/10 transition-colors">
-                            <div class="flex items-center gap-2 min-w-0">
-                                <i class="fa-solid fa-layer-group text-wabi-primary text-sm"></i>
-                                <span class="font-medium text-wabi-text-primary text-sm truncate">${escapeHTML(groupName)}</span>
-                                <span class="text-xs text-wabi-text-secondary">(${groupRecs.length}筆)</span>
-                                ${isSettled ? '<span class="text-xs bg-wabi-income/20 text-wabi-income px-1.5 py-0.5 rounded">已結清</span>' : ''}
+                        <div class="group-header flex flex-col md:flex-row md:items-center justify-between bg-wabi-primary/5 px-3 py-2 rounded-lg border border-wabi-primary/20 cursor-pointer hover:bg-wabi-primary/10 transition-colors gap-1.5 md:gap-2">
+                            <div class="flex items-center justify-between min-w-0 w-full md:w-auto">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <i class="fa-solid fa-layer-group text-wabi-primary text-sm shrink-0"></i>
+                                    <span class="font-medium text-wabi-text-primary text-sm truncate">${escapeHTML(groupName)}</span>
+                                    <span class="text-[11px] text-wabi-text-secondary shrink-0">(${groupRecs.length}筆)</span>
+                                    ${isSettled ? '<span class="text-[10px] bg-wabi-income/20 text-wabi-income px-1.5 py-0.5 rounded shrink-0 font-medium">已結清</span>' : ''}
+                                </div>
+                                <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform ml-2 shrink-0 md:hidden" style="transform: rotate(180deg)"></i>
                             </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <span class="text-xs text-wabi-text-secondary">支 ${formatCurrency(totalExpense)} ｜ 收 ${formatCurrency(totalIncome)}</span>
-                                <span class="text-xs font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨 ${netLabel}${formatCurrency(netAmount)}</span>
-                                ${!isSettled && hasSettlement ? `<span class="text-xs text-wabi-text-secondary" title="待結清（扣除退款）">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
-                                ${!isSettled && !hasSettlement ? `<span class="text-xs font-medium ${pendingAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}" title="待結清">待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
-                                <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform" style="transform: rotate(180deg)"></i>
+                            <div class="flex items-center justify-between md:justify-end gap-2 text-xs shrink-0 text-wabi-text-secondary pl-5 md:pl-0">
+                                <span>支出 ${formatCurrency(totalExpense)}</span>
+                                <span class="text-wabi-border">·</span>
+                                <span class="font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨額 ${netLabel}${formatCurrency(netAmount)}</span>
+                                ${!isSettled && hasSettlement ? `<span class="hidden sm:inline text-wabi-text-secondary" title="待結清">｜ 待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
+                                <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform ml-2 shrink-0 hidden md:block" style="transform: rotate(180deg)"></i>
                             </div>
                         </div>
-                        <div class="group-body ml-4 mt-1 space-y-1">
+                        <div class="group-body border-l-2 border-wabi-primary/20 pl-2 ml-1 mt-1 space-y-1">
                     `
-                    // Render each record within the group
-                    groupsHtml += groupRecs.map(record => this._renderSingleRecord(record)).join('')
+                    // Render each record within the group with inGroupContext = true
+                    groupsHtml += groupRecs.map(record => this._renderSingleRecord(record, true)).join('')
                     groupsHtml += `</div></div>`
                 }
 
@@ -794,7 +797,7 @@ export class RecordsListManager {
         }
     }
 
-    _renderSingleRecord(record) {
+    _renderSingleRecord(record, inGroupContext = false) {
         const isIncome = record.type === 'income'
         const category = this.categoryManager.getCategoryById(
             record.type,
@@ -920,40 +923,42 @@ export class RecordsListManager {
         const shouldDim =
             hasDebt && isDebtSettled && displayLogic.arrowToZero
 
-        // Group badge
+        // Group badge (若已處於群組展開方框內則隱藏重複標籤)
         let groupBadgeHtml = ''
-        if (record.groupId) {
+        if (record.groupId && !inGroupContext) {
             const meta = this.groupMetaCache?.[record.groupId] || {}
             const gName = meta.name || `群組`
-            groupBadgeHtml = `<span class="text-xs bg-emerald-500/15 text-emerald-600 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-layer-group mr-0.5"></i>${escapeHTML(gName)}</span>`
+            groupBadgeHtml = `<span class="text-[10px] bg-emerald-500/15 text-emerald-600 px-1.5 py-0.5 rounded font-medium"><i class="fa-solid fa-layer-group mr-0.5"></i>${escapeHTML(gName)}</span>`
         }
 
+        const hasDescription = record.description && record.description.trim() !== ''
+
         return `
-            <a ${isTransfer || isBalanceAdjustment ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-4 bg-wabi-surface px-2 min-h-[72px] py-2 justify-between rounded-lg border border-wabi-border ${isTransfer || isBalanceAdjustment ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
-            <div class="flex items-center gap-4 flex-1 min-w-0">
-                <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-12" ${isTransfer ? '' : colorStyle}>
-                    <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-2xl"></i>
+            <a ${isTransfer || isBalanceAdjustment ? '' : `href="#add?id=${record.id}"`} class="record-item flex items-center gap-3 bg-wabi-surface px-3 py-2.5 justify-between rounded-lg border border-wabi-border ${isTransfer || isBalanceAdjustment ? '' : 'hover:border-wabi-primary transition-colors'} ${shouldDim ? 'opacity-60' : ''}">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+                <div class="flex items-center justify-center rounded-lg ${isTransfer ? 'bg-gray-400' : colorClass} text-white shrink-0 size-10" ${isTransfer ? '' : colorStyle}>
+                    <i class="${isTransfer ? 'fa-solid fa-money-bill-transfer' : icon} text-xl"></i>
                 </div>
                 <div class="flex flex-col justify-center min-w-0">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <p class="text-wabi-text-primary text-base font-medium line-clamp-1">${escapeHTML(name)}</p>
-                        ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-sm cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <p class="text-wabi-text-primary text-sm font-medium line-clamp-1">${escapeHTML(name)}</p>
+                        ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-xs cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
                         ${hasDebt ? `
-                            <button class="debt-link-btn inline-flex items-center gap-1 text-xs ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
+                            <button class="debt-link-btn inline-flex items-center gap-1 text-[10px] ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
                                 <i class="fa-solid fa-handshake"></i>
                                 <span>${escapeHTML(statusLabel || '欠款')}</span>
                             </button>
                         ` : ''}
                         ${groupBadgeHtml}
                     </div>
-                    <p class="text-wabi-text-secondary text-sm font-normal line-clamp-2 break-all">${escapeHTML(record.description || '無備註')}</p>
+                    ${hasDescription ? `<p class="text-wabi-text-secondary text-xs font-normal line-clamp-2 break-all mt-0.5">${escapeHTML(record.description)}</p>` : ''}
                 </div>
             </div>
                 <div class="shrink-0 text-right">
                     ${
                         displayLogic.showArrow
                             ? `
-                                <p class="text-wabi-text-secondary text-base font-medium line-through">
+                                <p class="text-wabi-text-secondary text-sm font-medium line-through">
                                     ${isIncome ? '+' : '-'} ${formatCurrency(strikethroughAmount)}
                                 </p>
                                 <p class="text-xs font-medium ${arrowColor}">
@@ -961,12 +966,12 @@ export class RecordsListManager {
                                 </p>
                             `
                             : `
-                                <p class="${isIncome ? 'text-wabi-income' : 'text-wabi-expense'} text-base font-medium">
+                                <p class="${isIncome ? 'text-wabi-income' : 'text-wabi-expense'} text-sm font-semibold">
                                     ${isIncome ? '+' : '-'} ${formatCurrency(mainAmount)}
                                 </p>
                             `
                     }
-                    ${this.advancedModeEnabled ? `<p class="text-xs text-wabi-text-secondary">${escapeHTML(accountName)}</p>` : `<p class="text-xs text-wabi-text-secondary">${formatDate(record.date, 'short')}</p>`}
+                    ${this.advancedModeEnabled ? `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${escapeHTML(accountName)}</p>` : `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${formatDate(record.date, 'short')}</p>`}
                 </div>
             </a>
         `

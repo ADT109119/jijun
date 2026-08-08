@@ -481,6 +481,17 @@ describe('getDateRange', () => {
         expect(diffDays).toBe(6) // 包含今天 = 7 天，差 6 天
     })
 
+    it('last30days 回傳近 30 日範圍', () => {
+        const result = getDateRange('last30days')
+        expect(result).toHaveProperty('startDate')
+        expect(result).toHaveProperty('endDate')
+        // 驗證範圍是 30 天
+        const start = new Date(result.startDate)
+        const end = new Date(result.endDate)
+        const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24))
+        expect(diffDays).toBe(29) // 包含今天 = 30 天，差 29 天
+    })
+
     it('lastmonth 回傳上月範圍', () => {
         const today = new Date()
         const result = getDateRange('lastmonth')

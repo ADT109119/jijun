@@ -151,10 +151,36 @@ export class GroupManager {
      * @param {string} [note]
      * @returns {Promise<Object>}
      */
+    /**
+     * 部分退款
+     * @param {string} groupId
+     * @param {number} amount
+     * @param {number} accountId
+     * @param {string} date
+     * @param {string} [note]
+     * @returns {Promise<Object>}
+     */
     async partialSettleGroup(groupId, amount, accountId, date, note) {
         return await this.dataService.partialSettleGroup(
             groupId,
             amount,
+            accountId,
+            date,
+            note
+        )
+    }
+
+    /**
+     * 單筆紀錄個別還款/結清
+     * @param {number|string} recordId
+     * @param {number} [accountId]
+     * @param {string} [date]
+     * @param {string} [note]
+     * @returns {Promise<Object>}
+     */
+    async settleGroupRecord(recordId, accountId, date, note) {
+        return await this.dataService.settleGroupRecord(
+            recordId,
             accountId,
             date,
             note

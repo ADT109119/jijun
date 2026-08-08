@@ -200,8 +200,9 @@ export class SyncService {
      */
     async _signInNative(requestSharing = false) {
         try {
+            const socialLoginPlugin = '@capgo/capacitor-social-login'
             const { SocialLogin } = await import(
-                '@capgo/capacitor-social-login'
+                /* @vite-ignore */ socialLoginPlugin
             )
 
             const GOOGLE_CLIENT_ID = '350965300840-7eutjcl4jq930h5fjvoja4ho77q30cpp.apps.googleusercontent.com'
@@ -391,8 +392,9 @@ export class SyncService {
         // 呼叫原生登出
         if (isNative) {
             try {
+                const socialLoginPlugin = '@capgo/capacitor-social-login'
                 const { SocialLogin } = await import(
-                    '@capgo/capacitor-social-login'
+                    /* @vite-ignore */ socialLoginPlugin
                 )
                 await SocialLogin.logout({ provider: 'google' })
             } catch (e) {

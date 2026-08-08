@@ -27,6 +27,10 @@ export class AddPage {
             'debtManagementEnabled'
         )
         const showDebtBtn = !!debtEnabled?.value
+        const groupEnabledSetting = await this.app.dataService.getSetting(
+            'groupManagementEnabled'
+        )
+        const showGroupBtn = groupEnabledSetting ? !!groupEnabledSetting.value : true
         const amortizationEnabled = await this.app.dataService.getSetting(
             'amortizationEnabled'
         )
@@ -109,23 +113,20 @@ export class AddPage {
                                 `
                                         : ''
                                 }
-                                <button id="toggle-group-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="加入群組">
-                                    <i class="fa-solid fa-layer-group text-lg"></i>
-                                </button>
                                 ${
-                                    showInstallmentBtn
+                                    showGroupBtn
                                         ? `
-                                    <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
-                                        <i class="fa-solid fa-credit-card text-lg"></i>
+                                    <button id="toggle-group-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="加入群組">
+                                        <i class="fa-solid fa-layer-group text-lg"></i>
                                     </button>
                                 `
                                         : ''
                                 }
                                 ${
-                                    !isEditMode
+                                    showInstallmentBtn
                                         ? `
-                                    <button id="ai-entry-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-primary/10" title="AI 語音/文字記帳">
-                                        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+                                    <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
+                                        <i class="fa-solid fa-credit-card text-lg"></i>
                                     </button>
                                 `
                                         : ''
@@ -1101,9 +1102,9 @@ export class AddPage {
                 groupId: groupEnabled
                     ? (selectedGroupId || null)
                     : (isEditMode ? (recordToEdit?.groupId ?? null) : null),
-                // groupStatus: 若啟用群組面板 → 用使用者選的；編輯模式且未啟用 → 保留原始值；新增 → null
+                // groupStatus: 若啟用群組面板 → 依是否開啟欠款標記為 active(分帳欠款) 或 project(純專案消費)
                 groupStatus: groupEnabled
-                    ? (selectedGroupId ? 'active' : null)
+                    ? (selectedGroupId ? (debtEnabled && debtContactId ? 'active' : 'project') : null)
                     : (isEditMode ? (recordToEdit?.groupStatus ?? null) : null),
             }
 
@@ -1737,10 +1738,6 @@ export class AddPage {
             })
         }
 
-        const aiBtn = document.getElementById('ai-entry-btn')
-        if (aiBtn) {
-            aiBtn.addEventListener('click', openGeminiModal)
-        }
 
         // 監聽底部導覽列按鈕：僅當使用者「已在全新記帳新增頁面」且非編輯模式時，點擊底部麥克風按鈕觸發語音 Modal
         const navAddBtn = document.querySelector('a[data-page="add"]')

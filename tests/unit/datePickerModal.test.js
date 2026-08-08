@@ -108,7 +108,7 @@ describe('createDateRangeModal', () => {
             })
 
             const quickBtns = modal.querySelectorAll('.quick-date-btn')
-            expect(quickBtns.length).toBe(6)
+            expect(quickBtns.length).toBe(7)
         })
 
         it('快速日期按鈕包含正確的 data-range 屬性', () => {

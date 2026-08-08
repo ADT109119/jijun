@@ -156,6 +156,23 @@ export class SettingsPage {
                         <div id="manage-debts-link-container" class="hidden">
                              ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
                         </div>
+                        <!-- Group Management Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-layer-group"></i>
+                                </div>
+                                <p class="text-wabi-text-primary text-base font-normal">群組功能</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="group-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-groups-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-layer-group', '群組與專案管理', 'manage-groups-btn')}
+                        </div>
                         <!-- AI Offline Voice Assistant Toggle -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
                             <div class="flex items-center gap-4">
@@ -220,6 +237,7 @@ export class SettingsPage {
                                     <option value="month">本月</option>
                                     <option value="today">今天</option>
                                     <option value="last7days">近 7 天</option>
+                                    <option value="last30days">近 30 天</option>
                                     <option value="last">上次時間範圍</option>
                                 </select>
                             </div>
@@ -611,10 +629,12 @@ export class SettingsPage {
         )
         if (debtManagementToggle) {
             this.app.dataService.getSetting('debtManagementEnabled').then(setting => {
-                const isEnabled = !!setting?.value;
+                const isEnabled = setting ? !!setting.value : true;
                 debtManagementToggle.checked = isEnabled;
                 if (isEnabled) {
-                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                    document.getElementById('manage-debts-link-container')?.classList.remove('hidden');
+                } else {
+                    document.getElementById('manage-debts-link-container')?.classList.add('hidden');
                 }
             });
 
@@ -625,11 +645,41 @@ export class SettingsPage {
                     value: isEnabled,
                 })
                 if (isEnabled) {
-                    document.getElementById('manage-debts-link-container').classList.remove('hidden');
+                    document.getElementById('manage-debts-link-container')?.classList.remove('hidden');
                 } else {
-                    document.getElementById('manage-debts-link-container').classList.add('hidden');
+                    document.getElementById('manage-debts-link-container')?.classList.add('hidden');
                 }
                 showToast(`欠款管理已${isEnabled ? '啟用' : '停用'}`);
+            });
+        }
+
+        // Group Management Toggle
+        const groupManagementToggle = document.getElementById(
+            'group-management-toggle'
+        )
+        if (groupManagementToggle) {
+            this.app.dataService.getSetting('groupManagementEnabled').then(setting => {
+                const isEnabled = setting ? !!setting.value : true;
+                groupManagementToggle.checked = isEnabled;
+                if (isEnabled) {
+                    document.getElementById('manage-groups-link-container')?.classList.remove('hidden');
+                } else {
+                    document.getElementById('manage-groups-link-container')?.classList.add('hidden');
+                }
+            });
+
+            groupManagementToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'groupManagementEnabled',
+                    value: isEnabled,
+                })
+                if (isEnabled) {
+                    document.getElementById('manage-groups-link-container')?.classList.remove('hidden');
+                } else {
+                    document.getElementById('manage-groups-link-container')?.classList.add('hidden');
+                }
+                showToast(`群組功能已${isEnabled ? '啟用' : '停用'}`);
             });
         }
 
@@ -699,6 +749,13 @@ export class SettingsPage {
         if (manageDebtsBtn) {
             manageDebtsBtn.addEventListener('click', () => {
                 window.location.hash = '#debts'
+            })
+        }
+
+        const manageGroupsBtn = document.getElementById('manage-groups-btn')
+        if (manageGroupsBtn) {
+            manageGroupsBtn.addEventListener('click', () => {
+                window.location.hash = '#groups'
             })
         }
 

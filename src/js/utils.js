@@ -369,6 +369,15 @@ export function getDateRange(period) {
                 endDate: formatDateToString(today),
             }
         }
+        case 'last30days': {
+            // 近三十日
+            const thirtyDaysAgo = new Date(today)
+            thirtyDaysAgo.setDate(today.getDate() - 29) // 包含今天，所以是 -29
+            return {
+                startDate: formatDateToString(thirtyDaysAgo),
+                endDate: formatDateToString(today),
+            }
+        }
         case 'lastmonth': {
             // 上月
             const lastMonthStart = new Date(
