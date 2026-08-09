@@ -1864,6 +1864,11 @@ export class DebtManager {
                 個別還
               </button>
             ` : ''}
+            ${isSettled ? `
+              <button class="unsettle-record-btn px-2.5 py-1 text-xs font-medium text-amber-600 border border-amber-600 rounded hover:bg-amber-50 transition-colors" data-record-id="${r.id}">
+                還原
+              </button>
+            ` : ''}
           </div>
         </div>
       `;
@@ -1910,6 +1915,9 @@ export class DebtManager {
             <div class="flex-1 text-center py-2 text-sm text-wabi-income font-medium bg-wabi-income/10 rounded-lg">
               <i class="fa-solid fa-check-circle mr-1"></i>此群組已全部結清
             </div>
+            <button id="modal-unsettle-group-btn" class="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-sm rounded-lg transition-colors">
+              還原全組
+            </button>
           `}
           <button id="modal-close-group-btn" class="px-5 py-2.5 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary text-sm rounded-lg transition-colors">
             關閉
@@ -1932,6 +1940,28 @@ export class DebtManager {
       });
     });
 
+    modal.querySelectorAll('.unsettle-record-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const recordId = parseInt(btn.dataset.recordId) || btn.dataset.recordId;
+        const targetRec = groupRecords.find(r => r.id === recordId);
+        if (targetRec) {
+          if (targetRec.debtId) {
+            const allRecords = await this.dataService.getRecords({ allLedgers: true });
+            const debtRepayments = allRecords.filter(r => String(r.debtId) === String(targetRec.debtId) && (r.category === 'debt_repayment' || r.category === 'debt_collection'));
+            for (const repRec of debtRepayments) {
+              await this.dataService.deleteRecord(repRec.id);
+            }
+          }
+          await this.dataService.updateRecord(targetRec.id, { groupStatus: 'active' });
+          await this.dataService.recalculateGroupState(groupId);
+          if (typeof showToast === 'function') showToast('已還原該筆明細之結清狀態');
+          closeModal();
+          await this.showGroupDetailsModal(groupId);
+          if (typeof this.loadDebtList === 'function') this.loadDebtList();
+        }
+      });
+    });
+
     modal.querySelector('#modal-settle-group-btn')?.addEventListener('click', async () => {
       closeModal();
       await this.showSettleGroupModal(groupId);
@@ -1940,6 +1970,24 @@ export class DebtManager {
     modal.querySelector('#modal-partial-settle-btn')?.addEventListener('click', async () => {
       closeModal();
       await this.showPartialSettleGroupModal(groupId);
+    });
+
+    modal.querySelector('#modal-unsettle-group-btn')?.addEventListener('click', async () => {
+      for (const r of groupRecords) {
+        if (r.debtId) {
+          const allRecords = await this.dataService.getRecords({ allLedgers: true });
+          const debtRepayments = allRecords.filter(rec => String(rec.debtId) === String(r.debtId) && (rec.category === 'debt_repayment' || rec.category === 'debt_collection'));
+          for (const repRec of debtRepayments) {
+            await this.dataService.deleteRecord(repRec.id);
+          }
+        }
+        await this.dataService.updateRecord(r.id, { groupStatus: 'active' });
+      }
+      await this.dataService.recalculateGroupState(groupId);
+      if (typeof showToast === 'function') showToast('已還原全組結清狀態');
+      closeModal();
+      await this.showGroupDetailsModal(groupId);
+      if (typeof this.loadDebtList === 'function') this.loadDebtList();
     });
   }
 

@@ -1680,7 +1680,11 @@ export class AddPage {
 
                         await this.app.dataService.deleteRecord(id)
 
-                        if (associatedDebtId) {
+                        const isRepaymentCategory =
+                            record?.category === 'debt_repayment' ||
+                            record?.category === 'debt_collection'
+
+                        if (associatedDebtId && !isRepaymentCategory) {
                             if (
                                 await customConfirm(
                                     '此紀錄有關聯的欠款，是否也要一併刪除該欠款？'

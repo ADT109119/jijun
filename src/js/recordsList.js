@@ -1,6 +1,12 @@
 import { formatCurrency, formatDate, formatDateToString, getDateRange, escapeHTML } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
+let isAppFirstLoaded = true
+
+export function resetAppFirstLoaded(val = true) {
+    isAppFirstLoaded = val
+}
+
 export class RecordsListManager {
     constructor(dataService, categoryManager, container) {
         this.dataService = dataService
@@ -28,8 +34,15 @@ export class RecordsListManager {
     }
 
     async init() {
-        // Restore session filters before setting up defaults
-        const sessionFilters = this._loadSessionFilters()
+        // Restore session filters before setting up defaults ONLY if navigating within same app session (not fresh F5 reload)
+        let sessionFilters = null
+        if (isAppFirstLoaded) {
+            sessionStorage.removeItem('jijun_records_filters')
+            isAppFirstLoaded = false
+        } else {
+            sessionFilters = this._loadSessionFilters()
+        }
+
         if (sessionFilters) {
             this.filters = sessionFilters
         } else {

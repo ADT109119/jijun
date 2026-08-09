@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { RecordsListManager } from '../../src/js/recordsList.js'
+import { RecordsListManager, resetAppFirstLoaded } from '../../src/js/recordsList.js'
 
 // Mock utils.js for predictable dates
 vi.mock('../../src/js/utils.js', async importOriginal => {
@@ -178,7 +178,7 @@ describe('RecordsListManager - 明細預設時間範圍', () => {
         ).toBe(true)
     })
 
-    it('優先讀取 session 暫存的過濾條件，而非預設設定', async () => {
+    it('全新載入/按下 F5 重新整理時，忽略 Session 暫存並自動還原預設過濾條件', async () => {
         sessionStorage.setItem(
             'jijun_records_filters',
             JSON.stringify({
@@ -195,6 +195,31 @@ describe('RecordsListManager - 明細預設時間範圍', () => {
             key: 'defaultRecordsPeriod',
             value: 'month',
         })
+        resetAppFirstLoaded(true)
+        await manager.init()
+        expect(manager.filters.period).toBe('month')
+        expect(manager.filters.searchQuery).toBe('')
+        expect(sessionStorage.getItem('jijun_records_filters')).toBeNull()
+    })
+
+    it('同 App 內切換路由時，優先讀取 Session 暫存的過濾條件', async () => {
+        sessionStorage.setItem(
+            'jijun_records_filters',
+            JSON.stringify({
+                period: 'week',
+                type: 'expense',
+                categories: [],
+                accounts: [],
+                customStartDate: '2026-06-28',
+                customEndDate: '2026-07-04',
+                searchQuery: '測試',
+            })
+        )
+        await dataService.saveSetting({
+            key: 'defaultRecordsPeriod',
+            value: 'month',
+        })
+        resetAppFirstLoaded(false)
         await manager.init()
         expect(manager.filters.period).toBe('week')
         expect(manager.filters.searchQuery).toBe('測試')

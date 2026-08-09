@@ -632,6 +632,59 @@ describe('DataService — Record Groups', () => {
             expect(groups[0].netAmount).toBe(0)
             expect(groups[0].settled).toBe(true) // 全部紀錄皆已結清，自動標記群組為 settled
         })
+
+        it('刪除還款紀錄或修改金額時，自動觸發重算並還原欠款與群組結清狀態', async () => {
+            await ds.saveGroupMeta({ id: 'g_revert', name: '還原測試群組', ledgerId: 1 })
+            const contactId = await ds.addContact({ name: '趙六' })
+            const debtId = await ds.addDebt({ type: 'receivable', amount: 500, date: '2024-01-01', contactId })
+            const rId = await ds.addRecord({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g_revert', debtId, groupStatus: 'active', ledgerId: 1 })
+
+            // 結清整組
+            await ds.settleGroup('g_revert', 500, null, '2024-06-01')
+            let meta = await ds.getGroupMeta('g_revert')
+            expect(meta.settled).toBe(true)
+
+            let debt = await ds.getDebt(debtId)
+            expect(debt.settled).toBe(true)
+
+            // 找到自動生成的還款紀錄並刪除它
+            const records = await ds.getRecords({ allLedgers: true })
+            const repayRec = records.find(r => String(r.debtId) === String(debtId) && r.category === 'debt_collection')
+            expect(repayRec).toBeDefined()
+
+            // 觸發 deleteRecord
+            await ds.deleteRecord(repayRec.id)
+
+            // 斷言：欠款 remainingAmount 恢復為 500，settled 變為 false
+            debt = await ds.getDebt(debtId)
+            expect(debt.remainingAmount).toBe(500)
+            expect(debt.settled).toBe(false)
+
+            // 斷言：群組 settled 變為 false
+            meta = await ds.getGroupMeta('g_revert')
+            expect(meta.settled).toBe(false)
+        })
+
+        it('修改還款紀錄金額時，連動重算欠款 remainingAmount 與 settled 狀態', async () => {
+            const contactId = await ds.addContact({ name: '孫七' })
+            const debtId = await ds.addDebt({ type: 'receivable', amount: 100, date: '2024-01-01', contactId })
+
+            // 全額還款
+            await ds.settleDebt(debtId, 100)
+            let debt = await ds.getDebt(debtId)
+            expect(debt.settled).toBe(true)
+
+            const records = await ds.getRecords({ allLedgers: true })
+            const repayRec = records.find(r => String(r.debtId) === String(debtId) && r.category === 'debt_collection')
+
+            // 手動修改金額從 100 改為 30
+            await ds.updateRecord(repayRec.id, { amount: 30 })
+
+            // 斷言：欠款剩餘 70 且 settled 變為 false
+            debt = await ds.getDebt(debtId)
+            expect(debt.remainingAmount).toBe(70)
+            expect(debt.settled).toBe(false)
+        })
     })
 
     describe('_ensureGroupMetaStore() Hot-Upgrade', () => {

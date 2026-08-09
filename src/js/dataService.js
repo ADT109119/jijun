@@ -924,6 +924,20 @@ class DataService {
                     await this.logChange('update', 'records', id, updatedRecord)
                 }
 
+                // 全自動連動重算受影響之 Debt 與 Group 狀態
+                const affectedDebtIds = new Set(
+                    [record.debtId, updatedRecord.debtId].filter(Boolean)
+                )
+                const affectedGroupIds = new Set(
+                    [record.groupId, updatedRecord.groupId].filter(Boolean)
+                )
+                for (const dId of affectedDebtIds) {
+                    await this.recalculateDebtState(dId)
+                }
+                for (const gId of affectedGroupIds) {
+                    await this.recalculateGroupState(gId)
+                }
+
                 return updatedRecord
             }
 
@@ -945,10 +959,8 @@ class DataService {
             const store = tx.objectStore('records')
 
             // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
-            let recordData = null
-            if (!skipLog) {
-                recordData = await store.get(id)
-
+            let recordData = await store.get(id)
+            if (!skipLog && recordData) {
                 const shouldDelete = await this.triggerHook(
                     'onRecordDeleteBefore',
                     { id }
@@ -967,6 +979,15 @@ class DataService {
                     ledgerId: recordData.ledgerId,
                     accountId: recordData.accountId,
                 })
+            }
+
+            if (recordData) {
+                if (recordData.debtId) {
+                    await this.recalculateDebtState(recordData.debtId)
+                }
+                if (recordData.groupId) {
+                    await this.recalculateGroupState(recordData.groupId)
+                }
             }
 
             return true
@@ -3739,6 +3760,112 @@ class DataService {
         } catch (e) {
             console.error('Failed to settle group record:', e)
             throw e
+        }
+    }
+
+    /**
+     * 動態重新計算欠款之剩餘金額與 settled 結清狀態
+     * @param {number|string} debtId
+     */
+    async recalculateDebtState(debtId) {
+        if (!debtId) return null
+        try {
+            const debt = await this.getDebt(debtId)
+            if (!debt) return null
+
+            const allRecords = await this.getRecords({ allLedgers: true })
+            const repaymentRecords = allRecords.filter(
+                r => String(r.debtId) === String(debtId) && (r.category === 'debt_repayment' || r.category === 'debt_collection')
+            )
+
+            const paidAmountFromRecords = repaymentRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+            const originalAmount = debt.originalAmount || debt.amount || 0
+            const newRemainingAmount = Math.max(0, originalAmount - paidAmountFromRecords)
+            const isSettled = newRemainingAmount <= 0
+
+            const updates = {
+                remainingAmount: newRemainingAmount,
+                settled: isSettled,
+            }
+
+            if (!isSettled) {
+                updates.settledAt = null
+            } else if (!debt.settledAt) {
+                updates.settledAt = Date.now()
+            }
+
+            const updatedDebt = await this.updateDebt(debtId, updates, true)
+
+            // 自動尋找綁定該欠款的所有群組，觸發群組狀態重算
+            const affectedGroupIds = new Set(
+                allRecords
+                    .filter(r => String(r.debtId) === String(debtId) && r.groupId)
+                    .map(r => r.groupId)
+            )
+            for (const gId of affectedGroupIds) {
+                await this.recalculateGroupState(gId)
+            }
+
+            return updatedDebt
+        } catch (error) {
+            console.error(`Failed to recalculate debt state for ${debtId}:`, error)
+            return null
+        }
+    }
+
+    /**
+     * 動態重新計算群組內各筆交易項目與群組標頭 settled 結清狀態
+     * @param {string} groupId
+     */
+    async recalculateGroupState(groupId) {
+        if (!groupId) return null
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) return null
+
+            const groupRecords = await this.getGroupRecords(groupId)
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const debtsMap = new Map(allDebts.map(d => [String(d.id), d]))
+
+            let activeCount = 0
+
+            for (const r of groupRecords) {
+                if (r.category === 'group_settlement') continue
+
+                if (r.debtId) {
+                    const debt = debtsMap.get(String(r.debtId))
+                    const isDebtSettled = debt ? debt.settled === true : false
+
+                    if (!isDebtSettled && r.groupStatus === 'settled') {
+                        r.groupStatus = 'active'
+                        await this.updateRecord(r.id, { groupStatus: 'active' }, true)
+                    } else if (isDebtSettled && r.groupStatus !== 'settled') {
+                        r.groupStatus = 'settled'
+                        await this.updateRecord(r.id, { groupStatus: 'settled' }, true)
+                    }
+                }
+
+                if (r.groupStatus !== 'settled') {
+                    activeCount++
+                }
+            }
+
+            const isGroupSettled = activeCount === 0 && groupRecords.length > 0
+            const metaUpdates = {
+                settled: isGroupSettled,
+            }
+
+            if (!isGroupSettled) {
+                metaUpdates.settledAt = null
+            } else if (!meta.settledAt) {
+                metaUpdates.settledAt = Date.now()
+            }
+
+            await this.saveGroupMeta({ ...meta, ...metaUpdates }, true)
+            return { ...meta, ...metaUpdates }
+        } catch (error) {
+            console.error(`Failed to recalculate group state for ${groupId}:`, error)
+            return null
         }
     }
 
