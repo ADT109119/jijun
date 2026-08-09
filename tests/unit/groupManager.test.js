@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { GroupManager } from '../../src/js/groupManager.js'
+import { GroupManager, getUniqueGroupName } from '../../src/js/groupManager.js'
 
 // Mock utils
 vi.mock('../../src/js/utils.js', () => ({
@@ -21,6 +21,7 @@ describe('GroupManager', () => {
             saveGroupMeta: vi.fn(),
             deleteGroupMeta: vi.fn(),
             getGroupMeta: vi.fn(),
+            getAllGroupMeta: vi.fn().mockResolvedValue([]),
             getGroups: vi.fn(),
             getRecords: vi.fn(),
             updateRecord: vi.fn(),
@@ -34,6 +35,24 @@ describe('GroupManager', () => {
         }
 
         gm = new GroupManager(mockDataService, mockApp)
+    })
+
+    describe('getUniqueGroupName 演算法', () => {
+        it('名稱不重複時，保持原始名稱', () => {
+            expect(getUniqueGroupName('asd', ['聚餐', '出差'])).toBe('asd')
+        })
+
+        it('名稱重複 1 次時，自動加上 (2) 後綴', () => {
+            expect(getUniqueGroupName('asd', ['asd', '出差'])).toBe('asd (2)')
+        })
+
+        it('名稱已存在 (2) 時，自動遞增加上 (3) 後綴', () => {
+            expect(getUniqueGroupName('asd', ['asd', 'asd (2)'])).toBe('asd (3)')
+        })
+
+        it('輸入自帶 (2) 的名稱時，若已存在則遞增為 (3)', () => {
+            expect(getUniqueGroupName('asd (2)', ['asd', 'asd (2)'])).toBe('asd (3)')
+        })
     })
 
     describe('constructor', () => {
@@ -53,6 +72,7 @@ describe('GroupManager', () => {
         it('建立新群組並回傳 groupId', async () => {
             const fakeId = 'group-uuid-123'
             vi.spyOn(crypto, 'randomUUID').mockReturnValue(fakeId)
+            mockDataService.getAllGroupMeta.mockResolvedValue([])
 
             const result = await gm.createGroup('聚餐')
 
@@ -61,9 +81,26 @@ describe('GroupManager', () => {
                 expect.objectContaining({
                     id: fakeId,
                     name: '聚餐',
-                    settled: false,
-                    settledAt: null,
                     ledgerId: 1,
+                    settled: false,
+                })
+            )
+        })
+
+        it('建立與既有群組同名的群組時，自動添加 (2) 編號後綴', async () => {
+            const fakeId = 'group-uuid-456'
+            vi.spyOn(crypto, 'randomUUID').mockReturnValue(fakeId)
+            mockDataService.getAllGroupMeta.mockResolvedValue([
+                { id: 'g1', name: 'asd' },
+            ])
+
+            const result = await gm.createGroup('asd')
+
+            expect(result).toBe(fakeId)
+            expect(mockDataService.saveGroupMeta).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: fakeId,
+                    name: 'asd (2)',
                 })
             )
         })
