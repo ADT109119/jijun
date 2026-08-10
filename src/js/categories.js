@@ -87,7 +87,7 @@ export const CATEGORIES = {
             name: '欠款回收',
             icon: 'fas fa-hand-holding-usd',
             color: 'bg-orange-500',
-        }, // Note: 此分類不計入統計（Issue #46 — 特別設計，非 bug）
+        },
         {
             id: 'another',
             name: '其他',
@@ -98,6 +98,7 @@ export const CATEGORIES = {
 }
 
 export function getCategoryById(type, id) {
+    if (type === null || type === undefined) return undefined
     // 先檢查預設分類
     let category = CATEGORIES[type].find(cat => cat.id === id)
 

@@ -27,6 +27,10 @@ export class AddPage {
             'debtManagementEnabled'
         )
         const showDebtBtn = !!debtEnabled?.value
+        const groupEnabledSetting = await this.app.dataService.getSetting(
+            'groupManagementEnabled'
+        )
+        const showGroupBtn = groupEnabledSetting ? !!groupEnabledSetting.value : true
         const amortizationEnabled = await this.app.dataService.getSetting(
             'amortizationEnabled'
         )
@@ -110,19 +114,19 @@ export class AddPage {
                                         : ''
                                 }
                                 ${
-                                    showInstallmentBtn
+                                    showGroupBtn
                                         ? `
-                                    <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
-                                        <i class="fa-solid fa-credit-card text-lg"></i>
+                                    <button id="toggle-group-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="加入群組">
+                                        <i class="fa-solid fa-layer-group text-lg"></i>
                                     </button>
                                 `
                                         : ''
                                 }
                                 ${
-                                    !isEditMode
+                                    showInstallmentBtn
                                         ? `
-                                    <button id="ai-entry-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-accent hover:bg-wabi-primary/10" title="AI 語音/文字記帳">
-                                        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+                                    <button id="toggle-installment-btn" class="size-10 flex items-center justify-center rounded-full text-wabi-text-secondary hover:bg-wabi-bg" title="建立分期/攤提">
+                                        <i class="fa-solid fa-credit-card text-lg"></i>
                                     </button>
                                 `
                                         : ''
@@ -140,8 +144,8 @@ export class AddPage {
                                 </button>
                             </div>
                             <div class="flex h-9 w-full items-center justify-center rounded-lg bg-wabi-primary/5 p-1 mb-3">
-                                <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">別人欠我</button>
-                                <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
+                                <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">應收款項</button>
+                                <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">應付款項</button>
                             </div>
                             <select id="debt-contact-select" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm">
                                 <option value="">選擇聯絡人...</option>
@@ -206,6 +210,60 @@ export class AddPage {
                                 <span>每期金額：</span><strong id="installment-per-period" class="text-blue-600">--</strong>
                             </div>
                             <p class="text-xs text-wabi-text-secondary mt-2">金額/分類/日期由上方記帳欄位帶入，儲存時自動建立分期計畫。</p>
+                        </div>
+
+                        <!-- Group Panel (hidden by default) -->
+                        <div id="group-panel" class="hidden bg-emerald-500/10 rounded-lg p-4 mb-4 border border-emerald-500/30">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="font-medium text-emerald-600"><i class="fa-solid fa-layer-group mr-2"></i>明細群組</span>
+                                <button id="close-group-panel" class="text-wabi-text-secondary hover:text-emerald-600">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="flex h-9 w-full items-center justify-center rounded-lg bg-emerald-500/5 p-1 mb-3">
+                                <button id="group-action-select" class="group-action-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-emerald-500 text-white">選取已有</button>
+                                <button id="group-action-create" class="group-action-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">建立新群組</button>
+                            </div>
+                            <!-- Select existing group (Custom Select with Search & Top 5 Priority) -->
+                            <div id="group-select-section" class="space-y-2">
+                                <div class="relative space-y-2" id="custom-group-dropdown-container">
+                                    <!-- 優化搜尋與細選欄位 Header (無任何內層黑框) -->
+                                    <div class="flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-xl px-3 py-1.5 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all shadow-sm">
+                                        <i class="fa-solid fa-magnifying-glass text-wabi-text-secondary text-xs shrink-0"></i>
+                                        <input type="text" id="custom-group-search-input" placeholder="搜尋群組名稱..." class="w-full text-xs bg-transparent text-wabi-text-primary border-none outline-none ring-0 focus:border-none focus:outline-none focus:ring-0 appearance-none shadow-none placeholder:text-wabi-text-secondary/60" autocomplete="off" style="border: none !important; outline: none !important; box-shadow: none !important;" />
+                                        <button type="button" id="open-group-picker-modal-btn" class="shrink-0 text-xs px-2.5 py-1 bg-emerald-500/10 text-emerald-600 rounded-lg hover:bg-emerald-500/20 transition-colors flex items-center gap-1.5 font-medium" title="展開所有群組細選">
+                                            <i class="fa-solid fa-list-check"></i>
+                                            <span>清單</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- 已選擇提示卡片 -->
+                                    <div id="selected-group-card" class="hidden items-center justify-between p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs">
+                                        <div class="flex items-center gap-2 min-w-0 pr-2">
+                                            <i class="fa-solid fa-circle-check text-emerald-500 text-sm shrink-0"></i>
+                                            <span class="text-wabi-text-secondary">已選：</span>
+                                            <span id="selected-group-name-display" class="font-bold text-emerald-700 dark:text-emerald-400 truncate">未選擇</span>
+                                        </div>
+                                        <button type="button" id="clear-selected-group-btn" class="text-xs px-2 py-0.5 bg-wabi-surface text-wabi-text-secondary hover:text-wabi-expense border border-wabi-border rounded-md transition-colors shrink-0">
+                                            <i class="fa-solid fa-times mr-1"></i>清除
+                                        </button>
+                                    </div>
+
+                                    <!-- 快速候選近 5 筆清單 -->
+                                    <div class="text-[11px] font-medium text-wabi-text-secondary px-1 flex items-center justify-between">
+                                        <span>近期群組 (點擊選取)</span>
+                                        <span class="text-[10px] opacity-70">未結清優先</span>
+                                    </div>
+                                    <div id="custom-group-quick-list" class="bg-wabi-surface border border-wabi-border rounded-xl shadow-sm max-h-48 overflow-y-auto divide-y divide-wabi-border text-xs">
+                                        <!-- 動態渲染近 5 筆預設/過濾群組 -->
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Create new group -->
+                            <div id="group-create-section" class="hidden">
+                                <input type="text" id="group-name-input" maxlength="50" placeholder="群組名稱（如：7/15 台北出差）"
+                                    class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm outline-none focus:border-emerald-500" />
+                            </div>
                         </div>
 
                         <!-- Type Switcher & Amount -->
@@ -639,7 +697,292 @@ export class AddPage {
             })
         }
 
-        // --- 計算機狀態（整合於小鍵盤）---
+        // --- Group Panel ---
+        const groupPanel = document.getElementById('group-panel')
+        const toggleGroupBtn = document.getElementById('toggle-group-btn')
+        let groupEnabled = false
+        let selectedGroupId = null
+        let groupAction = 'select' // 'select' | 'create'
+
+        if (toggleGroupBtn && groupPanel) {
+            // Toggle panel
+            toggleGroupBtn.addEventListener('click', async () => {
+                groupEnabled = !groupEnabled
+                groupPanel.classList.toggle('hidden', !groupEnabled)
+                toggleGroupBtn.classList.toggle('text-emerald-500', groupEnabled)
+                toggleGroupBtn.classList.toggle('bg-emerald-500/10', groupEnabled)
+                toggleGroupBtn.classList.toggle('text-wabi-text-secondary', !groupEnabled)
+                if (groupEnabled) {
+                    await loadGroupList()
+                }
+            })
+
+            // Close panel
+            document.getElementById('close-group-panel')?.addEventListener('click', () => {
+                groupEnabled = false
+                groupPanel.classList.add('hidden')
+                toggleGroupBtn.classList.remove('text-emerald-500', 'bg-emerald-500/10')
+                toggleGroupBtn.classList.add('text-wabi-text-secondary')
+                selectedGroupId = null
+            })
+
+            // Action toggle (select vs create)
+            document.querySelectorAll('.group-action-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    groupAction = btn.id === 'group-action-select' ? 'select' : 'create'
+                    document.querySelectorAll('.group-action-btn').forEach(b => {
+                        b.classList.remove('bg-emerald-500', 'text-white')
+                        b.classList.add('text-wabi-text-secondary')
+                    })
+                    btn.classList.remove('text-wabi-text-secondary')
+                    btn.classList.add('bg-emerald-500', 'text-white')
+                    document.getElementById('group-select-section').classList.toggle('hidden', groupAction === 'create')
+                    document.getElementById('group-create-section').classList.toggle('hidden', groupAction === 'select')
+                })
+            })
+
+            let allCachedGroups = []
+
+            const updateGroupSelectUI = (group = null) => {
+                const selectedCard = document.getElementById('selected-group-card')
+                const nameDisplay = document.getElementById('selected-group-name-display')
+                if (!nameDisplay) return
+                if (group) {
+                    selectedGroupId = group.id
+                    nameDisplay.innerHTML = `${escapeHTML(group.name)} <span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-normal ${group.settled ? 'bg-wabi-text-secondary/10 text-wabi-text-secondary' : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'}">${group.settled ? '已結清' : '未結清'}</span>`
+                    selectedCard?.classList.remove('hidden')
+                    selectedCard?.classList.add('flex')
+                } else {
+                    selectedGroupId = null
+                    nameDisplay.textContent = '未選擇'
+                    selectedCard?.classList.add('hidden')
+                    selectedCard?.classList.remove('flex')
+                }
+            }
+
+            const renderQuickList = (query = '') => {
+                const quickList = document.getElementById('custom-group-quick-list')
+                if (!quickList) return
+
+                const cleanQuery = query.trim().toLowerCase()
+                let filtered = allCachedGroups
+                if (cleanQuery) {
+                    filtered = allCachedGroups.filter(g => g.name.toLowerCase().includes(cleanQuery))
+                }
+
+                const isSearching = cleanQuery.length > 0
+                const displayItems = isSearching ? filtered : filtered.slice(0, 5)
+
+                if (displayItems.length === 0) {
+                    if (isSearching) {
+                        quickList.innerHTML = `<div class="p-3 text-center text-wabi-text-secondary opacity-75">無符合「${escapeHTML(cleanQuery)}」的群組</div>`
+                    } else {
+                        quickList.innerHTML = `
+                            <div class="p-4 text-center space-y-2">
+                                <div class="text-wabi-text-secondary opacity-75">尚無建立的群組</div>
+                                <button type="button" id="quick-create-group-trigger" class="text-xs px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors font-medium inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>建立第一個新群組</span>
+                                </button>
+                            </div>
+                        `
+                        document.getElementById('quick-create-group-trigger')?.addEventListener('click', () => {
+                            document.getElementById('group-action-create')?.click()
+                        })
+                    }
+                    return
+                }
+
+                let html = displayItems.map(g => {
+                    const isSelected = selectedGroupId === g.id
+                    return `
+                        <button type="button" data-group-id="${g.id}" class="group-option-item w-full text-left p-2.5 hover:bg-emerald-500/10 transition-colors flex items-center justify-between ${isSelected ? 'bg-emerald-500/15 font-semibold text-emerald-600' : 'text-wabi-text-primary'}">
+                            <div class="flex items-center gap-2 min-w-0 pr-2">
+                                <i class="fa-solid ${g.settled ? 'fa-folder-closed text-wabi-text-secondary' : 'fa-layer-group text-emerald-500'} text-xs shrink-0"></i>
+                                <span class="truncate">${escapeHTML(g.name)}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0 text-[11px]">
+                                <span class="${g.netAmount > 0 ? 'text-wabi-income' : g.netAmount < 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'} font-mono">${g.netAmount > 0 ? '+' : g.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(g.netAmount))}</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] ${g.settled ? 'bg-wabi-text-secondary/10 text-wabi-text-secondary' : 'bg-emerald-500/10 text-emerald-600'}">${g.settled ? '已結清' : '進行中'}</span>
+                            </div>
+                        </button>
+                    `
+                }).join('')
+
+                if (!isSearching && filtered.length > 5) {
+                    html += `
+                        <button type="button" id="quick-list-more-btn" class="w-full text-center p-2 text-xs text-emerald-600 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors font-medium flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-ellipsis"></i>
+                            <span>查看更多 (${filtered.length} 筆細選)</span>
+                        </button>
+                    `
+                }
+
+                quickList.innerHTML = html
+
+                // Bind click events on quick list items
+                quickList.querySelectorAll('.group-option-item').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const gid = btn.dataset.groupId
+                        const target = allCachedGroups.find(g => g.id === gid)
+                        if (target) {
+                            updateGroupSelectUI(target)
+                            renderQuickList(document.getElementById('custom-group-search-input')?.value || '')
+                        }
+                    })
+                })
+
+                document.getElementById('quick-list-more-btn')?.addEventListener('click', () => {
+                    showGroupPickerModal()
+                })
+            }
+
+            // Load groups (unsettled first, sorted by newest date, top 5 display)
+            const loadGroupList = async () => {
+                try {
+                    allCachedGroups = await this.app.dataService.getGroups()
+
+                    // 排序：優先放未結清 (settled=false)，同狀態下最新日期/時間優先
+                    allCachedGroups.sort((a, b) => {
+                        if (a.settled !== b.settled) {
+                            return a.settled ? 1 : -1
+                        }
+                        const timeA = a.dateTo || a.createdAt || ''
+                        const timeB = b.dateTo || b.createdAt || ''
+                        return timeB.localeCompare(timeA)
+                    })
+
+                    // If editing a record with groupId, set initial selection
+                    if (isEditMode && recordToEdit?.groupId) {
+                        const existing = allCachedGroups.find(g => g.id === recordToEdit.groupId)
+                        if (existing) {
+                            updateGroupSelectUI(existing)
+                            groupEnabled = true
+                            toggleGroupBtn.classList.add('text-emerald-500', 'bg-emerald-500/10')
+                            toggleGroupBtn.classList.remove('text-wabi-text-secondary')
+                        }
+                    }
+
+                    renderQuickList()
+                } catch (e) {
+                    console.error('Failed to load groups:', e)
+                }
+            }
+
+            // Search input listener
+            document.getElementById('custom-group-search-input')?.addEventListener('input', e => {
+                renderQuickList(e.target.value)
+            })
+
+            // Clear button listener
+            document.getElementById('clear-selected-group-btn')?.addEventListener('click', () => {
+                updateGroupSelectUI(null)
+                renderQuickList(document.getElementById('custom-group-search-input')?.value || '')
+            })
+
+            // Modal 細選彈窗
+            const showGroupPickerModal = () => {
+                const modal = document.createElement('div')
+                modal.id = 'group-picker-modal'
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
+                const renderModalContent = (q = '') => {
+                    const cleanQ = q.trim().toLowerCase()
+                    let items = allCachedGroups
+                    if (cleanQ) {
+                        items = items.filter(g => g.name.toLowerCase().includes(cleanQ))
+                    }
+
+                    const activeItems = items.filter(g => !g.settled)
+                    const settledItems = items.filter(g => g.settled)
+
+                    const buildSection = (title, list, badgeClass, badgeText) => {
+                        if (list.length === 0) return ''
+                        return `
+                            <div class="mb-4">
+                                <h4 class="text-xs font-semibold text-wabi-text-secondary uppercase tracking-wider mb-2">${title} (${list.length})</h4>
+                                <div class="space-y-1.5">
+                                    ${list.map(g => `
+                                        <button type="button" data-gid="${g.id}" class="modal-group-item w-full text-left p-3 rounded-lg border border-wabi-border bg-wabi-surface hover:border-emerald-500 transition-colors flex items-center justify-between ${selectedGroupId === g.id ? 'ring-2 ring-emerald-500/50 bg-emerald-500/5' : ''}">
+                                            <div class="flex items-center gap-3 min-w-0">
+                                                <div class="size-8 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-600 shrink-0">
+                                                    <i class="fa-solid fa-layer-group"></i>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <div class="font-medium text-sm text-wabi-text-primary truncate">${escapeHTML(g.name)}</div>
+                                                    <div class="text-xs text-wabi-text-secondary">${g.recordCount} 筆交易紀錄</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-right shrink-0">
+                                                <div class="text-xs font-mono font-semibold ${g.netAmount > 0 ? 'text-wabi-income' : g.netAmount < 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${g.netAmount > 0 ? '+' : g.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(g.netAmount))}</div>
+                                                <span class="inline-block text-[10px] px-1.5 py-0.5 rounded ${badgeClass}">${badgeText}</span>
+                                            </div>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `
+                    }
+
+                    const activeHtml = buildSection('進行中群組', activeItems, 'bg-emerald-500/10 text-emerald-600', '進行中')
+                    const settledHtml = buildSection('已結清群組', settledItems, 'bg-wabi-text-secondary/10 text-wabi-text-secondary', '已結清')
+
+                    const container = modal.querySelector('#modal-group-list-container')
+                    if (container) {
+                        container.innerHTML = (activeHtml || settledHtml) ? (activeHtml + settledHtml) : '<div class="py-8 text-center text-wabi-text-secondary text-sm">無符合的群組</div>'
+                        container.querySelectorAll('.modal-group-item').forEach(btn => {
+                            btn.addEventListener('click', () => {
+                                const gid = btn.dataset.gid
+                                const target = allCachedGroups.find(g => g.id === gid)
+                                if (target) {
+                                    updateGroupSelectUI(target)
+                                    renderQuickList()
+                                }
+                                modal.remove()
+                            })
+                        })
+                    }
+                }
+
+                modal.innerHTML = `
+                    <div class="bg-wabi-bg rounded-xl max-w-md w-full p-5 max-h-[85vh] flex flex-col shadow-xl">
+                        <div class="flex items-center justify-between mb-3 pb-2 border-b border-wabi-border">
+                            <h3 class="text-base font-bold text-wabi-primary flex items-center gap-2">
+                                <i class="fa-solid fa-layer-group text-emerald-500"></i>細選群組
+                            </h3>
+                            <button id="close-modal-btn" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1">
+                                <i class="fa-solid fa-times text-base"></i>
+                            </button>
+                        </div>
+                        <div class="mb-3">
+                            <div class="flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-lg p-2.5">
+                                <i class="fa-solid fa-magnifying-glass text-wabi-text-secondary text-xs"></i>
+                                <input type="text" id="modal-group-search-input" placeholder="搜尋全量群組名稱..." class="w-full text-xs bg-transparent text-wabi-text-primary focus:outline-none" autocomplete="off" />
+                            </div>
+                        </div>
+                        <div id="modal-group-list-container" class="flex-1 overflow-y-auto pr-1">
+                            <!-- 進行中與已結清列表 -->
+                        </div>
+                    </div>
+                `
+
+                document.body.appendChild(modal)
+                renderModalContent()
+
+                modal.querySelector('#close-modal-btn')?.addEventListener('click', () => modal.remove())
+                modal.addEventListener('click', e => {
+                    if (e.target === modal) modal.remove()
+                })
+                modal.querySelector('#modal-group-search-input')?.addEventListener('input', e => {
+                    renderModalContent(e.target.value)
+                })
+            }
+
+            // Bind open modal button
+            document.getElementById('open-group-picker-modal-btn')?.addEventListener('click', () => {
+                showGroupPickerModal()
+            })
+        }
         let calcPrev = null // 運算前值
         let calcOp = null // 當前運算子
         let calcNew = true // 是否剛開始輸入新數字
@@ -967,6 +1310,17 @@ export class AddPage {
         }
 
         const saveRegularRecord = async amount => {
+            // If creating new group, create it first
+            if (groupEnabled && groupAction === 'create') {
+                const groupName = document.getElementById('group-name-input')?.value.trim()
+                if (!groupName) {
+                    showToast('請輸入群組名稱', 'error')
+                    return
+                }
+                const newGroupId = await this.app.groupManager.createGroup(groupName)
+                selectedGroupId = newGroupId
+            }
+
             const recordData = {
                 type: currentType,
                 category: selectedCategory,
@@ -974,6 +1328,14 @@ export class AddPage {
                 description: noteInput.value,
                 date: currentDate,
                 accountId: advancedModeEnabled ? selectedAccountId : null,
+                // groupId: 若啟用群組面板 → 用使用者選的；編輯模式且未啟用 → 保留原始值；新增 → null
+                groupId: groupEnabled
+                    ? (selectedGroupId || null)
+                    : (isEditMode ? (recordToEdit?.groupId ?? null) : null),
+                // groupStatus: 若啟用群組面板 → 依是否開啟欠款標記為 active(分帳欠款) 或 project(純專案消費)
+                groupStatus: groupEnabled
+                    ? (selectedGroupId ? (debtEnabled && debtContactId ? 'active' : 'project') : null)
+                    : (isEditMode ? (recordToEdit?.groupStatus ?? null) : null),
             }
 
             if (isEditMode) {
@@ -1224,10 +1586,10 @@ export class AddPage {
                                 <div class="space-y-2 mb-3">
                                     <div class="flex gap-2">
                                         <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-wabi-border text-wabi-text-secondary'}">
-                                            別人欠我
+                                            應收款項
                                         </button>
                                         <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-wabi-border text-wabi-text-secondary'}">
-                                            我欠別人
+                                            應付款項
                                         </button>
                                     </div>
                                     <select id="debt-contact-edit" class="w-full p-2 border border-wabi-border rounded-lg text-sm bg-wabi-surface text-wabi-text-primary">
@@ -1257,7 +1619,7 @@ export class AddPage {
                                     : `
                                 <div class="text-sm text-wabi-text-secondary">
                                     <p><strong class="text-wabi-text-primary">聯絡人：</strong>${contactName}</p>
-                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
+                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '應收款項' : '應付款項'}</p>
                                     <p><strong class="text-wabi-text-primary">原始金額：</strong>${formatCurrency(originalAmount)}</p>
                                 </div>
                             `
@@ -1548,7 +1910,11 @@ export class AddPage {
 
                         await this.app.dataService.deleteRecord(id)
 
-                        if (associatedDebtId) {
+                        const isRepaymentCategory =
+                            record?.category === 'debt_repayment' ||
+                            record?.category === 'debt_collection'
+
+                        if (associatedDebtId && !isRepaymentCategory) {
                             if (
                                 await customConfirm(
                                     '此紀錄有關聯的欠款，是否也要一併刪除該欠款？'
@@ -1606,10 +1972,6 @@ export class AddPage {
             })
         }
 
-        const aiBtn = document.getElementById('ai-entry-btn')
-        if (aiBtn) {
-            aiBtn.addEventListener('click', openGeminiModal)
-        }
 
         // 監聽底部導覽列按鈕：僅當使用者「已在全新記帳新增頁面」且非編輯模式時，點擊底部麥克風按鈕觸發語音 Modal
         const navAddBtn = document.querySelector('a[data-page="add"]')
@@ -2037,8 +2399,9 @@ export class AddPage {
             .map(
                 account => `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
-                <div class="flex items-center justify-center rounded-lg ${escapeHTML(account.color || 'bg-gray-500')} text-white shrink-0 size-10">
+                <div class="relative flex items-center justify-center rounded-lg ${escapeHTML(account.color || 'bg-gray-500')} text-white shrink-0 size-10">
                     <i class="${escapeHTML(account.icon || 'fa-solid fa-wallet')} text-xl"></i>
+                    ${account.type === 'credit_card' ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
                 </div>
                 <span class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</span>
             </button>

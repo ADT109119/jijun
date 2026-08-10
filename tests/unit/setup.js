@@ -30,8 +30,12 @@ const mockDb = {
                 indexNames: {
                     contains: name => {
                         const indexes = {
-                            records: ['date', 'amortizationId'],
-                            accounts: ['type'],
+                            records: ['date', 'amortizationId', 'uuid'],
+                            accounts: ['type', 'uuid'],
+                            contacts: ['uuid'],
+                            debts: ['uuid'],
+                            recurring_transactions: ['uuid'],
+                            ledgers: ['uuid'],
                             credit_statements: [
                                 'accountId',
                                 'ledgerId',
@@ -39,12 +43,17 @@ const mockDb = {
                                 'status',
                             ],
                             amortizations: ['uuid', 'ledgerId', 'status'],
+                            groupMeta: ['ledgerId'],
                         }
                         return (indexes[storeName] || []).includes(name)
                     },
                 },
                 index: name => {
                     return {
+                        get: async key => {
+                            const item = data.find(i => i[name] === key)
+                            return Promise.resolve(item || null)
+                        },
                         getAll: async query => {
                             let filterFn
                             if (
@@ -143,6 +152,8 @@ const mockDb = {
                     const idx = data.findIndex(item => item.id === itemData.id)
                     if (idx >= 0) {
                         data[idx] = { ...itemData }
+                    } else {
+                        data.push({ ...itemData })
                     }
                     return Promise.resolve()
                 },
@@ -225,6 +236,7 @@ for (const name of [
     'amortizations',
     'plugins',
     'credit_statements',
+    'groupMeta',
 ]) {
     mockDb.initStore(name)
 }

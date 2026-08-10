@@ -9,7 +9,7 @@ const openDB =
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
-        this.dbVersion = 15 // Schema version 15: Upgraded to support version 15 compatibility & legacy debt payments migration
+        this.dbVersion = 15 // Schema v15: Record Groups (groupMeta store)
         this.db = null
         this.useLocalStorage = false
         this.hookProvider = null // Function to trigger hooks
@@ -491,9 +491,18 @@ class DataService {
                                 cursor = await cursor.continue()
                             }
                         }
-                        // Schema version 15: Compatibility placeholder
-                        if (oldVersion < 15) {
-                            // Version 15 migration placeholder
+                        // Schema version 15: Record Groups (groupMeta store)
+                        if (!db.objectStoreNames.contains('groupMeta')) {
+                            const groupStore = db.createObjectStore(
+                                'groupMeta',
+                                { keyPath: 'id' }
+                            )
+                            groupStore.createIndex('uuid', 'uuid', {
+                                unique: true,
+                            })
+                            groupStore.createIndex('ledgerId', 'ledgerId', {
+                                unique: false,
+                            })
                         }
                     },
                 })
@@ -818,20 +827,15 @@ class DataService {
                 )
             }
 
+            // Multi-level sort: date desc → timestamp desc → id desc
             return records.sort((a, b) => {
-                const dateA = a.date || ''
-                const dateB = b.date || ''
-                if (dateA !== dateB) {
-                    return dateB.localeCompare(dateA)
-                }
-                const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
-                const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
-                if (timeA !== timeB) {
-                    return timeB - timeA
-                }
-                const idA = typeof a.id === 'number' ? a.id : 0
-                const idB = typeof b.id === 'number' ? b.id : 0
-                return idB - idA
+                // Primary: date descending
+                if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+                // Secondary: timestamp descending (missing timestamps sort to bottom)
+                const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+                if (tsDiff !== 0) return tsDiff
+                // Tertiary: id descending (newer IDs are larger)
+                return (b.id || 0) - (a.id || 0)
             })
         } catch (error) {
             console.error('獲取記錄失敗:', error)
@@ -920,6 +924,20 @@ class DataService {
                     await this.logChange('update', 'records', id, updatedRecord)
                 }
 
+                // 全自動連動重算受影響之 Debt 與 Group 狀態
+                const affectedDebtIds = new Set(
+                    [record.debtId, updatedRecord.debtId].filter(Boolean)
+                )
+                const affectedGroupIds = new Set(
+                    [record.groupId, updatedRecord.groupId].filter(Boolean)
+                )
+                for (const dId of affectedDebtIds) {
+                    await this.recalculateDebtState(dId)
+                }
+                for (const gId of affectedGroupIds) {
+                    await this.recalculateGroupState(gId)
+                }
+
                 return updatedRecord
             }
 
@@ -941,10 +959,8 @@ class DataService {
             const store = tx.objectStore('records')
 
             // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
-            let recordData = null
-            if (!skipLog) {
-                recordData = await store.get(id)
-
+            let recordData = await store.get(id)
+            if (!skipLog && recordData) {
                 const shouldDelete = await this.triggerHook(
                     'onRecordDeleteBefore',
                     { id }
@@ -963,6 +979,15 @@ class DataService {
                     ledgerId: recordData.ledgerId,
                     accountId: recordData.accountId,
                 })
+            }
+
+            if (recordData) {
+                if (recordData.debtId) {
+                    await this.recalculateDebtState(recordData.debtId)
+                }
+                if (recordData.groupId) {
+                    await this.recalculateGroupState(recordData.groupId)
+                }
             }
 
             return true
@@ -1236,20 +1261,12 @@ class DataService {
             )
         }
 
+        // Multi-level sort: date desc → timestamp desc → id desc
         return records.sort((a, b) => {
-            const dateA = a.date || ''
-            const dateB = b.date || ''
-            if (dateA !== dateB) {
-                return dateB.localeCompare(dateA)
-            }
-            const timeA = typeof a.timestamp === 'number' ? a.timestamp : 0
-            const timeB = typeof b.timestamp === 'number' ? b.timestamp : 0
-            if (timeA !== timeB) {
-                return timeB - timeA
-            }
-            const idA = typeof a.id === 'number' ? a.id : 0
-            const idB = typeof b.id === 'number' ? b.id : 0
-            return idB - idA
+            if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+            const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
+            if (tsDiff !== 0) return tsDiff
+            return (b.id || 0) - (a.id || 0)
         })
     }
 
@@ -1513,6 +1530,7 @@ class DataService {
                 recurring_transactions: recurring_transactions,
                 amortizations: amortizations,
                 credit_statements: credit_statements,
+                groupMeta: await this.getAllGroupMeta(),
                 files: files,
                 customCategories: customCategoriesMap,
                 categoryOrder: categoryOrderMap,
@@ -1600,6 +1618,7 @@ class DataService {
                     await this.clearAllContacts()
                     await this.clearAllDebts()
                     await this.clearAllCreditStatements()
+                    await this.clearAllGroupMeta()
                     if (!this.useLocalStorage) {
                         try {
                             const txR = this.db.transaction(
@@ -1886,6 +1905,18 @@ class DataService {
                     // 6. 匯入欠款 (Phase 1: Insert & Map IDs)
                     // We use direct DB insertion instead of addDebt to preserve imported state (amounts, payments, etc.)
                     const oldDebtIdToNewIdMap = new Map()
+
+                    // 5.5 匯入 Group Meta (在 debt 之前，因為 groupId 不需要 remap)
+                    if (data.groupMeta && Array.isArray(data.groupMeta)) {
+                        const txGM = this.db.transaction('groupMeta', 'readwrite')
+                        for (const gm of data.groupMeta) {
+                            const { id, ...gmData } = gm
+                            gmData.ledgerId = getMappedLedgerId(gmData.ledgerId)
+                            if (!gmData.uuid) gmData.uuid = this.generateUUID()
+                            await txGM.store.put({ id, ...gmData })
+                        }
+                        await txGM.done
+                    }
                     const debtsToUpdate = [] // Keep track for Phase 2 linking
 
                     if (data.debts && Array.isArray(data.debts)) {
@@ -2247,6 +2278,7 @@ class DataService {
             'recurring_transactions',
             'amortizations',
             'credit_statements',
+            'groupMeta',
         ]
         for (const storeName of stores) {
             try {
@@ -2300,6 +2332,7 @@ class DataService {
             'amortizations',
             'credit_statements',
             'ledgers',
+            'groupMeta',
         ]
         for (const storeName of stores) {
             try {
@@ -2315,8 +2348,14 @@ class DataService {
                         'readwrite'
                     )
                     for (const item of backup[storeName]) {
-                        delete item.id // Let DB generate new IDs to avoid conflicts
-                        await restoreTx.store.add(item)
+                        // groupMeta 使用 put 保留原始 id（keyPath: 'id'，無 autoIncrement）
+                        // 其他 store 刪除 id 並使用 add，讓資料庫自動產生新 ID
+                        if (storeName === 'groupMeta') {
+                            await restoreTx.store.put(item)
+                        } else {
+                            delete item.id // Let DB generate new IDs to avoid conflicts
+                            await restoreTx.store.add(item)
+                        }
                     }
                     await restoreTx.done
                 }
@@ -2582,6 +2621,9 @@ class DataService {
         const credit_statements = (
             await this.getCreditStatements({ allLedgers: true })
         ).filter(s => validLedgerIds.has(s.ledgerId))
+        const groupMetaList = (
+            await this.getAllGroupMeta()
+        ).filter(g => validLedgerIds.has(g.ledgerId))
 
         // 建立帳戶/聯絡人/欠款 UUID 查找表
         const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]))
@@ -2645,6 +2687,7 @@ class DataService {
             recurring_transactions,
             amortizations,
             credit_statements,
+            groupMeta: groupMetaList,
             ...(isSharedSync
                 ? {}
                 : {
@@ -3348,6 +3391,511 @@ class DataService {
         } catch (error) {
             console.error('Failed to clear debts:', error)
             throw error
+        }
+    }
+
+    async _ensureGroupMetaStore() {
+        if (!this.db || this.useLocalStorage) return
+        if (!this.db.objectStoreNames || typeof this.db.objectStoreNames.contains !== 'function') return
+        if (this.db.objectStoreNames.contains('groupMeta')) return
+
+        console.warn('[DataService] groupMeta store missing in IndexedDB. Performing hot-upgrade...')
+        try {
+            const nextVersion = Math.max((this.db.version || 0) + 1, this.dbVersion + 1)
+            this.db.close()
+            this.db = await openDB(this.dbName, nextVersion, {
+                upgrade: (db) => {
+                    if (!db.objectStoreNames.contains('groupMeta')) {
+                        const groupStore = db.createObjectStore('groupMeta', { keyPath: 'id' })
+                        groupStore.createIndex('uuid', 'uuid', { unique: true })
+                        groupStore.createIndex('ledgerId', 'ledgerId', { unique: false })
+                    }
+                },
+            })
+            this.dbVersion = nextVersion
+        } catch (e) {
+            console.error('[DataService] Failed to auto-upgrade groupMeta store:', e)
+        }
+    }
+
+    // --- Group Meta Methods ---
+    async getGroupMeta(groupId) {
+        try {
+            await this._ensureGroupMetaStore()
+            return await this.db.get('groupMeta', groupId)
+        } catch (error) {
+            console.error(`Failed to get groupMeta ${groupId}:`, error)
+            return null
+        }
+    }
+
+    async getAllGroupMeta(ledgerId = null) {
+        try {
+            await this._ensureGroupMetaStore()
+            if (ledgerId !== null) {
+                const tx = this.db.transaction('groupMeta', 'readonly')
+                const index = tx.objectStore('groupMeta').index('ledgerId')
+                return await index.getAll(ledgerId)
+            }
+            return await this.db.getAll('groupMeta')
+        } catch (error) {
+            console.error('Failed to get all groupMeta:', error)
+            return []
+        }
+    }
+
+    async saveGroupMeta(groupMeta, skipLog = false) {
+        try {
+            await this._ensureGroupMetaStore()
+            const uuid =
+                groupMeta.uuid || this.generateUUID()
+            const data = {
+                id: groupMeta.id || uuid,
+                uuid,
+                name: groupMeta.name || '',
+                createdAt: groupMeta.createdAt || Date.now(),
+                settled: groupMeta.settled || false,
+                settledAt: groupMeta.settledAt || null,
+                ledgerId:
+                    groupMeta.ledgerId || this.activeLedgerId,
+            }
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            const id = await tx.store.put(data)
+            await tx.done
+            if (!skipLog) {
+                await this.logChange('update', 'groupMeta', id, {
+                    uuid: data.uuid,
+                    ledgerId: data.ledgerId,
+                })
+            }
+            return id
+        } catch (error) {
+            console.error('Failed to save groupMeta:', error)
+            throw error
+        }
+    }
+
+    async deleteGroupMeta(id, skipLog = false) {
+        try {
+            await this._ensureGroupMetaStore()
+            // 先 unlink records，避免 meta 已刪但 records 仍指向孤立 group
+            await this.unlinkRecordsFromGroup(id)
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            let itemData = null
+            if (!skipLog) itemData = await tx.store.get(id)
+            await tx.store.delete(id)
+            await tx.done
+            if (!skipLog && itemData)
+                await this.logChange('delete', 'groupMeta', id, {
+                    uuid: itemData.uuid,
+                    ledgerId: itemData.ledgerId,
+                })
+            return true
+        } catch (error) {
+            console.error(`Failed to delete groupMeta ${id}:`, error)
+            throw error
+        }
+    }
+
+    async clearAllGroupMeta() {
+        try {
+            await this._ensureGroupMetaStore()
+            const records = await this.getRecords({ allLedgers: true })
+            const needsUnlink = records.some(r => r.groupId)
+            if (needsUnlink) {
+                const txR = this.db.transaction('records', 'readwrite')
+                const store = txR.store
+                for (const r of records) {
+                    if (r.groupId) {
+                        r.groupId = null
+                        r.groupStatus = null
+                        await store.put(r)
+                    }
+                }
+                await txR.done
+            }
+            const tx = this.db.transaction('groupMeta', 'readwrite')
+            await tx.store.clear()
+            await tx.done
+            return true
+        } catch (error) {
+            console.error('Failed to clear groupMeta:', error)
+            throw error
+        }
+    }
+
+    // --- Private helpers ---
+
+    /**
+    /**
+     * 計算群組淨額 (精確累計總應收 totalReceivable 與總應付 totalPayable)
+     * - 被欠支出 (代墊) & 被欠收入 (拖欠薪水/貨款) 均屬於「別人欠我」(totalReceivable)
+     * - 欠別人支出 (別人代墊) & 欠別人收入 (預領) 均屬於「我欠別人」(totalPayable)
+     * @param {Array} groupRecords
+     * @param {Array} [allDebts]
+     * @returns {{totalExpense: number, totalIncome: number, netAmount: number, totalReceivable: number, totalPayable: number}}
+     */
+    _calculateGroupNet(groupRecords, allDebts = null) {
+        const nonSettlement = groupRecords.filter(
+            r => r.category !== 'group_settlement' && r.groupStatus !== 'settled'
+        )
+        const totalExpense = nonSettlement
+            .filter(r => r.type === 'expense')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+        const totalIncome = nonSettlement
+            .filter(r => r.type === 'income')
+            .reduce((s, r) => s + (r.amount || 0), 0)
+
+        let debtsMap = new Map()
+        if (allDebts) {
+            allDebts.forEach(d => debtsMap.set(d.id, d))
+        }
+
+        let totalReceivable = 0 // 別人欠我 (代墊支出 + 拖欠收入)
+        let totalPayable = 0    // 我欠別人 (別人代墊支出 + 預領收入)
+
+        nonSettlement.forEach(r => {
+            if (r.debtId && debtsMap.has(r.debtId)) {
+                const debt = debtsMap.get(r.debtId)
+                if (!debt.settled) {
+                    const rem = debt.remainingAmount !== undefined ? debt.remainingAmount : debt.amount
+                    if (debt.type === 'receivable') {
+                        totalReceivable += rem // 被欠款 (被欠支出代墊 或 被欠收入拖欠薪水)
+                    } else if (debt.type === 'payable') {
+                        totalPayable += rem    // 欠別人 (別人代墊支出 或 預領收入)
+                    }
+                }
+            } else if (r.groupStatus === 'active' || r.isDebt || (r.debtId === undefined && r.groupStatus === undefined)) {
+                if (r.type === 'expense') {
+                    totalReceivable += (r.amount || 0) // 代墊支出 -> 我出的錢，別人欠我
+                } else if (r.type === 'income') {
+                    totalPayable += (r.amount || 0)    // 普通群組收入 -> 我收到的錢，抵銷代墊
+                }
+            }
+        })
+
+        const netAmount = totalReceivable - totalPayable
+        return { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable }
+    }
+
+    async _calculateGroupNetAsync(groupRecords) {
+        const debts = await this.getDebts({ allLedgers: true })
+        return this._calculateGroupNet(groupRecords, debts)
+    }
+
+    async unlinkRecordsFromGroup(groupId) {
+        try {
+            const records = await this.getRecords({ allLedgers: true })
+            const tx = this.db.transaction('records', 'readwrite')
+            for (const r of records) {
+                if (r.groupId === groupId) {
+                    r.groupId = null
+                    r.groupStatus = null
+                    await tx.store.put(r)
+                }
+            }
+            await tx.done
+        } catch (error) {
+            console.error(`Failed to unlink records from group ${groupId}:`, error)
+        }
+    }
+
+    // --- Group Aggregation Methods ---
+    async getGroupRecords(groupId, ledgerId = null) {
+        try {
+            const records = await this.getRecords({ ledgerId })
+            if (groupId === undefined) {
+                // Return all records that belong to any group
+                return records.filter(r => r.groupId)
+            }
+            return records.filter(r => r.groupId === groupId)
+        } catch (e) {
+            return []
+        }
+    }
+
+    async getGroups(ledgerId = null) {
+        try {
+            const metas = await this.getAllGroupMeta(ledgerId)
+            const allRecords = await this.getRecords({
+                ledgerId,
+            })
+            const allDebts = await this.getDebts({ allLedgers: true })
+
+            // O(n) Map 預先分群，避免 metas.map() 內層 filter 造成 O(n×m)
+            const byGroup = new Map()
+            allRecords.filter(r => r.groupId).forEach(r => {
+                if (!byGroup.has(r.groupId)) byGroup.set(r.groupId, [])
+                byGroup.get(r.groupId).push(r)
+            })
+
+            return metas.map(meta => {
+                const groupRecs = byGroup.get(meta.id) || []
+                const { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable } = this._calculateGroupNet(groupRecs, allDebts)
+                const dates = groupRecs.map(r => r.date).filter(Boolean)
+                const sorted = [...dates].sort()
+                return {
+                    ...meta,
+                    recordCount: groupRecs.length,
+                    totalExpense,
+                    totalIncome,
+                    netAmount,
+                    totalReceivable,
+                    totalPayable,
+                    settled: meta.settled,
+                    dateFrom: sorted[0] || null,
+                    dateTo:
+                        sorted.length > 0
+                            ? sorted[sorted.length - 1]
+                            : null,
+                    recordIds: groupRecs.map(r => r.id),
+                }
+            })
+        } catch (e) {
+            console.error('Failed to get groups:', e)
+            return []
+        }
+    }
+
+    async settleGroup(groupId, settleAmount, accountId, date, note) {
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) throw new Error('Group not found')
+
+            const groupRecords = await this.getGroupRecords(groupId)
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const debtsMap = new Map(allDebts.map(d => [d.id, d]))
+
+            const currentDate = date || formatDateToString(new Date())
+
+            // 逐筆清查群組內未結清的紀錄與欠款
+            for (const r of groupRecords) {
+                if (r.groupStatus !== 'settled' && r.category !== 'group_settlement') {
+                    if (r.debtId) {
+                        const debt = debtsMap.get(r.debtId)
+                        if (debt && !debt.settled && debt.remainingAmount > 0) {
+                            await this.settleDebt(debt.id, debt.remainingAmount, {
+                                accountId: accountId || null,
+                                forceCreate: true,
+                            })
+                        }
+                    }
+                    await this.updateRecord(r.id, { groupStatus: 'settled' })
+                }
+            }
+
+            // 標記群組結清
+            await this.saveGroupMeta(
+                { ...meta, settled: true, settledAt: Date.now() },
+                true
+            )
+
+            return { meta }
+        } catch (e) {
+            console.error('Failed to settle group:', e)
+            throw e
+        }
+    }
+
+    async partialSettleGroup(
+        groupId,
+        amount,
+        accountId,
+        date,
+        note
+    ) {
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) throw new Error('Group not found')
+
+            if (amount === null || amount === undefined || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
+                throw new Error(`部分退款金額無效: ${amount}`)
+            }
+
+            const groupRecords = await this.getGroupRecords(groupId)
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const debtsMap = new Map(allDebts.map(d => [d.id, d]))
+
+            let remainingPaymentToDistribute = amount
+
+            for (const r of groupRecords) {
+                if (remainingPaymentToDistribute <= 0) break
+                if (r.groupStatus !== 'settled' && r.debtId) {
+                    const debt = debtsMap.get(r.debtId)
+                    if (debt && !debt.settled && debt.remainingAmount > 0) {
+                        const payAmt = Math.min(remainingPaymentToDistribute, debt.remainingAmount)
+                        await this.settleDebt(debt.id, payAmt, {
+                            accountId: accountId || null,
+                            forceCreate: true,
+                        })
+                        remainingPaymentToDistribute -= payAmt
+                        if (payAmt >= debt.remainingAmount) {
+                            await this.updateRecord(r.id, { groupStatus: 'settled' })
+                        }
+                    }
+                }
+            }
+
+            // 檢查是否全數完成
+            const remainingRecords = await this.getGroupRecords(groupId)
+            const activeCount = remainingRecords.filter(r => r.groupStatus !== 'settled' && r.category !== 'group_settlement').length
+            if (activeCount === 0) {
+                await this.saveGroupMeta(
+                    { ...meta, settled: true, settledAt: Date.now() },
+                    true
+                )
+            }
+
+            return { amount }
+        } catch (e) {
+            console.error('Failed to partial settle group:', e)
+            throw e
+        }
+    }
+
+    async settleGroupRecord(recordId, accountId, date, note) {
+        try {
+            const records = await this.getRecords({ allLedgers: true })
+            const targetRecord = records.find(r => r.id === recordId)
+            if (!targetRecord) throw new Error('Record not found')
+            if (!targetRecord.groupId) throw new Error('Record does not belong to any group')
+            if (targetRecord.groupStatus === 'settled') throw new Error('Record already settled')
+
+            if (targetRecord.debtId) {
+                const debt = await this.getDebt(targetRecord.debtId)
+                if (debt && !debt.settled && debt.remainingAmount > 0) {
+                    await this.settleDebt(debt.id, debt.remainingAmount, {
+                        accountId: accountId || null,
+                        forceCreate: true,
+                    })
+                }
+            }
+
+            await this.updateRecord(targetRecord.id, { groupStatus: 'settled' })
+
+            const groupRecords = await this.getGroupRecords(targetRecord.groupId)
+            const remainingActive = groupRecords.filter(
+                r => r.category !== 'group_settlement' && r.groupStatus !== 'settled'
+            )
+
+            if (remainingActive.length === 0) {
+                const meta = await this.getGroupMeta(targetRecord.groupId)
+                if (meta && !meta.settled) {
+                    await this.saveGroupMeta(
+                        { ...meta, settled: true, settledAt: Date.now() },
+                        true
+                    )
+                }
+            }
+        } catch (e) {
+            console.error('Failed to settle group record:', e)
+            throw e
+        }
+    }
+
+    /**
+     * 動態重新計算欠款之剩餘金額與 settled 結清狀態
+     * @param {number|string} debtId
+     */
+    async recalculateDebtState(debtId) {
+        if (!debtId) return null
+        try {
+            const debt = await this.getDebt(debtId)
+            if (!debt) return null
+
+            const allRecords = await this.getRecords({ allLedgers: true })
+            const repaymentRecords = allRecords.filter(
+                r => String(r.debtId) === String(debtId) && (r.category === 'debt_repayment' || r.category === 'debt_collection')
+            )
+
+            const paidAmountFromRecords = repaymentRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+            const originalAmount = debt.originalAmount || debt.amount || 0
+            const newRemainingAmount = Math.max(0, originalAmount - paidAmountFromRecords)
+            const isSettled = newRemainingAmount <= 0
+
+            const updates = {
+                remainingAmount: newRemainingAmount,
+                settled: isSettled,
+            }
+
+            if (!isSettled) {
+                updates.settledAt = null
+            } else if (!debt.settledAt) {
+                updates.settledAt = Date.now()
+            }
+
+            const updatedDebt = await this.updateDebt(debtId, updates, true)
+
+            // 自動尋找綁定該欠款的所有群組，觸發群組狀態重算
+            const affectedGroupIds = new Set(
+                allRecords
+                    .filter(r => String(r.debtId) === String(debtId) && r.groupId)
+                    .map(r => r.groupId)
+            )
+            for (const gId of affectedGroupIds) {
+                await this.recalculateGroupState(gId)
+            }
+
+            return updatedDebt
+        } catch (error) {
+            console.error(`Failed to recalculate debt state for ${debtId}:`, error)
+            return null
+        }
+    }
+
+    /**
+     * 動態重新計算群組內各筆交易項目與群組標頭 settled 結清狀態
+     * @param {string} groupId
+     */
+    async recalculateGroupState(groupId) {
+        if (!groupId) return null
+        try {
+            const meta = await this.getGroupMeta(groupId)
+            if (!meta) return null
+
+            const groupRecords = await this.getGroupRecords(groupId)
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const debtsMap = new Map(allDebts.map(d => [String(d.id), d]))
+
+            let activeCount = 0
+
+            for (const r of groupRecords) {
+                if (r.category === 'group_settlement') continue
+
+                if (r.debtId) {
+                    const debt = debtsMap.get(String(r.debtId))
+                    const isDebtSettled = debt ? debt.settled === true : false
+
+                    if (!isDebtSettled && r.groupStatus === 'settled') {
+                        r.groupStatus = 'active'
+                        await this.updateRecord(r.id, { groupStatus: 'active' }, true)
+                    } else if (isDebtSettled && r.groupStatus !== 'settled') {
+                        r.groupStatus = 'settled'
+                        await this.updateRecord(r.id, { groupStatus: 'settled' }, true)
+                    }
+                }
+
+                if (r.groupStatus !== 'settled') {
+                    activeCount++
+                }
+            }
+
+            const isGroupSettled = activeCount === 0 && groupRecords.length > 0
+            const metaUpdates = {
+                settled: isGroupSettled,
+            }
+
+            if (!isGroupSettled) {
+                metaUpdates.settledAt = null
+            } else if (!meta.settledAt) {
+                metaUpdates.settledAt = Date.now()
+            }
+
+            await this.saveGroupMeta({ ...meta, ...metaUpdates }, true)
+            return { ...meta, ...metaUpdates }
+        } catch (error) {
+            console.error(`Failed to recalculate group state for ${groupId}:`, error)
+            return null
         }
     }
 

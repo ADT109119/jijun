@@ -1,5 +1,20 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.2': {
+        date: '2026-08-09',
+        title: '全新專案與分帳群組系統、正統還款連動與明細體驗優化',
+        features: [
+            '全新專案與分帳群組系統：新增獨立群組與專案管理頁面，支援為旅遊、聚餐、專案建立分帳群組，記帳時可一鍵綁定群組與欠款人，並即時統計待結算淨額。',
+            '群組正統結清與欠款連動：提供「一鍵結清整組」與「單筆個別還」，自動發起真實欠款還清程序與還款/收款明細，徹底對齊 100% 帳務平衡。',
+            '還原結清與連動動態重算：支援撤銷還款與還原結清狀態；當手動刪除還款紀錄或編輯修改還款金額時，系統自動動態重算欠款剩餘金額，並自動還原欠款與群組為進行中狀態。',
+        ],
+        improvements: [
+            '群組功能彈性開關：於設定頁面新增「群組功能」切換開關，可依個人需求選擇啟用或隱藏群組功能。',
+            '刪除還款防誤刪提示優化：刪除類別為還款或欠款回收的交易紀錄時，自動隱藏「是否一併刪除關聯欠款」之對話框，防範誤觸導致原始欠款主紀錄被刪除。',
+            '手機版群組與明細 UI 適配：重構手機版群組標頭二層式響應佈局與明細卡片，隱藏重複標籤並自動消除無備註空白行，提升閱讀密度。',
+            '明細篩選生命週期優化：精準區分 F5 頁面重新整理（自動還原初始過濾條件）與同 App 內路由切換（保留先前篩選狀態），解決刷新頁面後過濾器無法重置問題。',
+        ],
+    },
     '2.1.7.1': {
         date: '2026-08-03',
         title: '明細搜尋清空功能與主題 SVG 解析優化',
@@ -1143,19 +1158,32 @@ export class ChangelogManager {
 
         document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove()
+// Escape 鍵關閉 (無障礙支援)
+        const escapeHandler = e => {
+            if (e.key === 'Escape') {
+                closeChangelogModal()
+            }
+        }
+        document.addEventListener('keydown', escapeHandler)
+
+        const closeChangelogModal = () => {
+            if (document.contains(modal)) {
+                modal.remove()
+                document.removeEventListener('keydown', escapeHandler)
+            }
+        }
 
         // 事件監聽
         const closeBtn = document.getElementById('close-changelog-btn')
-        if (closeBtn) closeBtn.addEventListener('click', closeModal)
+        if (closeBtn) closeBtn.addEventListener('click', closeChangelogModal)
 
         const confirmBtn = document.getElementById('confirm-changelog-btn')
-        if (confirmBtn) confirmBtn.addEventListener('click', closeModal)
+        if (confirmBtn) confirmBtn.addEventListener('click', closeChangelogModal)
 
         // 點擊背景關閉
         modal.addEventListener('click', e => {
             if (e.target === modal) {
-                closeModal()
+                closeChangelogModal()
             }
         })
     }

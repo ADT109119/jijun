@@ -19,6 +19,38 @@ describe('CATEGORIES', () => {
         expect(CATEGORIES.income.length).toBeGreaterThan(0)
     })
 
+    it('expense 有恰好 8 個分類', () => {
+        expect(CATEGORIES.expense).toHaveLength(8)
+    })
+
+    it('income 有恰好 8 個分類', () => {
+        expect(CATEGORIES.income).toHaveLength(8)
+    })
+
+    it('expense 所有分類 ID 不重複', () => {
+        const ids = CATEGORIES.expense.map(c => c.id)
+        expect(new Set(ids).size).toBe(ids.length)
+    })
+
+    it('income 所有分類 ID 不重複', () => {
+        const ids = CATEGORIES.income.map(c => c.id)
+        expect(new Set(ids).size).toBe(ids.length)
+    })
+
+    it('所有 color 是合法的 Tailwind 類別 (bg-xxx-nnn)', () => {
+        const all = [...CATEGORIES.expense, ...CATEGORIES.income]
+        for (const cat of all) {
+            expect(cat.color).toMatch(/^bg-[a-z]+-\d{3}$/)
+        }
+    })
+
+    it('所有 icon 是合法的 FontAwesome 類別 (fas fa-xxx)', () => {
+        const all = [...CATEGORIES.expense, ...CATEGORIES.income]
+        for (const cat of all) {
+            expect(cat.icon).toMatch(/^fas\sfa-/)
+        }
+    })
+
     it('每個分類都有 id, name, icon, color', () => {
         for (const type of ['expense', 'income']) {
             for (const cat of CATEGORIES[type]) {
@@ -61,16 +93,32 @@ describe('getCategoryById', () => {
         expect(() => getCategoryById('unknown', 'food')).toThrow()
     })
 
-    it('window.app 不存在時不會拋錯', () => {
-        const savedApp = globalThis.window?.app
-        // 確保 window.app 不存在（setup.js 沒有設定）
-        if (globalThis.window) delete globalThis.window.app
-
-        expect(() => getCategoryById('expense', 'food')).not.toThrow()
-
-        if (savedApp) {
-            globalThis.window.app = savedApp
+    it('自定義分類 fallback 需要 window.app.categoryManager', () => {
+        // 準備自定義分類
+        const customCat = { id: 'custom-foo', name: '自訂', icon: 'fas fa-star', color: 'bg-pink-400' }
+        if (globalThis.window) {
+            if (!globalThis.window.app) globalThis.window.app = {}
+            globalThis.window.app.categoryManager = { customCategories: { expense: [customCat] } }
         }
+        try {
+            // 用自訂 id，強制走到 window.app.categoryManager fallback 路徑
+            const cat = getCategoryById('expense', 'custom-foo')
+            expect(cat).toEqual(customCat)
+        } finally {
+            if (globalThis.window?.app) {
+                delete globalThis.window.app.categoryManager
+            }
+        }
+    })
+
+    it('空字串 id 回傳 undefined', () => {
+        expect(getCategoryById('expense', '')).toBeUndefined()
+        expect(getCategoryById('income', '')).toBeUndefined()
+    })
+
+    it('null id 回傳 undefined', () => {
+        expect(getCategoryById('expense', null)).toBeUndefined()
+        expect(getCategoryById('income', null)).toBeUndefined()
     })
 })
 
@@ -83,6 +131,22 @@ describe('getCategoryName', () => {
     it('不存在的分類回傳未知分類', () => {
         expect(getCategoryName('expense', 'fake')).toBe('未知分類')
     })
+
+    it('空字串 id 回傳未知分類', () => {
+        expect(getCategoryName('expense', '')).toBe('未知分類')
+    })
+
+    it('null id 回傳未知分類', () => {
+        expect(getCategoryName('expense', null)).toBe('未知分類')
+    })
+
+    it('undefined type 回傳未知分類', () => {
+        expect(getCategoryName(undefined, 'food')).toBe('未知分類')
+    })
+
+    it('回傳值為 string', () => {
+        expect(typeof getCategoryName('expense', 'food')).toBe('string')
+    })
 })
 
 describe('getCategoryIcon', () => {
@@ -93,5 +157,21 @@ describe('getCategoryIcon', () => {
 
     it('不存在的分類回傳預設 icon', () => {
         expect(getCategoryIcon('expense', 'fake')).toBe('fas fa-question')
+    })
+
+    it('空字串 id 回傳預設 icon', () => {
+        expect(getCategoryIcon('expense', '')).toBe('fas fa-question')
+    })
+
+    it('null id 回傳預設 icon', () => {
+        expect(getCategoryIcon('expense', null)).toBe('fas fa-question')
+    })
+
+    it('undefined type 回傳預設 icon', () => {
+        expect(getCategoryIcon(undefined, 'food')).toBe('fas fa-question')
+    })
+
+    it('回傳值為 string', () => {
+        expect(typeof getCategoryIcon('expense', 'food')).toBe('string')
     })
 })

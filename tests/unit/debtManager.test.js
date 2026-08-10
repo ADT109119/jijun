@@ -1,23 +1,29 @@
 // ==================== DebtManager 單元測試 ====================
 // 測試重點：欠款金額計算、剩餘金額回退邏輯、總結卡片計算、
-//           聯絡人摘要計算、分頁邏輯、部分付款驗證
+//           聯絡人摘要計算、分頁邏輯、部分付款驗證、刪除欠款雙岔流程、
+//           編輯欠款結清判定、XSS 跳脫
 // DebtManager 的 UI 方法 (renderDebtsPage, showAddDebtModal 等) 不在此測試
 // 因為它們依賴完整的 DOM 與 window.app，適合 E2E 測試
+// 備註：核心業務邏輯皆透過「真實 DebtManager 實例」驗證，不使用內嵌副本
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock utils.js 的函數
-vi.mock('../../src/js/utils.js', () => ({
-    formatCurrency: vi.fn(v => `NT$${Math.round(v)}`),
-    formatDate: vi.fn(d => d || '2024/01/01'),
-    formatDateToString: vi.fn(d => d || '2024-01-01'),
-    showToast: vi.fn(),
-    customConfirm: vi.fn(() => Promise.resolve(true)),
-    customAlert: vi.fn(),
-    escapeHTML: vi.fn(s => s),
-}))
+// Mock utils.js 的函數（escapeHTML 保留真實實作，避免繞過 XSS 跳脫）
+vi.mock('../../src/js/utils.js', async importOriginal => {
+    const actual = await importOriginal()
+    return {
+        ...actual,
+        formatCurrency: vi.fn(v => `NT$${Math.round(v)}`),
+        formatDate: vi.fn(d => d || '2024/01/01'),
+        formatDateToString: vi.fn(() => '2024-01-01'),
+        showToast: vi.fn(),
+        customConfirm: vi.fn(() => Promise.resolve(true)),
+        customAlert: vi.fn(),
+    }
+})
 
 import { DebtManager } from '../../src/js/debtManager.js'
+import { customConfirm, customAlert } from '../../src/js/utils.js'
 
 // 建立最小化的 DataService mock
 function createMockDataService() {
@@ -86,6 +92,7 @@ function createMockDataService() {
             const idx = records.findIndex(r => r.id === id)
             if (idx >= 0) records.splice(idx, 1)
         }),
+        updateRecord: vi.fn(async () => {}),
         getRecords: vi.fn(async filters => {
             let result = [...records]
             if (filters && filters.debtId) {
@@ -93,241 +100,602 @@ function createMockDataService() {
             }
             return result
         }),
+        // 群組資料：未使用群組功能的測試一律回傳空陣列
+        getGroups: vi.fn(async () => []),
+        getGroupMeta: vi.fn(async () => null),
+        getGroupRecords: vi.fn(async () => []),
+        getSetting: vi.fn(async () => null),
+        settleDebt: vi.fn(async () => {}),
+        addPartialPayment: vi.fn(async () => {}),
+        getRecord: vi.fn(async () => null),
+        getAccounts: vi.fn(async () => []),
+        getFile: vi.fn(async () => null),
         logChange: vi.fn(),
     }
 }
-// ── Helper: compute summary from debts ──
-function computeSummary(debts) {
-    let receivable = 0
-    let payable = 0
-    debts.forEach(d => {
-        const amount = d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0
-        if (d.type === 'receivable') receivable += amount
-        else payable += amount
-    })
-    return { receivable, payable }
+
+// ── Helper: 渲染頁面並回傳容器 ──
+async function renderPage(dm) {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    await dm.renderDebtsPage(container)
+    return container
 }
 
-// ── Helper: compute contact summary ──
-function computeContactSummary(debts) {
-    const map = {}
-    debts.forEach(d => {
-        if (!map[d.contactId]) map[d.contactId] = { receivable: 0, payable: 0 }
-        const amount = d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0
-        if (d.type === 'receivable') map[d.contactId].receivable += amount
-        else map[d.contactId].payable += amount
+// ── Helper: 等待非同步事件處理完成 ──
+const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+
+// ==================== 核心業務邏輯測試（透過真實實例） ====================
+describe('DebtManager - 核心業務邏輯（真實實例）', () => {
+    let dm, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        dm = new DebtManager(ds)
     })
-    return map
-}
 
-// ==================== 核心業務邏輯測試 ====================
-// DebtManager 本身沒有公開的純計算方法，所以我們測試其核心邏輯的正確性
-// 這些邏輯主要位於 updateSummaryCards 和 showContactSummaryModal 中
+    describe('總結卡片金額計算 (updateSummaryCards)', () => {
+        it('有 remainingAmount 時使用 remainingAmount', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                remainingAmount: 5000,
+                originalAmount: 10000,
+                date: '2024-01-01',
+            })
 
-describe('DebtManager - 核心業務邏輯', () => {
-    describe('金額計算 (remainingAmount 回退邏輯)', () => {
-        it('有 remainingAmount 時使用 remainingAmount', () => {
-            const debts = [
-                {
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[0].textContent).toContain('5000')
+            expect(cards[0].textContent).not.toContain('10000')
+        })
+
+        it('無 remainingAmount 但有 originalAmount 時使用 originalAmount', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'payable',
+                originalAmount: 3000,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[1].textContent).toContain('3000')
+        })
+
+        it('只有 amount (舊格式) 時使用 amount', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 2000,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[0].textContent).toContain('2000')
+        })
+
+        it('所有金額欄位皆無時回退為 0', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'payable',
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[1].textContent).toContain('NT$0')
+        })
+
+        it('正確累加 receivable 和 payable', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                remainingAmount: 1000,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                remainingAmount: 2000,
+                date: '2024-01-02',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'payable',
+                remainingAmount: 500,
+                date: '2024-01-03',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'payable',
+                remainingAmount: 1500,
+                date: '2024-01-04',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[0].textContent).toContain('3000')
+            expect(cards[1].textContent).toContain('2000')
+        })
+
+        it('已結清的欠款不計入總結卡片', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 500,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 900,
+                settled: true,
+                date: '2024-01-02',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[0].textContent).toContain('500')
+            expect(cards[0].textContent).not.toContain('900')
+        })
+
+        it('type 為 undefined 時歸類為「我欠別人」(payable)', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                amount: 800,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards[1].textContent).toContain('800')
+            expect(cards[0].textContent).not.toContain('800')
+        })
+
+        it('渲染時會載入群組資料以顯示未結清群組卡片', async () => {
+            const container = await renderPage(dm)
+            expect(ds.getGroups).toHaveBeenCalled()
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            expect(cards.length).toBe(3)
+            expect(cards[2].textContent).toContain('未結清群組')
+            expect(cards[2].textContent).toContain('0 個')
+        })
+    })
+
+    describe('聯絡人摘要 (showContactSummaryModal)', () => {
+        it('正確按聯絡人分組並計算淨額', async () => {
+            const c1 = await ds.addContact({ name: '小明', phone: '0911111111' })
+            const c2 = await ds.addContact({ name: '小華', phone: '0922222222' })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'receivable',
+                amount: 1000,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'payable',
+                amount: 300,
+                date: '2024-01-02',
+            })
+            await ds.addDebt({
+                contactId: c2.id,
+                type: 'receivable',
+                amount: 2000,
+                date: '2024-01-03',
+            })
+
+            await renderPage(dm)
+            await dm.showContactSummaryModal()
+            const modal = document.querySelector('#contact-summary-modal')
+            expect(modal).toBeTruthy()
+            const rows = modal.querySelectorAll('tr[data-contact-id]')
+            expect(rows.length).toBe(2)
+            // 小明：欠我 1000，我欠 300 → 淨額 +700
+            expect(rows[0].textContent).toContain('小明')
+            expect(rows[0].textContent).toContain('1000')
+            expect(rows[0].textContent).toContain('300')
+            expect(rows[0].textContent).toContain('700')
+            // 小華：欠我 2000 → 淨額 +2000
+            expect(rows[1].textContent).toContain('小華')
+            expect(rows[1].textContent).toContain('2000')
+        })
+
+        it('已結清欠款不顯示在聯絡人摘要', async () => {
+            const c1 = await ds.addContact({ name: '小明', phone: '0911111111' })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'receivable',
+                amount: 500,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'receivable',
+                amount: 999,
+                settled: true,
+                date: '2024-01-02',
+            })
+
+            await renderPage(dm)
+            await dm.showContactSummaryModal()
+            const modal = document.querySelector('#contact-summary-modal')
+            expect(modal.textContent).toContain('500')
+            expect(modal.textContent).not.toContain('999')
+        })
+    })
+
+    describe('分頁邏輯 (loadDebtList)', () => {
+        async function addDebts(count) {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            for (let i = 1; i <= count; i++) {
+                await ds.addDebt({
+                    contactId: contact.id,
                     type: 'receivable',
-                    remainingAmount: 5000,
-                    originalAmount: 10000,
-                },
-            ]
-            const { receivable } = computeSummary(debts)
-            expect(receivable).toBe(5000)
+                    amount: 100 + i,
+                    date: `2024-01-${String((i % 28) + 1).padStart(2, '0')}`,
+                })
+            }
+        }
+
+        it('15 筆資料分成 2 頁，第 1 頁顯示 10 筆並有分頁控制', async () => {
+            await addDebts(15)
+            const container = await renderPage(dm)
+            const list = container.querySelector('#debt-list-container')
+            expect(list.querySelectorAll('[data-debt-id]').length).toBe(10)
+            expect(list.textContent).toContain('1 / 2')
+            expect(container.querySelector('#next-page-btn')).toBeTruthy()
         })
 
-        it('無 remainingAmount 但有 originalAmount 時使用 originalAmount', () => {
-            const debts = [{ type: 'payable', originalAmount: 3000 }]
-            const { payable } = computeSummary(debts)
-            expect(payable).toBe(3000)
-        })
-
-        it('只有 amount (舊格式) 時使用 amount', () => {
-            const debts = [{ type: 'receivable', amount: 2000 }]
-            const { receivable } = computeSummary(debts)
-            expect(receivable).toBe(2000)
-        })
-
-        it('所有欄位都沒有時回退為 0', () => {
-            const debts = [{ type: 'payable' }]
-            const { payable } = computeSummary(debts)
-            expect(payable).toBe(0)
-        })
-    })
-
-    describe('總結計算', () => {
-        it('正確累加 receivable 和 payable', () => {
-            const debts = [
-                { type: 'receivable', remainingAmount: 1000 },
-                { type: 'receivable', remainingAmount: 2000 },
-                { type: 'payable', remainingAmount: 500 },
-                { type: 'payable', remainingAmount: 1500 },
-            ]
-            const { receivable, payable } = computeSummary(debts)
-            expect(receivable).toBe(3000)
-            expect(payable).toBe(2000)
-        })
-
-        it('空陣列回傳 0', () => {
-            const { receivable, payable } = computeSummary([])
-            expect(receivable).toBe(0)
-            expect(payable).toBe(0)
-        })
-
-        it('混合新舊格式正確計算', () => {
-            const debts = [
-                { type: 'receivable', remainingAmount: 1000 },
-                { type: 'receivable', originalAmount: 2000 },
-                { type: 'payable', amount: 500 },
-            ]
-            const { receivable, payable } = computeSummary(debts)
-            expect(receivable).toBe(3000)
-            expect(payable).toBe(500)
+        it('點擊下一頁後顯示第 2 頁剩餘 5 筆', async () => {
+            await addDebts(15)
+            window.scrollTo = vi.fn()
+            const container = await renderPage(dm)
+            const list = container.querySelector('#debt-list-container')
+            container.querySelector('#next-page-btn').click()
+            await flush()
+            expect(list.querySelectorAll('[data-debt-id]').length).toBe(5)
+            expect(list.textContent).toContain('2 / 2')
         })
     })
 
-    describe('聯絡人摘要計算', () => {
-        it('正確按聯絡人分組計算', () => {
-            const debts = [
-                { contactId: 1, type: 'receivable', remainingAmount: 1000 },
-                { contactId: 1, type: 'payable', remainingAmount: 500 },
-                { contactId: 2, type: 'receivable', remainingAmount: 2000 },
-            ]
-            const summary = computeContactSummary(debts)
-            expect(summary[1]).toEqual({ receivable: 1000, payable: 500 })
-            expect(summary[2]).toEqual({ receivable: 2000, payable: 0 })
-        })
+    describe('進度百分比計算 (loadDebtList)', () => {
+        it('部分還款時顯示正確進度百分比', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 500,
+                date: '2024-01-01',
+            })
 
-        it('淨額計算正確', () => {
-            const debts = [
-                { contactId: 1, type: 'receivable', remainingAmount: 1000 },
-                { contactId: 1, type: 'payable', remainingAmount: 500 },
-            ]
-            const summary = computeContactSummary(debts)
-            const net = summary[1].receivable - summary[1].payable
-            expect(net).toBe(500)
-        })
-
-        it('空陣列不回傳任何聯絡人', () => {
-            const summary = computeContactSummary([])
-            expect(Object.keys(summary).length).toBe(0)
-        })
-
-        it('單一聯絡人多筆欠款正確累加', () => {
-            const debts = [
-                { contactId: 1, type: 'receivable', remainingAmount: 1000 },
-                { contactId: 1, type: 'receivable', originalAmount: 2000 },
-                { contactId: 1, type: 'payable', amount: 500 },
-            ]
-            const summary = computeContactSummary(debts)
-            expect(summary[1].receivable).toBe(3000)
-            expect(summary[1].payable).toBe(500)
-            expect(summary[1].receivable - summary[1].payable).toBe(2500)
+            const container = await renderPage(dm)
+            expect(container.textContent).toContain('50%')
+            expect(container.textContent).toContain('已收款')
         })
     })
 
-    describe('分頁計算', () => {
-        it('pageSize=10 時 15 筆資料有 2 頁', () => {
-            const totalDebts = 15
-            const pageSize = 10
-            const totalPages = Math.ceil(totalDebts / pageSize)
-            expect(totalPages).toBe(2)
+    describe('部分付款驗證 (showPartialPaymentModal)', () => {
+        it.each([
+            { value: '', label: '空值' },
+            { value: '0', label: '0' },
+            { value: '-50', label: '負數' },
+        ])('金額為 $label 時顯示錯誤且不建立付款', async ({ value }) => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 1000,
+                date: '2024-01-01',
+            })
+
+            await renderPage(dm)
+            await dm.showPartialPaymentModal(debt.id)
+            const modal = document.querySelector('#partial-payment-modal')
+            modal.querySelector('#partial-amount').value = value
+            modal.querySelector('#confirm-partial-btn').click()
+            await flush()
+
+            expect(customAlert).toHaveBeenCalled()
+            expect(ds.addPartialPayment).not.toHaveBeenCalled()
         })
 
-        it('pageSize=10 時 10 筆資料只有 1 頁', () => {
-            const totalDebts = 10
-            const pageSize = 10
-            const totalPages = Math.ceil(totalDebts / pageSize)
-            expect(totalPages).toBe(1)
+        it('金額超過剩餘金額時顯示錯誤且不建立付款', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 1000,
+                date: '2024-01-01',
+            })
+
+            await renderPage(dm)
+            await dm.showPartialPaymentModal(debt.id)
+            const modal = document.querySelector('#partial-payment-modal')
+            modal.querySelector('#partial-amount').value = '1500'
+            modal.querySelector('#confirm-partial-btn').click()
+            await flush()
+
+            expect(customAlert).toHaveBeenCalled()
+            expect(ds.addPartialPayment).not.toHaveBeenCalled()
         })
 
-        it('第 1 頁 startIndex=0', () => {
-            const currentPage = 1
-            const pageSize = 10
-            const startIndex = (currentPage - 1) * pageSize
-            expect(startIndex).toBe(0)
-        })
+        it('金額有效時呼叫 addPartialPayment 並帶入正確金額', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 1000,
+                date: '2024-01-01',
+            })
 
-        it('第 2 頁 startIndex=10', () => {
-            const currentPage = 2
-            const pageSize = 10
-            const startIndex = (currentPage - 1) * pageSize
-            expect(startIndex).toBe(10)
-        })
+            await renderPage(dm)
+            await dm.showPartialPaymentModal(debt.id)
+            const modal = document.querySelector('#partial-payment-modal')
+            modal.querySelector('#partial-amount').value = '300'
+            modal.querySelector('#confirm-partial-btn').click()
+            await flush()
 
-        it('slice 取得正確範圍', () => {
-            const debts = Array.from({ length: 15 }, (_, i) => ({ id: i + 1 }))
-            const page2 = debts.slice(10, 20)
-            expect(page2.length).toBe(5)
-            expect(page2[0].id).toBe(11)
-            expect(page2[4].id).toBe(15)
+            expect(ds.addPartialPayment).toHaveBeenCalledWith(debt.id, 300, {
+                accountId: null,
+            })
         })
     })
 
-    describe('部分付款驗證', () => {
-        it('付款金額不能超過剩餘金額', () => {
-            const remainingAmount = 1000
-            const payment = 1500
-            const valid = payment > 0 && payment <= remainingAmount
-            expect(valid).toBe(false)
+    describe('刪除欠款雙岔流程 (delete-debt-btn)', () => {
+        it('刪除無關聯紀錄的欠款只呼叫 deleteDebt', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 100,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            customConfirm.mockReset()
+            customConfirm.mockResolvedValueOnce(true)
+            container.querySelector('.delete-debt-btn').click()
+            await flush()
+
+            expect(customConfirm).toHaveBeenCalledTimes(1)
+            expect(ds.deleteDebt).toHaveBeenCalledWith(debt.id)
+            expect(ds.deleteRecord).not.toHaveBeenCalled()
+            expect(ds.updateRecord).not.toHaveBeenCalled()
         })
 
-        it('付款金額等於剩餘金額為有效', () => {
-            const remainingAmount = 1000
-            const payment = 1000
-            const valid = payment > 0 && payment <= remainingAmount
-            expect(valid).toBe(true)
+        it('刪除有關聯紀錄的欠款且確認時，會連帶刪除紀錄', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 100,
+                recordId: 999,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            customConfirm.mockReset()
+            customConfirm.mockResolvedValueOnce(true) // 確認刪除欠款
+            customConfirm.mockResolvedValueOnce(true) // 確認一併刪除紀錄
+            container.querySelector('.delete-debt-btn').click()
+            await flush()
+
+            expect(ds.deleteDebt).toHaveBeenCalledWith(debt.id)
+            expect(ds.deleteRecord).toHaveBeenCalledWith(999)
+            expect(ds.updateRecord).not.toHaveBeenCalled()
         })
 
-        it('付款金額為 0 無效', () => {
-            const remainingAmount = 1000
-            const payment = 0
-            const valid = payment > 0 && payment <= remainingAmount
-            expect(valid).toBe(false)
+        it('刪除有關聯紀錄的欠款但取消時，清除紀錄上的反向引用', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 100,
+                recordId: 999,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            customConfirm.mockReset()
+            customConfirm.mockResolvedValueOnce(true) // 確認刪除欠款
+            customConfirm.mockResolvedValueOnce(false) // 不刪除關聯紀錄
+            container.querySelector('.delete-debt-btn').click()
+            await flush()
+
+            expect(ds.deleteDebt).toHaveBeenCalledWith(debt.id)
+            expect(ds.deleteRecord).not.toHaveBeenCalled()
+            expect(ds.updateRecord).toHaveBeenCalledWith(999, { debtId: null })
         })
 
-        it('付款金額為負數無效', () => {
-            const remainingAmount = 1000
-            const payment = -100
-            const valid = payment > 0 && payment <= remainingAmount
-            expect(valid).toBe(false)
+        it('取消第一次確認時不刪除任何資料', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 100,
+                recordId: 999,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            customConfirm.mockReset()
+            customConfirm.mockResolvedValueOnce(false)
+            container.querySelector('.delete-debt-btn').click()
+            await flush()
+
+            expect(ds.deleteDebt).not.toHaveBeenCalled()
+            expect(ds.deleteRecord).not.toHaveBeenCalled()
+            expect(ds.updateRecord).not.toHaveBeenCalled()
         })
     })
 
-    describe('進度百分比計算', () => {
-        it('全額已付進度 100%', () => {
-            const originalAmount = 1000
-            const remainingAmount = 0
-            const paidAmount = originalAmount - remainingAmount
-            const progressPercent =
-                originalAmount > 0
-                    ? ((paidAmount / originalAmount) * 100).toFixed(0)
-                    : 0
-            expect(progressPercent).toBe('100')
+    describe('編輯欠款結清判定 (showAddDebtModal)', () => {
+        it('編輯時餘額歸零且原本未結清 → 自動標記為已結清', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 600,
+                settled: false,
+                payments: [{ amount: 400 }],
+                date: '2024-01-01',
+            })
+
+            await renderPage(dm)
+            await dm.showAddDebtModal(debt)
+            const modal = document.querySelector('#add-debt-modal')
+            modal.querySelector('#debt-amount').value = '400'
+            modal.querySelector('#save-debt-btn').click()
+            await flush()
+
+            expect(ds.updateDebt).toHaveBeenCalledWith(
+                debt.id,
+                expect.objectContaining({
+                    settled: true,
+                    remainingAmount: 0,
+                })
+            )
         })
 
-        it('半額已付進度 50%', () => {
-            const originalAmount = 1000
-            const remainingAmount = 500
-            const paidAmount = originalAmount - remainingAmount
-            const progressPercent =
-                originalAmount > 0
-                    ? ((paidAmount / originalAmount) * 100).toFixed(0)
-                    : 0
-            expect(progressPercent).toBe('50')
+        it('編輯時餘額大於 0 且原本已結清 → 恢復為未結清', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 0,
+                settled: true,
+                settledAt: 123456,
+                payments: [{ amount: 1000 }],
+                date: '2024-01-01',
+            })
+
+            await renderPage(dm)
+            await dm.showAddDebtModal(debt)
+            const modal = document.querySelector('#add-debt-modal')
+            modal.querySelector('#debt-amount').value = '1200'
+            modal.querySelector('#save-debt-btn').click()
+            await flush()
+
+            expect(ds.updateDebt).toHaveBeenCalledWith(
+                debt.id,
+                expect.objectContaining({
+                    settled: false,
+                    settledAt: null,
+                    remainingAmount: 200,
+                })
+            )
         })
 
-        it('零金額進度 0%', () => {
-            const originalAmount = 0
-            const remainingAmount = 0
-            const paidAmount = originalAmount - remainingAmount
-            const progressPercent =
-                originalAmount > 0
-                    ? ((paidAmount / originalAmount) * 100).toFixed(0)
-                    : 0
-            expect(progressPercent).toBe(0)
+        it('編輯時餘額大於 0 且原本未結清 → 維持未結清狀態', async () => {
+            const contact = await ds.addContact({ name: '甲', phone: '1' })
+            const debt = await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 1000,
+                originalAmount: 1000,
+                remainingAmount: 600,
+                settled: false,
+                payments: [{ amount: 400 }],
+                date: '2024-01-01',
+            })
+
+            await renderPage(dm)
+            await dm.showAddDebtModal(debt)
+            const modal = document.querySelector('#add-debt-modal')
+            modal.querySelector('#debt-amount').value = '500'
+            modal.querySelector('#save-debt-btn').click()
+            await flush()
+
+            const [updateId, updateData] = ds.updateDebt.mock.calls[0]
+            expect(updateId).toBe(debt.id)
+            expect(updateData).toEqual(
+                expect.objectContaining({ remainingAmount: 100 })
+            )
+            expect(updateData).not.toHaveProperty('settled')
+        })
+    })
+
+    describe('XSS 防護 (真實 escapeHTML)', () => {
+        it('聯絡人名稱與備註中的 HTML 會被跳脫，不產生可執行的 script', async () => {
+            const malicious = '<script>alert(1)</script>'
+            const contact = await ds.addContact({
+                name: malicious,
+                phone: '1',
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 100,
+                description: malicious,
+                date: '2024-01-01',
+            })
+
+            const container = await renderPage(dm)
+            // 不應產生真實的 <script> 元素
+            expect(container.querySelector('script')).toBeNull()
+            // 原始 HTML 中不應含有未跳脫的 script 標籤
+            expect(container.innerHTML).not.toContain('<script>')
+            // 內容應以 HTML 實體形式呈現
+            expect(container.innerHTML).toContain('&lt;script&gt;')
         })
     })
 })
@@ -440,7 +808,8 @@ describe('DebtManager - 建構與基本狀態', () => {
             const cards = container.querySelectorAll(
                 '#summary-cards-container > div'
             )
-            expect(cards.length).toBe(2)
+            // 兩張金額卡片 + 一張未結清群組卡片
+            expect(cards.length).toBe(3)
             // 第一張卡片: 別人欠我 NT$1000
             expect(cards[0].textContent).toContain('1000')
             // 第二張卡片: 我欠別人 NT$500
@@ -477,6 +846,23 @@ describe('DebtManager - 建構與基本狀態', () => {
             )
             expect(cards[0].textContent).toContain('1000')
             expect(cards[0].textContent).toContain('A')
+        })
+
+        it('refreshCurrentView 在群組頁面觸發時自動渲染 groupsPage 且不拋出 DOM null 異常', async () => {
+            const renderFn = vi.fn()
+            const mockApp = {
+                router: {
+                    routes: {
+                        groups: { render: renderFn },
+                    },
+                },
+            }
+            const debtMgr = new DebtManager(ds, mockApp)
+            
+            window.location.hash = '#groups'
+            await debtMgr.refreshCurrentView()
+
+            expect(renderFn).toHaveBeenCalledTimes(1)
         })
     })
 })
