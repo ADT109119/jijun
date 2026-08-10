@@ -101,7 +101,7 @@ export class GroupManager {
      */
     async getUnsettledGroups(ledgerId = null) {
         const groups = await this.dataService.getGroups(ledgerId)
-        return groups.filter(g => !g.settled)
+        return groups.filter(g => !g.settled && g.netAmount !== 0)
     }
 
     /**

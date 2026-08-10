@@ -847,5 +847,22 @@ describe('DebtManager - 建構與基本狀態', () => {
             expect(cards[0].textContent).toContain('1000')
             expect(cards[0].textContent).toContain('A')
         })
+
+        it('refreshCurrentView 在群組頁面觸發時自動渲染 groupsPage 且不拋出 DOM null 異常', async () => {
+            const renderFn = vi.fn()
+            const mockApp = {
+                router: {
+                    routes: {
+                        groups: { render: renderFn },
+                    },
+                },
+            }
+            const debtMgr = new DebtManager(ds, mockApp)
+            
+            window.location.hash = '#groups'
+            await debtMgr.refreshCurrentView()
+
+            expect(renderFn).toHaveBeenCalledTimes(1)
+        })
     })
 })

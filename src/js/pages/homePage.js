@@ -282,7 +282,7 @@ export class HomePage {
 
         try {
             const groups = await this.app.dataService.getGroups()
-            const unsettled = groups.filter(g => !g.settled)
+            const unsettled = groups.filter(g => !g.settled && g.netAmount !== 0)
             if (unsettled.length === 0) {
                 container.innerHTML = ''
                 return

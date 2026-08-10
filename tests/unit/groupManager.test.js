@@ -409,4 +409,21 @@ describe('GroupManager', () => {
             )
         })
     })
+
+    describe('getUnsettledGroups', () => {
+        it('排除已被標記為 settled 或 netAmount 為 0 的無待結款群組', async () => {
+            const allGroups = [
+                { id: 'g1', name: '有待收應款', settled: false, netAmount: 500 },
+                { id: 'g2', name: '已結清群組', settled: true, netAmount: 0 },
+                { id: 'g3', name: '無欠款普通群組', settled: false, netAmount: 0 },
+                { id: 'g4', name: '有待付應款', settled: false, netAmount: -300 },
+            ]
+            mockDataService.getGroups.mockResolvedValue(allGroups)
+
+            const unsettled = await gm.getUnsettledGroups()
+
+            expect(unsettled).toHaveLength(2)
+            expect(unsettled.map(g => g.id)).toEqual(['g1', 'g4'])
+        })
+    })
 })
