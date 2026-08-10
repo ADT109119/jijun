@@ -3,8 +3,10 @@ import { formatCurrency, formatDate, formatDateToString, showToast, customConfir
 import { getCategoryById } from './categories.js';
 
 export class DebtManager {
-  constructor(dataService) {
+  constructor(dataService, app = null) {
     this.dataService = dataService;
+    this.app = app;
+    this.appRef = app;
     this.container = null;
     this.currentFilter = 'unsettled'; // 'unsettled' | 'settled' | 'all'
     this.currentContactFilter = null; // null means all contacts
@@ -120,7 +122,10 @@ export class DebtManager {
 
   // Update summary cards based on current contact filter
   async updateSummaryCards() {
+    if (!this.container) return;
     const container = this.container.querySelector('#summary-cards-container');
+    if (!container) return;
+
     const allDebts = await this.dataService.getDebts({ settled: false });
     
     let filteredDebts = allDebts;
@@ -164,11 +169,11 @@ export class DebtManager {
     
     container.innerHTML = `
       <div class="bg-wabi-income/10 rounded-xl p-4 text-center border border-wabi-income/20">
-        <p class="text-sm text-wabi-income font-medium">${selectedContact ? selectedContact + ' 欠我' : '別人欠我'}</p>
+        <p class="text-sm text-wabi-income font-medium">${selectedContact ? '應收 ' + selectedContact : '總應收 (待收)'}</p>
         <p class="text-2xl font-bold text-wabi-income">${formatCurrency(totalReceivable)}</p>
       </div>
       <div class="bg-wabi-expense/10 rounded-xl p-4 text-center border border-wabi-expense/20">
-        <p class="text-sm text-wabi-expense font-medium">${selectedContact ? '我欠 ' + selectedContact : '我欠別人'}</p>
+        <p class="text-sm text-wabi-expense font-medium">${selectedContact ? '應付 ' + selectedContact : '總應付 (待付)'}</p>
         <p class="text-2xl font-bold text-wabi-expense">${formatCurrency(totalPayable)}</p>
       </div>
       ${groupCardHtml}
@@ -217,8 +222,8 @@ export class DebtManager {
           <thead class="bg-gray-100">
             <tr>
               <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium">聯絡人</th>
-              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">欠我</th>
-              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">我欠</th>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">應收</th>
+              <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">應付</th>
               <th class="px-4 py-2 text-xs text-wabi-text-secondary font-medium text-right">淨額</th>
             </tr>
           </thead>
@@ -311,7 +316,10 @@ export class DebtManager {
   }
 
   async loadDebtList() {
+    if (!this.container) return;
     const listContainer = this.container.querySelector('#debt-list-container');
+    if (!listContainer) return;
+
     const filters = {};
     
     if (this.currentFilter === 'unsettled') {
@@ -414,7 +422,7 @@ export class DebtManager {
               </div>
               <div>
                 <p class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</p>
-                <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
+                <p class="text-sm text-wabi-text-secondary">${isReceivable ? '應收' : '應付'}</p>
               </div>
             </div>
             <div class="text-right">
@@ -515,7 +523,7 @@ export class DebtManager {
               <div>
                 <p class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</p>
                 <div class="flex items-center gap-2 mt-0.5">
-                  <p class="text-sm text-wabi-text-secondary">${isReceivable ? '欠我' : '我欠'}</p>
+                  <p class="text-sm text-wabi-text-secondary">${isReceivable ? '應收' : '應付'}</p>
                   ${categoryObj ? `
                     <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-wabi-bg border border-wabi-border text-wabi-text-primary font-medium">
                       <i class="${categoryObj.icon} text-[10px]"></i>
@@ -1177,8 +1185,8 @@ export class DebtManager {
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">類型</label>
           <div class="flex h-10 w-full items-center justify-center rounded-lg bg-wabi-bg/50 p-1">
-            <button id="debt-type-receivable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(!isEdit || debtToEdit?.type === 'receivable') ? 'bg-wabi-income text-wabi-surface' : 'text-wabi-text-secondary'}">別人欠我</button>
-            <button id="debt-type-payable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(isEdit && debtToEdit?.type === 'payable') ? 'bg-wabi-expense text-wabi-surface' : 'text-wabi-text-secondary'}">我欠別人</button>
+            <button id="debt-type-receivable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(!isEdit || debtToEdit?.type === 'receivable') ? 'bg-wabi-income text-wabi-surface' : 'text-wabi-text-secondary'}">應收款項</button>
+            <button id="debt-type-payable" class="debt-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium ${(isEdit && debtToEdit?.type === 'payable') ? 'bg-wabi-expense text-wabi-surface' : 'text-wabi-text-secondary'}">應付款項</button>
           </div>
         </div>
 
@@ -1604,6 +1612,26 @@ export class DebtManager {
     });
   }
 
+  async refreshCurrentView() {
+    try {
+      if (this.container && this.container.querySelector('#summary-cards-container')) {
+        await this.updateSummaryCards();
+      }
+      if (this.container && this.container.querySelector('#debt-list-container')) {
+        await this.loadDebtList();
+      }
+
+      if (window.location.hash.startsWith('#groups')) {
+        const groupsPage = this.appRef?.router?.routes?.groups;
+        if (groupsPage && typeof groupsPage.render === 'function') {
+          await groupsPage.render();
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to refresh current view:', e);
+    }
+  }
+
   // Helper to get avatar URL for a contact
   async getContactAvatarUrl(contact) {
     if (contact.avatarFileId) {
@@ -1735,11 +1763,11 @@ export class DebtManager {
     const groupMeta = await this.dataService.getGroupMeta(groupId);
     if (!groupMeta) return;
     const groupRecords = await this.dataService.getGroupRecords(groupId);
-    const { netAmount } = this.dataService._calculateGroupNet(groupRecords);
-    // netAmount < 0: 支出多(代墊) → 收款(拿回代墊款)
-    // netAmount > 0: 收入多(溢領) → 退款(退還多拿的)
-    const isRefund = netAmount > 0;
-    const netDirection = netAmount < 0 ? `${escapeHTML(groupMeta.name)}欠我` : netAmount > 0 ? `我欠${escapeHTML(groupMeta.name)}` : '已平衡';
+    const { netAmount } = await this.dataService._calculateGroupNetAsync(groupRecords);
+    // netAmount > 0: 群組欠我 (應收) → 部分收款
+    // netAmount < 0: 我欠群組 (應付) → 部分還/退款
+    const isRefund = netAmount < 0;
+    const netDirection = netAmount > 0 ? `應收 ${escapeHTML(groupMeta.name)}` : netAmount < 0 ? `應付 ${escapeHTML(groupMeta.name)}` : '已平衡';
 
     const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
     const isAdvancedMode = !!advancedModeSetting?.value;
@@ -1750,7 +1778,7 @@ export class DebtManager {
       if (accounts.length > 0) defaultAccountId = accounts[0].id;
     }
 
-    const actionLabel = isRefund ? '退款' : '收款';
+    const actionLabel = netAmount > 0 ? '收款' : '付款';
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
     modal.innerHTML = `
@@ -1805,8 +1833,7 @@ export class DebtManager {
         await this.dataService.partialSettleGroup(groupId, amount, selectedAccountId, new Date().toISOString().split('T')[0], `部分${actionLabel}`);
         closeModal();
         showToast(`部分${actionLabel}已記錄`, 'success');
-        await this.updateSummaryCards();
-        await this.loadDebtList();
+        await this.refreshCurrentView();
       } catch (e) {
         console.error('Failed to partial settle group:', e);
         customAlert('操作失敗，請稍後再試');
@@ -1820,9 +1847,11 @@ export class DebtManager {
     if (!groupMeta) return;
 
     const groupRecords = await this.dataService.getGroupRecords(groupId);
-    const { netAmount, totalExpense, totalIncome } = this.dataService._calculateGroupNet(groupRecords);
+    const { netAmount, totalExpense, totalIncome } = await this.dataService._calculateGroupNetAsync(groupRecords);
+    const allDebts = await this.dataService.getDebts({ allLedgers: true });
+    const debtsMap = new Map(allDebts.map(d => [d.id, d]));
 
-    const netDirection = netAmount < 0 ? `${escapeHTML(groupMeta.name)}欠我` : netAmount > 0 ? `我欠${escapeHTML(groupMeta.name)}` : '已平衡';
+    const netDirection = netAmount > 0 ? `應收 ${escapeHTML(groupMeta.name)}` : netAmount < 0 ? `應付 ${escapeHTML(groupMeta.name)}` : '已平衡';
 
     const modal = document.createElement('div');
     modal.id = 'group-details-modal';
@@ -1839,6 +1868,33 @@ export class DebtManager {
       const colorStyle = isHexColor ? `style="background-color: ${cat.color};"` : '';
       const colorClass = isHexColor ? '' : (cat.color || 'bg-gray-500');
 
+      // 判定是否有實際欠款 & 債務方向標籤 (專業用語)
+      let hasDebt = false;
+      let debtTagHtml = '';
+
+      if (isSettlement) {
+        debtTagHtml = `<span class="text-[10px] bg-wabi-text-secondary/10 text-wabi-text-secondary px-1.5 py-0.5 rounded font-normal border border-wabi-border">結算劃轉</span>`;
+      } else if (r.debtId && debtsMap.has(r.debtId)) {
+        hasDebt = true;
+        const debt = debtsMap.get(r.debtId);
+        if (debt.type === 'receivable') {
+          const label = isIncome ? '待收收入' : '墊付款 (應收)';
+          debtTagHtml = `<span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium border border-emerald-500/20">${label}</span>`;
+        } else {
+          const label = isIncome ? '預收款項 (應付)' : '他人代墊 (應付)';
+          debtTagHtml = `<span class="text-[10px] bg-rose-500/10 text-rose-600 px-1.5 py-0.5 rounded font-medium border border-rose-500/20">${label}</span>`;
+        }
+      } else if (r.groupStatus === 'active' || r.isDebt) {
+        hasDebt = true;
+        if (isIncome) {
+          debtTagHtml = `<span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium border border-emerald-500/20">待收收入</span>`;
+        } else {
+          debtTagHtml = `<span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium border border-emerald-500/20">墊付款 (應收)</span>`;
+        }
+      } else {
+        debtTagHtml = `<span class="text-[10px] bg-wabi-text-secondary/10 text-wabi-text-secondary/70 px-1.5 py-0.5 rounded font-normal border border-wabi-border/60">一般消費</span>`;
+      }
+
       return `
         <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
           <div class="flex items-center gap-3">
@@ -1846,11 +1902,12 @@ export class DebtManager {
               <i class="${cat.icon || 'fa-solid fa-receipt'}"></i>
             </div>
             <div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <p class="font-medium text-wabi-text-primary text-sm">${escapeHTML(r.description || cat.name)}</p>
+                ${debtTagHtml}
                 ${isSettled ? `<span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium">已結清</span>` : ''}
               </div>
-              <p class="text-xs text-wabi-text-secondary">${formatDate(r.date, 'short')} · ${cat.name}</p>
+              <p class="text-xs text-wabi-text-secondary mt-0.5">${formatDate(r.date, 'short')} · ${cat.name}</p>
             </div>
           </div>
           <div class="flex items-center gap-3">
@@ -1859,8 +1916,12 @@ export class DebtManager {
                 ${isIncome ? '+' : '-'}${formatCurrency(r.amount)}
               </p>
             </div>
-            ${(!isSettled && !groupMeta.settled) ? `
+            ${!isSettled && !isSettlement && hasDebt ? `
               <button class="settle-record-btn px-2.5 py-1 text-xs font-medium text-emerald-600 border border-emerald-600 rounded hover:bg-emerald-50 transition-colors" data-record-id="${r.id}">
+                個別還
+              </button>
+            ` : !isSettled && !isSettlement && !hasDebt ? `
+              <button disabled class="px-2.5 py-1 text-xs font-medium text-wabi-text-secondary/40 border border-wabi-border bg-wabi-surface/50 rounded cursor-not-allowed opacity-50" title="此項目非待結算欠款，無需還款">
                 個別還
               </button>
             ` : ''}
@@ -1956,8 +2017,8 @@ export class DebtManager {
           await this.dataService.recalculateGroupState(groupId);
           if (typeof showToast === 'function') showToast('已還原該筆明細之結清狀態');
           closeModal();
+          await this.refreshCurrentView();
           await this.showGroupDetailsModal(groupId);
-          if (typeof this.loadDebtList === 'function') this.loadDebtList();
         }
       });
     });
@@ -1986,8 +2047,8 @@ export class DebtManager {
       await this.dataService.recalculateGroupState(groupId);
       if (typeof showToast === 'function') showToast('已還原全組結清狀態');
       closeModal();
+      await this.refreshCurrentView();
       await this.showGroupDetailsModal(groupId);
-      if (typeof this.loadDebtList === 'function') this.loadDebtList();
     });
   }
 
@@ -2048,8 +2109,8 @@ export class DebtManager {
         closeModal();
         if (parentModal) parentModal.remove();
         showToast('該筆明細已完成個別還款並產生結清紀錄', 'success');
-        await this.updateSummaryCards();
-        await this.loadDebtList();
+
+        await this.refreshCurrentView();
         await this.showGroupDetailsModal(groupId);
       } catch (e) {
         console.error('Failed to settle group record:', e);

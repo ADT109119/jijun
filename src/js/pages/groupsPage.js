@@ -43,8 +43,8 @@ export class GroupsPage {
                   </button>
                 </div>
               ` : sortedGroups.map(group => {
-                const netClass = group.netAmount < 0 ? 'text-wabi-income' : group.netAmount > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary';
-                const netDirection = group.netAmount < 0 ? '待收款' : group.netAmount > 0 ? '待退款' : '已平衡';
+                const netClass = group.netAmount > 0 ? 'text-wabi-income' : group.netAmount < 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary';
+                const netDirection = group.netAmount > 0 ? '待收款' : group.netAmount < 0 ? '待付款' : '已平衡';
 
                 return `
                   <div class="group-page-card bg-wabi-surface rounded-xl border border-wabi-border p-4 shadow-sm hover:border-emerald-500/50 transition-colors" data-group-id="${group.id}">
@@ -68,7 +68,7 @@ export class GroupsPage {
                         </div>
                       </div>
                       <div class="text-right">
-                        <p class="font-bold ${netClass} text-base">${group.netAmount >= 0 ? '-' : '+'}${formatCurrency(Math.abs(group.netAmount))}</p>
+                        <p class="font-bold ${netClass} text-base">${group.netAmount > 0 ? '+' : group.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(group.netAmount))}</p>
                         <p class="text-xs text-wabi-text-secondary mt-0.5">${netDirection}</p>
                       </div>
                     </div>

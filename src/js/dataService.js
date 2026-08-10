@@ -3527,11 +3527,15 @@ class DataService {
     // --- Private helpers ---
 
     /**
-     * 計算群組淨額（排除 group_settlement 紀錄）
+    /**
+     * 計算群組淨額 (精確累計總應收 totalReceivable 與總應付 totalPayable)
+     * - 被欠支出 (代墊) & 被欠收入 (拖欠薪水/貨款) 均屬於「別人欠我」(totalReceivable)
+     * - 欠別人支出 (別人代墊) & 欠別人收入 (預領) 均屬於「我欠別人」(totalPayable)
      * @param {Array} groupRecords
-     * @returns {{totalExpense: number, totalIncome: number, netAmount: number}}
+     * @param {Array} [allDebts]
+     * @returns {{totalExpense: number, totalIncome: number, netAmount: number, totalReceivable: number, totalPayable: number}}
      */
-    _calculateGroupNet(groupRecords) {
+    _calculateGroupNet(groupRecords, allDebts = null) {
         const nonSettlement = groupRecords.filter(
             r => r.category !== 'group_settlement' && r.groupStatus !== 'settled'
         )
@@ -3542,18 +3546,41 @@ class DataService {
             .filter(r => r.type === 'income')
             .reduce((s, r) => s + (r.amount || 0), 0)
 
-        // 待結算/代墊金額 (netAmount)：只統計【開啟欠款 (debtId 存在)】、【分帳結清 (group_settlement)】或【顯式標為 active/isDebt】的交易
-        const debtRecords = nonSettlement.filter(
-            r => r.debtId || r.category === 'group_settlement' || r.isDebt || r.groupStatus === 'active' || (r.debtId === undefined && r.groupStatus === undefined)
-        )
-        const debtExpense = debtRecords
-            .filter(r => r.type === 'expense')
-            .reduce((s, r) => s + (r.amount || 0), 0)
-        const debtIncome = debtRecords
-            .filter(r => r.type === 'income')
-            .reduce((s, r) => s + (r.amount || 0), 0)
+        let debtsMap = new Map()
+        if (allDebts) {
+            allDebts.forEach(d => debtsMap.set(d.id, d))
+        }
 
-        return { totalExpense, totalIncome, netAmount: debtIncome - debtExpense }
+        let totalReceivable = 0 // 別人欠我 (代墊支出 + 拖欠收入)
+        let totalPayable = 0    // 我欠別人 (別人代墊支出 + 預領收入)
+
+        nonSettlement.forEach(r => {
+            if (r.debtId && debtsMap.has(r.debtId)) {
+                const debt = debtsMap.get(r.debtId)
+                if (!debt.settled) {
+                    const rem = debt.remainingAmount !== undefined ? debt.remainingAmount : debt.amount
+                    if (debt.type === 'receivable') {
+                        totalReceivable += rem // 被欠款 (被欠支出代墊 或 被欠收入拖欠薪水)
+                    } else if (debt.type === 'payable') {
+                        totalPayable += rem    // 欠別人 (別人代墊支出 或 預領收入)
+                    }
+                }
+            } else if (r.groupStatus === 'active' || r.isDebt || (r.debtId === undefined && r.groupStatus === undefined)) {
+                if (r.type === 'expense') {
+                    totalReceivable += (r.amount || 0) // 代墊支出 -> 我出的錢，別人欠我
+                } else if (r.type === 'income') {
+                    totalPayable += (r.amount || 0)    // 普通群組收入 -> 我收到的錢，抵銷代墊
+                }
+            }
+        })
+
+        const netAmount = totalReceivable - totalPayable
+        return { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable }
+    }
+
+    async _calculateGroupNetAsync(groupRecords) {
+        const debts = await this.getDebts({ allLedgers: true })
+        return this._calculateGroupNet(groupRecords, debts)
     }
 
     async unlinkRecordsFromGroup(groupId) {
@@ -3593,6 +3620,7 @@ class DataService {
             const allRecords = await this.getRecords({
                 ledgerId,
             })
+            const allDebts = await this.getDebts({ allLedgers: true })
 
             // O(n) Map 預先分群，避免 metas.map() 內層 filter 造成 O(n×m)
             const byGroup = new Map()
@@ -3603,7 +3631,7 @@ class DataService {
 
             return metas.map(meta => {
                 const groupRecs = byGroup.get(meta.id) || []
-                const { totalExpense, totalIncome, netAmount } = this._calculateGroupNet(groupRecs)
+                const { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable } = this._calculateGroupNet(groupRecs, allDebts)
                 const dates = groupRecs.map(r => r.date).filter(Boolean)
                 const sorted = [...dates].sort()
                 return {
@@ -3612,6 +3640,8 @@ class DataService {
                     totalExpense,
                     totalIncome,
                     netAmount,
+                    totalReceivable,
+                    totalPayable,
                     settled: meta.settled,
                     dateFrom: sorted[0] || null,
                     dateTo:

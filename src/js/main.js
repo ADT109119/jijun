@@ -7,6 +7,15 @@ import {
     showToast,
     MAX_ITERATIONS,
 } from './utils.js'
+
+// 全域防護瀏覽器擴充套件引起的無害 postMessage 異步過濾錯
+if (typeof window !== 'undefined') {
+    window.addEventListener('unhandledrejection', (event) => {
+        if (event.reason && (event.reason.message?.includes("postMessage") || event.reason.message?.includes("target origin 'null'"))) {
+            event.preventDefault();
+        }
+    });
+}
 import { BudgetManager } from './budgetManager.js'
 import { CategoryManager } from './categoryManager.js'
 import { ChangelogManager } from './changelog.js'
@@ -61,7 +70,7 @@ export class EasyAccountingApp {
             this.categoryManager
         )
         this.quickSelectManager = new QuickSelectManager()
-        this.debtManager = new DebtManager(this.dataService)
+        this.debtManager = new DebtManager(this.dataService, this)
         this.groupManager = new GroupManager(this.dataService, this)
         this.ledgerManager = new LedgerManager(this.dataService, this)
         this.pluginManager = new PluginManager(this.dataService, this)

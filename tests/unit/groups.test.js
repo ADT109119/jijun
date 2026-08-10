@@ -110,7 +110,7 @@ describe('DataService — Record Groups', () => {
             const groups = await ds.getGroups()
             expect(groups[0].totalExpense).toBe(300)
             expect(groups[0].totalIncome).toBe(0)
-            expect(groups[0].netAmount).toBe(-300)
+            expect(groups[0].netAmount).toBe(300)
         })
 
         it('空群組回傳 count=0', async () => {
@@ -131,7 +131,7 @@ describe('DataService — Record Groups', () => {
             const result = ds._calculateGroupNet(records)
             expect(result.totalExpense).toBe(300)
             expect(result.totalIncome).toBe(500)
-            expect(result.netAmount).toBe(200)
+            expect(result.netAmount).toBe(-200)
         })
 
         it('M03: 空陣列回傳零', () => {
@@ -149,7 +149,7 @@ describe('DataService — Record Groups', () => {
             const result = ds._calculateGroupNet(records)
             expect(result.totalExpense).toBe(300)
             expect(result.totalIncome).toBe(0)
-            expect(result.netAmount).toBe(-300)
+            expect(result.netAmount).toBe(300)
         })
 
         it('M03: 金額為 null/undefined 時視為 0', () => {
@@ -163,7 +163,7 @@ describe('DataService — Record Groups', () => {
             expect(result.totalIncome).toBe(0)
         })
 
-        it('M03: 純支出為負淨額', () => {
+        it('M03: 純支出為代墊正淨額(對方欠我)', () => {
             const records = [
                 { type: 'expense', amount: 500 },
                 { type: 'expense', amount: 200 },
@@ -171,17 +171,17 @@ describe('DataService — Record Groups', () => {
             const result = ds._calculateGroupNet(records)
             expect(result.totalExpense).toBe(700)
             expect(result.totalIncome).toBe(0)
-            expect(result.netAmount).toBe(-700)
+            expect(result.netAmount).toBe(700)
         })
 
-        it('M03: 純收入為正淨額', () => {
+        it('M03: 純收入為負淨額', () => {
             const records = [
                 { type: 'income', amount: 1000 },
             ]
             const result = ds._calculateGroupNet(records)
             expect(result.totalExpense).toBe(0)
             expect(result.totalIncome).toBe(1000)
-            expect(result.netAmount).toBe(1000)
+            expect(result.netAmount).toBe(-1000)
         })
 
         it('M03: 浮點數精度（100.99 + 0.01）', () => {
@@ -498,12 +498,12 @@ describe('DataService — Record Groups', () => {
             await tx.done
 
             let groups = await ds.getGroups()
-            expect(groups[0].netAmount).toBe(-500)
+            expect(groups[0].netAmount).toBe(500)
 
             await ds.partialSettleGroup('g1', 100, null, '2024-06-01', '部分退款')
 
             groups = await ds.getGroups()
-            expect(groups[0].netAmount).toBe(-500)
+            expect(groups[0].netAmount).toBe(500)
             expect(groups[0].settled).toBe(false)
 
             await ds.settleGroup('g1', null, null, '2024-06-02', '結清')
@@ -523,7 +523,7 @@ describe('DataService — Record Groups', () => {
             const groups = await ds.getGroups()
             expect(groups[0].totalIncome).toBe(0)
             expect(groups[0].totalExpense).toBe(500)
-            expect(groups[0].netAmount).toBe(-500)
+            expect(groups[0].netAmount).toBe(500)
         })
     })
 
@@ -611,7 +611,7 @@ describe('DataService — Record Groups', () => {
             const r2Id = await ds.addRecord({ type: 'expense', amount: 200, date: '2024-01-02', description: '午餐', groupId: 'g1', debtId: debt2, groupStatus: 'active', ledgerId: 1 })
 
             let groups = await ds.getGroups()
-            expect(groups[0].netAmount).toBe(-500) // 代墊 500
+            expect(groups[0].netAmount).toBe(500) // 代墊 500
 
             // 個別結清 r1 (300)
             await ds.settleGroupRecord(r1Id)
@@ -623,7 +623,7 @@ describe('DataService — Record Groups', () => {
             expect(d1Updated.settled).toBe(true)
 
             groups = await ds.getGroups()
-            expect(groups[0].netAmount).toBe(-200) // 扣除已結清後剩餘 200 待結清
+            expect(groups[0].netAmount).toBe(200) // 扣除已結清後剩餘 200 待結清
             expect(groups[0].settled).toBe(false)
 
             // 個別結清 r2 (200)
