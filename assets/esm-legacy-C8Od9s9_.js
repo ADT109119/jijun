@@ -1,0 +1,1 @@
+(function(){System.register([`./main-legacy-CVrMlAW1.js`,`./dist-legacy-DLgVq5dn.js`],function(e,t){var n,r;return{setters:[function(e){n=e.t},function(e){r=e.registerPlugin}],execute:function(){e(`App`,r(`App`,{web:()=>n(()=>t.import(`./web-legacy-BmLcyIzQ.js`).then(e=>new e.AppWeb),void 0)}))}}})})();
