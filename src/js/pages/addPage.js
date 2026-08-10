@@ -144,8 +144,8 @@ export class AddPage {
                                 </button>
                             </div>
                             <div class="flex h-9 w-full items-center justify-center rounded-lg bg-wabi-primary/5 p-1 mb-3">
-                                <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">應收款項</button>
-                                <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">應付款項</button>
+                                <button id="debt-type-receivable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium bg-wabi-income text-wabi-surface">別人欠我</button>
+                                <button id="debt-type-payable-add" class="debt-add-type-btn flex-1 h-full rounded-md px-3 py-1 text-sm font-medium text-wabi-text-secondary">我欠別人</button>
                             </div>
                             <select id="debt-contact-select" class="w-full p-2 bg-wabi-surface border border-wabi-border rounded-lg text-sm">
                                 <option value="">選擇聯絡人...</option>
@@ -1586,10 +1586,10 @@ export class AddPage {
                                 <div class="space-y-2 mb-3">
                                     <div class="flex gap-2">
                                         <button id="debt-type-receivable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${isReceivable ? 'bg-wabi-income text-white border-wabi-income' : 'border-wabi-border text-wabi-text-secondary'}">
-                                            應收款項
+                                            別人欠我
                                         </button>
                                         <button id="debt-type-payable-edit" class="flex-1 py-1.5 text-xs font-medium rounded-lg border ${!isReceivable ? 'bg-wabi-expense text-white border-wabi-expense' : 'border-wabi-border text-wabi-text-secondary'}">
-                                            應付款項
+                                            我欠別人
                                         </button>
                                     </div>
                                     <select id="debt-contact-edit" class="w-full p-2 border border-wabi-border rounded-lg text-sm bg-wabi-surface text-wabi-text-primary">
@@ -1619,7 +1619,7 @@ export class AddPage {
                                     : `
                                 <div class="text-sm text-wabi-text-secondary">
                                     <p><strong class="text-wabi-text-primary">聯絡人：</strong>${contactName}</p>
-                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '應收款項' : '應付款項'}</p>
+                                    <p><strong class="text-wabi-text-primary">類型：</strong>${isReceivable ? '別人欠我' : '我欠別人'}</p>
                                     <p><strong class="text-wabi-text-primary">原始金額：</strong>${formatCurrency(originalAmount)}</p>
                                 </div>
                             `
