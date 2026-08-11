@@ -1024,5 +1024,51 @@ describe('SyncService', () => {
             )
             expect(addSpy).not.toHaveBeenCalled()
         })
+
+        it('支援 groupMeta 的拓撲排序與 _applyAdd / _applyUpdate / _applyDelete 分支呼叫', async () => {
+            const saveGMSpy = vi.fn().mockResolvedValue()
+            const deleteGMSpy = vi.fn().mockResolvedValue()
+            ds = createMockDataService({
+                saveGroupMeta: saveGMSpy,
+                deleteGroupMeta: deleteGMSpy,
+                getByUUID: vi.fn(async (storeName, uuid) =>
+                    uuid === 'g-uuid-1' ? { id: 'g1', uuid: 'g-uuid-1' } : null
+                ),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyAdd('groupMeta', { uuid: 'g-uuid-new', name: '新群組' })
+            expect(saveGMSpy).toHaveBeenCalledWith(
+                expect.objectContaining({ uuid: 'g-uuid-new', name: '新群組' }),
+                true
+            )
+
+            await ss._applyUpdateWithId('groupMeta', 'g1', { name: '已修改群組' })
+            expect(saveGMSpy).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'g1', name: '已修改群組' }),
+                true
+            )
+
+            await ss._applyDeleteWithId('groupMeta', 'g1')
+            expect(deleteGMSpy).toHaveBeenCalledWith('g1', true)
+        })
+
+        it('_resolveAllForeignKeys 能正確將 record 的 groupUuid 解析為本地 groupId', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) =>
+                    storeName === 'groupMeta' && uuid === 'g-uuid-100'
+                        ? { id: 'local-g-100', uuid: 'g-uuid-100' }
+                        : null
+                ),
+            })
+            ss = createSyncService(ds)
+
+            const resolved = await ss._resolveAllForeignKeys('records', {
+                description: '群組交易',
+                groupUuid: 'g-uuid-100',
+            })
+
+            expect(resolved.groupId).toBe('local-g-100')
+        })
     })
 })

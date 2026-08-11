@@ -2625,10 +2625,11 @@ class DataService {
             await this.getAllGroupMeta()
         ).filter(g => validLedgerIds.has(g.ledgerId))
 
-        // 建立帳戶/聯絡人/欠款 UUID 查找表
+        // 建立帳戶/聯絡人/欠款/群組 UUID 查找表
         const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]))
         const contactUuidMap = new Map(rawContacts.map(c => [c.id, c.uuid]))
         const debtUuidMap = new Map(rawDebts.map(d => [d.id, d.uuid]))
+        const groupUuidMap = new Map(groupMetaList.map(g => [g.id, g.uuid]))
 
         // 補全所有外鍵 UUID，確保跨裝置同步時能正確對應
         const records = rawRecords.map(r => ({
@@ -2637,6 +2638,7 @@ class DataService {
             accountUuid:
                 r.accountUuid || accountUuidMap.get(r.accountId) || null,
             debtUuid: r.debtUuid || debtUuidMap.get(r.debtId) || null,
+            groupUuid: r.groupUuid || groupUuidMap.get(r.groupId) || null,
         }))
         const accounts = rawAccounts.map(a => ({
             ...a,

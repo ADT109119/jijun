@@ -800,6 +800,8 @@ export class SyncService {
             'category_order',
             'hidden_categories',
             'ledgers',
+            'groupMeta',
+            'group_meta',
             'accounts',
             'contacts',
             'records',
@@ -1722,10 +1724,32 @@ export class SyncService {
         }
     }
 
+    /**
+     * 將遠端 record 的 groupUuid 解析為本地 groupId。
+     * @param {object} data
+     * @returns {object} 已修正 groupId 的 data
+     */
+    async _resolveRecordGroupId(data) {
+        if (!data.groupUuid) return data
+        try {
+            const group = await this.dataService.getByUUID(
+                'groupMeta',
+                data.groupUuid
+            )
+            return { ...data, groupId: group ? group.id : data.groupId || null }
+        } catch (_) {
+            return data
+        }
+    }
+
     async _resolveAllForeignKeys(storeName, data) {
         if (!data) return data
         let resolved = await this._resolveLedgerId(data)
-        if (storeName === 'records' || storeName === 'debts') {
+        if (storeName === 'records') {
+            resolved = await this._resolveRecordAccountId(resolved)
+            resolved = await this._resolveRecordDebtId(resolved)
+            resolved = await this._resolveRecordGroupId(resolved)
+        } else if (storeName === 'debts') {
             resolved = await this._resolveRecordAccountId(resolved)
             resolved = await this._resolveRecordDebtId(resolved)
         }
@@ -1925,6 +1949,12 @@ export class SyncService {
         }
 
         switch (storeName) {
+            case 'groupMeta':
+            case 'group_meta': {
+                const resolvedGroupMeta = await this._resolveLedgerId(data)
+                await this.dataService.saveGroupMeta(resolvedGroupMeta, true)
+                break
+            }
             case 'ledgers': {
                 await this.dataService.addLedger(data, true)
                 break
@@ -2200,6 +2230,15 @@ export class SyncService {
 
     async _applyUpdateWithId(storeName, id, data) {
         switch (storeName) {
+            case 'groupMeta':
+            case 'group_meta': {
+                const resolvedGroupMeta = await this._resolveLedgerId(data)
+                await this.dataService.saveGroupMeta(
+                    { ...resolvedGroupMeta, id },
+                    true
+                )
+                break
+            }
             case 'ledgers': {
                 // 保護本地的共用元資料，防止被遠端的舊資料（無此欄位）覆蓋
                 // 只有當 remote data 沒有指定這些欄位時，才用 local 的值填補
@@ -2333,6 +2372,10 @@ export class SyncService {
 
     async _applyDeleteWithId(storeName, id) {
         switch (storeName) {
+            case 'groupMeta':
+            case 'group_meta':
+                await this.dataService.deleteGroupMeta(id, true)
+                break
             case 'ledgers':
                 await this.dataService.deleteLedger(id, true)
                 break
