@@ -25,7 +25,7 @@ src/js/
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 雲端備份&同步
+├── syncService.js       # Google Drive 雲端備份&同步 (含跨裝置 groupMeta 群組資料同步與 UUID 外鍵解析)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── router.js            # 路由管理
 ├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取)

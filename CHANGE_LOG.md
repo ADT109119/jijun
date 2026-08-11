@@ -1,5 +1,13 @@
 # 輕鬆記帳 2.0 - 更新日誌
 
+## v2.1.7.3 (2026-08-11) - 修復群組 Google Drive 雲端同步與備份支援
+
+### 🐛 錯誤修復
+
+- **修復群組 (groupMeta) 之 Google Drive 雲端同步與備份支援**：於 `exportDataForSync` 補上 `groupUuid` 跨裝置外鍵映射，將 `groupMeta` 納入拓撲排序 (`topoOrder`)，並支援紀錄群組 UUID 自動導回本地 `groupId`，補齊同步處理分支 (`_applyAdd`、`_applyUpdateWithId`、`_applyDeleteWithId`) 與單元測試。
+
+---
+
 ## v2.1.7.2 (2026-08-09) - 全新專案與分帳群組系統、正統還款連動與明細體驗優化
 
 ### ✨ 新功能

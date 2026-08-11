@@ -1,5 +1,12 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.3': {
+        date: '2026-08-11',
+        title: '修復群組 Google Drive 雲端同步與備份支援',
+        bugfixes: [
+            '修復群組 (groupMeta) 之 Google Drive 雲端同步與備份支援：於 exportDataForSync 補上 groupUuid 跨裝置外鍵映射，將 groupMeta 納入拓撲排序 (topoOrder)，並支援紀錄群組 UUID 自動導回本地 groupId，補齊同步處理分支 (_applyAdd、_applyUpdateWithId、_applyDeleteWithId) 與單元測試。',
+        ],
+    },
     '2.1.7.2': {
         date: '2026-08-09',
         title: '全新專案與分帳群組系統、正統還款連動與明細體驗優化',
