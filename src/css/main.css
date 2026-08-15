@@ -427,6 +427,15 @@ select option {
     animation: modalPopDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* 導览教学：#U08 目标元素高亮 */
+.guide-highlight {
+    position: relative;
+    z-index: 109;
+    box-shadow: 0 0 0 3px var(--wabi-primary, #3b82f6),
+        0 0 0 6px rgba(59, 130, 246, 0.25);
+    border-radius: 0.75rem;
+}
+
 /* AI Token 實時逐字淡入浮現動畫 */
 @keyframes tokenFadeIn {
     0% {

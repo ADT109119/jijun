@@ -149,7 +149,11 @@ const mockDb = {
                     return Promise.resolve(id)
                 },
                 put: itemData => {
-                    const idx = data.findIndex(item => item.id === itemData.id)
+                    const idx = data.findIndex(
+                        item =>
+                            (itemData.id !== undefined && item.id === itemData.id) ||
+                            (itemData.key !== undefined && item.key === itemData.key)
+                    )
                     if (idx >= 0) {
                         data[idx] = { ...itemData }
                     } else {
@@ -158,14 +162,35 @@ const mockDb = {
                     return Promise.resolve()
                 },
                 get: id => {
-                    const item = data.find(i => i.id === id)
+                    const item = data.find(i => i.id === id || i.key === id)
                     return Promise.resolve(item || null)
+                },
+                openCursor: () => {
+                    let cursorIdx = 0
+                    const getCursor = () => {
+                        if (cursorIdx >= data.length) return null
+                        const item = data[cursorIdx]
+                        return {
+                            key: item.id || item.key,
+                            value: item,
+                            delete: async () => {
+                                const idx = data.indexOf(item)
+                                if (idx >= 0) data.splice(idx, 1)
+                                return Promise.resolve()
+                            },
+                            continue: async () => {
+                                cursorIdx++
+                                return Promise.resolve(getCursor())
+                            },
+                        }
+                    }
+                    return Promise.resolve(getCursor())
                 },
                 getAll: () => {
                     return Promise.resolve([...data])
                 },
                 delete: id => {
-                    const idx = data.findIndex(i => i.id === id)
+                    const idx = data.findIndex(i => i.id === id || i.key === id)
                     if (idx >= 0) {
                         data.splice(idx, 1)
                     }
@@ -190,7 +215,7 @@ const mockDb = {
     async get(keyPath, key) {
         const storeName = typeof keyPath === 'string' ? keyPath : 'records'
         const data = this.initStore(storeName)
-        return Promise.resolve(data.find(item => item.id === key) || null)
+        return Promise.resolve(data.find(item => item.id === key || item.key === key) || null)
     },
 
     // 支援 DataService 的 db.getAll('storeName') API
@@ -227,6 +252,7 @@ const mockDb = {
 
 // 初始化所有 store
 for (const name of [
+    'settings',
     'ledgers',
     'records',
     'accounts',
@@ -237,6 +263,9 @@ for (const name of [
     'plugins',
     'credit_statements',
     'groupMeta',
+    'files',
+    'themes',
+    'sync_log',
 ]) {
     mockDb.initStore(name)
 }

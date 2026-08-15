@@ -424,7 +424,7 @@ export class LedgerManager {
 
     /**
      * 取消共用帳本（擁有者專用）
-     * 删除雲端共享檔案並將帳本还原為個人帳本
+     * 刪除雲端共享檔案並將帳本還原為個人帳本
      * @param {number} ledgerId
      */
     async unshareLedger(ledgerId) {

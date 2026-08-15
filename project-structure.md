@@ -27,6 +27,8 @@ src/js/
 ├── pluginStorage.js     # 插件沙箱化儲存
 ├── syncService.js       # Google Drive 雲端備份&同步 (含跨裝置 groupMeta 群組資料同步與 UUID 外鍵解析)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
+├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
+├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
 ├── router.js            # 路由管理
 ├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取)
 └── utils.js             # 共用工具函數 (格式化、Toast 等)
@@ -175,6 +177,7 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- ...等等（共有 26 個測試檔案，對應各主要模組的單元驗證）
+- `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
+- ...等等（共有 34 個測試檔案，對應各主要模組的單元驗證）
 - 透過 `npx vitest run` 執行所有單元測試
 

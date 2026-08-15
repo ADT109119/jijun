@@ -487,7 +487,7 @@ export class AIService {
         }
 
         // 0. 剔除思考鏈標籤以相容 Reasoning/Thinking 模型 (如 DeepSeek-R1 / Qwen3 推理系列)
-        responseText = responseText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        responseText = responseText.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, '').trim();
 
         // 1. 檢測是否為「特殊標記壓縮格式」 [AMT] / [CAT]
         if (responseText.includes('[AMT]') || responseText.includes('[CAT]')) {
@@ -581,7 +581,7 @@ export class AIService {
         const matchedCategory = categories.find(c => text.includes(c)) || categories[0] || '餐飲';
         const matchedAccount = accounts.find(a => text.includes(a)) || accounts[0] || '現金';
 
-        const isIncome = text.includes('領') || text.includes('賺') || text.includes('收入') || text.includes('薪水');
+        const isIncome = text.includes('領') || text.includes('领') || text.includes('賺') || text.includes('赚') || text.includes('收入') || text.includes('薪水');
         const type = isIncome ? 'income' : 'expense';
 
         const d = new Date(currentDate.getTime());

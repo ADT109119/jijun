@@ -1,5 +1,5 @@
 // ==================== 廣告服務模組 ====================
-// 雙平台設計：
+// 雙平臺設計：
 //   原生環境 (Capacitor Android) → 使用 @capacitor-community/admob 原生 SDK
 //   瀏覽器環境 (Web PWA)        → 使用 AdSense 橫幅 + GPT 獎勵廣告
 // 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 7 天
@@ -21,7 +21,7 @@ const ADMOB_BANNER_ID = __AD_ADMOB_BANNER_ID__
 const ADMOB_REWARDED_ID = __AD_ADMOB_REWARDED_ID__
 const AD_IS_TESTING = __AD_IS_TESTING__
 
-// ── 平台偵測 ────────────────────────────────────────
+// ── 平臺偵測 ────────────────────────────────────────
 const isNative =
     typeof window !== 'undefined' &&
     window.Capacitor?.isNativePlatform?.() === true
@@ -246,7 +246,7 @@ export class RewardService {
             return
         }
 
-        // ── 原生平台：使用 AdMob Banner ──
+        // ── 原生平臺：使用 AdMob Banner ──
         // Banner 是 Native Overlay，浮在 WebView 上方
         // 透過 bannerAdSizeChanged 事件取得實際高度 → 設定 body padding-top 推動內容
         if (isNative && this._admobModule) {
@@ -282,7 +282,7 @@ export class RewardService {
             return
         }
 
-        // ── Web 平台：使用 AdSense ──
+        // ── Web 平臺：使用 AdSense ──
         const loaded = await ensureAdsenseLoaded()
         if (!loaded) {
             container.innerHTML = ''
@@ -324,12 +324,12 @@ export class RewardService {
             return false
         }
 
-        // ── 原生平台：使用 AdMob Rewarded Video ──
+        // ── 原生平臺：使用 AdMob Rewarded Video ──
         if (isNative) {
             return this._showNativeRewardedAd()
         }
 
-        // ── Web 平台：使用 GPT 獎勵廣告 ──
+        // ── Web 平臺：使用 GPT 獎勵廣告 ──
         return this._showWebRewardedAd()
     }
 

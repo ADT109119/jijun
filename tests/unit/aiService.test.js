@@ -161,3 +161,66 @@ describe('AIService - 防呆機制 System Prompt 重構', () => {
         expect(parsedJson.parameters.properties.category.enum).not.toContain('薪水')
     })
 })
+
+describe('AIService - 思考鏈標籤剥离 (Bug 1 回归)', () => {
+    const dataServiceMock = {}
+    const aiService = new AIService(dataServiceMock)
+
+    it('能剥离 <thinking> 尖括号形式 (DeepSeek-R1/Qwen3 真实输出)', () => {
+        const output = '<thinking>用户花了120元，判断为餐饮</thinking><tool_call>{"name":"add_record","args":{"amount":120,"category":"餐飲","account":"現金","description":"午餐","type":"expense"}}</tool_call>'
+        const record = aiService.extractToolCall(output)
+        expect(record.amount).toBe(120)
+        expect(record.category).toBe('餐飲')
+        expect(record.type).toBe('expense')
+    })
+
+    it('能剥离无尖括号的 thinking... 非标准形式 (兼容旧测试用例)', () => {
+        const output = ' thinking用户花了120元吃早餐<tool_call>{"name":"add_record","args":{"amount":120,"category":"餐飲","account":"現金","description":"早餐","type":"expense"}}</tool_call>'
+        const record = aiService.extractToolCall(output)
+        expect(record.amount).toBe(120)
+        expect(record.description).toBe('早餐')
+    })
+
+    it('思考鏈內容含特殊標記時不會誤匹配 [AMT]/[CAT]', () => {
+        // 思考鏈里出现的 [AMT] 不应干扰最终 tool call 解析
+        const output = '<thinking>[AMT]999[CAT]測試</thinking><tool_call>{"amount":30,"category":"交通","account":"現金","description":"公車","type":"expense"}</tool_call>'
+        const record = aiService.extractToolCall(output)
+        expect(record.amount).toBe(30)
+        expect(record.category).toBe('交通')
+    })
+})
+
+describe('AIService - 繁體/簡體关键词兼容 (簡体输入支持)', () => {
+    it('繁体「領了薪水」被正确识别为收入', async () => {
+        const aiService = new AIService({})
+        const categories = ['餐飲', '交通', '薪水']
+        const accounts = ['現金', '銀行']
+        const result = await aiService.parseRecord('領了薪水 5000 元存入銀行', categories, accounts, new Date('2026-08-03T12:00:00'))
+        expect(result.type).toBe('income')
+        expect(result.amount).toBe(5000)
+    })
+
+    it('繁體「賺到 300 元」被正确识别为收入', async () => {
+        const aiService = new AIService({})
+        const categories = ['餐饮', '其他']
+        const accounts = ['現金']
+        const result = await aiService.parseRecord('賺到 300 元', categories, accounts, new Date('2026-08-03T12:00:00'))
+        expect(result.type).toBe('income')
+    })
+
+    it('简体「领到工资」「赚了」输入也能被识别为收入 (简体兼容增强)', async () => {
+        const aiService = new AIService({})
+        const categories = ['餐饮', '其他']
+        const accounts = ['現金']
+        const result1 = await aiService.parseRecord('今天领到工资 500 元', categories, accounts, new Date('2026-08-03T12:00:00'))
+        expect(result1.type).toBe('income')
+        const result2 = await aiService.parseRecord('赚了 200 元', categories, accounts, new Date('2026-08-03T12:00:00'))
+        expect(result2.type).toBe('income')
+    })
+
+    it('普通支出不受关键词扩充影响', async () => {
+        const aiService = new AIService({})
+        const result = await aiService.parseRecord('買貓糧花了 200 元', ['宠物', '其他'], ['現金'], new Date('2026-08-03T12:00:00'))
+        expect(result.type).toBe('expense')
+    })
+})

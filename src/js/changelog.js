@@ -1,5 +1,24 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.4': {
+        date: '2026-08-14',
+        title: '全新全方位導覽引導系統 (Onboarding & Feature Tour) 與體驗升級',
+        features: [
+            '全新全方位導覽引導系統 (Onboarding & Feature Tour)：為新手與進階使用者打造模組化導覽引擎，包含初次開啟歡迎 Modal、觸控滑動手勢、鍵盤導航與無障礙宣告。',
+            '互動式實操記帳引導演練：提供生動完整的自動實操記帳流程（新增消費 ➔ 儲存 ➔ 明細檢視 ➔ 編輯金額 ➔ 刪除測試紀錄），搭配中斷保護與資料自動清理機制，讓使用者零門檻上手。',
+            '全功能情境逐步導覽：完整覆蓋欠款借貸、多帳戶資產、大額分期/折舊、群組專案分帳、離線 AI 語音記帳、預算進度條、收支統計圖表、週期性固定交易與多帳本管理等所有主要功能模組。',
+            '功能開關即時介紹與隨時重新觀看：於設定頁開啟實驗/進階功能時即時彈出功能介紹氣泡，並於設定頁「關於」區塊新增「導覽教學」入口，可隨時一鍵重置並重溫教學。',
+        ],
+        improvements: [
+            '信用卡自動扣款排程防護：新增背景定時與頁面獲焦檢查機制，覆蓋跨午夜與長時間開啟場景，自動執行到期帳單沖銷。',
+            '群組分帳淨額與個人欠款過濾優化：修正群組結清淨額方向定義與部分還款按鈕文案，並於個人欠款總額中精準排除群組代墊項目，避免雙重計數。',
+            '群組明細彈窗手機版介面與排版體驗優化：修正小螢幕裝置上群組明細分類圖示被擠壓扁平、狀態 Badge 與金額換行變形、個別還按鈕文字垂直破版等問題，升級頂部淨額與底部操作列之自適應佈局。',
+        ],
+        bugfixes: [
+            '修復資料匯入與雲端備份還原時 IndexedDB 連線異常問題：改採本機打包引入 idb 模組，徹底消除對外部 CDN 的依賴，並於 importData 與各資料清空方法中補齊資料庫連線確保與防呆機制，解決在特定行動裝置或離線環境下出現 null is not an object (evaluating \'this.db.transaction\') 導致還原失敗的錯誤。',
+            '修復群組分帳功能設定未納入資料匯出與同步之問題：補齊 groupManagementEnabled 設定項之匯出、匯入與多裝置同步支援，並新增智慧相容機制（若匯入舊版備份且內含群組資料時自動啟用群組功能）。',
+        ],
+    },
     '2.1.7.3': {
         date: '2026-08-11',
         title: '修復群組 Google Drive 雲端同步與備份支援',
@@ -943,9 +962,14 @@ export class ChangelogManager {
 
     // 獲取當前版本資訊
     getCurrentVersionInfo() {
+        const current = CHANGELOG[this.currentVersion] || {}
         return {
             version: this.currentVersion,
-            ...CHANGELOG[this.currentVersion],
+            ...current,
+            // 保證 features/bugfixes/improvements 始終爲數組（純 bugfix 版本可能缺 features）
+            features: current.features || [],
+            bugfixes: current.bugfixes || [],
+            improvements: current.improvements || [],
         }
     }
 
@@ -1177,6 +1201,10 @@ export class ChangelogManager {
             if (document.contains(modal)) {
                 modal.remove()
                 document.removeEventListener('keydown', escapeHandler)
+                // 通知導覽系統：Changelog Modal 已關閉（Phase 5 版本導覽串列）
+                if (this.app?.guideManager?.onChangelogClosed) {
+                    this.app.guideManager.onChangelogClosed()
+                }
             }
         }
 
@@ -1216,6 +1244,7 @@ export class ChangelogManager {
             : (isExistingUser && previousAppVersion !== currentVersion)
 
         // 更新儲存的版本號標記
+        this.currentVersion = currentVersion
         localStorage.setItem('app-current-version', currentVersion)
         localStorage.setItem('app-last-seen-version', currentVersion)
 
@@ -1251,6 +1280,9 @@ export class ChangelogManager {
             improvements = [],
             note,
         } = targetVersionInfo
+
+        // 查詢該版本是否有專屬未觀看的導覽教學
+        const versionTourId = this.app?.guideManager?.getVersionTourId?.(version)
 
         modal.innerHTML = `
       <div class="bg-wabi-surface border border-wabi-border rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-modal-pop">
@@ -1321,27 +1353,48 @@ export class ChangelogManager {
         <!-- Footer -->
         <div class="p-4 bg-wabi-bg/50 border-t border-wabi-border/60 flex items-center justify-between gap-3">
           <button id="view-full-changelog-btn" class="text-xs font-semibold text-wabi-primary hover:underline px-2">查看歷史日誌</button>
-          <button id="confirm-update-changelog-btn" class="px-6 py-2.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md">
-            開始體驗
-          </button>
+          <div class="flex items-center gap-2">
+            ${versionTourId ? `
+              <button id="confirm-update-changelog-btn" class="px-4 py-2 bg-wabi-surface text-wabi-text-secondary text-sm font-semibold rounded-2xl border border-wabi-border hover:bg-wabi-bg transition-colors">
+                我知道了
+              </button>
+              <button id="start-version-tour-btn" class="px-4 py-2 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md flex items-center gap-1.5">
+                <i class="fa-solid fa-compass"></i> 查看教學
+              </button>
+            ` : `
+              <button id="confirm-update-changelog-btn" class="px-6 py-2.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md">
+                開始體驗
+              </button>
+            `}
+          </div>
         </div>
       </div>
     `
 
         document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove()
+        const closeModal = (startTour = false) => {
+            modal.remove()
+            // 通知導覽系統：根據使用者是否點擊「查看教學」決定是否啟動導覽
+            if (this.app?.guideManager?.onChangelogClosed) {
+                this.app.guideManager.onChangelogClosed({ startTour, tourId: versionTourId })
+            }
+        }
 
-        document.getElementById('close-update-changelog-btn').addEventListener('click', closeModal)
-        document.getElementById('confirm-update-changelog-btn').addEventListener('click', closeModal)
+        document.getElementById('close-update-changelog-btn').addEventListener('click', () => closeModal(false))
+        document.getElementById('confirm-update-changelog-btn').addEventListener('click', () => closeModal(false))
+        const tourBtn = document.getElementById('start-version-tour-btn')
+        if (tourBtn) {
+            tourBtn.addEventListener('click', () => closeModal(true))
+        }
         modal.addEventListener('click', e => {
-            if (e.target === modal) closeModal()
+            if (e.target === modal) closeModal(false)
         })
 
         const fullLogBtn = document.getElementById('view-full-changelog-btn')
         if (fullLogBtn) {
             fullLogBtn.addEventListener('click', () => {
-                closeModal()
+                closeModal(false)
                 this.showChangelogModal()
             })
         }

@@ -65,6 +65,7 @@ export class SettingsPage {
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">關於</h3>
                         ${this.createSettingItem('fa-solid fa-arrows-rotate', '檢查更新', 'check-update-btn')}
                         ${this.createSettingItem('fa-solid fa-file-lines', '更新日誌', 'changelog-btn')}
+                        ${this.createSettingItem('fa-solid fa-compass-drafting', '導覽教學', 'guide-tour-btn')}
                         ${this.createSettingItem('fa-solid fa-shield-halved', '隱私權政策', 'privacy-btn')}
                         ${this.createSettingItem('fa-solid fa-scale-balanced', '授權條款', 'license-btn')}
                         <a id="github-repo-link" href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
@@ -430,6 +431,14 @@ export class SettingsPage {
             .addEventListener('click', () =>
                 this.app.changelogManager.showChangelogModal()
             )
+        // 導覽教學：重置導引狀態並重新展示歡迎教學
+        const guideTourBtn = document.getElementById('guide-tour-btn')
+        if (guideTourBtn) {
+            guideTourBtn.addEventListener('click', () => {
+                this.app.guideManager.resetAllGuides()
+                this.app.guideManager.showWelcomeModal()
+            })
+        }
         document.getElementById('privacy-btn').addEventListener('click', () => {
             window.location.hash = '#privacy'
         })
@@ -552,6 +561,10 @@ export class SettingsPage {
                 })
                 if (isEnabled) {
                     await this.handleAdvancedModeActivation()
+                    // 第一次開啟多帳戶模式時立即顯示功能介紹
+                    if (this.app.guideManager) {
+                        this.app.guideManager.showToggleTour('accounts')
+                    }
                 }
                 showToast(
                     `多帳戶模式已${isEnabled ? '啟用' : '停用'}，將重新載入...`
@@ -605,6 +618,10 @@ export class SettingsPage {
                     document
                         .getElementById('manage-amortizations-link-container')
                         .classList.remove('hidden')
+                    // 第一次開啟攤提/分期時立即顯示功能介紹
+                    if (this.app.guideManager) {
+                        this.app.guideManager.showToggleTour('amortizations')
+                    }
                 } else {
                     document
                         .getElementById('manage-amortizations-link-container')
@@ -629,7 +646,7 @@ export class SettingsPage {
         )
         if (debtManagementToggle) {
             this.app.dataService.getSetting('debtManagementEnabled').then(setting => {
-                const isEnabled = setting ? !!setting.value : true;
+                const isEnabled = setting ? !!setting.value : false;
                 debtManagementToggle.checked = isEnabled;
                 if (isEnabled) {
                     document.getElementById('manage-debts-link-container')?.classList.remove('hidden');
@@ -646,6 +663,10 @@ export class SettingsPage {
                 })
                 if (isEnabled) {
                     document.getElementById('manage-debts-link-container')?.classList.remove('hidden');
+                    // 第一次開啟欠款管理時立即顯示功能介紹
+                    if (this.app.guideManager) {
+                        this.app.guideManager.showToggleTour('debts')
+                    }
                 } else {
                     document.getElementById('manage-debts-link-container')?.classList.add('hidden');
                 }
@@ -659,7 +680,7 @@ export class SettingsPage {
         )
         if (groupManagementToggle) {
             this.app.dataService.getSetting('groupManagementEnabled').then(setting => {
-                const isEnabled = setting ? !!setting.value : true;
+                const isEnabled = setting ? !!setting.value : false;
                 groupManagementToggle.checked = isEnabled;
                 if (isEnabled) {
                     document.getElementById('manage-groups-link-container')?.classList.remove('hidden');
@@ -676,6 +697,10 @@ export class SettingsPage {
                 })
                 if (isEnabled) {
                     document.getElementById('manage-groups-link-container')?.classList.remove('hidden');
+                    // 第一次開啟群組功能時立即顯示功能介紹
+                    if (this.app.guideManager) {
+                        this.app.guideManager.showToggleTour('groups')
+                    }
                 } else {
                     document.getElementById('manage-groups-link-container')?.classList.add('hidden');
                 }
@@ -720,6 +745,10 @@ export class SettingsPage {
                     if (this.app.aiService.isModelDownloaded()) {
                         this.app.aiService.setExperimentalEnabled(true)
                         if (this.app.updateNavAddIcon) this.app.updateNavAddIcon()
+                        // 第一次開啟 AI 語音記帳時立即顯示功能介紹
+                        if (this.app.guideManager) {
+                            this.app.guideManager.showToggleTour('ai')
+                        }
                         showToast('已開啟 AI 離線記帳語音助手', 'success')
                     } else {
                         e.target.checked = false // Wait for modal completion

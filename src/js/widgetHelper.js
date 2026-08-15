@@ -71,7 +71,7 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
         const balanceSign = monthBalance >= 0 ? '+' : '-'
         const balanceText = `${balanceSign}${formatCurrency(Math.abs(monthBalance))}`
 
-        // 5. 延遲導入 Capacitor 的 registerPlugin，避免在 Web 平台 import 時出錯
+        // 5. 延遲導入 Capacitor 的 registerPlugin，避免在 Web 平臺 import 時出錯
         const { registerPlugin } = await import('@capacitor/core')
         const WidgetStorage = registerPlugin('WidgetStorage')
 

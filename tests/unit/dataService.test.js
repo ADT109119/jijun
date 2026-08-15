@@ -2050,3 +2050,78 @@ describe('DataService — logChange 外鍵補全', () => {
         expect(syncLog[0].data.ledgerUuid).toBe('ledger-uuid-1')
     })
 })
+
+describe('DataService — groupManagementEnabled 設定項匯出/匯入/同步', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('exportData 與 exportDataForSync 應包含 groupManagementEnabled 設定', async () => {
+        await ds.saveSetting({
+            key: 'groupManagementEnabled',
+            value: true,
+        })
+
+        let exportedPayload = null
+        const originalBlob = globalThis.Blob
+        globalThis.Blob = class extends originalBlob {
+            constructor(parts, options) {
+                super(parts, options)
+                try {
+                    exportedPayload = JSON.parse(parts[0])
+                } catch {
+                    exportedPayload = null
+                }
+            }
+        }
+
+        try {
+            await ds.exportData()
+            expect(exportedPayload).not.toBeNull()
+            expect(exportedPayload.settings.groupManagementEnabled).toBe(true)
+        } finally {
+            globalThis.Blob = originalBlob
+        }
+
+        const syncExport = await ds.exportDataForSync()
+        expect(syncExport.settings).toBeDefined()
+        expect(syncExport.settings.groupManagementEnabled).toBe(true)
+    })
+
+    it('importData 應正確還原 groupManagementEnabled 設定', async () => {
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+                groupManagementEnabled: true,
+            },
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '預設帳本', uuid: 'ledger-uuid-1' }],
+            records: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [{ id: 'gm-1', name: '出差群組', ledgerId: 1, uuid: 'gm-uuid-1' }],
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            const setting = await ds.getSetting('groupManagementEnabled')
+            expect(setting?.value).toBe(true)
+        } finally {
+            restore()
+        }
+    })
+})

@@ -1,4 +1,5 @@
-import { showToast } from './utils.js'
+// 群組管理模組
+import { formatCurrency, formatDate, showToast } from './utils.js'
 
 /**
  * 產生不重複的群組名稱，若已有同名群組則自動加上 (2), (3) 等後綴
@@ -183,15 +184,6 @@ export class GroupManager {
         )
     }
 
-    /**
-     * 部分退款
-     * @param {string} groupId
-     * @param {number} amount
-     * @param {number} accountId
-     * @param {string} date
-     * @param {string} [note]
-     * @returns {Promise<Object>}
-     */
     /**
      * 部分退款
      * @param {string} groupId

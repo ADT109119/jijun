@@ -30,6 +30,7 @@ import { NotificationService } from './notificationService.js'
 import { ThemeManager } from './themeManager.js'
 import { AIService } from './aiService.js'
 import { Router } from './router.js'
+import { GuideManager } from './tourManager.js'
 import { escapeHTML } from './utils.js'
 import { updateAndroidWidget } from './widgetHelper.js'
 
@@ -65,6 +66,8 @@ export class EasyAccountingApp {
         this.aiService = new AIService(this.dataService)
         this.categoryManager = new CategoryManager(this.dataService)
         this.changelogManager = new ChangelogManager()
+        // 為導覽系統提供 app 引用（Phase 5 版本導覽：Changelog 關閉後串列觸發）
+        this.changelogManager.app = this
         this.budgetManager = new BudgetManager(
             this.dataService,
             this.categoryManager
@@ -78,6 +81,7 @@ export class EasyAccountingApp {
         this.rewardService = new RewardService()
         this.notificationService = new NotificationService(this.dataService)
         this.themeManager = new ThemeManager(this.dataService)
+        this.guideManager = new GuideManager(this)
 
         this.appContainer = document.getElementById('app-container')
 
@@ -157,9 +161,17 @@ export class EasyAccountingApp {
         this.processRecurringTransactions()
         this.processAmortizations()
         this.processCreditCardStatements()
+        this._setupCreditAutoPayScheduler()
 
         // 檢查版本升級並自動彈出最新 Changelog Modal
         this.changelogManager.checkAndShowVersionUpdateModal()
+
+        // 導覽功能：#U08 初次開啟歡迎 Modal / 版本更新新導覽
+        // 使用 changelog 列表中真正的最新版本（而非構造器緩存的舊版本號）
+        const latestVersion =
+            this.changelogManager.getAllVersions()[0]?.version ||
+            this.changelogManager.currentVersion
+        this.guideManager.init(latestVersion)
 
         // Connect DataService hooks to PluginManager & NotificationService
         this.dataService.setHookProvider(async (hookName, payload) => {
@@ -670,6 +682,41 @@ export class EasyAccountingApp {
         } catch (error) {
             console.error('處理信用卡自動出帳與銷帳失敗:', error)
         }
+    }
+
+    // ==================== 信用卡自動扣款後台排程 (#B05-3) ====================
+    // 問題：processCreditCardStatements() 只在 app 啟動時執行一次，若用戶繳款日當天
+    // 沒打開 app（或長時間保持打開跨過午夜），到期帳單無法自動扣款／沖銷。
+    // 方案：在 app 開啟期間每小時檢查一次 + 頁面重新可見／獲焦時立即檢查，
+    // 以「本地日期」為粒度限流（每天最多跑一次完整邏輯），保證冪等且低開銷。
+    _setupCreditAutoPayScheduler() {
+        // init() 已執行 processCreditCardStatements()，故將今日標記為已處理，
+        // 後續 interval/事件僅負責「新的一天」與「頁面復蘇」時補跑。
+        this._lastCreditAutoPayDate = this._todayStr()
+
+        const maybeRun = () => {
+            const todayStr = this._todayStr()
+            if (this._lastCreditAutoPayDate === todayStr) return
+            this._lastCreditAutoPayDate = todayStr
+            this.processCreditCardStatements()
+        }
+
+        // 每小時檢查一次（覆蓋跨午夜、長時間後台運行場景）
+        if (this._creditAutoPayTimer) clearInterval(this._creditAutoPayTimer)
+        this._creditAutoPayTimer = setInterval(maybeRun, 60 * 60 * 1000)
+
+        // 頁面從後台恢復或重新獲焦時立即檢查
+        this._creditAutoPayVisHandler = () => {
+            if (document.visibilityState === 'visible') maybeRun()
+        }
+        document.addEventListener('visibilitychange', this._creditAutoPayVisHandler)
+        this._creditAutoPayFocusHandler = () => maybeRun()
+        window.addEventListener('focus', this._creditAutoPayFocusHandler)
+    }
+
+    _todayStr() {
+        const d = new Date()
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
 
     async registerServiceWorker() {

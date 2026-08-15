@@ -30,7 +30,7 @@ export class AddPage {
         const groupEnabledSetting = await this.app.dataService.getSetting(
             'groupManagementEnabled'
         )
-        const showGroupBtn = groupEnabledSetting ? !!groupEnabledSetting.value : true
+        const showGroupBtn = !!groupEnabledSetting?.value
         const amortizationEnabled = await this.app.dataService.getSetting(
             'amortizationEnabled'
         )

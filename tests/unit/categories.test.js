@@ -19,12 +19,12 @@ describe('CATEGORIES', () => {
         expect(CATEGORIES.income.length).toBeGreaterThan(0)
     })
 
-    it('expense 有恰好 8 個分類', () => {
-        expect(CATEGORIES.expense).toHaveLength(8)
+    it('expense 有恰好 9 個分類', () => {
+        expect(CATEGORIES.expense).toHaveLength(9)
     })
 
-    it('income 有恰好 8 個分類', () => {
-        expect(CATEGORIES.income).toHaveLength(8)
+    it('income 有恰好 9 個分類', () => {
+        expect(CATEGORIES.income).toHaveLength(9)
     })
 
     it('expense 所有分類 ID 不重複', () => {

@@ -2,7 +2,7 @@
 // 測試重點：版本資訊查詢、HTML 渲染、版本排序、showChangelogModal DOM 操作
 // 不包含無意義的 snapshot 測試，專注於行為正確性
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { CHANGELOG, ChangelogManager } from '../../src/js/changelog.js'
 
 // ── 測試資料輔助 ──────────────────────────────────────
@@ -502,6 +502,56 @@ describe('ChangelogManager', () => {
             // 點擊關閉按鈕
             const closeBtn = document.getElementById('close-update-changelog-btn')
             closeBtn.click()
+            expect(document.getElementById('update-changelog-modal')).toBeNull()
+        })
+
+        it('關閉 Changelog Modal 時通知導覽系統 onChangelogClosed 且預設不強制啟動導覽', () => {
+            const onChangelogClosed = vi.fn()
+            manager.app = { guideManager: { onChangelogClosed } }
+            manager.showUpdateChangelogModal()
+
+            const closeBtn = document.getElementById('close-update-changelog-btn')
+            closeBtn.click()
+
+            expect(onChangelogClosed).toHaveBeenCalledWith(
+                expect.objectContaining({ startTour: false })
+            )
+        })
+
+        it('有版本專屬導覽時渲染「查看教學」按鈕，點擊後觸發 startTour: true', () => {
+            const onChangelogClosed = vi.fn()
+            const getVersionTourId = vi.fn().mockReturnValue('debts')
+            manager.app = { guideManager: { onChangelogClosed, getVersionTourId } }
+            manager.showUpdateChangelogModal()
+
+            const tourBtn = document.getElementById('start-version-tour-btn')
+            expect(tourBtn).not.toBeNull()
+            expect(tourBtn.textContent).toContain('查看教學')
+
+            const confirmBtn = document.getElementById('confirm-update-changelog-btn')
+            expect(confirmBtn.textContent).toContain('我知道了')
+
+            tourBtn.click()
+            expect(onChangelogClosed).toHaveBeenCalledWith({
+                startTour: true,
+                tourId: 'debts',
+            })
+            expect(document.getElementById('update-changelog-modal')).toBeNull()
+        })
+
+        it('有版本專屬導覽時點擊「我知道了」觸發 startTour: false，略過導覽', () => {
+            const onChangelogClosed = vi.fn()
+            const getVersionTourId = vi.fn().mockReturnValue('debts')
+            manager.app = { guideManager: { onChangelogClosed, getVersionTourId } }
+            manager.showUpdateChangelogModal()
+
+            const confirmBtn = document.getElementById('confirm-update-changelog-btn')
+            confirmBtn.click()
+
+            expect(onChangelogClosed).toHaveBeenCalledWith({
+                startTour: false,
+                tourId: 'debts',
+            })
             expect(document.getElementById('update-changelog-modal')).toBeNull()
         })
     })

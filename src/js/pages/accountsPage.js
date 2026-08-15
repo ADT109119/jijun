@@ -133,6 +133,7 @@ export class AccountsPage {
                     </div>
                 </div>
                 <div class="flex gap-2">
+                    ${isCreditCard ? `<button class="credit-pay-btn" data-id="${account.id}" title="立即繳款" style="color:#22c55e"><i class="fa-solid fa-money-bill-wave"></i></button>` : ''}
                     <button class="adjust-balance-btn" data-id="${account.id}" data-balance="${currentBalance}"><i class="fa-solid fa-scale-balanced text-wabi-text-secondary"></i></button>
                     <button class="edit-account-btn" data-id="${account.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
                     <button class="delete-account-btn" data-id="${account.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
@@ -181,6 +182,19 @@ export class AccountsPage {
                 const accountId = parseInt(e.currentTarget.dataset.id, 10)
                 const account = await this.app.dataService.getAccount(accountId)
                 this.showAccountModal(account)
+            })
+        })
+
+        container.querySelectorAll('.credit-pay-btn').forEach(btn => {
+            btn.addEventListener('click', async e => {
+                const accountId = parseInt(e.currentTarget.dataset.id, 10)
+                if (Number.isNaN(accountId)) return
+                const account = await this.app.dataService.getAccount(accountId)
+                if (!account) {
+                    showToast('無法找到該信用卡帳戶', 'error')
+                    return
+                }
+                this.showCreditPayModal(account)
             })
         })
 
@@ -771,6 +785,129 @@ export class AccountsPage {
                 }
                 this.render() // Re-render the page
                 closeModal()
+            })
+    }
+
+    async showCreditPayModal(account) {
+        // 取得扣款賬戶 (排除信用卡和當前賬戶)
+        const allAccounts = await this.app.dataService.getAccounts()
+        const debitAccounts = allAccounts.filter(
+            a => a.type !== 'credit_card' && a.id !== account.id
+        )
+
+        if (debitAccounts.length === 0) {
+            showToast('你需要至少一個非信用卡賬戶才能繳款', 'warning')
+            return
+        }
+
+        // 獲取該信用卡未繳的賬單總額
+        const unpaidStatements = await this.app.dataService.getCreditStatements({
+            accountId: account.id,
+            status: 'unpaid',
+            allLedgers: true,
+        })
+        const unpaidTotal = unpaidStatements.reduce(
+            (sum, s) => sum + (s.amount || 0),
+            0
+        )
+
+        const modal = document.createElement('div')
+        modal.id = 'credit-pay-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
+        const accountOptions = debitAccounts
+            .map(a => `<option value="${a.id}">${escapeHTML(a.name)}</option>`)
+            .join('')
+
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+                <h3 class="text-lg font-bold text-wabi-primary">繳納信用卡費</h3>
+                <p class="text-sm text-wabi-text-secondary">${escapeHTML(account.name)} — 未繳賬單合計: <span class="font-semibold text-wabi-expense">${formatCurrency(unpaidTotal)}</span></p>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">扣款賬戶</label>
+                    <select id="credit-pay-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                </div>
+                <div>
+                    <label class="text-sm text-wabi-text-secondary">繳款金額</label>
+                    <input type="number" id="credit-pay-amount" placeholder="0.00" min="0" step="0.01" value="${unpaidTotal > 0 ? unpaidTotal : ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                </div>
+                <div class="flex gap-2 mt-6">
+                    <button id="confirm-credit-pay-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">確認繳款</button>
+                    <button id="cancel-credit-pay-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                </div>
+            </div>
+        `
+        document.body.appendChild(modal)
+
+        const closeModal = () => modal.remove()
+
+        modal
+            .querySelector('#cancel-credit-pay-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        modal
+            .querySelector('#confirm-credit-pay-btn')
+            .addEventListener('click', async () => {
+                const debitId = parseInt(
+                    modal.querySelector('#credit-pay-account').value,
+                    10
+                )
+                const amount = parseFloat(
+                    modal.querySelector('#credit-pay-amount').value
+                )
+
+                if (!amount || amount <= 0) {
+                    showToast('請輸入有效的金額', 'error')
+                    return
+                }
+
+                const debitAccount = debitAccounts.find(a => a.id === debitId)
+                if (!debitAccount) {
+                    showToast('無法找到扣款賬戶', 'error')
+                    return
+                }
+                const dateStr = formatDateToString(new Date())
+
+                // 寫扣款賬戶支出
+                const expenseRecord = {
+                    type: 'expense',
+                    category: 'transfer',
+                    amount,
+                    date: dateStr,
+                    description: `[手動繳款] 繳納信用卡費 (${account.name})`,
+                    accountId: debitId,
+                    ledgerId: account.ledgerId,
+                }
+
+                // 寫信用卡收入
+                const incomeRecord = {
+                    type: 'income',
+                    category: 'transfer',
+                    amount,
+                    date: dateStr,
+                    description: `[手動繳款] 從 ${debitAccount.name} 繳款 (${account.name})`,
+                    accountId: account.id,
+                    ledgerId: account.ledgerId,
+                }
+
+                try {
+                    await this.app.dataService.addRecord(expenseRecord)
+                    await this.app.dataService.addRecord(incomeRecord)
+
+                    // FIFO 沖銷未繳賬單狀態
+                    await this.app.dataService.updateCreditStatementsStatus()
+
+                    showToast('繳款成功！')
+                    this.render()
+                    closeModal()
+                } catch (err) {
+                    console.error('信用卡繳款失敗:', err)
+                    showToast('繳款失敗，請稍後重試', 'error')
+                }
             })
     }
 

@@ -1,6 +1,9 @@
+import { openDB as idbOpenDB } from 'idb'
 import { customConfirm, formatDateToString } from './utils.js'
+
 const openDB =
-    window.idb?.openDB ||
+    idbOpenDB ||
+    (typeof window !== 'undefined' && window.idb?.openDB) ||
     (() => {
         console.warn('IndexedDB 不可用，將使用 localStorage')
         return null
@@ -492,17 +495,19 @@ class DataService {
                             }
                         }
                         // Schema version 15: Record Groups (groupMeta store)
-                        if (!db.objectStoreNames.contains('groupMeta')) {
-                            const groupStore = db.createObjectStore(
-                                'groupMeta',
-                                { keyPath: 'id' }
-                            )
-                            groupStore.createIndex('uuid', 'uuid', {
-                                unique: true,
-                            })
-                            groupStore.createIndex('ledgerId', 'ledgerId', {
-                                unique: false,
-                            })
+                        if (oldVersion < 15) {
+                            if (!db.objectStoreNames.contains('groupMeta')) {
+                                const groupStore = db.createObjectStore(
+                                    'groupMeta',
+                                    { keyPath: 'id' }
+                                )
+                                groupStore.createIndex('uuid', 'uuid', {
+                                    unique: true,
+                                })
+                                groupStore.createIndex('ledgerId', 'ledgerId', {
+                                    unique: false,
+                                })
+                            }
                         }
                     },
                 })
@@ -706,7 +711,7 @@ class DataService {
         }
 
         // 同步接收路徑：移除來源裝置的 integer id，讓 IndexedDB 自動產生新 id
-        // 若保留來源 id，接收端可能因 key 衝突而静默失敗
+        // 若保留來源 id，接收端可能因 key 衝突而靜默失敗
         if (skipLog) delete recordWithTimestamp.id
 
         try {
@@ -959,7 +964,7 @@ class DataService {
             const store = tx.objectStore('records')
 
             // 在刪除前先取得完整紀錄資料，確保 logChange 能拿到 ledgerId/ledgerUuid
-            let recordData = await store.get(id)
+            const recordData = await store.get(id)
             if (!skipLog && recordData) {
                 const shouldDelete = await this.triggerHook(
                     'onRecordDeleteBefore',
@@ -1442,6 +1447,9 @@ class DataService {
             const debtManagementEnabled = await this.getSetting(
                 'debtManagementEnabled'
             )
+            const groupManagementEnabled = await this.getSetting(
+                'groupManagementEnabled'
+            )
             const contacts = includeDebts
                 ? await this.getContacts({ allLedgers: true })
                 : []
@@ -1520,6 +1528,8 @@ class DataService {
                         advancedAccountModeEnabled?.value || false,
                     debtManagementEnabled:
                         debtManagementEnabled?.value || false,
+                    groupManagementEnabled:
+                        groupManagementEnabled?.value || false,
                 },
                 activeLedgerId: this.activeLedgerId,
                 ledgers: ledgers,
@@ -1589,6 +1599,10 @@ class DataService {
             reader.onload = async event => {
                 let backupSnapshot = null
                 try {
+                    // 確保資料庫連線已就緒
+                    if (!this.db && !this.useLocalStorage) {
+                        await this.init()
+                    }
                     const data = JSON.parse(event.target.result)
 
                     // 確認是否要覆蓋現有資料
@@ -1649,6 +1663,10 @@ class DataService {
                         key: 'debtManagementEnabled',
                         value: false,
                     })
+                    await this.saveSetting({
+                        key: 'groupManagementEnabled',
+                        value: false,
+                    })
 
                     // --- 開始匯入 ---
                     // 1. 匯入設定
@@ -1656,6 +1674,9 @@ class DataService {
                         data.settings?.advancedAccountModeEnabled || false
                     const debtManagementEnabled =
                         data.settings?.debtManagementEnabled || false
+                    const groupManagementEnabled =
+                        data.settings?.groupManagementEnabled ??
+                        (data.groupMeta && data.groupMeta.length > 0 ? true : false)
                     await this.saveSetting({
                         key: 'advancedAccountModeEnabled',
                         value: advancedModeEnabled,
@@ -1663,6 +1684,10 @@ class DataService {
                     await this.saveSetting({
                         key: 'debtManagementEnabled',
                         value: debtManagementEnabled,
+                    })
+                    await this.saveSetting({
+                        key: 'groupManagementEnabled',
+                        value: groupManagementEnabled,
                     })
 
                     // 2. 匯入帳本 (ledgers) 及建立 mapped ID（必須在分類之前）
@@ -2672,6 +2697,9 @@ class DataService {
         const debtManagementEnabled = await this.getSetting(
             'debtManagementEnabled'
         )
+        const groupManagementEnabled = await this.getSetting(
+            'groupManagementEnabled'
+        )
 
         return {
             version: '2.3.0',
@@ -2680,6 +2708,7 @@ class DataService {
                 advancedAccountModeEnabled:
                     advancedAccountModeEnabled?.value || false,
                 debtManagementEnabled: debtManagementEnabled?.value || false,
+                groupManagementEnabled: groupManagementEnabled?.value || false,
             },
             ledgers,
             accounts,
@@ -2919,7 +2948,7 @@ class DataService {
             // 1. 刪除帳戶本身
             await accStore.delete(id)
 
-            // 2. 搜集需要刪除的帳單元數據，並在事務中刪除它們
+            // 2. 蒐集需要刪除的帳單元數據，並在事務中刪除它們
             const deletedStatements = []
             if (stmtStore.indexNames.contains('accountId')) {
                 const index = stmtStore.index('accountId')
@@ -2967,6 +2996,10 @@ class DataService {
 
     // 清除所有信用卡帳單
     async clearAllCreditStatements() {
+        if (!this.db && !this.useLocalStorage) {
+            await this.init()
+        }
+        if (!this.db) return true
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
             await tx.store.clear()
@@ -3359,6 +3392,10 @@ class DataService {
 
     // 清除所有帳戶
     async clearAllAccounts() {
+        if (!this.db && !this.useLocalStorage) {
+            await this.init()
+        }
+        if (!this.db) return true
         try {
             const tx = this.db.transaction('accounts', 'readwrite')
             await tx.store.clear()
@@ -3372,6 +3409,10 @@ class DataService {
 
     // 清除所有聯絡人
     async clearAllContacts() {
+        if (!this.db && !this.useLocalStorage) {
+            await this.init()
+        }
+        if (!this.db) return true
         try {
             const tx = this.db.transaction('contacts', 'readwrite')
             await tx.store.clear()
@@ -3385,6 +3426,10 @@ class DataService {
 
     // 清除所有欠款
     async clearAllDebts() {
+        if (!this.db && !this.useLocalStorage) {
+            await this.init()
+        }
+        if (!this.db) return true
         try {
             const tx = this.db.transaction('debts', 'readwrite')
             await tx.store.clear()
@@ -3396,6 +3441,7 @@ class DataService {
         }
     }
 
+    // --- Group Meta Methods ---
     async _ensureGroupMetaStore() {
         if (!this.db || this.useLocalStorage) return
         if (!this.db.objectStoreNames || typeof this.db.objectStoreNames.contains !== 'function') return
@@ -3500,6 +3546,10 @@ class DataService {
     }
 
     async clearAllGroupMeta() {
+        if (!this.db && !this.useLocalStorage) {
+            await this.init()
+        }
+        if (!this.db) return true
         try {
             await this._ensureGroupMetaStore()
             const records = await this.getRecords({ allLedgers: true })
@@ -3548,7 +3598,7 @@ class DataService {
             .filter(r => r.type === 'income')
             .reduce((s, r) => s + (r.amount || 0), 0)
 
-        let debtsMap = new Map()
+        const debtsMap = new Map()
         if (allDebts) {
             allDebts.forEach(d => debtsMap.set(d.id, d))
         }
@@ -3710,6 +3760,7 @@ class DataService {
             const meta = await this.getGroupMeta(groupId)
             if (!meta) throw new Error('Group not found')
 
+            // M01: 金額驗證
             if (amount === null || amount === undefined || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
                 throw new Error(`部分退款金額無效: ${amount}`)
             }
@@ -3900,7 +3951,6 @@ class DataService {
             return null
         }
     }
-
     // --- File Methods (for storing avatars, etc.) ---
     async addFile(file) {
         try {

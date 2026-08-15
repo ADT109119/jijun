@@ -669,7 +669,7 @@ export class LedgersPage {
             }
         }
 
-        // == 擁有者才可邀請新成員 ==
+        // == 擁有者纔可邀請新成員 ==
         if (isOwner) {
             const submitBtn = modal.querySelector('#share-submit-btn')
             const emailInput = modal.querySelector('#share-email-input')

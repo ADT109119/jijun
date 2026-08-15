@@ -104,6 +104,8 @@ function createMockDataService() {
         getGroups: vi.fn(async () => []),
         getGroupMeta: vi.fn(async () => null),
         getGroupRecords: vi.fn(async () => []),
+        _calculateGroupNet: vi.fn(() => ({ netAmount: 0, totalExpense: 0, totalIncome: 0 })),
+        _calculateGroupNetAsync: vi.fn(async () => ({ netAmount: 0, totalExpense: 0, totalIncome: 0 })),
         getSetting: vi.fn(async () => null),
         settleDebt: vi.fn(async () => {}),
         addPartialPayment: vi.fn(async () => {}),
@@ -305,6 +307,42 @@ describe('DebtManager - 核心業務邏輯（真實實例）', () => {
             expect(cards.length).toBe(3)
             expect(cards[2].textContent).toContain('未結清群組')
             expect(cards[2].textContent).toContain('0 個')
+        })
+
+        it('群組內的个人欠款不計入總結卡片（避免雙重計數）', async () => {
+            const contact = await ds.addContact({
+                name: '小明',
+                phone: '0912345678',
+            })
+            // 個人欠款 500（應收）應正常計入
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 500,
+                date: '2024-01-01',
+            })
+            // 屬於群組的欠款 999（應收）：关联记录有 groupId，應被排除
+            const groupRecord = await ds.addRecord({
+                groupId: 'group-1',
+                type: 'expense',
+                amount: 999,
+                categoryId: 1,
+            })
+            await ds.addDebt({
+                contactId: contact.id,
+                type: 'receivable',
+                amount: 999,
+                recordId: groupRecord.id,
+                date: '2024-01-02',
+            })
+
+            const container = await renderPage(dm)
+            const cards = container.querySelectorAll(
+                '#summary-cards-container > div'
+            )
+            // 应收卡片只含个人欠款 500，不含群组欠款 999
+            expect(cards[0].textContent).toContain('500')
+            expect(cards[0].textContent).not.toContain('999')
         })
     })
 
@@ -863,6 +901,115 @@ describe('DebtManager - 建構與基本狀態', () => {
             await debtMgr.refreshCurrentView()
 
             expect(renderFn).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    describe('群組結清淨額方向 (showSettleGroupModal)', () => {
+        it('netAmount > 0 時顯示「群組欠我」（应收/入帳）', async () => {
+            ds.getGroupMeta.mockResolvedValue({ name: '飯錢群組', settled: false })
+            ds.getGroupRecords.mockResolvedValue([])
+            ds._calculateGroupNet.mockReturnValue({
+                netAmount: 1000,
+                totalExpense: 1000,
+                totalIncome: 0,
+            })
+            // 開啟進階账户模式，使「入帳帳戶」标签渲染
+            ds.getSetting.mockImplementation(async key =>
+                key === 'advancedAccountModeEnabled' ? { value: true } : null
+            )
+            ds.getAccounts.mockResolvedValue([{ id: 1, name: '現金' }])
+
+            await dm.showSettleGroupModal('group-1')
+            const modal = document.querySelector(
+                '.fixed.inset-0.bg-black.bg-opacity-50.z-50'
+            )
+            expect(modal).toBeTruthy()
+            // netAmount > 0 = 群組欠我（应收）
+            expect(modal.textContent).toContain('飯錢群組欠我')
+            // 結清時应收應為「入帳」帳戶
+            expect(modal.textContent).toContain('入帳帳戶')
+            modal.remove()
+        })
+
+        it('netAmount < 0 時顯示「我欠群組」（應付/出帳）', async () => {
+            ds.getGroupMeta.mockResolvedValue({ name: '飯錢群組', settled: false })
+            ds.getGroupRecords.mockResolvedValue([])
+            ds._calculateGroupNet.mockReturnValue({
+                netAmount: -500,
+                totalExpense: 0,
+                totalIncome: 500,
+            })
+            // 開啟進階账户模式，使「出帳帳戶」标签渲染
+            ds.getSetting.mockImplementation(async key =>
+                key === 'advancedAccountModeEnabled' ? { value: true } : null
+            )
+            ds.getAccounts.mockResolvedValue([{ id: 1, name: '現金' }])
+
+            await dm.showSettleGroupModal('group-1')
+            const modal = document.querySelector(
+                '.fixed.inset-0.bg-black.bg-opacity-50.z-50'
+            )
+            expect(modal.textContent).toContain('我欠飯錢群組')
+            expect(modal.textContent).toContain('出帳帳戶')
+            modal.remove()
+        })
+    })
+
+    describe('群組詳情彈窗方向 (showGroupDetailsModal)', () => {
+        it('netAmount > 0 時顯示「應收」+ 部分收款按钮 + income 绿色', async () => {
+            ds.getGroupMeta.mockResolvedValue({ name: '飯錢群組', settled: false })
+            ds.getGroupRecords.mockResolvedValue([])
+            ds._calculateGroupNetAsync.mockResolvedValue({
+                netAmount: 1000,
+                totalExpense: 1000,
+                totalIncome: 0,
+            })
+            ds.getDebts.mockResolvedValue([])
+
+            await dm.showGroupDetailsModal('group-1')
+            const modal = document.querySelector(
+                '.fixed.inset-0.bg-black.bg-opacity-50.z-50'
+            )
+            expect(modal).toBeTruthy()
+            // netAmount > 0 = 应收（群组欠我）→ 應收措辞（netDirection = '應收 飯錢群組'）
+            expect(modal.textContent).toContain('應收')
+            expect(modal.textContent).toContain('飯錢群組')
+            // 应收 → 净額用 income 绿色
+            expect(modal.innerHTML).toContain(
+                'text-wabi-income'
+            )
+            // 应收 → 「部分收款」按钮
+            expect(modal.innerHTML).toContain('部分收款')
+            expect(modal.innerHTML).not.toContain('部分退款')
+            modal.remove()
+        })
+
+        it('netAmount < 0 時顯示「應付」+ 部分付款按钮 + expense 红色', async () => {
+            ds.getGroupMeta.mockResolvedValue({ name: '飯錢群組', settled: false })
+            ds.getGroupRecords.mockResolvedValue([])
+            ds._calculateGroupNetAsync.mockResolvedValue({
+                netAmount: -500,
+                totalExpense: 0,
+                totalIncome: 500,
+            })
+            ds.getDebts.mockResolvedValue([])
+
+            await dm.showGroupDetailsModal('group-1')
+            const modal = document.querySelector(
+                '.fixed.inset-0.bg-black.bg-opacity-50.z-50'
+            )
+            expect(modal).toBeTruthy()
+            // netAmount < 0 = 应付（我欠群组）→ 應付措辞（netDirection = '應付 飯錢群組'）
+            expect(modal.textContent).toContain('應付')
+            expect(modal.textContent).toContain('飯錢群組')
+            // 应付 → 净額用 expense 红色
+            expect(modal.innerHTML).toContain(
+                'text-wabi-expense'
+            )
+            // 应付 → 「部分付款」按钮
+            expect(modal.innerHTML).toContain('部分付款')
+            expect(modal.innerHTML).not.toContain('部分退款')
+            modal.remove()
         })
     })
 })
