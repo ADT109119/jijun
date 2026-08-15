@@ -346,7 +346,7 @@ describe('GuideManager', () => {
         it('首次進入統計頁觸發統計導覽', async () => {
             gm.markVersionCompleted('2.1.7.3')
             const el = document.createElement('div')
-            el.id = 'stats-calendar-container'
+            el.id = 'stats-expense-donut-container'
             document.body.appendChild(el)
             gm.checkFeatureTour('stats')
             await new Promise(r => setTimeout(r, 400))
@@ -726,4 +726,86 @@ describe('GuideManager', () => {
             expect(gm._pendingVersionTour).toBeNull()
         })
     })
+
+    describe('手機版與視窗邊界定位防護 (_positionBubble)', () => {
+        it('在目標元素靠近底部時自動翻轉至上方或嚴格約束在視窗內', () => {
+            const bubble = document.createElement('div')
+            bubble.id = 'guide-tour-bubble'
+            document.body.appendChild(bubble)
+
+            const target = document.createElement('div')
+            target.id = 'bottom-target'
+            document.body.appendChild(target)
+
+            // 模擬目標元素靠近視窗底部
+            vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+                top: 600,
+                bottom: 640,
+                left: 50,
+                right: 250,
+                width: 200,
+                height: 40,
+            })
+
+            // 模擬手機視窗尺寸 (375 x 667)
+            const originalInnerWidth = window.innerWidth
+            const originalInnerHeight = window.innerHeight
+            window.innerWidth = 375
+            window.innerHeight = 667
+
+            try {
+                gm._positionBubble(bubble, target, 'bottom')
+                const top = parseInt(bubble.style.top, 10)
+                const left = parseInt(bubble.style.left, 10)
+
+                // top 必須大於等於 12 且氣泡底部不超出視窗
+                expect(top).toBeGreaterThanOrEqual(12)
+                expect(top).toBeLessThanOrEqual(667 - 190 - 12)
+                expect(left).toBeGreaterThanOrEqual(12)
+                expect(left).toBeLessThanOrEqual(375 - 288 - 12)
+            } finally {
+                window.innerWidth = originalInnerWidth
+                window.innerHeight = originalInnerHeight
+                bubble.remove()
+                target.remove()
+            }
+        })
+
+        it('在手機寬度下 left/right 自動轉為垂直定位並防止左右溢出', () => {
+            const bubble = document.createElement('div')
+            document.body.appendChild(bubble)
+            const target = document.createElement('div')
+            document.body.appendChild(target)
+
+            vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+                top: 200,
+                bottom: 240,
+                left: 10,
+                right: 300,
+                width: 290,
+                height: 40,
+            })
+
+            const originalInnerWidth = window.innerWidth
+            const originalInnerHeight = window.innerHeight
+            window.innerWidth = 360
+            window.innerHeight = 640
+
+            try {
+                gm._positionBubble(bubble, target, 'left')
+                const left = parseInt(bubble.style.left, 10)
+                const top = parseInt(bubble.style.top, 10)
+
+                expect(left).toBeGreaterThanOrEqual(12)
+                expect(left).toBeLessThanOrEqual(360 - 288 - 12)
+                expect(top).toBeGreaterThanOrEqual(12)
+            } finally {
+                window.innerWidth = originalInnerWidth
+                window.innerHeight = originalInnerHeight
+                bubble.remove()
+                target.remove()
+            }
+        })
+    })
 })
+

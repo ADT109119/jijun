@@ -4,10 +4,10 @@ export const statisticsTour = {
     id: 'statistics',
     steps: [
         {
-            target: '#stats-container',
+            target: '#stats-expense-donut-container',
             title: '收支統計圖表',
             body: '提供圓餅圖、長條圖與月度趨勢線，直觀呈現各大分類（飲食、交通、娛樂等）的開銷比重與變化。',
-            position: 'bottom',
+            position: 'top',
         },
         {
             target: '#stats-calendar-container',

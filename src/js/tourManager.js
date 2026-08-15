@@ -60,6 +60,7 @@ export class GuideManager {
         this._currentStepReject = null
         // 待觸發的版本導覽（changelog 關閉後觸發），null = 無待導覽
         this._pendingVersionTour = null
+        this._repositionListener = null
     }
 
     // ── 狀態查詢 ────────────────────────────
@@ -486,6 +487,88 @@ export class GuideManager {
         return true
     }
 
+    /**
+     * 智能計算氣泡位置並嚴格約束在手機與桌機視窗內（防止在手機端破版或超出螢幕）
+     * @param {HTMLElement} bubble 氣泡元素
+     * @param {HTMLElement|null} targetEl 目標元素
+     * @param {string} preferredPosition 偏好方向 'top' | 'bottom' | 'left' | 'right'
+     */
+    _positionBubble(bubble, targetEl, preferredPosition = 'top') {
+        if (!bubble) return
+
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 375
+        const vh = typeof window !== 'undefined' ? window.innerHeight : 667
+        const margin = 12
+        const offset = 12
+
+        // 無目標元素時居中顯示
+        if (!targetEl || typeof targetEl.getBoundingClientRect !== 'function') {
+            bubble.style.left = '50%'
+            bubble.style.top = '25%'
+            bubble.style.transform = 'translateX(-50%)'
+            return
+        }
+
+        bubble.style.transform = '' // 清除居中 transform
+
+        const rect = targetEl.getBoundingClientRect()
+        const bw = bubble.offsetWidth || 288
+        const bh = bubble.offsetHeight || 190
+
+        // 計算水平基準 (預設盡量對齊目標中心)
+        let left = rect.left + rect.width / 2 - bw / 2
+        // 水平邊界防溢出
+        left = Math.max(margin, Math.min(left, vw - bw - margin))
+
+        // 計算垂直可用空間
+        const spaceAbove = rect.top
+        const spaceBelow = vh - rect.bottom
+        let top
+
+        let side = preferredPosition
+        // 在手機垂直螢幕（寬度 < 640px）上，left/right 容易超出左右邊界，自動轉換為 top/bottom
+        if (vw < 640 && (side === 'left' || side === 'right')) {
+            side = spaceBelow >= spaceAbove ? 'bottom' : 'top'
+        }
+
+        // 智能翻轉：若指定方向空間不足且另一側空間更大時翻轉
+        if (side === 'top' && spaceAbove < bh + offset + margin && spaceBelow > spaceAbove) {
+            side = 'bottom'
+        } else if (side === 'bottom' && spaceBelow < bh + offset + margin && spaceAbove > spaceBelow) {
+            side = 'top'
+        }
+
+        switch (side) {
+            case 'bottom':
+                top = rect.bottom + offset
+                break
+            case 'left':
+                left = rect.left - bw - offset
+                top = rect.top + rect.height / 2 - bh / 2
+                break
+            case 'right':
+                left = rect.right + offset
+                top = rect.top + rect.height / 2 - bh / 2
+                break
+            case 'top':
+            default:
+                top = rect.top - bh - offset
+                break
+        }
+
+        // 嚴格 Viewport Clamping：確保氣泡 100% 完整落在可視畫面內
+        const minTop = margin
+        const maxTop = Math.max(minTop, vh - bh - margin)
+        top = Math.max(minTop, Math.min(top, maxTop))
+
+        const minLeft = margin
+        const maxLeft = Math.max(minLeft, vw - bw - margin)
+        left = Math.max(minLeft, Math.min(left, maxLeft))
+
+        bubble.style.left = `${Math.round(left)}px`
+        bubble.style.top = `${Math.round(top)}px`
+    }
+
     showStep(steps, tourId) {
         if (this.currentTourIndex >= steps.length) {
             // 導覽結束
@@ -499,7 +582,14 @@ export class GuideManager {
             return
         }
 
+        // 清除上一步的氣泡與高亮
+        this.destroyBubble()
+
         const step = steps[this.currentTourIndex]
+        if (!step) {
+            this._tourActive = false
+            return
+        }
 
         // 執行步驟前置動作（如自訂操作或準備）
         if (typeof step.beforeShow === 'function') {
@@ -559,22 +649,20 @@ export class GuideManager {
             return
         }
 
-        // 平滑滾動目標元素至可視區域
+        // 立即滾動目標元素至可視區域中央（auto 確保在獲取座標前已就位）
         if (targetEl && typeof targetEl.scrollIntoView === 'function') {
             try {
-                targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                targetEl.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
             } catch {
                 /* 忽略滾動異常 */
             }
         }
 
-        const rect = targetEl ? targetEl.getBoundingClientRect() : null
-
         // 浮動氣泡
         const bubble = document.createElement('div')
         bubble.id = 'guide-tour-bubble'
         bubble.className =
-            'fixed z-[110] bg-wabi-surface border border-wabi-border rounded-2xl shadow-2xl p-4 w-72 max-w-[calc(100vw-2rem)] animate-modal-pop'
+            'fixed z-[9999] bg-wabi-surface border border-wabi-border rounded-2xl shadow-2xl p-4 w-72 max-w-[calc(100vw-1.5rem)] max-h-[85vh] flex flex-col animate-modal-pop'
 
         bubble.innerHTML = `
       <div class="flex items-center justify-between mb-2">
@@ -584,80 +672,16 @@ export class GuideManager {
         </button>
       </div>
       <h4 class="font-bold text-wabi-text-primary text-base mb-1">${escapeHTML(step.title)}</h4>
-      <p class="text-sm text-wabi-text-secondary leading-relaxed mb-3 whitespace-pre-line">${escapeHTML(step.body)}</p>
-      <div class="flex items-center justify-between">
+      <div class="flex-1 overflow-y-auto pr-0.5">
+        <p class="text-sm text-wabi-text-secondary leading-relaxed mb-3 whitespace-pre-line">${escapeHTML(step.body)}</p>
+      </div>
+      <div class="flex items-center justify-between pt-1">
         <span class="text-xs text-wabi-text-secondary font-medium">${this.currentTourIndex + 1} / ${steps.length}</span>
         <button id="guide-tour-next" class="px-4 py-1.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-xl hover:opacity-90 transition-opacity">
           ${this.currentTourIndex < steps.length - 1 ? '下一步' : '完成'}
         </button>
       </div>
     `
-
-        // 定位氣泡：有目標時依據 step.position 調整（top/bottom/left/right）；無目標時居中
-        if (targetEl && rect) {
-            const position = step.position || 'top'
-            const offset = 12
-            const bubbleRect = { width: 288, height: 180 } // 預估尺寸
-            let left, top
-
-            switch (position) {
-                case 'bottom':
-                    left = Math.max(
-                        8,
-                        Math.min(
-                            rect.left + rect.width / 2 - bubbleRect.width / 2,
-                            window.innerWidth - bubbleRect.width - 8
-                        )
-                    )
-                    top = rect.bottom + offset
-                    // 若底部超出視窗且上方有空間，自動翻轉至上方
-                    if (
-                        top + bubbleRect.height > window.innerHeight - 8 &&
-                        rect.top - bubbleRect.height - offset > 8
-                    ) {
-                        top = rect.top - bubbleRect.height - offset
-                    }
-                    break
-                case 'left':
-                    left = Math.max(8, rect.left - bubbleRect.width - offset)
-                    top = Math.max(8, rect.top + rect.height / 2 - 80)
-                    break
-                case 'right':
-                    left = Math.min(
-                        window.innerWidth - bubbleRect.width - 8,
-                        rect.right + offset
-                    )
-                    top = Math.max(8, rect.top + rect.height / 2 - 80)
-                    break
-                case 'top':
-                default:
-                    left = Math.max(
-                        8,
-                        Math.min(
-                            rect.left + rect.width / 2 - bubbleRect.width / 2,
-                            window.innerWidth - bubbleRect.width - 8
-                        )
-                    )
-                    top = Math.max(8, rect.top - bubbleRect.height - offset)
-                    // 若頂部超出視窗且下方有空間，自動翻轉至下方
-                    if (
-                        top < 8 &&
-                        rect.bottom + offset + bubbleRect.height <
-                            window.innerHeight - 8
-                    ) {
-                        top = rect.bottom + offset
-                    }
-                    break
-            }
-
-            bubble.style.left = `${left}px`
-            bubble.style.top = `${top}px`
-        } else {
-            // 無目標時居中顯示（介紹性步驟）
-            bubble.style.left = '50%'
-            bubble.style.top = '20%'
-            bubble.style.transform = 'translateX(-50%)'
-        }
 
         // 高亮目標元素
         if (targetEl && targetEl.classList) {
@@ -667,7 +691,39 @@ export class GuideManager {
         document.body.appendChild(bubble)
         this.bubble = bubble
 
+        // 掛載後根據實際尺寸與視窗計算定位
+        this._positionBubble(bubble, targetEl, step.position || 'top')
+
+        // 綁定 resize 與 scroll 事件動態調整
+        if (this._repositionListener) {
+            window.removeEventListener('resize', this._repositionListener)
+            window.removeEventListener('scroll', this._repositionListener)
+        }
+        this._repositionListener = () => {
+            if (this.bubble && document.contains(this.bubble)) {
+                this._positionBubble(this.bubble, targetEl, step.position || 'top')
+            }
+        }
+        window.addEventListener('resize', this._repositionListener, { passive: true })
+        window.addEventListener('scroll', this._repositionListener, { passive: true })
+
+        const handleKeydown = e => {
+            if (e.key === 'Escape') {
+                cleanup()
+                this.markTourSeen(tourId)
+                this._tourActive = false
+                this.destroyBubble()
+            }
+        }
+        document.addEventListener('keydown', handleKeydown)
+
         const cleanup = () => {
+            document.removeEventListener('keydown', handleKeydown)
+            if (this._repositionListener) {
+                window.removeEventListener('resize', this._repositionListener)
+                window.removeEventListener('scroll', this._repositionListener)
+                this._repositionListener = null
+            }
             if (targetEl && targetEl.classList) {
                 targetEl.classList.remove('guide-highlight')
             }
@@ -693,8 +749,14 @@ export class GuideManager {
     }
 
     destroyBubble() {
+        if (this._repositionListener) {
+            window.removeEventListener('resize', this._repositionListener)
+            window.removeEventListener('scroll', this._repositionListener)
+            this._repositionListener = null
+        }
         const bubble = document.getElementById('guide-tour-bubble')
         if (bubble) bubble.remove()
+        this.bubble = null
         document
             .querySelectorAll('.guide-highlight')
             .forEach(el => el.classList.remove('guide-highlight'))
@@ -836,51 +898,51 @@ export class GuideManager {
         const bubble = document.createElement('div')
         bubble.id = 'guide-tour-bubble'
         bubble.className =
-            'fixed z-[110] bg-wabi-surface border border-wabi-border rounded-2xl shadow-2xl p-4 w-72 animate-modal-pop'
+            'fixed z-[9999] bg-wabi-surface border border-wabi-border rounded-2xl shadow-2xl p-4 w-72 max-w-[calc(100vw-1.5rem)] max-h-[85vh] flex flex-col animate-modal-pop'
         bubble.innerHTML = `
       <div class="flex items-center justify-between mb-2">
         <span class="text-xs font-bold text-wabi-primary uppercase tracking-wide">導覽教學</span>
-        <button id="guide-tour-close" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1 text-lg leading-none">
+        <button id="guide-tour-close" class="text-wabi-text-secondary hover:text-wabi-text-primary p-1 text-lg leading-none" aria-label="關閉導覽">
           <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
       <h4 class="font-bold text-wabi-text-primary text-base mb-1">${escapeHTML(title)}</h4>
-      <p class="text-sm text-wabi-text-secondary leading-relaxed mb-2">${escapeHTML(body)}</p>
+      <div class="flex-1 overflow-y-auto pr-0.5">
+        <p class="text-sm text-wabi-text-secondary leading-relaxed mb-2 whitespace-pre-line">${escapeHTML(body)}</p>
+      </div>
       ${onNext ? `<button id="guide-tour-next" class="mt-2 w-full py-2 rounded-xl bg-wabi-primary text-white font-bold text-sm hover:opacity-90 transition-all">${escapeHTML(nextLabel)} <i class="fa-solid fa-arrow-right ml-1"></i></button>` : ''}
     `
-        if (targetSel) {
-            const targetEl = document.querySelector(targetSel)
-            if (targetEl) {
-                const rect = targetEl.getBoundingClientRect()
-                const bw = 288, bh = 195, offset = 12
-                let left, top
-                if (position === 'top') {
-                    left = Math.max(8, Math.min(rect.left + rect.width / 2 - bw / 2, window.innerWidth - bw - 8))
-                    top = Math.max(8, rect.top - bh - offset)
-                } else if (position === 'left') {
-                    left = Math.max(8, rect.left - bw - offset)
-                    top = Math.max(8, rect.top + rect.height / 2 - bh / 2)
-                } else if (position === 'right') {
-                    left = Math.min(window.innerWidth - bw - 8, rect.right + offset)
-                    top = Math.max(8, rect.top + rect.height / 2 - bh / 2)
-                } else {
-                    left = Math.max(8, Math.min(rect.left + rect.width / 2 - bw / 2, window.innerWidth - bw - 8))
-                    top = rect.bottom + offset
+        const targetEl = targetSel ? document.querySelector(targetSel) : null
+        if (targetEl) {
+            if (typeof targetEl.scrollIntoView === 'function') {
+                try {
+                    targetEl.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' })
+                } catch {
+                    /* 忽略滾動異常 */
                 }
-                bubble.style.left = `${left}px`
-                bubble.style.top = `${top}px`
-                targetEl.classList.add('guide-highlight')
-            } else {
-                bubble.style.left = '50%'
-                bubble.style.top = '20%'
-                bubble.style.transform = 'translateX(-50%)'
             }
-        } else {
-            bubble.style.left = '50%'
-            bubble.style.top = '20%'
-            bubble.style.transform = 'translateX(-50%)'
+            if (targetEl.classList) {
+                targetEl.classList.add('guide-highlight')
+            }
         }
+
         document.body.appendChild(bubble)
+        this.bubble = bubble
+
+        this._positionBubble(bubble, targetEl, position || 'bottom')
+
+        if (this._repositionListener) {
+            window.removeEventListener('resize', this._repositionListener)
+            window.removeEventListener('scroll', this._repositionListener)
+        }
+        this._repositionListener = () => {
+            if (this.bubble && document.contains(this.bubble)) {
+                this._positionBubble(this.bubble, targetEl, position || 'bottom')
+            }
+        }
+        window.addEventListener('resize', this._repositionListener, { passive: true })
+        window.addEventListener('scroll', this._repositionListener, { passive: true })
+
         const closeBtn = bubble.querySelector('#guide-tour-close')
         closeBtn.addEventListener('click', () => {
             this.destroyBubble()
