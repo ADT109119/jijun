@@ -715,16 +715,9 @@ export class RecordsListManager {
                     const totalExpense = groupRecs.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0)
                     const totalIncome = groupRecs.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0)
                     const netAmount = totalIncome - totalExpense
-                    // 待結清（排除 group_settlement）
-                    const nonSettlement = groupRecs.filter(r => r.category !== 'group_settlement')
-                    const pendingExpense = nonSettlement.filter(r => r.type === 'expense').reduce((s, r) => s + (r.amount || 0), 0)
-                    const pendingIncome = nonSettlement.filter(r => r.type === 'income').reduce((s, r) => s + (r.amount || 0), 0)
-                    const pendingAmount = pendingIncome - pendingExpense
                     const isSettled = meta.settled === true
 
-                    const hasSettlement = groupRecs.length > nonSettlement.length
                     const netLabel = netAmount >= 0 ? '+' : ''
-                    const pendingLabel = pendingAmount >= 0 ? '+' : ''
 
                     groupsHtml += `
                     <div class="group-block mb-2" data-group-id="${groupId}">
@@ -742,7 +735,6 @@ export class RecordsListManager {
                                 <span>支出 ${formatCurrency(totalExpense)}</span>
                                 <span class="text-wabi-border">·</span>
                                 <span class="font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨額 ${netLabel}${formatCurrency(netAmount)}</span>
-                                ${!isSettled && hasSettlement ? `<span class="hidden sm:inline text-wabi-text-secondary" title="待結清">｜ 待結清 ${pendingLabel}${formatCurrency(pendingAmount)}</span>` : ''}
                                 <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform ml-2 shrink-0 hidden md:block" style="transform: rotate(180deg)"></i>
                             </div>
                         </div>
@@ -819,25 +811,17 @@ export class RecordsListManager {
         const isTransfer = record.category === 'transfer'
         const isBalanceAdjustment =
             record.category === 'balance_adjustment'
-        const isGroupSettlement =
-            record.category === 'group_settlement'
         const icon = isBalanceAdjustment
             ? 'fa-solid fa-scale-balanced'
-            : isGroupSettlement
-              ? 'fa-solid fa-users-gear'
-              : category?.icon || 'fa-solid fa-question'
+            : category?.icon || 'fa-solid fa-question'
         const name = isTransfer
             ? '帳戶間轉帳'
             : isBalanceAdjustment
               ? '帳務差額'
-              : isGroupSettlement
-                ? '群組結清'
-                : category?.name || '未分類'
+              : category?.name || '未分類'
         const color = isBalanceAdjustment
             ? 'bg-purple-500'
-            : isGroupSettlement
-              ? 'bg-emerald-500'
-              : category?.color || 'bg-gray-400'
+            : category?.color || 'bg-gray-400'
         const hasDebt = !!record.debtId
         const hasAmortization = !!record.amortizationId
 

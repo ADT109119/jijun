@@ -3589,7 +3589,7 @@ class DataService {
      */
     _calculateGroupNet(groupRecords, allDebts = null) {
         const nonSettlement = groupRecords.filter(
-            r => r.category !== 'group_settlement' && r.groupStatus !== 'settled'
+            r => r.groupStatus !== 'settled'
         )
         const totalExpense = nonSettlement
             .filter(r => r.type === 'expense')
@@ -3722,7 +3722,7 @@ class DataService {
 
             // 逐筆清查群組內未結清的紀錄與欠款
             for (const r of groupRecords) {
-                if (r.groupStatus !== 'settled' && r.category !== 'group_settlement') {
+                if (r.groupStatus !== 'settled') {
                     if (r.debtId) {
                         const debt = debtsMap.get(r.debtId)
                         if (debt && !debt.settled && debt.remainingAmount > 0) {
@@ -3791,7 +3791,7 @@ class DataService {
 
             // 檢查是否全數完成
             const remainingRecords = await this.getGroupRecords(groupId)
-            const activeCount = remainingRecords.filter(r => r.groupStatus !== 'settled' && r.category !== 'group_settlement').length
+            const activeCount = remainingRecords.filter(r => r.groupStatus !== 'settled').length
             if (activeCount === 0) {
                 await this.saveGroupMeta(
                     { ...meta, settled: true, settledAt: Date.now() },
@@ -3828,7 +3828,7 @@ class DataService {
 
             const groupRecords = await this.getGroupRecords(targetRecord.groupId)
             const remainingActive = groupRecords.filter(
-                r => r.category !== 'group_settlement' && r.groupStatus !== 'settled'
+                r => r.groupStatus !== 'settled'
             )
 
             if (remainingActive.length === 0) {
@@ -3913,8 +3913,6 @@ class DataService {
             let activeCount = 0
 
             for (const r of groupRecords) {
-                if (r.category === 'group_settlement') continue
-
                 if (r.debtId) {
                     const debt = debtsMap.get(String(r.debtId))
                     const isDebtSettled = debt ? debt.settled === true : false

@@ -1942,7 +1942,6 @@ export class DebtManager {
       <p class="text-center py-6 text-wabi-text-secondary">此群組尚無交易明細</p>
     ` : groupRecords.map(r => {
       const cat = getCategoryById(r.type || 'expense', r.category) || { name: r.category || '未分類', icon: 'fa-regular fa-note-sticky', color: 'bg-gray-500' };
-      const isSettlement = r.category === 'group_settlement';
       const isSettled = r.groupStatus === 'settled';
       const isIncome = r.type === 'income';
       const isHexColor = cat.color && cat.color.startsWith('#');
@@ -1953,9 +1952,7 @@ export class DebtManager {
       let hasDebt = false;
       let debtTagHtml = '';
 
-      if (isSettlement) {
-        debtTagHtml = `<span class="text-[10px] whitespace-nowrap bg-wabi-text-secondary/10 text-wabi-text-secondary px-1.5 py-0.5 rounded font-normal border border-wabi-border shrink-0">結算劃轉</span>`;
-      } else if (r.debtId && debtsMap.has(r.debtId)) {
+      if (r.debtId && debtsMap.has(r.debtId)) {
         hasDebt = true;
         const debt = debtsMap.get(r.debtId);
         if (debt.type === 'receivable') {
@@ -1997,11 +1994,11 @@ export class DebtManager {
                 ${isIncome ? '+' : '-'}${formatCurrency(r.amount)}
               </p>
             </div>
-            ${!isSettled && !isSettlement && hasDebt ? `
+            ${!isSettled && hasDebt ? `
               <button class="settle-record-btn px-2.5 py-1 text-xs font-medium text-emerald-600 border border-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors whitespace-nowrap shrink-0" data-record-id="${r.id}">
                 個別還
               </button>
-            ` : !isSettled && !isSettlement && !hasDebt ? `
+            ` : !isSettled && !hasDebt ? `
               <button disabled class="px-2.5 py-1 text-xs font-medium text-wabi-text-secondary/40 border border-wabi-border bg-wabi-surface/50 rounded-lg cursor-not-allowed opacity-50 whitespace-nowrap shrink-0" title="此項目非待結算欠款，無需還款">
                 個別還
               </button>

@@ -100,19 +100,6 @@ describe('DataService — Record Groups', () => {
             expect(groups[0].settled).toBe(false)
         })
 
-        it('排除 group_settlement 類別的統計', async () => {
-            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
-            const tx = ds.db.transaction('records', 'readwrite')
-            await tx.store.add({ type: 'expense', amount: 300, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
-            await tx.store.add({ type: 'income', amount: 500, date: '2024-01-03', groupId: 'g1', category: 'group_settlement', ledgerId: 1 })
-            await tx.done
-
-            const groups = await ds.getGroups()
-            expect(groups[0].totalExpense).toBe(300)
-            expect(groups[0].totalIncome).toBe(0)
-            expect(groups[0].netAmount).toBe(300)
-        })
-
         it('空群組回傳 count=0', async () => {
             await ds.saveGroupMeta({ id: 'empty', name: '空群組', ledgerId: 1 })
             const groups = await ds.getGroups()
@@ -139,17 +126,6 @@ describe('DataService — Record Groups', () => {
             expect(result.totalExpense).toBe(0)
             expect(result.totalIncome).toBe(0)
             expect(result.netAmount).toBe(0)
-        })
-
-        it('M03: 排除 group_settlement 類別', () => {
-            const records = [
-                { type: 'expense', amount: 300 },
-                { type: 'income', amount: 100, category: 'group_settlement' },
-            ]
-            const result = ds._calculateGroupNet(records)
-            expect(result.totalExpense).toBe(300)
-            expect(result.totalIncome).toBe(0)
-            expect(result.netAmount).toBe(300)
         })
 
         it('M03: 金額為 null/undefined 時視為 0', () => {
@@ -206,7 +182,7 @@ describe('DataService — Record Groups', () => {
     })
 
     describe('settleGroup()', () => {
-        it('結清群組後不產生 group_settlement 假紀錄，而是觸發真實欠款還清並標記 group.settled', async () => {
+        it('結清群組後觸發真實欠款還清並標記 group.settled', async () => {
             await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
             const contactId = await ds.addContact({ name: '張三' })
             const debtId = await ds.addDebt({ type: 'receivable', amount: 300, date: '2024-01-01', contactId })
@@ -224,8 +200,6 @@ describe('DataService — Record Groups', () => {
             expect(updatedDebt.remainingAmount).toBe(0)
 
             const records = await ds.getRecords({ allLedgers: true })
-            const settlementRecords = records.filter(r => r.category === 'group_settlement')
-            expect(settlementRecords).toHaveLength(0)
 
             const repaymentRecords = records.filter(r => r.category === 'debt_collection')
             expect(repaymentRecords).toHaveLength(1)
@@ -510,20 +484,6 @@ describe('DataService — Record Groups', () => {
 
             const meta = await ds.getGroupMeta('g1')
             expect(meta.settled).toBe(true)
-        })
-
-        it('多筆 group_settlement 紀錄在 getGroups 中都被排除', async () => {
-            await ds.saveGroupMeta({ id: 'g1', name: '公款', ledgerId: 1 })
-            const tx = ds.db.transaction('records', 'readwrite')
-            await tx.store.add({ type: 'expense', amount: 500, date: '2024-01-01', groupId: 'g1', ledgerId: 1 })
-            await tx.store.add({ type: 'income', amount: 100, date: '2024-01-05', groupId: 'g1', category: 'group_settlement', ledgerId: 1 })
-            await tx.store.add({ type: 'income', amount: 200, date: '2024-01-06', groupId: 'g1', category: 'group_settlement', ledgerId: 1 })
-            await tx.done
-
-            const groups = await ds.getGroups()
-            expect(groups[0].totalIncome).toBe(0)
-            expect(groups[0].totalExpense).toBe(500)
-            expect(groups[0].netAmount).toBe(500)
         })
     })
 
