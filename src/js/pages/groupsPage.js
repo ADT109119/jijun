@@ -48,26 +48,26 @@ export class GroupsPage {
 
                 return `
                   <div class="group-page-card bg-wabi-surface rounded-xl border border-wabi-border p-4 shadow-sm hover:border-emerald-500/50 transition-colors" data-group-id="${group.id}">
-                    <div class="flex items-start justify-between">
-                      <div class="flex items-center gap-3">
-                        <div class="flex items-center justify-center rounded-full bg-emerald-500/20 text-emerald-600 ring-2 ring-emerald-500 size-10 flex-shrink-0">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="flex items-center gap-3 min-w-0 flex-1">
+                        <div class="flex items-center justify-center rounded-full bg-emerald-500/20 text-emerald-600 ring-2 ring-emerald-500 size-10 shrink-0">
                           <i class="fa-solid fa-layer-group"></i>
                         </div>
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <p class="font-bold text-wabi-text-primary text-base">${escapeHTML(group.name)}</p>
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <p class="font-bold text-wabi-text-primary text-base truncate">${escapeHTML(group.name)}</p>
                             ${group.settled ? `
-                              <span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full font-medium">已結清</span>
+                              <span class="text-[10px] bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0">已結清</span>
                             ` : `
-                              <span class="text-[10px] bg-wabi-primary/10 text-wabi-primary px-2 py-0.5 rounded-full font-medium">進行中</span>
+                              <span class="text-[10px] bg-wabi-primary/10 text-wabi-primary px-2 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0">進行中</span>
                             `}
                           </div>
-                          <p class="text-xs text-wabi-text-secondary mt-0.5">
+                          <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">
                             ${group.recordCount} 筆交易 · ${group.dateFrom ? `${formatDate(group.dateFrom, 'short')} ~ ${formatDate(group.dateTo, 'short')}` : '尚未有紀錄'}
                           </p>
                         </div>
                       </div>
-                      <div class="text-right">
+                      <div class="text-right shrink-0">
                         <p class="font-bold ${netClass} text-base">${group.netAmount > 0 ? '+' : group.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(group.netAmount))}</p>
                         <p class="text-xs text-wabi-text-secondary mt-0.5">${netDirection}</p>
                       </div>

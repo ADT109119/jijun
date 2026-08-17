@@ -1012,4 +1012,102 @@ describe('DebtManager - 建構與基本狀態', () => {
             modal.remove()
         })
     })
+
+    describe('聯絡人篩選群組邏輯 (loadDebtList & updateSummaryCards)', () => {
+        it('選擇聯絡人後，不含該聯絡人欠款的群組不應顯示', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+            const cBob = await ds.addContact({ name: 'Bob', phone: '0922' })
+
+            // 群組 1：只包含 Alice 的欠款
+            const rec1 = await ds.addRecord({
+                groupId: 'group-1',
+                type: 'expense',
+                amount: 500,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cAlice.id,
+                type: 'receivable',
+                amount: 500,
+                recordId: rec1.id,
+                groupId: 'group-1',
+                settled: false,
+                date: '2024-01-01',
+            })
+
+            // 群組 2：純專案，無任何欠款
+            await ds.addRecord({
+                groupId: 'group-2',
+                type: 'expense',
+                amount: 300,
+                date: '2024-01-02',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: 'Alice群組', settled: false, netAmount: 500, totalExpense: 500, totalIncome: 0, dateFrom: '2024-01-01', dateTo: '2024-01-01', recordCount: 1 },
+                { id: 'group-2', name: '專案群組', settled: false, netAmount: 300, totalExpense: 300, totalIncome: 0, dateFrom: '2024-01-02', dateTo: '2024-01-02', recordCount: 1 },
+            ])
+
+            const container = await renderPage(dm)
+
+            // 預設（無篩選聯絡人）：顯示所有群組
+            expect(container.textContent).toContain('Alice群組')
+            expect(container.textContent).toContain('專案群組')
+
+            // 篩選 Bob（在群組 1、2 皆無欠款）：兩個群組皆不應顯示
+            dm.currentContactFilter = cBob.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            expect(container.querySelector('.group-card[data-group-id="group-1"]')).toBeNull()
+            expect(container.querySelector('.group-card[data-group-id="group-2"]')).toBeNull()
+            const summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('0 個')
+
+            // 篩選 Alice（在群組 1 有欠款）：群組 1 顯示，群組 2 隱藏
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            expect(container.querySelector('.group-card[data-group-id="group-1"]')).not.toBeNull()
+            expect(container.querySelector('.group-card[data-group-id="group-2"]')).toBeNull()
+            const summaryCardsAlice = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCardsAlice[2].textContent).toContain('1 個')
+        })
+
+        it('未結清篩選下，若聯絡人在該群組的欠款已結清，群組不應顯示在未結清列表', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+
+            // 群組 1：Alice 的欠款已結清
+            const rec1 = await ds.addRecord({
+                groupId: 'group-1',
+                type: 'expense',
+                amount: 500,
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cAlice.id,
+                type: 'receivable',
+                amount: 500,
+                recordId: rec1.id,
+                groupId: 'group-1',
+                settled: true,
+                date: '2024-01-01',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: 'Alice已結清群組', settled: false, netAmount: 0, totalExpense: 500, totalIncome: 0, dateFrom: '2024-01-01', dateTo: '2024-01-01', recordCount: 1 },
+            ])
+
+            const container = await renderPage(dm)
+            dm.currentFilter = 'unsettled'
+            dm.currentContactFilter = cAlice.id
+
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            expect(container.querySelector('.group-card[data-group-id="group-1"]')).toBeNull()
+        })
+    })
 })
+

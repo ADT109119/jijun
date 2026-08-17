@@ -20,7 +20,7 @@ src/js/
 ├── recordsList.js       # 記帳紀錄列表
 ├── budgetManager.js     # 預算管理
 ├── quickSelectManager.js# 快速選擇管理
-├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人管理、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款)
+├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款)
 ├── changelog.js         # 更新日誌
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
@@ -91,7 +91,9 @@ public/                  # 靜態資源目錄
 └── widgets/             # PWA 桌面小工具定義檔 (包含 template.json 與 data.json)
 
 tools/jijun-ai-training/  # 離線 AI 模型 (jijun-LM) 數據生成與訓練管線
-├── generate_dataset.py # 訓練資料集批量生成腳本 (含極簡短語 Ultra-Short 強化與 --short_ratio 參數)
+├── generate_dataset.py # 訓練資料集批量生成腳本 (含 80+ 種全方位在地化生活情境、20+ 種口語句型庫、極簡短語 Ultra-Short 強化與 --short_ratio 參數)
+├── audit_dataset_llm.py # LLM 逐行資料集質檢與對齊稽核腳本 (支援並行與指數退避重試)
+├── fix_unmentioned_accounts.py # 未明確提及支付管道樣本之預設帳戶（現金）校驗修復腳本
 ├── filter_dataset.py   # 資料集語意對齊過濾器
 ├── split_dataset.py    # 訓練集/測試集分割腳本 (80/20)
 ├── train_custom_sft.py # PyTorch 微調 SFT 腳本

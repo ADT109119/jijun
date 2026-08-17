@@ -162,11 +162,31 @@ export class DebtManager {
       ? contacts.find(c => c.id === this.currentContactFilter)?.name || '聯絡人' 
       : null;
     
-    // Load group summary (always independent of contact filter)
+    // Load group summary (filtered by contact if contact filter is active)
     let groupCardHtml = '';
     try {
       const groups = await this.dataService.getGroups();
-      const unsettledGroups = groups.filter(g => !g.settled && g.netAmount !== 0);
+      let unsettledGroups = groups.filter(g => !g.settled && g.netAmount !== 0);
+
+      if (this.currentContactFilter) {
+        const contactGroupIds = new Set();
+        allDebts.forEach(d => {
+          if (d.contactId === this.currentContactFilter && !d.settled) {
+            if (d.groupId) contactGroupIds.add(d.groupId);
+            if (d.recordId) {
+              const rec = recordsMap.get(d.recordId);
+              if (rec && rec.groupId) contactGroupIds.add(rec.groupId);
+            }
+          }
+        });
+        allRecords.forEach(r => {
+          if (r.groupId && r.contactId === this.currentContactFilter && r.groupStatus !== 'settled') {
+            contactGroupIds.add(r.groupId);
+          }
+        });
+        unsettledGroups = unsettledGroups.filter(g => contactGroupIds.has(g.id));
+      }
+
       const totalGroupNet = unsettledGroups.reduce((s, g) => s + g.netAmount, 0);
       groupCardHtml = `
         <div class="bg-emerald-500/10 rounded-xl p-4 text-center border border-emerald-500/20">
@@ -367,7 +387,7 @@ export class DebtManager {
       return true;
     });
 
-    // Apply contact filter (only for personal debts, not groups)
+    // Apply contact filter (for personal debts)
     if (this.currentContactFilter) {
       allDebts = allDebts.filter(d => d.contactId === this.currentContactFilter);
     }
@@ -385,6 +405,40 @@ export class DebtManager {
           groups = allGroups.filter(g => g.settled);
         } else {
           groups = allGroups.filter(g => g.netAmount !== 0 || g.settled);
+        }
+
+        // Apply contact filter to groups: only show groups containing debts/records of this contact
+        if (this.currentContactFilter) {
+          const allDebtsInDb = await this.dataService.getDebts({ allLedgers: true });
+          let targetDebts = allDebtsInDb.filter(d => d.contactId === this.currentContactFilter);
+          if (this.currentFilter === 'unsettled') {
+            targetDebts = targetDebts.filter(d => !d.settled);
+          } else if (this.currentFilter === 'settled') {
+            targetDebts = targetDebts.filter(d => d.settled);
+          }
+
+          const matchedGroupIds = new Set();
+          targetDebts.forEach(d => {
+            if (d.groupId) matchedGroupIds.add(d.groupId);
+            if (d.recordId) {
+              const rec = recordsMap.get(d.recordId);
+              if (rec && rec.groupId) matchedGroupIds.add(rec.groupId);
+            }
+          });
+
+          allRecords.forEach(r => {
+            if (r.groupId && r.contactId === this.currentContactFilter) {
+              if (this.currentFilter === 'unsettled' && r.groupStatus !== 'settled') {
+                matchedGroupIds.add(r.groupId);
+              } else if (this.currentFilter === 'settled' && r.groupStatus === 'settled') {
+                matchedGroupIds.add(r.groupId);
+              } else if (this.currentFilter === 'all') {
+                matchedGroupIds.add(r.groupId);
+              }
+            }
+          });
+
+          groups = groups.filter(g => matchedGroupIds.has(g.id));
         }
       } catch (e) {
         console.warn('Failed to load groups for debt list:', e);
@@ -624,17 +678,20 @@ export class DebtManager {
       const isGroupHighlighted = this.highlightGroupId === group.id;
       return `
         <div class="group-card bg-wabi-surface rounded-lg border p-4 ${group.settled ? 'opacity-60' : ''} ${isGroupHighlighted ? 'border-emerald-600 ring-2 ring-emerald-600/20' : 'border-emerald-500/30'}" data-group-id="${group.id}">
-          <div class="flex items-start justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center rounded-full bg-emerald-500/20 text-emerald-600 ring-2 ring-emerald-500 size-10">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="flex items-center justify-center rounded-full bg-emerald-500/20 text-emerald-600 ring-2 ring-emerald-500 size-10 shrink-0">
                 <i class="fa-solid fa-layer-group"></i>
               </div>
-              <div>
-                <p class="font-medium text-wabi-text-primary">${escapeHTML(group.name)} <span class="text-xs text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded">群組</span></p>
-                <p class="text-sm text-wabi-text-secondary">${group.recordCount}筆明細 · ${formatDate(group.dateFrom, 'short')} ~ ${formatDate(group.dateTo, 'short')}</p>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 min-w-0">
+                  <p class="font-medium text-wabi-text-primary truncate">${escapeHTML(group.name)}</p>
+                  <span class="text-xs text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">群組</span>
+                </div>
+                <p class="text-sm text-wabi-text-secondary mt-0.5 truncate">${group.recordCount}筆明細 · ${formatDate(group.dateFrom, 'short')} ~ ${formatDate(group.dateTo, 'short')}</p>
               </div>
             </div>
-            <div class="text-right">
+            <div class="text-right shrink-0">
               <p class="font-bold ${netClass}">${group.netAmount > 0 ? '+' : group.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(group.netAmount))}</p>
               <p class="text-xs text-wabi-text-secondary">支 ${formatCurrency(group.totalExpense)} ｜ 收 ${formatCurrency(group.totalIncome)}</p>
             </div>
@@ -1875,7 +1932,7 @@ export class DebtManager {
     const allDebts = await this.dataService.getDebts({ allLedgers: true });
     const debtsMap = new Map(allDebts.map(d => [d.id, d]));
 
-    const netDirection = netAmount > 0 ? `應收 ${escapeHTML(groupMeta.name)}` : netAmount < 0 ? `應付 ${escapeHTML(groupMeta.name)}` : '已平衡';
+    const netDirection = netAmount > 0 ? `應收 ` : netAmount < 0 ? `應付 ` : '已平衡';
 
     const modal = document.createElement('div');
     modal.id = 'group-details-modal';
