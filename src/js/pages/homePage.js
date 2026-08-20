@@ -5,6 +5,7 @@ import {
     getDateRange,
     formatDateToString,
     getMonthRange,
+    escapeHTML,
 } from '../utils.js'
 import Sortable from 'sortablejs'
 
@@ -270,12 +271,17 @@ export class HomePage {
         const container = document.getElementById('group-balance-container')
         if (!container) return
 
-        // Only show if debt feature is enabled
+        // 檢查功能開關（支援 debtManagementEnabled 或 groupManagementEnabled）
         const debtEnabledSetting = await this.app.dataService.getSetting(
             'debtManagementEnabled'
         )
-        const debtEnabled = !!debtEnabledSetting?.value
-        if (!debtEnabled) {
+        const groupEnabledSetting = await this.app.dataService.getSetting(
+            'groupManagementEnabled'
+        )
+        const isEnabled =
+            (groupEnabledSetting?.value ?? true) ||
+            (debtEnabledSetting?.value ?? true)
+        if (!isEnabled) {
             container.innerHTML = ''
             return
         }
@@ -312,19 +318,21 @@ export class HomePage {
                 </a>
             `
 
-            // Show individual groups if 2-5 groups, otherwise just summary
-            if (unsettled.length >= 2 && unsettled.length <= 5) {
+            // 顯示最多前 5 筆未結清群組列表
+            const displayGroups = unsettled.slice(0, 5)
+            if (displayGroups.length > 0) {
                 html += `
                     <div class="bg-wabi-surface rounded-xl shadow-sm border border-wabi-border p-4 mb-6">
                         <div class="space-y-2">
-                            ${unsettled.map(g => {
+                            ${displayGroups.map(g => {
                                 const netSign = g.netAmount >= 0 ? '+' : '-'
                                 const netClass = g.netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'
+                                const dateInfo = g.dateFrom && g.dateTo ? `${g.dateFrom} ~ ${g.dateTo}` : (g.dateFrom || '尚無紀錄')
                                 return `
                                     <a href="#records?groupId=${g.id}" class="flex items-center justify-between py-2 border-b border-wabi-border last:border-0 hover:bg-wabi-bg rounded px-2 transition-colors">
                                         <div class="flex-1 min-w-0">
-                                            <p class="text-sm font-medium text-wabi-text-primary truncate">${g.name}</p>
-                                            <p class="text-xs text-wabi-text-secondary">${g.recordCount}筆 · ${g.dateFrom} ~ ${g.dateTo}</p>
+                                            <p class="text-sm font-medium text-wabi-text-primary truncate">${escapeHTML(g.name)}</p>
+                                            <p class="text-xs text-wabi-text-secondary">${g.recordCount}筆 · ${dateInfo}</p>
                                         </div>
                                         <div class="text-right shrink-0 ml-3">
                                             <p class="text-sm font-bold ${netClass}">${netSign}${formatCurrency(Math.abs(g.netAmount))}</p>
