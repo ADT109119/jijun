@@ -1,0 +1,22 @@
+{
+  "version": "2.1.7.6",
+  "buildHash": "9d834be0",
+  "assets": [
+    "/assets/main-Xf1JT-Ax.js",
+    "/assets/esm-D2J800zb.js",
+    "/assets/main-CUzaDkdS.css",
+    "/assets/polyfills-legacy-BPH2oTxc.js",
+    "/assets/main-legacy-Dd_9KS0q.js",
+    "/assets/fa-brands-400-C99Yv4gD.woff2",
+    "/assets/fa-regular-400-OOsPf1xj.woff2",
+    "/assets/fa-solid-900-DAI24fNt.woff2",
+    "/assets/fa-v4compatibility-aR9vOKaP.woff2",
+    "/assets/inter-latin-400-normal-C38fXH4l.woff2",
+    "/assets/inter-latin-500-normal-Cerq10X2.woff2",
+    "/assets/inter-latin-600-normal-LgqL8muc.woff2",
+    "/assets/inter-latin-700-normal-Yt3aPRUw.woff2",
+    "/assets/noto-sans-tc-chinese-traditional-400-normal-ijqRPkq_.woff2",
+    "/assets/noto-sans-tc-chinese-traditional-500-normal-CI7IWX24.woff2",
+    "/assets/noto-sans-tc-chinese-traditional-700-normal-C8s0_Inz.woff2"
+  ]
+}

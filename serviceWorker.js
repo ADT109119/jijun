@@ -1,12 +1,14 @@
-// 現代化 Service Worker
-// 使用統一的版本號和快取名稱
-const APP_VERSION = '2.1.7.5' // 版本號，2.1.2.3 版後在 build 時自動注入 package.json 的版本號
-const CACHE_NAME = self.CACHE_NAMES?.main || `easy-accounting-v${APP_VERSION}`
-const STATIC_CACHE = self.CACHE_NAMES?.static || `static-v${APP_VERSION}`
-const DYNAMIC_CACHE = self.CACHE_NAMES?.dynamic || `dynamic-v${APP_VERSION}`
+// 現代化 Service Worker（v2：precache + opaque cache-first）
+// 使用統一的版本號和 build hash 命名快取
+const APP_VERSION = '2.1.7.6' // build 時自動注入 package.json 的版本號
+const BUILD_HASH = '9d834be0' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
 
-// 需要預先快取的核心檔案
-const urlsToCache = [
+// 快取命名帶 BUILD_HASH：新 build 的 SW 用新快取，舊快取在 activate 時清理
+const APP_CACHE = `app-v${APP_VERSION}-${BUILD_HASH}` // install 時的 precache（本機 assets + 核心 + CDN）
+const DYNAMIC_CACHE = `dynamic-v${APP_VERSION}-${BUILD_HASH}` // 執行期快取
+
+// 核心檔案（本機伺服）
+const CORE_URLS = [
     '/',
     '/index.html',
     '/manifest.json',
@@ -16,54 +18,53 @@ const urlsToCache = [
     '/widgets/data.json',
 ]
 
-// 需要網路優先的檔案（經常變動）
-const networkFirstUrls = [
-    // '/src/js/',
-    // '/src/css/',
-    // '/api/'
-]
+// 外部 CDN 資源（cross-origin → opaque 回應，cache.put 仍可儲存）
+// 批次 2 後為空：Tailwind 已改 PostCSS 本地 build（CSS 進 /assets/* 被 precache）。
+// 僅剩 Google OAuth/Drive（accounts.google.com/apis.google.com）在 index.html，
+// 但那是登入/同步功能才動的、不屬首屏關鍵資源，不需 precache。
+const CDN_URLS = []
 
-// 快取優先的檔案（靜態資源）
-const cacheFirstUrls = [
-    '/icon/',
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.svg',
-    '.woff',
-    '.woff2',
-]
-
-// 安裝事件
+// 安裝事件：per-URL precache（單一資源失敗不讓整個 SW 安裝失敗）
 self.addEventListener('install', event => {
-    console.log(`Service Worker v${APP_VERSION} 安裝中...`)
+    console.log(`Service Worker v${APP_VERSION} (build ${BUILD_HASH}) 安裝中...`)
 
     event.waitUntil(
-        caches
-            .open(STATIC_CACHE)
-            .then(cache => {
-                console.log('快取核心檔案中...')
-                return cache.addAll(
-                    urlsToCache.map(url => {
-                        // 為每個 URL 添加版本參數以強制更新
-                        return new Request(url, { cache: 'reload' })
-                    })
-                )
-            })
-            .then(() => {
-                console.log(`Service Worker v${APP_VERSION} 安裝完成`)
-                // 強制跳過等待，立即激活新版本
-                return self.skipWaiting()
-            })
-            .catch(error => {
-                console.error('Service Worker 安裝失敗:', error)
-            })
+        (async () => {
+            const cache = await caches.open(APP_CACHE)
+
+            // 1) 本機 build assets（dist/precachemanifest.json，由 vite plugin 生成；dev 模式不存在 → 空）
+            let assetUrls = []
+            try {
+                const r = await fetch('/precachemanifest.json', { cache: 'no-cache' })
+                if (r.ok) assetUrls = (await r.json()).assets || []
+            } catch (e) {
+                // dev 或 manifest 不可用：只預快取 CORE + CDN
+            }
+
+            // 2) 逐 URL put（cross-origin 沒有 CORS header 時回應是 opaque，仍可入快取）
+            const put = async url => {
+                try {
+                    await cache.put(url, await fetch(url, { cache: 'no-cache' }))
+                } catch (err) {
+                    console.warn('precache 失敗（首次使用會走網路）:', url)
+                }
+            }
+            await Promise.all(
+                [...CORE_URLS, ...assetUrls, ...CDN_URLS].map(put)
+            )
+
+            console.log(
+                `Service Worker v${APP_VERSION} (build ${BUILD_HASH}) 安裝完成（${assetUrls.length} 個本機 assets）`
+            )
+            // 強制跳過等待，立即激活新版本
+            return self.skipWaiting()
+        })()
     )
 })
 
 // 啟用事件
 self.addEventListener('activate', event => {
-    console.log(`Service Worker v${APP_VERSION} 啟用中...`)
+    console.log(`Service Worker v${APP_VERSION} (build ${BUILD_HASH}) 啟用中...`)
 
     event.waitUntil(
         Promise.all([
@@ -71,8 +72,7 @@ self.addEventListener('activate', event => {
             caches.keys().then(cacheNames => {
                 return Promise.all(
                     cacheNames.map(cacheName => {
-                        // 刪除所有不是當前版本的快取
-                        if (!cacheName.includes(APP_VERSION)) {
+                        if (cacheName !== APP_CACHE && cacheName !== DYNAMIC_CACHE) {
                             console.log('刪除舊快取:', cacheName)
                             return caches.delete(cacheName)
                         }
@@ -116,41 +116,32 @@ self.addEventListener('fetch', event => {
         return
     }
 
-    const url = new URL(event.request.url)
-
-    // 判斷快取策略
-    if (shouldUseNetworkFirst(url.pathname)) {
-        // 網路優先策略（用於經常變動的檔案）
+    // 導覽請求（index.html / /）一律網路優先：
+    // HTML 是入口，cache-first 會讓舊 SW 在更新後仍提供舊 index.html，
+    // 載入舊 JS 開新版本 DB → VersionError → 資料「看似消失」的根因鏈之一。
+    if (event.request.mode === 'navigate') {
         event.respondWith(networkFirst(event.request))
-    } else if (shouldUseCacheFirst(url.pathname)) {
-        // 快取優先策略（用於靜態資源）
-        event.respondWith(cacheFirst(event.request))
-    } else {
-        // 預設：快取優先，網路備用
-        event.respondWith(cacheFirst(event.request))
+        return
     }
+
+    // 其他一切（本機 assets、CSS、CDN、字型）：cache-first。
+    // cross-origin 的 opaque 回應（Tailwind CDN、FA 字型、Google Fonts woff2）
+    // 首次載入即入快取 → 離線可活，不再受 HTTP cache TTL 限制。
+    event.respondWith(cacheFirst(event.request))
 })
 
-// 判斷是否使用網路優先策略
-function shouldUseNetworkFirst(pathname) {
-    return networkFirstUrls.some(pattern => pathname.includes(pattern))
-}
-
-// 判斷是否使用快取優先策略
-function shouldUseCacheFirst(pathname) {
-    return cacheFirstUrls.some(pattern => pathname.includes(pattern))
-}
-
-// 網路優先策略
+// 網路優先策略（僅導覽請求用）
 async function networkFirst(request) {
     try {
         // 先嘗試從網路獲取
         const networkResponse = await fetch(request)
 
         if (networkResponse && networkResponse.status === 200) {
-            // 成功獲取，更新快取
-            const cache = await caches.open(DYNAMIC_CACHE)
-            cache.put(request, networkResponse.clone())
+            // 成功獲取，更新快取（只存同源）
+            if (new URL(request.url).origin === self.location.origin) {
+                const cache = await caches.open(DYNAMIC_CACHE)
+                cache.put(request, networkResponse.clone())
+            }
             return networkResponse
         }
     } catch (error) {
@@ -163,7 +154,7 @@ async function networkFirst(request) {
         return cachedResponse
     }
 
-    // 如果是頁面請求且快取中沒有，返回離線頁面
+    // 如果是頁面請求且快取中沒有，返回離線頁面（precache 的 index.html）
     if (request.destination === 'document') {
         return caches.match('/index.html')
     }
@@ -175,9 +166,9 @@ async function networkFirst(request) {
     })
 }
 
-// 快取優先策略
+// 快取優先策略（其餘全部請求用）
 async function cacheFirst(request) {
-    // 先從快取獲取
+    // 先從快取獲取（opaque 回應也能 match 到）
     const cachedResponse = await caches.match(request)
     if (cachedResponse) {
         return cachedResponse
@@ -187,18 +178,11 @@ async function cacheFirst(request) {
         // 快取中沒有，從網路獲取
         const networkResponse = await fetch(request)
 
-        if (networkResponse && networkResponse.status === 200) {
-            // 成功獲取，存入快取
+        // ok（同源）或 opaque（cross-origin 無 CORS）都入快取
+        if (networkResponse && (networkResponse.ok || networkResponse.type === 'opaque')) {
             const cache = await caches.open(DYNAMIC_CACHE)
-
-            // 只快取同源請求
-            if (request.url.startsWith(self.location.origin)) {
-                cache.put(request, networkResponse.clone())
-            }
-
-            return networkResponse
+            cache.put(request, networkResponse.clone()).catch(() => {})
         }
-
         return networkResponse
     } catch (error) {
         console.log('網路和快取都失敗:', request.url)
@@ -253,7 +237,7 @@ self.addEventListener('message', event => {
                     )
                 )
         } else {
-            // Fallback: If browser doesn't support offline triggers, we just
+            // Fallback: In browsers without offline triggers, just
             // set a timeout. This only works reliably while the browser/SW is kept alive.
             const delay = timestamp - Date.now()
             if (delay > 0) {
@@ -304,7 +288,7 @@ self.addEventListener('push', event => {
 
 // 通知點擊處理
 self.addEventListener('notificationclick', event => {
-    console.log('通知被點擊:', event.notification.tag)
+    console.log('通知點擊:', event.notification.tag)
     event.notification.close()
 
     event.waitUntil(clients.openWindow('/'))
@@ -312,7 +296,7 @@ self.addEventListener('notificationclick', event => {
 
 // === Microsoft Edge PWA Widget Background Handling ===
 
-// Helper to query IndexedDB for today's totals
+// Helper: query IndexedDB for today's totals
 function getTodayTotal() {
     return new Promise(resolve => {
         // Open without version parameter to automatically use the latest active DB version
@@ -365,7 +349,7 @@ function getTodayTotal() {
     })
 }
 
-// Helper to update widget by instance ID or tag
+// Helper: update widget by instance ID or tag
 async function updateWidgetInstance(instanceId, tag) {
     if (!self.widgets) return
     try {
@@ -399,7 +383,7 @@ async function updateWidgetInstance(instanceId, tag) {
     }
 }
 
-// Helper to update all installed widgets
+// Helper: update all installed widgets
 async function updateAllWidgets() {
     if (!self.widgets) return
     try {
@@ -421,12 +405,12 @@ self.addEventListener('widgetinstall', event => {
 })
 
 self.addEventListener('widgetuninstall', event => {
-    console.log(`Widget ${event.instanceId} uninstalled.`)
+    console.log(`Widget uninstalled:`, event.widget?.definition?.tag)
 })
 
 self.addEventListener('widgetclick', event => {
     if (event.action === 'refresh' || event.verb === 'refresh') {
-        event.waitUntil(updateWidgetInstance(event.instanceId))
+        event.waitUntil(updateWidgetInstance(null, event.tag))
     }
 })
 
