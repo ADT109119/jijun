@@ -6,9 +6,9 @@
     （原本 Google Fonts <link>；woff2 由 Vite 打包並進 SW precache）
   @import 必須在所有其他規則之前（CSS 規範）。
 */
-@import './tailwind.css';
 @import '@fortawesome/fontawesome-free/css/all.min.css';
 @import '../fonts/fonts.css';
+@import './tailwind.css';
 
 body {
     font-family: 'Inter', 'Noto Sans TC', sans-serif;

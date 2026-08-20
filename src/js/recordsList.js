@@ -731,9 +731,9 @@ export class RecordsListManager {
                                 </div>
                                 <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform ml-2 shrink-0 md:hidden" style="transform: rotate(180deg)"></i>
                             </div>
-                            <div class="flex items-center justify-between md:justify-end gap-2 text-xs shrink-0 text-wabi-text-secondary pl-5 md:pl-0">
+                            <div class="flex items-center justify-between md:justify-end gap-2 text-xs shrink-0 text-wabi-text-secondary pl-5 md:pl-0 w-full md:w-auto">
                                 <span>支出 ${formatCurrency(totalExpense)}</span>
-                                <span class="text-wabi-border">·</span>
+                                <span class="text-wabi-border hidden md:inline">·</span>
                                 <span class="font-medium ${netAmount >= 0 ? 'text-wabi-income' : 'text-wabi-expense'}">淨額 ${netLabel}${formatCurrency(netAmount)}</span>
                                 <i class="fa-solid fa-chevron-down text-wabi-text-secondary text-xs group-chevron transition-transform ml-2 shrink-0 hidden md:block" style="transform: rotate(180deg)"></i>
                             </div>
@@ -759,9 +759,12 @@ export class RecordsListManager {
             header.addEventListener('click', () => {
                 const groupBlock = header.closest('.group-block')
                 const body = groupBlock.querySelector('.group-body')
-                const chevron = header.querySelector('.group-chevron')
+                const chevrons = header.querySelectorAll('.group-chevron')
                 body.classList.toggle('hidden')
-                chevron.style.transform = body.classList.contains('hidden') ? '' : 'rotate(180deg)'
+                const isHidden = body.classList.contains('hidden')
+                chevrons.forEach(c => {
+                    c.style.transform = isHidden ? '' : 'rotate(180deg)'
+                })
             })
         })
 
@@ -789,10 +792,12 @@ export class RecordsListManager {
             const groupBlock = listContainer.querySelector(`.group-block[data-group-id="${this.highlightGroupId}"]`)
             if (groupBlock) {
                 const body = groupBlock.querySelector('.group-body')
-                const chevron = groupBlock.querySelector('.group-chevron')
+                const chevrons = groupBlock.querySelectorAll('.group-chevron')
                 if (body) {
                     body.classList.remove('hidden')
-                    if (chevron) chevron.style.transform = 'rotate(180deg)'
+                    chevrons.forEach(c => {
+                        c.style.transform = 'rotate(180deg)'
+                    })
                 }
                 setTimeout(() => {
                     groupBlock.scrollIntoView({ behavior: 'smooth', block: 'center' })
