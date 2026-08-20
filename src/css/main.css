@@ -1,7 +1,14 @@
 /*
   Custom Styles for 輕鬆記帳
+  本機資源（取代 CDN，離線可用）：
+  - Font Awesome：npm @fortawesome/fontawesome-free（原本 cdnjs all.min.css）
+  - 字型：src/fonts/fonts.css → @fontsource Inter(latin) + Noto Sans TC(traditional)
+    （原本 Google Fonts <link>；woff2 由 Vite 打包並進 SW precache）
+  @import 必須在所有其他規則之前（CSS 規範）。
 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+@import './tailwind.css';
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+@import '../fonts/fonts.css';
 
 body {
     font-family: 'Inter', 'Noto Sans TC', sans-serif;

@@ -947,12 +947,15 @@ export class DebtManager {
 
     if (isAdvancedMode) {
       accounts = await this.dataService.getAccounts();
+      let preferredId = null;
       if (debt.recordId) {
         const mainRecord = await this.dataService.getRecord(debt.recordId);
         if (mainRecord && mainRecord.accountId) {
-          defaultAccountId = mainRecord.accountId;
+          preferredId = mainRecord.accountId;
         }
       }
+      // 還款無法入信用卡帳戶：信用卡轉導至其自動扣繳帳戶/現金
+      defaultAccountId = await this.dataService.resolveDefaultSettleAccountId(preferredId);
       if (!defaultAccountId && accounts.length > 0) {
         defaultAccountId = accounts[0].id;
       }
@@ -1059,7 +1062,16 @@ export class DebtManager {
     const isReceivable = debt.type === 'receivable';
 
     const accounts = await this.dataService.getAccounts();
-    const defaultAccountId = accounts.length > 0 ? accounts[0].id : null;
+    // 還款無法入信用卡帳戶：以原始欠款紀錄帳戶為偏好，信用卡會轉導
+    let preferredId = null;
+    if (debt.recordId) {
+      const mainRecord = await this.dataService.getRecord(debt.recordId);
+      if (mainRecord && mainRecord.accountId) {
+        preferredId = mainRecord.accountId;
+      }
+    }
+    const defaultAccountId = (await this.dataService.resolveDefaultSettleAccountId(preferredId))
+      || (accounts.length > 0 ? accounts[0].id : null);
 
     const modal = document.createElement('div');
     modal.id = 'settle-debt-modal';
@@ -1781,7 +1793,9 @@ export class DebtManager {
     let defaultAccountId = null;
     if (isAdvancedMode) {
       accounts = await this.dataService.getAccounts();
-      if (accounts.length > 0) defaultAccountId = accounts[0].id;
+      // 結清無法入信用卡帳戶：預設現金/第一非信用卡帳戶
+      defaultAccountId = await this.dataService.resolveDefaultSettleAccountId(null);
+      if (!defaultAccountId && accounts.length > 0) defaultAccountId = accounts[0].id;
     }
 
     const modal = document.createElement('div');
@@ -1856,7 +1870,9 @@ export class DebtManager {
     let defaultAccountId = null;
     if (isAdvancedMode) {
       accounts = await this.dataService.getAccounts();
-      if (accounts.length > 0) defaultAccountId = accounts[0].id;
+      // 結清無法入信用卡帳戶：預設現金/第一非信用卡帳戶
+      defaultAccountId = await this.dataService.resolveDefaultSettleAccountId(null);
+      if (!defaultAccountId && accounts.length > 0) defaultAccountId = accounts[0].id;
     }
 
     const actionLabel = netAmount > 0 ? '收款' : '付款';
@@ -2142,7 +2158,11 @@ export class DebtManager {
     let defaultAccountId = null;
     if (isAdvancedMode) {
       accounts = await this.dataService.getAccounts();
-      if (accounts.length > 0) defaultAccountId = accounts[0].id;
+      // 結清無法入信用卡帳戶：以該筆紀錄帳戶為偏好，信用卡會轉導
+      defaultAccountId = await this.dataService.resolveDefaultSettleAccountId(
+        record.accountId || null
+      );
+      if (!defaultAccountId && accounts.length > 0) defaultAccountId = accounts[0].id;
     }
 
     const isExpense = record.type === 'expense';

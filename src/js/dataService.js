@@ -1,13 +1,10 @@
 import { openDB as idbOpenDB } from 'idb'
 import { customConfirm, formatDateToString } from './utils.js'
 
-const openDB =
-    idbOpenDB ||
-    (typeof window !== 'undefined' && window.idb?.openDB) ||
-    (() => {
-        console.warn('IndexedDB 不可用，將使用 localStorage')
-        return null
-    })
+const openDB = idbOpenDB || (() => {
+    console.warn('IndexedDB 不可用，將使用 localStorage')
+    return null
+})
 
 class DataService {
     constructor() {
@@ -37,496 +34,701 @@ class DataService {
     }
 
     async init() {
+        this.initDiagnostics = null
+        this._existingDbVersion = null
         try {
             if (openDB && typeof openDB === 'function') {
-                this.db = await openDB(this.dbName, this.dbVersion, {
-                    async upgrade(db, oldVersion, newVersion, transaction) {
-                        // Schema version 1
-                        if (oldVersion < 1) {
-                            if (!db.objectStoreNames.contains('records')) {
-                                const recordStore = db.createObjectStore(
-                                    'records',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                recordStore.createIndex('date', 'date')
-                                recordStore.createIndex('type', 'type')
-                                recordStore.createIndex('category', 'category')
-                            }
-                            if (!db.objectStoreNames.contains('settings')) {
-                                db.createObjectStore('settings', {
-                                    keyPath: 'key',
-                                })
-                            }
-                        }
-                        // Schema version 2
-                        if (oldVersion < 2) {
-                            if (!db.objectStoreNames.contains('accounts')) {
-                                const accountStore = db.createObjectStore(
-                                    'accounts',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                accountStore.createIndex('name', 'name', {
-                                    unique: true,
-                                })
-                            }
-                            const recordStore =
-                                transaction.objectStore('records')
-                            if (!recordStore.indexNames.contains('accountId')) {
-                                recordStore.createIndex(
-                                    'accountId',
-                                    'accountId'
-                                )
-                            }
-                        }
-                        // Schema version 3
-                        if (oldVersion < 3) {
-                            if (
-                                !db.objectStoreNames.contains(
-                                    'recurring_transactions'
-                                )
-                            ) {
-                                const recurringStore = db.createObjectStore(
-                                    'recurring_transactions',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                recurringStore.createIndex(
-                                    'nextDueDate',
-                                    'nextDueDate'
-                                )
-                            }
-                        }
-                        // Schema version 4: Debt management system
-                        if (oldVersion < 4) {
-                            // Files store for storing blobs (avatars, etc.)
-                            if (!db.objectStoreNames.contains('files')) {
-                                db.createObjectStore('files', {
-                                    keyPath: 'id',
-                                    autoIncrement: true,
-                                })
-                            }
-                            // Contacts store for debt management
-                            if (!db.objectStoreNames.contains('contacts')) {
-                                const contactStore = db.createObjectStore(
-                                    'contacts',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                contactStore.createIndex('name', 'name')
-                            }
-                            // Debts store for tracking receivables and payables
-                            if (!db.objectStoreNames.contains('debts')) {
-                                const debtStore = db.createObjectStore(
-                                    'debts',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                debtStore.createIndex('contactId', 'contactId')
-                                debtStore.createIndex('type', 'type')
-                                debtStore.createIndex('settled', 'settled')
-                            }
-                        }
-                        // Schema version 5: Plugin System
-                        if (oldVersion < 5) {
-                            if (!db.objectStoreNames.contains('plugins')) {
-                                db.createObjectStore('plugins', {
-                                    keyPath: 'id',
-                                })
-                                // id: plugin identifier (e.g. 'com.example.myplugin')
-                                // name, version, script (blob/string), enabled (bool)
-                            }
-                        }
-                        // Schema version 6: Sync log for multi-device sync
-                        if (oldVersion < 6) {
-                            if (!db.objectStoreNames.contains('sync_log')) {
-                                const syncStore = db.createObjectStore(
-                                    'sync_log',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                syncStore.createIndex('timestamp', 'timestamp')
-                            }
-                        }
-                        // Schema version 7: UUIDs for sync deduplication
-                        if (oldVersion < 7) {
-                            const stores = [
-                                'records',
-                                'accounts',
-                                'contacts',
-                                'debts',
-                                'recurring_transactions',
-                            ]
-                            for (const storeName of stores) {
-                                if (db.objectStoreNames.contains(storeName)) {
-                                    const store =
-                                        transaction.objectStore(storeName)
-                                    if (!store.indexNames.contains('uuid')) {
-                                        store.createIndex('uuid', 'uuid', {
-                                            unique: true,
-                                        })
-                                    }
-                                    // Iterate and assign UUIDs to existing records
-                                    let cursor = await store.openCursor()
-                                    while (cursor) {
-                                        const updateData = cursor.value
-                                        if (!updateData.uuid) {
-                                            // Simple UUID v4 generator
-                                            updateData.uuid =
-                                                self.crypto &&
-                                                self.crypto.randomUUID
-                                                    ? self.crypto.randomUUID()
-                                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-                                                          /[xy]/g,
-                                                          function (c) {
-                                                              const r =
-                                                                      (Math.random() *
-                                                                          16) |
-                                                                      0,
-                                                                  v =
-                                                                      c === 'x'
-                                                                          ? r
-                                                                          : (r &
-                                                                                0x3) |
-                                                                            0x8
-                                                              return v.toString(
-                                                                  16
-                                                              )
-                                                          }
-                                                      )
-                                            await cursor.update(updateData)
-                                        }
-                                        cursor = await cursor.continue()
-                                    }
-                                }
-                            }
-                        }
-                        // Schema version 8: Multi-ledger support
-                        if (oldVersion < 8) {
-                            // 1. 建立 ledgers object store
-                            if (!db.objectStoreNames.contains('ledgers')) {
-                                const ledgerStore = db.createObjectStore(
-                                    'ledgers',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                ledgerStore.createIndex('uuid', 'uuid', {
-                                    unique: true,
-                                })
-                            }
+                // ── 階段一：無版本偵測（讀 DB 實際版本，不觸發 upgrade）──
+                // 修正直接 openDB(name, this.dbVersion) 的三個歷史風險：
+                // (1) DB 已被升到更高版本時（例如舊版熱升級把 DB 推到 v16），
+                //     直接開 v15 必得 VersionError
+                // (2) upgrade 回呼拋例外會中止整筆升級，DB 永久卡舊版，
+                //     之後每次啟動都 VersionError → 靜默 fallback → 空 app
+                // (3) 其他分頁開啟中時升級被擋（blocked），open promise
+                //     會永遠 pending
+                const probe = await this._probeDbVersion()
+                // probe 回傳 { version }：
+                // - DB 存在 → 實際版本
+                // - DB 不存在（全新裝置）→ 0，之後以程式版本建立
+                // - databases() 不可用 → 程式版本（等同舊版行為）
+                const currentVersion = probe.version
+                this._existingDbVersion = currentVersion
 
-                            // 2. 為所有資料 store 新增 ledgerId index
-                            const dataStores = [
-                                'records',
-                                'accounts',
-                                'contacts',
-                                'debts',
-                                'recurring_transactions',
-                            ]
-                            for (const storeName of dataStores) {
-                                if (db.objectStoreNames.contains(storeName)) {
-                                    const store =
-                                        transaction.objectStore(storeName)
-                                    if (
-                                        !store.indexNames.contains('ledgerId')
-                                    ) {
-                                        store.createIndex(
-                                            'ledgerId',
-                                            'ledgerId'
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 3. 插入預設帳本
-                            const ledgerStore =
-                                transaction.objectStore('ledgers')
-                            const defaultUuid =
-                                self.crypto && self.crypto.randomUUID
-                                    ? self.crypto.randomUUID()
-                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-                                          /[xy]/g,
-                                          function (c) {
-                                              const r =
-                                                      (Math.random() * 16) | 0,
-                                                  v =
-                                                      c === 'x'
-                                                          ? r
-                                                          : (r & 0x3) | 0x8
-                                              return v.toString(16)
-                                          }
-                                      )
-                            await ledgerStore.add({
-                                id: 1,
-                                uuid: defaultUuid,
-                                name: '預設帳本',
-                                icon: 'fa-solid fa-book',
-                                color: '#334A52',
-                                type: 'personal',
-                                createdAt: Date.now(),
-                            })
-
-                            // 4. 為所有現有資料打上 ledgerId = 1
-                            for (const storeName of dataStores) {
-                                if (db.objectStoreNames.contains(storeName)) {
-                                    const store =
-                                        transaction.objectStore(storeName)
-                                    let cursor = await store.openCursor()
-                                    while (cursor) {
-                                        const data = cursor.value
-                                        if (
-                                            data.ledgerId === undefined ||
-                                            data.ledgerId === null
-                                        ) {
-                                            data.ledgerId = 1
-                                            await cursor.update(data)
-                                        }
-                                        cursor = await cursor.continue()
-                                    }
-                                }
-                            }
-                        }
-                        // Schema version 9: Remove unique constraint on account name
-                        if (oldVersion < 9) {
-                            if (db.objectStoreNames.contains('accounts')) {
-                                const accountStore =
-                                    transaction.objectStore('accounts')
-                                if (accountStore.indexNames.contains('name')) {
-                                    accountStore.deleteIndex('name')
-                                }
-                                accountStore.createIndex('name', 'name', {
-                                    unique: false,
-                                })
-                            }
-                        }
-                        // Schema version 10: Themes Store
-                        if (oldVersion < 10) {
-                            if (!db.objectStoreNames.contains('themes')) {
-                                db.createObjectStore('themes', {
-                                    keyPath: 'id',
-                                })
-                            }
-                        }
-                        // Schema version 11: Amortizations (攤提/折舊/分期)
-                        if (oldVersion < 11) {
-                            if (
-                                !db.objectStoreNames.contains('amortizations')
-                            ) {
-                                const aStore = db.createObjectStore(
-                                    'amortizations',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                aStore.createIndex('uuid', 'uuid', {
-                                    unique: true,
-                                })
-                                aStore.createIndex('ledgerId', 'ledgerId')
-                                aStore.createIndex('status', 'status')
-                            }
-                        }
-                        // Schema version 12: Add amortizationId index to records
-                        if (oldVersion < 12) {
-                            if (db.objectStoreNames.contains('records')) {
-                                const recordStore =
-                                    transaction.objectStore('records')
-                                if (
-                                    !recordStore.indexNames.contains(
-                                        'amortizationId'
-                                    )
-                                ) {
-                                    recordStore.createIndex(
-                                        'amortizationId',
-                                        'amortizationId',
-                                        { unique: false }
-                                    )
-                                }
-                            }
-                        }
-                        // Schema version 13: Credit card support
-                        if (oldVersion < 13) {
-                            if (db.objectStoreNames.contains('accounts')) {
-                                const store =
-                                    transaction.objectStore('accounts')
-                                // 為舊資料補上 type = 'wallet'
-                                let cursor = await store.openCursor()
-                                while (cursor) {
-                                    const data = cursor.value
-                                    if (!data.type) {
-                                        data.type = 'wallet'
-                                        data.creditLimit = 0
-                                        data.statementDay = 25
-                                        data.dueDay = 15
-                                        await cursor.update(data)
-                                    }
-                                    cursor = await cursor.continue()
-                                }
-                                // 新增 type index
-                                if (!store.indexNames.contains('type')) {
-                                    store.createIndex('type', 'type', {
-                                        unique: false,
-                                    })
-                                }
-                            }
-                            // 新增信用卡帳單 store
-                            if (
-                                !db.objectStoreNames.contains(
-                                    'credit_statements'
-                                )
-                            ) {
-                                const stmtStore = db.createObjectStore(
-                                    'credit_statements',
-                                    {
-                                        keyPath: 'id',
-                                        autoIncrement: true,
-                                    }
-                                )
-                                stmtStore.createIndex('uuid', 'uuid', {
-                                    unique: true,
-                                })
-                                stmtStore.createIndex('accountId', 'accountId')
-                                stmtStore.createIndex('ledgerId', 'ledgerId')
-                                stmtStore.createIndex('period', 'period')
-                                stmtStore.createIndex('status', 'status')
-                            }
-                        }
-                        // Schema version 14: Migrate legacy debt payments to records for correct balances
-                        if (oldVersion < 14) {
-                            const debtsStore = transaction.objectStore('debts')
-                            const recordsStore = transaction.objectStore('records')
-                            const contactsStore = transaction.objectStore('contacts')
-                            const accountsStore = transaction.objectStore('accounts')
-
-                            // 獲取預設帳戶，做為 fallback 帳戶 ID
-                            let defaultAccountId = null
-                            const accCursor = await accountsStore.openCursor()
-                            if (accCursor) {
-                                defaultAccountId = accCursor.value.id
-                            }
-
-                            let cursor = await debtsStore.openCursor()
-                            while (cursor) {
-                                const debt = cursor.value
-                                if (debt.payments && debt.payments.length > 0) {
-                                    let updated = false
-                                    
-                                    // 獲取聯絡人名稱
-                                    let contactName = '未知聯絡人'
-                                    if (debt.contactId) {
-                                        const contact = await contactsStore.get(debt.contactId)
-                                        if (contact) {
-                                            contactName = contact.name || '未知聯絡人'
-                                        }
-                                    }
-
-                                    // 獲取原始記帳紀錄的帳戶 ID
-                                    let originalAccountId = null
-                                    if (debt.recordId) {
-                                        const originalRecord = await recordsStore.get(debt.recordId)
-                                        if (originalRecord) {
-                                            originalAccountId = originalRecord.accountId
-                                        }
-                                    }
-
-                                    const updatedPayments = []
-                                    for (const payment of debt.payments) {
-                                        if (!payment.recordId && !payment.recordUuid) {
-                                            const paymentDate = payment.date || formatDateToString(new Date())
-                                            const recordAccountId = originalAccountId || defaultAccountId
-
-                                            // 建立記帳紀錄
-                                            const record = {
-                                                type: debt.type === 'receivable' ? 'income' : 'expense',
-                                                category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
-                                                amount: payment.amount,
-                                                date: paymentDate,
-                                                description: debt.type === 'receivable'
-                                                    ? `收回欠款：${contactName} - ${debt.description || ''}`
-                                                    : `還款：${contactName} - ${debt.description || ''}`,
-                                                ledgerId: debt.ledgerId || 1,
-                                                debtId: debt.id,
-                                                ...(recordAccountId ? { accountId: recordAccountId } : {}),
-                                            }
-
-                                            // 生成 uuid (因為從 version 7 起需要 uuid)
-                                            record.uuid =
-                                                self.crypto && self.crypto.randomUUID
-                                                    ? self.crypto.randomUUID()
-                                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-                                                          /[xy]/g,
-                                                          function (c) {
-                                                              const r = (Math.random() * 16) | 0,
-                                                                  v = c === 'x' ? r : (r & 0x3) | 0x8
-                                                              return v.toString(16)
-                                                          }
-                                                      )
-
-                                            // 寫入 records
-                                            const newRecordId = await recordsStore.add(record)
-                                            payment.recordId = newRecordId
-                                            payment.recordUuid = record.uuid
-                                            updated = true
-                                        }
-                                        updatedPayments.push(payment)
-                                    }
-
-                                    if (updated) {
-                                        debt.payments = updatedPayments
-                                        await cursor.update(debt)
-                                    }
-                                }
-                                cursor = await cursor.continue()
-                            }
-                        }
-                        // Schema version 15: Record Groups (groupMeta store)
-                        if (oldVersion < 15) {
-                            if (!db.objectStoreNames.contains('groupMeta')) {
-                                const groupStore = db.createObjectStore(
-                                    'groupMeta',
-                                    { keyPath: 'id' }
-                                )
-                                groupStore.createIndex('uuid', 'uuid', {
-                                    unique: true,
-                                })
-                                groupStore.createIndex('ledgerId', 'ledgerId', {
-                                    unique: false,
-                                })
-                            }
-                        }
-                    },
+                // ── 階段二：以 max(程式版本, DB 實際版本) 開啟 ──
+                // 若 DB 已比程式新（舊版 JS 曾升級過），照 DB 版本開啟避免
+                // VersionError，等下次版本更新時再補升級。
+                const targetVersion = Math.max(
+                    currentVersion,
+                    this.dbVersion,
+                    1
+                )
+                let blockedReject
+                const blockedPromise = new Promise((_, reject) => {
+                    blockedReject = reject
                 })
+                const openPromise = openDB(this.dbName, targetVersion, {
+                    upgrade: (db, oldVersion, newVersion, transaction) =>
+                        this._runUpgrade(
+                            db,
+                            oldVersion,
+                            newVersion,
+                            transaction
+                        ),
+                    // idb 的 blocked 事件：升級被其他分頁擋住時 open promise
+                    // 永遠不會 settle，必須用 race 主動 reject，
+                    // 否則 init 永久卡死在骨架畫面。
+                    blocked: (oldV, newV) =>
+                        blockedReject(
+                            new Error('db_blocked:' + oldV + '->' + newV)
+                        ),
+                })
+                try {
+                    this.db = await Promise.race([
+                        openPromise,
+                        blockedPromise,
+                    ])
+                } catch (e) {
+                    this.db = null
+                    throw e
+                }
 
                 // If it's the first time using the app, try to migrate from localStorage
                 await this.migrateFromLocalStorage()
             } else {
-                throw new Error('IndexedDB not available')
+                // 瀏覽器根本沒有 IndexedDB（極端環境）：才允許降級
+                throw new Error('indexeddb_not_supported')
             }
         } catch (error) {
+            const blockedCase =
+                error &&
+                String(error.message || '').indexOf('db_blocked') === 0
+            const notSupported =
+                error && error.message === 'indexeddb_not_supported'
             console.error('Database initialization failed:', error)
-            // Fallback to localStorage if IndexedDB is not available
-            this.useLocalStorage = true
-            console.log('Using localStorage as a fallback')
+            // 記錄診斷資訊供 UI 警示與除錯（DevTools 可讀）
+            this.initDiagnostics = {
+                ok: false,
+                error: error
+                    ? (error.name || 'Error') +
+                      ': ' +
+                      (error.message || 'unknown')
+                    : 'unknown',
+                existingDbVersion: this._existingDbVersion,
+                blocked: !!blockedCase,
+                timestamp: Date.now(),
+            }
+            try {
+                sessionStorage.setItem(
+                    'db_init_diagnostics',
+                    JSON.stringify(this.initDiagnostics)
+                )
+            } catch (e) {
+                // sessionStorage 不可用時忽略
+            }
+            if (blockedCase) {
+                // 升級被其他分頁擋住：資料還在 DB 裡，不降級（降級會顯示
+                // 空 app 誤導用戶以為資料消失）。明確報錯讓 UI 提示
+                // 用戶關閉其他分頁。
+                this.db = null
+                this.useLocalStorage = false
+                throw new Error(
+                    '資料庫升級被其他分頁鎖定，請關閉所有分頁後重新載入',
+                    { cause: error }
+                )
+            }
+            if (notSupported) {
+                // 真的沒有 IndexedDB（老瀏覽器/特殊環境）：才允許降級
+                this.useLocalStorage = true
+                console.log('IndexedDB 不存在，使用 localStorage 降級')
+                return
+            }
+            // 其他失敗（VersionError、SecurityError、upgrade 拋例外…）：
+            // 不靜默降級——降級等於把用戶資料鎖在 IDB 裡卻顯示空 app，
+            // 是最糟的「資料看似消失」路徑。明確拋錯讓 UI 顯示警示。
+            this.db = null
+            this.useLocalStorage = false
+            throw new Error(
+                '資料庫初始化失敗（' +
+                    this.initDiagnostics.error +
+                    '），資料可能仍存在資料庫中，請重新載入或從備份還原',
+                { cause: error }
+            )
+        }
+    }
+
+    /**
+     * 偵測已存在 DB 的實際版本。
+     * 使用 IDBFactory.databases()（唯讀查詢，不開啟 DB、不觸發 upgrade）。
+     * 支援：Chrome 71+ / Edge / Brave / Firefox 98+ / Safari 14.1+。
+     *
+     * 注意：不能用 openDB(name, null) 偵測——WebIDL 會把 null 轉成 0，
+     * Chromium 直接拋 "The version provided must not be 0"（已實測，
+     * 即使 DB 存在也一樣），因此舊版 null 偵測在 Chrome/Brave 上永遠失敗。
+     */
+    async _probeDbVersion() {
+        try {
+            if (
+                typeof indexedDB !== 'undefined' &&
+                typeof indexedDB.databases === 'function'
+            ) {
+                const dbs = await indexedDB.databases()
+                const match = (dbs || []).find(d => d.name === this.dbName)
+                // DB 不存在 → 版本 0（全新安裝，之後以程式版本建立）
+                return { version: match ? match.version || 0 : 0 }
+            }
+        } catch (e) {
+            // databases() 極罕見失敗：退回假設程式版本（等同舊版行為）
+            console.warn(
+                '[DataService] databases() 偵測失敗，改用程式版本開啟:',
+                e
+            )
+        }
+        return { version: this.dbVersion }
+    }
+
+    /**
+     * 執行 Schema 升級（從 init 抽出的 upgrade 回呼）。
+     * 關鍵保護：升級回呼內的未捕捉例外會中止整筆 upgrade transaction，
+     * DB 停留在舊版本，之後每次啟動都 VersionError（資料「消失」主因之一）。
+     * 整體包 try/catch：失敗時記錄診斷，DB 仍會提升到目標版本，
+     * 避免「升級卡死 → 每次啟動失敗」的鎖死循環。
+     */
+    async _runUpgrade(db, oldVersion, newVersion, transaction) {
+        try {
+            // Schema version 1
+            if (oldVersion < 1) {
+                if (!db.objectStoreNames.contains('records')) {
+                    const recordStore = db.createObjectStore(
+                        'records',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    recordStore.createIndex('date', 'date')
+                    recordStore.createIndex('type', 'type')
+                    recordStore.createIndex('category', 'category')
+                }
+                if (!db.objectStoreNames.contains('settings')) {
+                    db.createObjectStore('settings', {
+                        keyPath: 'key',
+                    })
+                }
+            }
+            // Schema version 2
+            if (oldVersion < 2) {
+                if (!db.objectStoreNames.contains('accounts')) {
+                    const accountStore = db.createObjectStore(
+                        'accounts',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    accountStore.createIndex('name', 'name', {
+                        unique: true,
+                    })
+                }
+                const recordStore =
+                    transaction.objectStore('records')
+                if (!recordStore.indexNames.contains('accountId')) {
+                    recordStore.createIndex(
+                        'accountId',
+                        'accountId'
+                    )
+                }
+            }
+            // Schema version 3
+            if (oldVersion < 3) {
+                if (
+                    !db.objectStoreNames.contains(
+                        'recurring_transactions'
+                    )
+                ) {
+                    const recurringStore = db.createObjectStore(
+                        'recurring_transactions',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    recurringStore.createIndex(
+                        'nextDueDate',
+                        'nextDueDate'
+                    )
+                }
+            }
+            // Schema version 4: Debt management system
+            if (oldVersion < 4) {
+                // Files store for storing blobs (avatars, etc.)
+                if (!db.objectStoreNames.contains('files')) {
+                    db.createObjectStore('files', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
+                }
+                // Contacts store for debt management
+                if (!db.objectStoreNames.contains('contacts')) {
+                    const contactStore = db.createObjectStore(
+                        'contacts',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    contactStore.createIndex('name', 'name')
+                }
+                // Debts store for tracking receivables and payables
+                if (!db.objectStoreNames.contains('debts')) {
+                    const debtStore = db.createObjectStore(
+                        'debts',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    debtStore.createIndex('contactId', 'contactId')
+                    debtStore.createIndex('type', 'type')
+                    debtStore.createIndex('settled', 'settled')
+                }
+            }
+            // Schema version 5: Plugin System
+            if (oldVersion < 5) {
+                if (!db.objectStoreNames.contains('plugins')) {
+                    db.createObjectStore('plugins', {
+                        keyPath: 'id',
+                    })
+                    // id: plugin identifier (e.g. 'com.example.myplugin')
+                    // name, version, script (blob/string), enabled (bool)
+                }
+            }
+            // Schema version 6: Sync log for multi-device sync
+            if (oldVersion < 6) {
+                if (!db.objectStoreNames.contains('sync_log')) {
+                    const syncStore = db.createObjectStore(
+                        'sync_log',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    syncStore.createIndex('timestamp', 'timestamp')
+                }
+            }
+            // Schema version 7: UUIDs for sync deduplication
+            if (oldVersion < 7) {
+                const stores = [
+                    'records',
+                    'accounts',
+                    'contacts',
+                    'debts',
+                    'recurring_transactions',
+                ]
+                for (const storeName of stores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store =
+                            transaction.objectStore(storeName)
+                        if (!store.indexNames.contains('uuid')) {
+                            store.createIndex('uuid', 'uuid', {
+                                unique: true,
+                            })
+                        }
+                        // Iterate and assign UUIDs to existing records
+                        let cursor = await store.openCursor()
+                        while (cursor) {
+                            const updateData = cursor.value
+                            if (!updateData.uuid) {
+                                // Simple UUID v4 generator
+                                updateData.uuid =
+                                    self.crypto &&
+                                    self.crypto.randomUUID
+                                        ? self.crypto.randomUUID()
+                                        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+                                              /[xy]/g,
+                                              function (c) {
+                                                  const r =
+                                                          (Math.random() *
+                                                              16) |
+                                                          0,
+                                                      v =
+                                                          c === 'x'
+                                                              ? r
+                                                              : (r &
+                                                                    0x3) |
+                                                                0x8
+                                                  return v.toString(
+                                                      16
+                                                  )
+                                              }
+                                          )
+                                await cursor.update(updateData)
+                            }
+                            cursor = await cursor.continue()
+                        }
+                    }
+                }
+            }
+            // Schema version 8: Multi-ledger support
+            if (oldVersion < 8) {
+                // 1. 建立 ledgers object store
+                if (!db.objectStoreNames.contains('ledgers')) {
+                    const ledgerStore = db.createObjectStore(
+                        'ledgers',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    ledgerStore.createIndex('uuid', 'uuid', {
+                        unique: true,
+                    })
+                }
+
+                // 2. 為所有資料 store 新增 ledgerId index
+                const dataStores = [
+                    'records',
+                    'accounts',
+                    'contacts',
+                    'debts',
+                    'recurring_transactions',
+                ]
+                for (const storeName of dataStores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store =
+                            transaction.objectStore(storeName)
+                        if (
+                            !store.indexNames.contains('ledgerId')
+                        ) {
+                            store.createIndex(
+                                'ledgerId',
+                                'ledgerId'
+                            )
+                        }
+                    }
+                }
+
+                // 3. 插入預設帳本
+                const ledgerStore =
+                    transaction.objectStore('ledgers')
+                const defaultUuid =
+                    self.crypto && self.crypto.randomUUID
+                        ? self.crypto.randomUUID()
+                        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+                              /[xy]/g,
+                              function (c) {
+                                  const r =
+                                          (Math.random() * 16) | 0,
+                                      v =
+                                          c === 'x'
+                                              ? r
+                                              : (r & 0x3) | 0x8
+                                  return v.toString(16)
+                              }
+                          )
+                await ledgerStore.add({
+                    id: 1,
+                    uuid: defaultUuid,
+                    name: '預設帳本',
+                    icon: 'fa-solid fa-book',
+                    color: '#334A52',
+                    type: 'personal',
+                    createdAt: Date.now(),
+                })
+
+                // 4. 為所有現有資料打上 ledgerId = 1
+                for (const storeName of dataStores) {
+                    if (db.objectStoreNames.contains(storeName)) {
+                        const store =
+                            transaction.objectStore(storeName)
+                        let cursor = await store.openCursor()
+                        while (cursor) {
+                            const data = cursor.value
+                            if (
+                                data.ledgerId === undefined ||
+                                data.ledgerId === null
+                            ) {
+                                data.ledgerId = 1
+                                await cursor.update(data)
+                            }
+                            cursor = await cursor.continue()
+                        }
+                    }
+                }
+            }
+            // Schema version 9: Remove unique constraint on account name
+            if (oldVersion < 9) {
+                if (db.objectStoreNames.contains('accounts')) {
+                    const accountStore =
+                        transaction.objectStore('accounts')
+                    if (accountStore.indexNames.contains('name')) {
+                        accountStore.deleteIndex('name')
+                    }
+                    accountStore.createIndex('name', 'name', {
+                        unique: false,
+                    })
+                }
+            }
+            // Schema version 10: Themes Store
+            if (oldVersion < 10) {
+                if (!db.objectStoreNames.contains('themes')) {
+                    db.createObjectStore('themes', {
+                        keyPath: 'id',
+                    })
+                }
+            }
+            // Schema version 11: Amortizations (攤提/折舊/分期)
+            if (oldVersion < 11) {
+                if (
+                    !db.objectStoreNames.contains('amortizations')
+                ) {
+                    const aStore = db.createObjectStore(
+                        'amortizations',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    aStore.createIndex('uuid', 'uuid', {
+                        unique: true,
+                    })
+                    aStore.createIndex('ledgerId', 'ledgerId')
+                    aStore.createIndex('status', 'status')
+                }
+            }
+            // Schema version 12: Add amortizationId index to records
+            if (oldVersion < 12) {
+                if (db.objectStoreNames.contains('records')) {
+                    const recordStore =
+                        transaction.objectStore('records')
+                    if (
+                        !recordStore.indexNames.contains(
+                            'amortizationId'
+                        )
+                    ) {
+                        recordStore.createIndex(
+                            'amortizationId',
+                            'amortizationId',
+                            { unique: false }
+                        )
+                    }
+                }
+            }
+            // Schema version 13: Credit card support
+            if (oldVersion < 13) {
+                if (db.objectStoreNames.contains('accounts')) {
+                    const store =
+                        transaction.objectStore('accounts')
+                    // 為舊資料補上 type = 'wallet'
+                    let cursor = await store.openCursor()
+                    while (cursor) {
+                        const data = cursor.value
+                        if (!data.type) {
+                            data.type = 'wallet'
+                            data.creditLimit = 0
+                            data.statementDay = 25
+                            data.dueDay = 15
+                            await cursor.update(data)
+                        }
+                        cursor = await cursor.continue()
+                    }
+                    // 新增 type index
+                    if (!store.indexNames.contains('type')) {
+                        store.createIndex('type', 'type', {
+                            unique: false,
+                        })
+                    }
+                }
+                // 新增信用卡帳單 store
+                if (
+                    !db.objectStoreNames.contains(
+                        'credit_statements'
+                    )
+                ) {
+                    const stmtStore = db.createObjectStore(
+                        'credit_statements',
+                        {
+                            keyPath: 'id',
+                            autoIncrement: true,
+                        }
+                    )
+                    stmtStore.createIndex('uuid', 'uuid', {
+                        unique: true,
+                    })
+                    stmtStore.createIndex('accountId', 'accountId')
+                    stmtStore.createIndex('ledgerId', 'ledgerId')
+                    stmtStore.createIndex('period', 'period')
+                    stmtStore.createIndex('status', 'status')
+                }
+            }
+            // Schema version 14: Migrate legacy debt payments to records for correct balances
+            if (oldVersion < 14) {
+                const debtsStore = transaction.objectStore('debts')
+                const recordsStore = transaction.objectStore('records')
+                const contactsStore = transaction.objectStore('contacts')
+                const accountsStore = transaction.objectStore('accounts')
+
+                // 獲取預設帳戶，做為 fallback 帳戶 ID
+                let defaultAccountId = null
+                const accCursor = await accountsStore.openCursor()
+                if (accCursor) {
+                    defaultAccountId = accCursor.value.id
+                }
+
+                let cursor = await debtsStore.openCursor()
+                while (cursor) {
+                    const debt = cursor.value
+                    if (debt.payments && debt.payments.length > 0) {
+                        let updated = false
+
+                        // 獲取聯絡人名稱
+                        let contactName = '未知聯絡人'
+                        if (debt.contactId) {
+                            const contact = await contactsStore.get(debt.contactId)
+                            if (contact) {
+                                contactName = contact.name || '未知聯絡人'
+                            }
+                        }
+
+                        // 獲取原始記帳紀錄的帳戶 ID
+                        let originalAccountId = null
+                        if (debt.recordId) {
+                            const originalRecord = await recordsStore.get(debt.recordId)
+                            if (originalRecord) {
+                                originalAccountId = originalRecord.accountId
+                            }
+                        }
+
+                        const updatedPayments = []
+                        for (const payment of debt.payments) {
+                            if (!payment.recordId && !payment.recordUuid) {
+                                const paymentDate = payment.date || formatDateToString(new Date())
+                                const recordAccountId = originalAccountId || defaultAccountId
+
+                                // 建立記帳紀錄
+                                const record = {
+                                    type: debt.type === 'receivable' ? 'income' : 'expense',
+                                    category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
+                                    amount: payment.amount,
+                                    date: paymentDate,
+                                    description: debt.type === 'receivable'
+                                        ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                        : `還款：${contactName} - ${debt.description || ''}`,
+                                    ledgerId: debt.ledgerId || 1,
+                                    debtId: debt.id,
+                                    ...(recordAccountId ? { accountId: recordAccountId } : {}),
+                                }
+
+                                // 生成 uuid (因為從 version 7 起需要 uuid)
+                                record.uuid =
+                                    self.crypto && self.crypto.randomUUID
+                                        ? self.crypto.randomUUID()
+                                        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
+                                              /[xy]/g,
+                                              function (c) {
+                                                  const r = (Math.random() * 16) | 0,
+                                                      v = c === 'x' ? r : (r & 0x3) | 0x8
+                                                  return v.toString(16)
+                                              }
+                                          )
+
+                                // 寫入 records
+                                const newRecordId = await recordsStore.add(record)
+                                payment.recordId = newRecordId
+                                payment.recordUuid = record.uuid
+                                updated = true
+                            }
+                            updatedPayments.push(payment)
+                        }
+
+                        if (updated) {
+                            debt.payments = updatedPayments
+                            await cursor.update(debt)
+                        }
+                    }
+                    cursor = await cursor.continue()
+                }
+            }
+            // Schema version 15: Record Groups (groupMeta store)
+            if (oldVersion < 15) {
+                if (!db.objectStoreNames.contains('groupMeta')) {
+                    const groupStore = db.createObjectStore(
+                        'groupMeta',
+                        { keyPath: 'id' }
+                    )
+                    groupStore.createIndex('uuid', 'uuid', {
+                        unique: true,
+                    })
+                    groupStore.createIndex('ledgerId', 'ledgerId', {
+                        unique: false,
+                    })
+                }
+            }
+        } catch (e) {
+            console.error(
+                '[DataService] Schema upgrade failed (oldVersion=' +
+                    oldVersion +
+                    ' newVersion=' +
+                    newVersion +
+                    '), DB 仍會停留在目標版本，部分遷移可能未完成:',
+                e
+            )
+            try {
+                sessionStorage.setItem(
+                    'db_upgrade_failures',
+                    JSON.stringify({
+                        from: oldVersion,
+                        to: newVersion,
+                        error: String(e),
+                        timestamp: Date.now(),
+                    })
+                )
+            } catch (e2) {
+                // sessionStorage 不可用時忽略
+            }
         }
     }
 
     // 從舊的 localStorage 遷移資料
     async migrateFromLocalStorage() {
+        // 1) 遷移舊版 localStorage 'records'（fallback 模式殘留的記帳紀錄）
+        //    舊版在 IDB 開啟失敗時會把新增紀錄寫進 localStorage 'records'；
+        //    若 IDB 之後恢復正常（重開 app / 升級修復），這些紀錄會永久
+        //    孤立在 localStorage 裡（app 顯示空 app）。在這裡一併遷回 IDB。
+        const lsRecordsRaw = localStorage.getItem('records')
+        if (lsRecordsRaw && this.db) {
+            try {
+                const lsRecords = JSON.parse(lsRecordsRaw)
+                if (Array.isArray(lsRecords) && lsRecords.length > 0) {
+                    const tx = this.db.transaction('records', 'readwrite')
+                    const store = tx.objectStore('records')
+                    let migrated = 0
+                    for (const record of lsRecords) {
+                        // 保留原 id（Date.now() 格式）避免重複遷移；
+                        // put 是冪等的，重複執行不會產生重複紀錄
+                        await store.put(record)
+                        migrated++
+                    }
+                    await tx.done
+                    console.log(
+                        `從 localStorage 'records' 遷移 ${migrated} 筆紀錄至 IndexedDB`
+                    )
+                    // 備份後清除（與 AllTheData 同策略）
+                    try {
+                        localStorage.setItem(
+                            'records_backup',
+                            lsRecordsRaw
+                        )
+                    } catch (e) {
+                        console.warn('localStorage 空間不足，無法留備份:', e)
+                    }
+                    localStorage.removeItem('records')
+                }
+            } catch (error) {
+                console.error('localStorage records 遷移失敗:', error)
+            }
+        }
+
+        // 2) 遷移更舊版的 AllTheData 格式
         const oldData = localStorage.getItem('AllTheData')
         if (oldData && this.db) {
             try {
@@ -1009,6 +1211,7 @@ class DataService {
             const dataToSave = {
                 ...data,
                 ledgerId: data.ledgerId ?? this.activeLedgerId,
+                chargeMode: data.chargeMode ?? 'periodic',
                 createdAt: data.createdAt ?? Date.now(),
             }
             const tx = this.db.transaction('amortizations', 'readwrite')
@@ -1625,6 +1828,28 @@ class DataService {
                     } catch (e) {
                         console.warn('建立匯入備份失敗，無法提供 undo 功能:', e)
                     }
+                    // --- 持久化緊急快照（跨 session 保險）---
+                    // 記憶體快照（backupSnapshot）在「清除舊資料」之後才還原，
+                    // 若期間瀏覽器崩潰 / 頁面關閉，快照一併消失。
+                    // 這裡先寫一份到 localStorage，匯入成功後才刪除；
+                    // 即使中斷，下次開機仍能手動救回。
+                    if (backupSnapshot) {
+                        try {
+                            localStorage.setItem(
+                                'import_emergency_snapshot',
+                                JSON.stringify(backupSnapshot)
+                            )
+                            localStorage.setItem(
+                                'import_emergency_snapshot_at',
+                                String(Date.now())
+                            )
+                        } catch (e) {
+                            console.warn(
+                                'localStorage 空間不足，無法建立緊急快照:',
+                                e
+                            )
+                        }
+                    }
 
                     // --- 清除所有舊資料 ---
                     await this.clearAllRecords()
@@ -2233,6 +2458,14 @@ class DataService {
                         }
                     }
 
+                    // 匯入成功：清除緊急快照（失敗時保留供手動救援）
+                    try {
+                        localStorage.removeItem('import_emergency_snapshot')
+                        localStorage.removeItem('import_emergency_snapshot_at')
+                    } catch (e) {
+                        // 忽略
+                    }
+
                     resolve({
                         success: true,
                         message: `成功匯入 ${validRecords.length} 筆記錄`,
@@ -2304,6 +2537,11 @@ class DataService {
             'amortizations',
             'credit_statements',
             'groupMeta',
+            // settings store 必須納入快照：預算設定（budget_settings*，
+            // 含 excludedBudgetCategories「忽略的類別」）、分類設定、
+            // 功能開關等都存在這裡。舊版快照漏掉 settings → 匯入失敗
+            // 自動還原時，已被失敗匯入檔覆寫的預算設定救不回來。
+            'settings',
         ]
         for (const storeName of stores) {
             try {
@@ -2358,6 +2596,9 @@ class DataService {
             'credit_statements',
             'ledgers',
             'groupMeta',
+            // settings store：與 _exportFullBackup 對應，還原匯入前
+            // 的預算/分類/功能開關設定（keyPath='key'，put 保留原 key）。
+            'settings',
         ]
         for (const storeName of stores) {
             try {
@@ -2373,14 +2614,15 @@ class DataService {
                         'readwrite'
                     )
                     for (const item of backup[storeName]) {
-                        // groupMeta 使用 put 保留原始 id（keyPath: 'id'，無 autoIncrement）
-                        // 其他 store 刪除 id 並使用 add，讓資料庫自動產生新 ID
-                        if (storeName === 'groupMeta') {
-                            await restoreTx.store.put(item)
-                        } else {
-                            delete item.id // Let DB generate new IDs to avoid conflicts
-                            await restoreTx.store.add(item)
-                        }
+                        // 全部 store 一律使用 put 保留原始 id：
+                        // 還原前先 clear 過整個 store，所以 put 原始 id
+                        // 不會衝突；保留 id 才能維持外鍵完整
+                        // （records.accountId / records.debtId /
+                        //  amortizations.accountId 等都指向原主鍵）。
+                        // 舊版 delete item.id + add 會讓所有 store 拿到
+                        // 新自增 ID，外鍵全部斷裂 → 還原「成功」後
+                        // 所有紀錄 filter 不到帳本/帳戶 → 看似資料全消失。
+                        await restoreTx.store.put(item)
                     }
                     await restoreTx.done
                 }
@@ -3442,28 +3684,18 @@ class DataService {
     }
 
     // --- Group Meta Methods ---
+    // 【已廢除熱升級】
+    // 舊版會在此偵測「groupMeta store 不存在」時執行 hot-upgrade：
+    // close 現行 DB → 以 nextVersion = max(db.version+1, dbVersion+1) 重開。
+    // 這是「更新後資料看似消失」的根因鏈之一：
+    //   熱升級把 DB 推到 v16，但程式碼 dbVersion 仍是 15 →
+    //   下次啟動 openDB(name, 15) 對 v16 的 DB 拋 VersionError →
+    //   舊版 init 靜默降級 localStorage → 用戶看到空 app。
+    // 現已改由 init 的兩階段偵測（_probeDbVersion + max 版本開啟）
+    // 處理版本不一致；groupMeta 的建立一律走 v15 的正式 upgrade 路徑。
+    // 此方法保留為 no-op，避免影響 5 個呼叫點；未來版本可移除。
     async _ensureGroupMetaStore() {
-        if (!this.db || this.useLocalStorage) return
-        if (!this.db.objectStoreNames || typeof this.db.objectStoreNames.contains !== 'function') return
-        if (this.db.objectStoreNames.contains('groupMeta')) return
-
-        console.warn('[DataService] groupMeta store missing in IndexedDB. Performing hot-upgrade...')
-        try {
-            const nextVersion = Math.max((this.db.version || 0) + 1, this.dbVersion + 1)
-            this.db.close()
-            this.db = await openDB(this.dbName, nextVersion, {
-                upgrade: (db) => {
-                    if (!db.objectStoreNames.contains('groupMeta')) {
-                        const groupStore = db.createObjectStore('groupMeta', { keyPath: 'id' })
-                        groupStore.createIndex('uuid', 'uuid', { unique: true })
-                        groupStore.createIndex('ledgerId', 'ledgerId', { unique: false })
-                    }
-                },
-            })
-            this.dbVersion = nextVersion
-        } catch (e) {
-            console.error('[DataService] Failed to auto-upgrade groupMeta store:', e)
-        }
+        return
     }
 
     // --- Group Meta Methods ---
@@ -4304,6 +4536,53 @@ class DataService {
         }
     }
 
+    /**
+     * 解析還款/結清的預設帳戶。
+     * 商業規則：朋友還款無法「存入信用卡」（無法轉帳進信用卡帳戶）。
+     * 當偏好帳戶是信用卡時（例如原始刷卡紀錄的帳戶），依序轉導：
+     *   1. 該信用卡綁定的自動扣繳帳戶
+     *   2. 名稱含「現金」的帳戶
+     *   3. 第一個非信用卡帳戶
+     *   4. 僅有信用卡時回傳 null（不強塞不合理預設，由 UI 層再兜底）
+     * @param {number|null} preferredId - 偏好帳戶 ID（通常是原始欠款紀錄的帳戶）
+     * @returns {Promise<number|null>}
+     */
+    async resolveDefaultSettleAccountId(preferredId = null) {
+        const accounts = await this.getAccounts()
+        if (!accounts || accounts.length === 0) return null
+
+        const isCard = acc => acc && acc.type === 'credit_card'
+
+        const preferred = preferredId
+            ? accounts.find(a => a.id === preferredId)
+            : null
+
+        // 偏好帳戶存在且非信用卡 → 直接沿用
+        if (preferred && !isCard(preferred)) return preferred.id
+
+        // 偏好帳戶是信用卡 → 轉導到其自動扣繳帳戶
+        if (
+            preferred &&
+            isCard(preferred) &&
+            preferred.autoPayAccountId
+        ) {
+            const debit = accounts.find(
+                a => a.id === preferred.autoPayAccountId
+            )
+            if (debit && !isCard(debit)) return debit.id
+        }
+
+        // 預設回現金帳戶
+        const cash = accounts.find(
+            a => !isCard(a) && (a.name || '').includes('現金')
+        )
+        if (cash) return cash.id
+
+        // 兜底：第一個非信用卡帳戶
+        const firstNonCard = accounts.find(a => !isCard(a))
+        return firstNonCard ? firstNonCard.id : null
+    }
+
     async settleDebt(id, paymentAmount = null, accountIdOrOptions = null) {
         try {
             const debt = await this.getDebt(id)
@@ -4369,13 +4648,13 @@ class DataService {
                 // 決定還款紀錄所屬帳戶
                 let recordAccountId = accountId
                 if (!recordAccountId && debtRecordAccountId) {
-                    recordAccountId = debtRecordAccountId
+                    // 原始紀錄帳戶若為信用卡，轉導到自動扣繳帳戶/現金（朋友無法還款進信用卡）
+                    recordAccountId = await this.resolveDefaultSettleAccountId(
+                        debtRecordAccountId
+                    )
                 }
                 if (!recordAccountId) {
-                    const accounts = await this.getAccounts()
-                    if (accounts && accounts.length > 0) {
-                        recordAccountId = accounts[0].id
-                    }
+                    recordAccountId = await this.resolveDefaultSettleAccountId(null)
                 }
 
                 const record = {
@@ -4489,6 +4768,24 @@ class DataService {
             let current = 0
             let repairedCount = 0
 
+            // UUID 快取：同一 debt / account 的多筆付款共用解析結果，
+            // 避免 addRecord 內部逐筆重複查詢（N+1 優化，2026-08-19）
+            const debtUuidCache = new Map()
+            const accountUuidCache = new Map()
+            const resolveUuid = async (storeName, cache, id) => {
+                if (id === null || id === undefined) return null
+                if (cache.has(id)) return cache.get(id)
+                let uuid = null
+                try {
+                    const item = await this.db.get(storeName, id)
+                    uuid = item?.uuid || null
+                } catch (_) {
+                    /* 查不到 uuid 不影響修復 */
+                }
+                cache.set(id, uuid)
+                return uuid
+            }
+
             for (const debt of debts) {
                 current++
                 const payments = debt.payments || []
@@ -4517,12 +4814,21 @@ class DataService {
                     defaultAccountId = accounts[0].id
                 }
 
+                // 批次預先解析本筆欠款與目標帳戶的 UUID（每 debt 各 1 次查詢，含快取），
+                // 後續補建紀錄時直接帶入 uuid/accountUuid，避免 addRecord 逐筆重查
+                const recordAccountId = originalAccountId || defaultAccountId
+                const preResolvedDebtUuid = await resolveUuid('debts', debtUuidCache, debt.id)
+                const preResolvedAccountUuid = await resolveUuid(
+                    'accounts',
+                    accountUuidCache,
+                    recordAccountId
+                )
+
                 for (const payment of payments) {
                     if (
                         (!payment.recordId && !payment.recordUuid) ||
                         (debt.recordId && payment.recordId === debt.recordId)
                     ) {
-                        const recordAccountId = originalAccountId || defaultAccountId
                         const record = {
                             type: debt.type === 'receivable' ? 'income' : 'expense',
                             category:
@@ -4537,17 +4843,33 @@ class DataService {
                                     : `還款：${contactName} - ${debt.description || ''}`,
                             ledgerId: debt.ledgerId || this.activeLedgerId,
                             debtId: debt.id,
+                            // 預先產生 uuid，addRecord 沿用，免於補建後再查回紀錄
+                            uuid: this.generateUUID(),
                             ...(recordAccountId
-                                ? { accountId: recordAccountId }
+                                ? {
+                                      accountId: recordAccountId,
+                                      accountUuid: preResolvedAccountUuid,
+                                  }
+                                : {}),
+                            // debtUuid 預先解析，避免 addRecord 內部重查
+                            ...(preResolvedDebtUuid
+                                ? { debtUuid: preResolvedDebtUuid }
                                 : {}),
                         }
 
                         const newRecordId = await this.addRecord(record)
-                        const newRecord = await this.getRecord(newRecordId)
-                        payment.recordId = newRecordId
-                        payment.recordUuid = newRecord?.uuid || null
-                        updated = true
-                        repairedCount++
+                        if (newRecordId !== null && newRecordId !== undefined) {
+                            payment.recordId = newRecordId
+                            payment.recordUuid = record.uuid
+                            updated = true
+                            repairedCount++
+                        } else {
+                            // Hook 取消建立紀錄（onRecordSaveBefore 回傳 null）：
+                            // 保持 payment 原狀待下次修復，不標記為已修復
+                            console.warn(
+                                `修復欠款付款時紀錄建立被取消 (debt ${debt.id})`
+                            )
+                        }
                     }
                     updatedPayments.push(payment)
                 }
@@ -4731,6 +5053,7 @@ class DataService {
                 'recurring_transactions',
                 'amortizations',
                 'credit_statements',
+                'groupMeta',
             ]
             for (const storeName of dataStores) {
                 const tx = this.db.transaction(storeName, 'readwrite')

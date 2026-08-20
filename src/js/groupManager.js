@@ -1,5 +1,5 @@
 // 群組管理模組
-import { formatCurrency, formatDate, showToast } from './utils.js'
+import { formatCurrency, formatDate, generateId, showToast } from './utils.js'
 
 /**
  * 產生不重複的群組名稱，若已有同名群組則自動加上 (2), (3) 等後綴
@@ -51,7 +51,11 @@ export class GroupManager {
         const existingNames = existingMetas.map(g => g.name)
         const uniqueName = getUniqueGroupName(name, existingNames)
 
-        const id = crypto.randomUUID()
+        // 使用 generateId()（utils.js）而非裸 crypto.randomUUID()：
+        // 後者在舊版 Android WebView（< 92，Android 10 及以下）不存在，
+        // 直接呼叫會拋 TypeError 中斷群組結清/新增群組流程。
+        // generateId() 有 Date.now()+Math.random() fallback。
+        const id = generateId()
         const meta = {
             id,
             name: uniqueName,

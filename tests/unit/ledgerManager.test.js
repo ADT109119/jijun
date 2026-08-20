@@ -401,6 +401,55 @@ describe('LedgerManager', () => {
             expect(mockSyncService.ensureSharedSync).toHaveBeenCalled()
             expect(result).toBe('file123')
         })
+
+        it('新共用流程的初始雲端檔案包含 groupMeta（明細群組）', async () => {
+            const mockLedger = {
+                id: 1,
+                name: '個人帳本',
+                uuid: 'ledger-uuid',
+                isShared: false,
+            }
+            mockDataService.getLedger.mockResolvedValue(mockLedger)
+            mockDataService.exportDataForSync.mockResolvedValue({
+                ledgers: [{ id: 1, name: '個人帳本', uuid: 'ledger-uuid' }],
+                groupMeta: [
+                    { id: 1, name: '聚餐群組', ledgerId: 1, uuid: 'gm-1' },
+                ],
+                accounts: [{ id: 1, name: '帳戶', ledgerId: 1, uuid: 'ac-1' }],
+                contacts: [],
+                debts: [],
+                recurring_transactions: [],
+                amortizations: [],
+                credit_statements: [],
+                records: [{ id: 1, ledgerId: 1, uuid: 'rec-1' }],
+            })
+
+            await ledgerManager.shareLedger(1, 'user@test.com')
+
+            // 解析寫入雲端檔案的初始資料
+            const updateCall = mockSyncService._updateFile.mock.calls.find(
+                c => c[0] === 'file123'
+            )
+            expect(updateCall).toBeDefined()
+            const payload = JSON.parse(updateCall[1])
+            const storeNames = payload.changes.map(c => c.storeName)
+
+            // groupMeta 必須被包含（曾遺漏導致共用帳本接收方無群組資料）
+            expect(storeNames).toContain('groupMeta')
+            const gmChange = payload.changes.find(
+                c => c.storeName === 'groupMeta'
+            )
+            expect(gmChange.data).toEqual({
+                id: 1,
+                name: '聚餐群組',
+                ledgerId: 1,
+                uuid: 'gm-1',
+            })
+            // 其他 store 仍完整
+            expect(storeNames).toContain('ledgers')
+            expect(storeNames).toContain('accounts')
+            expect(storeNames).toContain('records')
+        })
     })
 
     describe('joinSharedLedger', () => {

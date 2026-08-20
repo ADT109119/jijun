@@ -1,0 +1,69 @@
+/* 本地自託管字體（取代 Google Fonts CDN，離線可用）
+   只用 woff2（現代瀏覽器全支援），砍掉 @fontsource 預設的 woff 舊版備援
+   （Noto Sans TC 的 woff 共 ~4MB，純舊瀏覽器才用得上，不值得下載）。
+   字重與原 Google Fonts 請求一致：
+   - Inter：latin 子集 400/500/600/700
+   - Noto Sans TC：chinese-traditional 子集 400/500/700
+   woff2 由 Vite 打包成 /assets/* 並進 SW precache（woff2-only 讓首屏更輕）。
+   註：Font Awesome 直接 import all.min.css（其 @font-face 已 woff2 優先），
+   舊版 ttf 雖被 emit 到 dist 但現代瀏覽器永遠用 woff2、不會下載，離線無影響。 */
+
+/* ===== Inter — latin ===== */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url('../../node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2')
+        format('woff2');
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 500;
+    src: url('../../node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2')
+        format('woff2');
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 600;
+    src: url('../../node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2')
+        format('woff2');
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url('../../node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2')
+        format('woff2');
+}
+
+/* ===== Noto Sans TC — chinese-traditional ===== */
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url('../../node_modules/@fontsource/noto-sans-tc/files/noto-sans-tc-chinese-traditional-400-normal.woff2')
+        format('woff2');
+}
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 500;
+    src: url('../../node_modules/@fontsource/noto-sans-tc/files/noto-sans-tc-chinese-traditional-500-normal.woff2')
+        format('woff2');
+}
+@font-face {
+    font-family: 'Noto Sans TC';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url('../../node_modules/@fontsource/noto-sans-tc/files/noto-sans-tc-chinese-traditional-700-normal.woff2')
+        format('woff2');
+}

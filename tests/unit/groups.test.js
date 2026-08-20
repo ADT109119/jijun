@@ -647,8 +647,8 @@ describe('DataService — Record Groups', () => {
         })
     })
 
-    describe('_ensureGroupMetaStore() Hot-Upgrade', () => {
-        it('當資料庫缺乏 groupMeta store 時，自動執行熱升級建立該 store 且不拋錯', async () => {
+    describe('_ensureGroupMetaStore() 熱升級已廢除', () => {
+        it('缺乏 groupMeta store 時不再執行熱升級（避免 DB 版本錯位），直接拋錯', async () => {
             if (!ds.db || !ds.db.objectStoreNames) return
             const orig = ds.db.objectStoreNames.contains ? ds.db.objectStoreNames.contains.bind(ds.db.objectStoreNames) : () => true
             ds.db.objectStoreNames.contains = (name) => {
@@ -656,10 +656,13 @@ describe('DataService — Record Groups', () => {
                 return orig(name)
             }
 
-            await ds.saveGroupMeta({ id: 'g99', name: '恢復測試', ledgerId: 1 })
-            const meta = await ds.getGroupMeta('g99')
-            expect(meta).toBeDefined()
-            expect(meta.name).toBe('恢復測試')
+            // 熱升級已廢除：_ensureGroupMetaStore 為 no-op，
+            // 寫入不存在的 store 應拋錯（而非靜默熱升級）。
+            // 正常初始化會確保 groupMeta 存在（v15 upgrade 路徑），
+            // 此情境僅用於驗證不再執行危險的 hot-upgrade。
+            await expect(
+                ds.saveGroupMeta({ id: 'g99', name: '恢復測試', ledgerId: 1 })
+            ).rejects.toThrow()
         })
     })
 })

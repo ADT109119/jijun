@@ -1,5 +1,30 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.7.6': {
+        date: '2026-08-20',
+        title: '真實信用卡分期、記帳面板 UX 重構、P0 資料安全防護鏈與首屏零 CDN 本地化',
+        features: [
+            '真實信用卡分期（upfront 模式）：新增 chargeMode（upfront / periodic），刷卡當下全額入帳佔用信用卡額度，每期自動產生「扣款帳戶支出 + 信用卡收入」轉帳對以逐月釋放額度；末期差額精準計算卡端收入防雙重計數；攤提管理頁面顯示「佔用額度 / 已還」狀態與禁止編輯防護。',
+            '記帳頁面板 UX 重構：欠款、群組、分期面板改為收合式與按鈕狀態解耦；群組面板支援「建立即生效」與單行就地管理（明細/改名/刪除）；新增明確取消出口與編輯模式完整預填。',
+            '離線狀態即時提示列：新增離線狀態提示橫條，斷網時即時提醒資料安全存於本機、記帳照常可用。',
+        ],
+        improvements: [
+            '首屏 0 第三方 CDN 依賴與全本地化：Tailwind 改由 PostCSS 本地打包編譯，Font Awesome、Google Fonts (Inter / Noto Sans TC woff2)、QRCode.js 與 html5-qrcode 全本地化，Google SDK (GSI/gapi) 改為登入/同步時按需載入。',
+            'Service Worker 離線預快取機制：Vite 建置時自動掃描產物與字體生成 precachemanifest.json，SW 安裝時自動拉取預快取，實現完全斷網離線可用。',
+            '記帳頁欠款標記按鈕樣式優化：右上角欠款標記按鈕在啟用狀態時採用醒目的亮橘色 (text-orange-500 / bg-orange-500/10)，提升功能啟用感知。',
+            '信用卡帳戶可用額度顯示：帳戶管理頁面即時計算並顯示信用卡之目前欠款、總額度與可用額度。',
+            '孤兒欠款修復 N+1 查詢優化：預先解析 UUID 並建立記憶體快取，單筆還款修復省下 3 次 IndexedDB 查詢。',
+        ],
+        bugfixes: [
+            '修復資料庫升級 VersionError 與資料看似消失之重大問題：透過 indexedDB.databases() 探測實際版本以相容模式開啟資料庫，徹底防止版本錯位拋出 VersionError；升級被其他分頁鎖定時即時給出關閉分頁提示；廢除資料庫連線失敗時靜默降級 localStorage 的機制，並請求瀏覽器持久化儲存 (navigator.storage.persist())。',
+            '修復備份還原後關聯 ID 斷裂問題：備份還原全面改用 put 保留原始 ID，防止外鍵（關聯帳戶、欠款、分期）斷裂導致明細過濾不到。',
+            '修復 Service Worker 導覽請求提供舊版頁面問題：將 HTML 導覽請求改為 Network-First，避免更新後仍載入舊版 HTML 與 JS。',
+            '修復 Android 原生環境下通知與群組 ID 生成失效風險：修復 Capacitor 8 isNative 屬性廢除導致提醒未觸發的問題；將群組 ID 生成改為具備相容 fallback 的 generateId()，防止舊版 Android WebView 拋錯。',
+            '修復群組元資料 (groupMeta) 於刪除帳本與初始共用同步時遺漏之問題：刪除帳本時連帶清理該帳本群組，並於共用帳本初始同步時納入拓撲變更清單。',
+            '修復資料備份快照漏掉 settings store 問題：將預算設定（含忽略類別）與功能開關納入完整匯出與還原。',
+            '修復朋友還款誤存入信用卡問題：新增 resolveDefaultSettleAccountId，若原始交易為信用卡則自動轉導至其自動扣繳帳戶或現金帳戶。',
+        ],
+    },
     '2.1.7.5': {
         date: '2026-08-17',
         title: '欠款聯絡人群組篩選連動修復與群組狀態標籤排版優化',

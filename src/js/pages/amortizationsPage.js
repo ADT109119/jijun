@@ -110,6 +110,24 @@ export class AmortizationsPage {
             </div>`
         }
 
+        // 批量預載：一次取回所有記錄與帳戶，避免每項 N+1 查詢
+        const allRecords = await this.app.dataService.getRecords({
+            allLedgers: true,
+        })
+        const recordsByAmortId = new Map()
+        for (const r of allRecords) {
+            if (r.amortizationId !== null && r.amortizationId !== undefined) {
+                const list = recordsByAmortId.get(r.amortizationId) || []
+                list.push(r)
+                recordsByAmortId.set(r.amortizationId, list)
+            }
+        }
+        const allAccounts = await this.app.dataService.getAccounts({
+            allLedgers: true,
+        })
+        const accountById = new Map()
+        for (const a of allAccounts) accountById.set(a.id, a)
+
         const htmls = await Promise.all(
             filtered.map(async item => {
                 const type = TYPE_LABELS[item.type] || TYPE_LABELS.installment
@@ -126,16 +144,40 @@ export class AmortizationsPage {
                     item.recordType || 'expense',
                     item.category
                 )
+                const historyRecords = recordsByAmortId.get(item.id) || []
+
+                // upfront 額度狀態：已還 = 卡端 transfer 收入總和（兩腿不雙重計數）
+                const isUpfront = item.chargeMode === 'upfront'
+                let upfrontLine = ''
+                let hasDebit = false
+                if (isUpfront && item.accountId) {
+                    const card = accountById.get(item.accountId)
+                    hasDebit = !!(card && card.autoPayAccountId)
+                    const paidSoFar = historyRecords
+                        .filter(r => r.type === 'income')
+                        .reduce((sum, r) => sum + r.amount, 0)
+                    const remainingOnCard = Math.max(
+                        0,
+                        (item.totalAmount || 0) - paidSoFar
+                    )
+                    upfrontLine = `
+                        <div class="mt-1.5 flex items-center gap-2 text-xs flex-wrap">
+                            <span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/30">
+                                <i class="fa-solid fa-credit-card mr-1"></i>信用卡分期
+                            </span>
+                            <span class="text-wabi-text-secondary">佔用額度 <strong class="text-wabi-text-primary">$${this._formatAmount(remainingOnCard)}</strong> · 已還 <strong class="text-wabi-text-primary">$${this._formatAmount(paidSoFar)}</strong></span>
+                            ${hasDebit ? '' : '<span class="text-amber-600 font-medium">未設定扣款帳戶，到期不產生扣款</span>'}
+                        </div>`
+                }
 
                 // Check overpaid
                 let overpaidWarning = ''
                 if (item.status !== 'completed') {
-                    const historyRecords =
-                        await this.app.dataService.getRecords({
-                            amortizationId: item.id,
-                            allLedgers: true,
-                        })
-                    const actualPaidSoFar = historyRecords.reduce(
+                    // upfront 轉帳對含兩腿，只算卡端收入避免雙重計數
+                    const paidRecords = isUpfront
+                        ? historyRecords.filter(r => r.type === 'income')
+                        : historyRecords
+                    const actualPaidSoFar = paidRecords.reduce(
                         (sum, r) => sum + r.amount,
                         0
                     )
@@ -185,6 +227,7 @@ export class AmortizationsPage {
                                 ${item.downPayment ? `<span class="text-wabi-text-secondary">首付 <strong class="text-wabi-text-primary">$${this._formatAmount(item.downPayment)}</strong></span>` : ''}
                                 ${remaining > 0 && item.status === 'active' ? `<span class="text-wabi-text-secondary">下期 <strong class="text-wabi-primary">${item.nextDueDate}</strong></span>` : ''}
                             </div>
+                            ${upfrontLine}
                         </div>
                         <div class="flex flex-col gap-1 shrink-0">
                             ${
@@ -227,10 +270,15 @@ export class AmortizationsPage {
                 const item = await this.app.dataService.getAmortization(
                     parseInt(btn.dataset.id)
                 )
-                if (item)
-                    showAmortizationModal(this.app, item, {}, () =>
-                        this.render()
-                    )
+                if (!item) return
+                // 信用卡分期（upfront）：金額/期數已入账落帳，不支援編輯
+                if (item.chargeMode === 'upfront') {
+                    showToast('信用卡分期不支援編輯，請刪除後重建', 'warning')
+                    return
+                }
+                showAmortizationModal(this.app, item, {}, () =>
+                    this.render()
+                )
             })
         })
         document.querySelectorAll('.toggle-pause-btn').forEach(btn => {

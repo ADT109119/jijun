@@ -5,6 +5,7 @@
 
 import { ComparisonReport } from '../comparisonReport.js'
 import { formatCurrency } from '../utils.js'
+import { Chart } from 'chart.js'
 
 export class ComparisonPage {
     constructor(app) {
@@ -399,7 +400,7 @@ export class ComparisonPage {
     }
 
     renderComparisonChart(container, data) {
-        const Chart = window.Chart
+        // Chart 由 npm bundle 直接 import（原 window.Chart 讀取已廢除，CDN tag 已移除）
         if (!Chart) return
 
         // Remove old chart container if exists

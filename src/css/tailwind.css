@@ -1,0 +1,7 @@
+/* Tailwind 本地 build 入口（取代 Play CDN runtime JIT）
+   由 PostCSS 管線在 build 時產生靜態 utility CSS。
+   本檔放在 src/css/main.css 的最前面 @import（在 FA/字體 import 之前，
+   讓 FA 的 @font-face 與自訂樣式仍可覆寫 Tailwind 預設）。 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

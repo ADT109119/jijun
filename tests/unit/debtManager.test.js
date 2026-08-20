@@ -111,6 +111,7 @@ function createMockDataService() {
         addPartialPayment: vi.fn(async () => {}),
         getRecord: vi.fn(async () => null),
         getAccounts: vi.fn(async () => []),
+        resolveDefaultSettleAccountId: vi.fn(async () => null),
         getFile: vi.fn(async () => null),
         logChange: vi.fn(),
     }

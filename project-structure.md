@@ -56,7 +56,14 @@ src/js/pages/
 └── licensePage.js       # 授權條款
 
 src/css/
-└── main.css             # 主樣式表 (包含 Modal 滑入/滑出與淡入淡出動畫關鍵影格 animate-slide-up / animate-fade-in / animate-modal-pop)
+├── main.css             # 主樣式表 (包含 Modal 滑入/滑出與淡入淡出動畫關鍵影格 animate-slide-up / animate-fade-in / animate-modal-pop)
+└── tailwind.css         # Tailwind 本地 build 入口 (@tailwind base/components/utilities)
+
+src/fonts/
+└── fonts.css            # 本地自託管字體樣式表 (Inter + Noto Sans TC woff2)
+
+src/vendor/
+└── qrcode.js            # QRCode.js 本地資產 (以 classic script 注入避免 minifier 重綁 this)
 
 android/                 # Capacitor Android 原生專案
 ├── app/src/main/
@@ -65,7 +72,7 @@ android/                 # Capacitor Android 原生專案
 │   │   ├── MainActivity.java           # 註冊 WidgetStoragePlugin
 │   │   ├── WidgetStoragePlugin.java     # 自訂儲存插件 (保存桌面統計/載具/捷徑/行事曆 Widget 資料)
 │   │   ├── EasyAccountingWidgetProvider.java # 桌面統計小工具 Provider
-      ├── InvoiceCarrierWidgetProvider.java # 發票載具小工具 Provider (Code 39 繪製)
+│   │   ├── InvoiceCarrierWidgetProvider.java # 發票載具小工具 Provider (Code 39 繪製)
 │   │   ├── QuickCategoryWidgetProvider.java  # 快速分類捷徑小工具 Provider
 │   │   └── CalendarWidgetProvider.java       # 桌面行事曆金流小工具 Provider (42 格 6 週網格繪製)
 │   └── res/
@@ -84,7 +91,7 @@ android/                 # Capacitor Android 原生專案
 
 public/                  # 靜態資源目錄
 ├── manifest.json        # PWA 設定檔 (包含唯一 id、主題顏色與應用資訊)
-├── serviceWorker.js     # 離線快取 Service Worker
+├── serviceWorker.js     # 離線快取 Service Worker (支援 precachemanifest.json 自動注入與導覽 network-first)
 ├── vendor/wllama/       # wllama v3.5.1 本地端側 LLM 引擎檔 (esm/index.js + esm/wasm/wllama.wasm)
 ├── icon/                # 圖示目錄 (包含 icon.png 192px 與 icon-512.png 512px)
 ├── screenshots/         # PWA 螢幕截圖目錄 (用於應用商店預覽)
@@ -101,7 +108,94 @@ tools/jijun-ai-training/  # 離線 AI 模型 (jijun-LM) 數據生成與訓練管
 ├── demo_gguf.py        # Gradio/CLI GGUF 推論測試 Demo
 └── jijun-LM-GGUF/      # 導出的 GGUF 量化模型權重
 
+tailwind.config.js       # Tailwind CSS 主題與外掛設定檔 (PostCSS build 用)
+postcss.config.js        # PostCSS 插件設定檔 (tailwindcss + autoprefixer)
+vite.config.js           # Vite 打包配置 (含 Service Worker 版本與 precachemanifest 注入外掛)
 capacitor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
+index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCode/Chart.js 本地化與按需載入)
+```
+
+## 模組依賴
+
+- `main.js` → 所有模組 (中心樞紐)，**動態 import** `@capacitor/app`
+- `ledgerManager.js` → `dataService.js`, `utils.js`
+- `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
+- `syncService.js` → `dataService.js` (按需載入 Google SDK)
+- `pluginManager.js` → `dataService.js`, `pluginStorage.js`
+
+## 路由 (src/js/router.js)
+
+| 路由 | 頁面 | 說明 |
+|------|------|------|
+| `#home` | HomePage | 首頁 |
+| `#records` | RecordsPage | 明細列表 |
+| `#add` | AddPage | 新增/編輯紀錄 |
+| `#stats` | StatsPage | 統計 |
+| `#settings` | SettingsPage | 設定 |
+| `#accounts` | AccountsPage | 帳戶 |
+| `#recurring` | RecurringPage | 定期收支 |
+| `#debts` | DebtsPage | 欠款 |
+| `#amortizations` | AmortizationsPage | 攤提 |
+| `#comparison` | ComparisonPage | 比較報表 |
+| `#contacts` | ContactsPage | 聯絡人 |
+| `#ledgers` | LedgersPage | 帳本 |
+| `#plugins` | PluginsPage | 外掛 |
+| `#themes` | ThemesPage | 主題 |
+| `#themeStore` | ThemeStorePage | 主題商店 |
+| `#store` | StorePage | 商店 |
+| `#sync` | SyncSettingsPage | 同步設定 |
+| `#privacy` | PrivacyPage | 隱私權 |
+| `#license` | LicensePage | 授權 |
+
+## IndexedDB Schema
+
+**Database**: `easy-accounting-db`
+
+| Store | KeyPath | 說明 |
+|-------|---------|------|
+| `records` | `id` (autoIncrement) | 收支明細 |
+| `accounts` | `id` (autoIncrement) | 帳戶 |
+| `categories` | `id` | 分類 |
+| `settings` | `key` | 設定鍵值對 |
+| `contacts` | `id` (autoIncrement) | 聯絡人 |
+| `debts` | `id` (autoIncrement) | 欠款 |
+| `amortizations` | `id` (autoIncrement) | 攤提計畫 (支援 upfront 與 periodic) |
+| `ledgers` | `id` (autoIncrement) | 帳本 |
+| `theme` | `id` | 主題 |
+| `pluginState` | `id` | 外掛狀態 |
+| `groupMeta` | `id` | 群組分帳元資料 |
+| `credit_statements` | `id` (autoIncrement) | 信用卡帳單 |
+
+## 程式碼慣例
+
+- **語法**: 不使用分號 (no semicolons)，ES Module
+- **縮排**: 4 個空格
+- **命名**: camelCase（函數/變數）、PascalCase（class）、snake_case（資料庫欄位）
+- **XSS 防護**: 使用者輸入嵌入 innerHTML 時必須使用 `escapeHTML()`（import from `utils.js`）
+- **批次查詢**: 避免 N+1 查詢，使用 `getDebts()`、`getRecords()` 批次載入
+- **無障礙**: Modal 使用 `role="dialog"`、`aria-modal="true"`、`aria-labelledby`
+
+## 測試結構
+
+所有的單元測試位於 `tests/unit/` 目錄下：
+
+- `creditInstallment.test.js` # 測試信用卡分期 (upfront 模式、轉帳對生成、額度釋放、末期差額與補跑快取同步)
+- `dataServiceInit.test.js` # 測試 IndexedDB 初始化安全 (版本探測、VersionError 防護、blocked 偵測與持久化)
+- `recordsList.test.js` # 測試明細紀錄列表、預設時間範圍設定與搜尋清空按鈕
+- `amortization.test.js` # 測試折舊攤提分期邏輯
+- `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal (含 upfront 編輯防護)
+- `budgetManager.test.js` # 測試預算管理邏輯
+- `categoryManager.test.js` # 測試分類管理邏輯
+- `changelog.test.js` # 測試更新日誌解析與渲染
+- `themeManager.test.js` # 測試主題管理 (含 HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
+- `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
+- `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
+- `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
+- `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
+- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
+- `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
+- ...等等（共有 36 個測試檔案，1529 項測試全部通過）
+- 透過 `npm test` (`npx vitest run`) 執行所有單元測試citor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
 index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, IDB, GIS)
 ```
 
@@ -180,6 +274,6 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 34 個測試檔案，對應各主要模組的單元驗證）
-- 透過 `npx vitest run` 執行所有單元測試
+- ...等等（共有 36 個測試檔案，對應各主要模組的單元驗證）
+- 透過 `npx vitest run` 執行所有單元測試 (1529 測試項目)
 

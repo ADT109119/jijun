@@ -84,6 +84,42 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
             expect(backup.records).toEqual([])
             expect(backup.accounts).toEqual([])
         })
+
+        it('備份包含 settings store（預算設定含忽略的類別）', async () => {
+            const mockDb = ds.db
+
+            // 寫入預算設定（含 excludedBudgetCategories「忽略的類別」）
+            const budgetPayload = {
+                monthlyBudget: 10000,
+                categoryBudgets: { food: 3000, transport: 1500 },
+                categoryBudgetOrder: ['food', 'transport'],
+                excludedBudgetCategories: ['transfer', 'investment'],
+            }
+            const tx = mockDb.transaction('settings', 'readwrite')
+            await tx.store.put({
+                key: 'budget_settings_1',
+                value: budgetPayload,
+            })
+            await tx.store.put({ key: 'advancedAccountModeEnabled', value: true })
+            await tx.done
+
+            const backup = await ds._exportFullBackup()
+
+            expect(backup.settings).toBeDefined()
+            const budgetSetting = backup.settings.find(
+                s => s.key === 'budget_settings_1'
+            )
+            expect(budgetSetting).toBeDefined()
+            expect(budgetSetting.value).toEqual(budgetPayload)
+            expect(budgetSetting.value.excludedBudgetCategories).toEqual([
+                'transfer',
+                'investment',
+            ])
+            // 其他設定也要一併備份
+            expect(
+                backup.settings.some(s => s.key === 'advancedAccountModeEnabled')
+            ).toBe(true)
+        })
     })
 
     describe('_restoreFromBackup', () => {
@@ -167,6 +203,49 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
             expect(allRecords).toHaveLength(2)
             expect(allRecords[0].amount).toBe(100)
             expect(allRecords[1].amount).toBe(200)
+        })
+
+        it('匯入失敗還原後，預算設定（含忽略的類別）完整存活', async () => {
+            const mockDb = ds.db
+
+            // 1) 匯入前：DB 裡有原本的預算設定
+            const originalBudget = {
+                monthlyBudget: 20000,
+                categoryBudgets: { food: 5000 },
+                categoryBudgetOrder: ['food'],
+                excludedBudgetCategories: ['salary'],
+            }
+            const tx1 = mockDb.transaction('settings', 'readwrite')
+            await tx1.store.put({
+                key: 'budget_settings_1',
+                value: originalBudget,
+            })
+            await tx1.done
+
+            // 2) 建立快照（importData 流程的 _exportFullBackup）
+            const backup = await ds._exportFullBackup()
+
+            // 3) 模擬「匯入失敗」：匯入檔覆寫了預算設定（新的、錯誤的值）
+            const tx2 = mockDb.transaction('settings', 'readwrite')
+            await tx2.store.put({
+                key: 'budget_settings_1',
+                value: {
+                    monthlyBudget: 1,
+                    categoryBudgets: {},
+                    categoryBudgetOrder: [],
+                    excludedBudgetCategories: [],
+                },
+            })
+            await tx2.done
+
+            // 4) 自動還原（_restoreFromBackup）
+            await ds._restoreFromBackup(backup)
+
+            // 5) 驗證原預算設定被完整救回（put 保留原 key）
+            const restored = await mockDb.get('settings', 'budget_settings_1')
+            expect(restored).toBeDefined()
+            expect(restored.value).toEqual(originalBudget)
+            expect(restored.value.excludedBudgetCategories).toEqual(['salary'])
         })
     })
 })
@@ -1217,6 +1296,273 @@ describe('DataService — settleDebt 欠款結清', () => {
     })
 })
 
+describe('DataService — resolveDefaultSettleAccountId 還款預設帳戶', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    function addAccount(acc) {
+        ds.db._storeData.accounts.push(acc)
+    }
+
+    it('偏好帳戶非信用卡時直接沿用', async () => {
+        addAccount({ id: 10, name: '現金', ledgerId: 1, uuid: 'a10' })
+        addAccount({
+            id: 20,
+            name: '銀行',
+            type: 'bank',
+            ledgerId: 1,
+            uuid: 'a20',
+        })
+
+        await expect(ds.resolveDefaultSettleAccountId(20)).resolves.toBe(20)
+        // 無偏好時：回現金帳戶
+        await expect(ds.resolveDefaultSettleAccountId(null)).resolves.toBe(10)
+    })
+
+    it('偏好帳戶為信用卡且有自動扣繳帳戶時轉導到扣繳帳戶', async () => {
+        addAccount({ id: 10, name: '現金', ledgerId: 1, uuid: 'a10' })
+        addAccount({
+            id: 20,
+            name: '扣款銀行',
+            type: 'bank',
+            ledgerId: 1,
+            uuid: 'a20',
+        })
+        addAccount({
+            id: 30,
+            name: '信用卡',
+            type: 'credit_card',
+            autoPayAccountId: 20,
+            ledgerId: 1,
+            uuid: 'a30',
+        })
+
+        await expect(ds.resolveDefaultSettleAccountId(30)).resolves.toBe(20)
+    })
+
+    it('偏好帳戶為信用卡且無自動扣繳時預設現金帳戶', async () => {
+        addAccount({ id: 10, name: '現金', ledgerId: 1, uuid: 'a10' })
+        addAccount({
+            id: 20,
+            name: '銀行',
+            type: 'bank',
+            ledgerId: 1,
+            uuid: 'a20',
+        })
+        addAccount({
+            id: 30,
+            name: '信用卡',
+            type: 'credit_card',
+            ledgerId: 1,
+            uuid: 'a30',
+        })
+
+        await expect(ds.resolveDefaultSettleAccountId(30)).resolves.toBe(10)
+    })
+
+    it('無現金帳戶時兜底第一非信用卡帳戶', async () => {
+        addAccount({
+            id: 20,
+            name: '銀行',
+            type: 'bank',
+            ledgerId: 1,
+            uuid: 'a20',
+        })
+        addAccount({
+            id: 30,
+            name: '信用卡',
+            type: 'credit_card',
+            ledgerId: 1,
+            uuid: 'a30',
+        })
+
+        await expect(ds.resolveDefaultSettleAccountId(30)).resolves.toBe(20)
+    })
+
+    it('僅有信用卡時回傳 null（不強塞信用卡）', async () => {
+        addAccount({
+            id: 30,
+            name: '信用卡',
+            type: 'credit_card',
+            ledgerId: 1,
+            uuid: 'a30',
+        })
+
+        await expect(ds.resolveDefaultSettleAccountId(30)).resolves.toBeNull()
+        await expect(ds.resolveDefaultSettleAccountId(null)).resolves.toBeNull()
+    })
+
+    it('無任何帳戶時回傳 null', async () => {
+        await expect(ds.resolveDefaultSettleAccountId(null)).resolves.toBeNull()
+    })
+})
+
+describe('DataService — settleDebt 信用卡還款轉導', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        ds.db._storeData.contacts.push({ id: 1, name: '測試聯絡人' })
+    })
+
+    it('原始紀錄為信用卡（有自動扣繳）：未指定帳戶時還款落到扣繳帳戶', async () => {
+        ds.db._storeData.accounts.push(
+            { id: 10, name: '現金', ledgerId: 1, uuid: 'acc-10' },
+            {
+                id: 20,
+                name: '扣款銀行',
+                type: 'bank',
+                ledgerId: 1,
+                uuid: 'acc-20',
+            },
+            {
+                id: 30,
+                name: '信用卡',
+                type: 'credit_card',
+                autoPayAccountId: 20,
+                ledgerId: 1,
+                uuid: 'acc-30',
+            },
+        )
+        // 原始刷卡紀錄（欠款關聯到此）
+        ds.db._storeData.records.push({
+            id: 5,
+            type: 'expense',
+            amount: 1000,
+            accountId: 30,
+            ledgerId: 1,
+        })
+        ds.db._storeData.debts.push({
+            id: 1,
+            type: 'payable',
+            description: '刷卡代墊',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-cc-1',
+            recordId: 5,
+            recordUuid: 'rec-cc-5',
+            payments: [],
+        })
+
+        // 未指定 accountId（走 fallback）
+        const result = await ds.settleDebt(1)
+
+        expect(result.settled).toBe(true)
+        const repayment = ds.db._storeData.records.find(
+            r => r.debtId === 1 && r.category === 'debt_repayment',
+        )
+        expect(repayment).toBeDefined()
+        // 不落入信用卡，落到自動扣繳帳戶（銀行）
+        expect(repayment.accountId).toBe(20)
+    })
+
+    it('原始紀錄為信用卡（無自動扣繳）：未指定帳戶時還款落到現金', async () => {
+        ds.db._storeData.accounts.push(
+            { id: 10, name: '現金', ledgerId: 1, uuid: 'acc-10' },
+            {
+                id: 30,
+                name: '信用卡',
+                type: 'credit_card',
+                ledgerId: 1,
+                uuid: 'acc-30',
+            },
+        )
+        ds.db._storeData.records.push({
+            id: 6,
+            type: 'expense',
+            amount: 500,
+            accountId: 30,
+            ledgerId: 1,
+        })
+        ds.db._storeData.debts.push({
+            id: 2,
+            type: 'payable',
+            description: '刷卡代墊',
+            originalAmount: 500,
+            remainingAmount: 500,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-cc-2',
+            recordId: 6,
+            recordUuid: 'rec-cc-6',
+            payments: [],
+        })
+
+        const result = await ds.settleDebt(2)
+
+        expect(result.settled).toBe(true)
+        const repayment = ds.db._storeData.records.find(
+            r => r.debtId === 2 && r.category === 'debt_repayment',
+        )
+        expect(repayment).toBeDefined()
+        expect(repayment.accountId).toBe(10)
+    })
+
+    it('明確指定帳戶時仍依使用者選擇（不轉導）', async () => {
+        ds.db._storeData.accounts.push(
+            { id: 10, name: '現金', ledgerId: 1, uuid: 'acc-10' },
+            {
+                id: 20,
+                name: '銀行',
+                type: 'bank',
+                ledgerId: 1,
+                uuid: 'acc-20',
+            },
+            {
+                id: 30,
+                name: '信用卡',
+                type: 'credit_card',
+                autoPayAccountId: 10,
+                ledgerId: 1,
+                uuid: 'acc-30',
+            },
+        )
+        ds.db._storeData.records.push({
+            id: 7,
+            type: 'expense',
+            amount: 300,
+            accountId: 30,
+            ledgerId: 1,
+        })
+        ds.db._storeData.debts.push({
+            id: 3,
+            type: 'payable',
+            description: '刷卡代墊',
+            originalAmount: 300,
+            remainingAmount: 300,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-cc-3',
+            recordId: 7,
+            recordUuid: 'rec-cc-7',
+            payments: [],
+        })
+
+        // 使用者明確選銀行（非信用卡）
+        const result = await ds.settleDebt(3, null, { accountId: 20 })
+
+        expect(result.settled).toBe(true)
+        const repayment = ds.db._storeData.records.find(
+            r => r.debtId === 3 && r.category === 'debt_repayment',
+        )
+        expect(repayment).toBeDefined()
+        expect(repayment.accountId).toBe(20)
+    })
+})
+
 describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
     let ds
 
@@ -1383,6 +1729,97 @@ describe('DataService — repairOrphanedDebtRecords 完整性修復', () => {
         })
 
         expect(await ds.needsDebtRepair()).toBe(true)
+    })
+
+    it('補建紀錄帶入預先解析的 accountUuid / debtUuid（免 addRecord 逐筆重查）', async () => {
+        ds.db._storeData.debts.push({
+            id: 6,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-6',
+            recordId: null,
+            payments: [{ amount: 1000, date: '2024-01-01' }],
+        })
+
+        await ds.repairOrphanedDebtRecords()
+
+        const record = ds.db._storeData.records[0]
+        expect(record).toBeDefined()
+        // 外鍵 UUID 應已帶入紀錄（來源為帳戶/欠款的預先解析值）
+        expect(record.accountUuid).toBe('acc-uuid-10')
+        expect(record.debtUuid).toBe('debt-uuid-6')
+        // payment.recordUuid 必須與補建紀錄的 uuid 一致（不再 getRecord 查回）
+        expect(ds.db._storeData.debts[0].payments[0].recordUuid).toBe(record.uuid)
+    })
+
+    it('多筆殘留付款各補建一條紀錄且 payment 對應正確（UUID 快取共用）', async () => {
+        ds.db._storeData.debts.push({
+            id: 7,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 3000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-7',
+            recordId: null,
+            payments: [
+                { amount: 1000, date: '2024-01-01' },
+                { amount: 1000, date: '2024-02-01' },
+            ],
+        })
+
+        const result = await ds.repairOrphanedDebtRecords()
+        expect(result.repairedCount).toBe(2)
+
+        const records = ds.db._storeData.records
+        expect(records).toHaveLength(2)
+        const [first, second] = records
+        expect(first.amount).toBe(1000)
+        expect(second.amount).toBe(1000)
+        // 兩筆紀錄各有獨立 uuid（不共用同一 uuid）
+        expect(first.uuid).not.toBe(second.uuid)
+        // 各 payment 指向對應紀錄
+        const payments = ds.db._storeData.debts[0].payments
+        expect(payments[0].recordId).toBe(first.id)
+        expect(payments[0].recordUuid).toBe(first.uuid)
+        expect(payments[1].recordId).toBe(second.id)
+        expect(payments[1].recordUuid).toBe(second.uuid)
+        // 共用同一 debtUuid / accountUuid
+        expect(first.debtUuid).toBe(second.debtUuid)
+        expect(first.debtUuid).toBe('debt-uuid-7')
+        expect(first.accountUuid).toBe(second.accountUuid)
+        expect(first.accountUuid).toBe('acc-uuid-10')
+    })
+
+    it('addRecord 被 hook 取消時不標記修復、payment 保留原狀待下次重試', async () => {
+        ds.db._storeData.debts.push({
+            id: 8,
+            type: 'payable',
+            description: '借款',
+            originalAmount: 1000,
+            remainingAmount: 1000,
+            contactId: 1,
+            ledgerId: 1,
+            uuid: 'debt-uuid-8',
+            recordId: null,
+            payments: [{ amount: 1000, date: '2024-01-01' }],
+        })
+
+        // 模擬 onRecordSaveBefore hook 取消紀錄建立（addRecord 回傳 null）
+        vi.spyOn(ds, 'addRecord').mockResolvedValue(null)
+
+        const result = await ds.repairOrphanedDebtRecords()
+        expect(result.repairedCount).toBe(0)
+        expect(ds.db._storeData.records).toHaveLength(0)
+        // payment 未被標記為已修復（無 recordId/recordUuid）
+        const payment = ds.db._storeData.debts[0].payments[0]
+        expect(payment.recordId).toBeUndefined()
+        expect(payment.recordUuid).toBeUndefined()
     })
 })
 
@@ -1755,7 +2192,7 @@ describe('DataService — 匯出/備份結構完整性', () => {
         expect(restored.name).toBe('保留群組')
     })
 
-    it('_restoreFromBackup 還原 records 時重新指派 ID 但保留 uuid', async () => {
+    it('_restoreFromBackup 還原 records 時保留原始 ID 與 uuid（維持外鍵完整）', async () => {
         const backup = {
             records: [
                 {
@@ -1782,7 +2219,8 @@ describe('DataService — 匯出/備份結構完整性', () => {
 
         const records = await ds.getRecords({ allLedgers: true })
         expect(records).toHaveLength(1)
-        expect(records[0].id).not.toBe(999)
+        // 保留原始 id：還原後 records.accountId/debtId 等外鍵才能對得上
+        expect(records[0].id).toBe(999)
         expect(records[0].uuid).toBe('backup-rec-uuid')
     })
 })
@@ -1858,6 +2296,31 @@ describe('DataService — 帳本切換與邊界情境', () => {
         const accounts = await ds.getAccounts({ allLedgers: true })
         expect(accounts).toHaveLength(1)
         expect(accounts[0].ledgerId).toBe(1)
+    })
+
+    it('deleteLedger 連帶刪除該帳本的 groupMeta（明細群組），避免孤兒殘留', async () => {
+        ds.db._storeData.ledgers.push({ id: 2, name: '帳本二', uuid: 'l2' })
+        // 帳本 2 的群組
+        ds.db._storeData.groupMeta.push({
+            id: 1,
+            name: '帳本二群組',
+            ledgerId: 2,
+            uuid: 'gm-l2',
+        })
+        // 帳本 1 的群組（應保留）
+        ds.db._storeData.groupMeta.push({
+            id: 2,
+            name: '帳本一群組',
+            ledgerId: 1,
+            uuid: 'gm-l1',
+        })
+
+        await ds.deleteLedger(2)
+
+        const groups = await ds.getAllGroupMeta()
+        expect(groups).toHaveLength(1)
+        expect(groups[0].ledgerId).toBe(1)
+        expect(groups[0].name).toBe('帳本一群組')
     })
 
     it('刪除目前使用的帳本後自動切回預設帳本', async () => {
@@ -2123,5 +2586,41 @@ describe('DataService — groupManagementEnabled 設定項匯出/匯入/同步',
         } finally {
             restore()
         }
+    })
+})
+
+describe('DataService — addAmortization chargeMode', () => {
+    let ds
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('未指定 chargeMode 預設 periodic', async () => {
+        const id = await ds.addAmortization({
+            name: 'A', type: 'installment', recordType: 'expense',
+            category: '購物', totalAmount: 1000, periods: 3,
+            completedPeriods: 0, amountPerPeriod: 333,
+            frequency: 'monthly', startDate: '2026-08-01',
+            nextDueDate: '2026-08-01', status: 'active',
+        })
+        const item = await ds.getAmortization(id)
+        expect(item.chargeMode).toBe('periodic')
+    })
+
+    it('顯式 upfront 保留', async () => {
+        const id = await ds.addAmortization({
+            name: 'B', type: 'installment', recordType: 'expense',
+            category: '購物', totalAmount: 30000, periods: 12,
+            completedPeriods: 0, amountPerPeriod: 2500,
+            frequency: 'monthly', startDate: '2026-08-01',
+            nextDueDate: '2026-08-01', status: 'active',
+            chargeMode: 'upfront', accountId: 99,
+        })
+        const item = await ds.getAmortization(id)
+        expect(item.chargeMode).toBe('upfront')
     })
 })

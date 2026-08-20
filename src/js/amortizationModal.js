@@ -39,6 +39,12 @@ export function showAmortizationModal(
     const isEdit = !!item
     const today = formatDateToString(new Date())
 
+    // 信用卡分期（upfront）：全額已入账，金額/期數不可改（防繞過入口）
+    if (isEdit && item.chargeMode === 'upfront') {
+        showToast('信用卡分期不支援編輯，請刪除後重建', 'warning')
+        return
+    }
+
     // 合併預填與現有資料
     const defaults = {
         name: item?.name || prefill.name || '',

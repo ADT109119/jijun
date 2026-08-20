@@ -33,8 +33,8 @@ describe('NotificationService', () => {
         vi.clearAllMocks()
         Object.values(mockLocalNotifications).forEach(m => m.mockClear())
         mockDS = createMockDataService()
-        // Web 環境: 非原生
-        globalThis.Capacitor = { isNative: false }
+        // Web 環境: 非原生（Capacitor 8 用 isNativePlatform() 方法，無 isNative 屬性）
+        globalThis.Capacitor = { isNativePlatform: () => false }
         // Mock Notification API
         globalThis.Notification = class {
             static get permission() {
@@ -343,8 +343,8 @@ describe('NotificationService', () => {
 
     describe('Native platform simulation', () => {
         beforeEach(() => {
-            // 模擬原生環境
-            globalThis.Capacitor = { isNative: true }
+            // 模擬原生環境（Capacitor 8 API：isNativePlatform() 方法）
+            globalThis.Capacitor = { isNativePlatform: () => true }
             mockLocalNotifications.checkPermissions.mockResolvedValue({
                 display: 'granted',
             })

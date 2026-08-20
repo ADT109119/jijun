@@ -109,7 +109,21 @@ export class EasyAccountingApp {
     }
 
     async init() {
-        await this.dataService.init()
+        // 請求瀏覽器將本站的儲存（IndexedDB/localStorage）標記為「持久化」，
+        // 大幅降低 Chromium/Brave 在磁碟空間不足時自動清除（eviction）的機率。
+        // 失敗不阻擋啟動（部分瀏覽器會要求用戶手動點擊授權）。
+        this._requestStoragePersistence()
+
+        // DB 初始化失敗時不再靜默繼續：顯示明確的警示畫面。
+        // 舊版 init 永不拋錯（全部 catch 掉），DB 壞了用戶看到的是空 app，
+        // 誤以為「更新後資料全部消失」。
+        try {
+            await this.dataService.init()
+        } catch (error) {
+            console.error('App init 失敗：資料庫無法初始化', error)
+            this.showInitFailureScreen(error)
+            return
+        }
 
         // 啟動時執行欠款紀錄完整性檢查：修復因操作中斷（如結清/收款途中關閉應用）
         // 而殘留的「付款已記錄、對應記帳紀錄卻未建立」的資料。
@@ -147,6 +161,7 @@ export class EasyAccountingApp {
         }
 
         this.registerServiceWorker()
+        this.setupOfflineBanner()
 
         // Hide install button if already in standalone mode
         if (window.matchMedia('(display-mode: standalone)').matches) {
@@ -572,6 +587,11 @@ export class EasyAccountingApp {
             }
         }
 
+        // 預先載入所有帳戶（含信用卡）— 避免迴圈內 N+1 查詢
+        const allAccounts = await this.dataService.getAccounts({ allLedgers: true })
+        const accountById = new Map()
+        for (const a of allAccounts) accountById.set(a.id, a)
+
         for (const item of items) {
             try {
                 if (item.status !== 'active') continue
@@ -608,10 +628,14 @@ export class EasyAccountingApp {
 
                         const historyRecords =
                             recordsByAmortId.get(item.id) || []
-                        const actualPaidSoFar = historyRecords.reduce(
-                            (sum, r) => sum + r.amount,
-                            0
-                        )
+                        // upfront：轉帳對含「扣款帳戶支出 + 卡收入」兩腿，
+                        // 已還金額只算卡端收入腿（避免雙重計數）
+                        const paidSoFarFilter = item.chargeMode === 'upfront'
+                            ? (r) => r.type === 'income'
+                            : () => true
+                        const actualPaidSoFar = historyRecords
+                            .filter(paidSoFarFilter)
+                            .reduce((sum, r) => sum + r.amount, 0)
                         const remaining = exactTotalToPay - actualPaidSoFar
 
                         if (item.decimalStrategy === 'keep') {
@@ -626,18 +650,65 @@ export class EasyAccountingApp {
 
                     // 產生一筆記帳紀錄
                     if (generateAmount > 0) {
-                        const newRecord = {
-                            type: item.recordType || 'expense',
-                            amount: generateAmount,
-                            category: item.category,
-                            description: `${item.name} (第 ${completedPeriods + 1}/${item.periods} 期)`,
-                            date: nextDueDate,
-                            accountId: item.accountId || undefined,
-                            ledgerId: item.ledgerId,
-                            amortizationId: item.id, // 標記關聯 ID
-                        }
+                        if (item.chargeMode === 'upfront') {
+                            // 信用卡分期：每期 = 轉帳對（扣款帳戶支出 + 卡收入）
+                            // 卡收入抵銷欠款 → 額度逐月釋放
+                            const card = accountById.get(item.accountId)
+                            const debitId =
+                                card && card.autoPayAccountId
+                                    ? card.autoPayAccountId
+                                    : null
+                            if (debitId) {
+                                const periodLabel = `第 ${completedPeriods + 1}/${item.periods} 期`
+                                const debitRecord = {
+                                    type: 'expense',
+                                    category: 'transfer',
+                                    amount: generateAmount,
+                                    description: `${item.name} 分期扣款 (${periodLabel})`,
+                                    date: nextDueDate,
+                                    accountId: debitId,
+                                    ledgerId: item.ledgerId,
+                                    amortizationId: item.id, // 標記關聯 ID
+                                }
+                                const incomeRecord = {
+                                    type: 'income',
+                                    category: 'transfer',
+                                    amount: generateAmount,
+                                    description: `${item.name} 分期還款入卡 (${periodLabel})`,
+                                    date: nextDueDate,
+                                    accountId: item.accountId,
+                                    ledgerId: item.ledgerId,
+                                    amortizationId: item.id, // 標記關聯 ID
+                                }
+                                await this.dataService.addRecord(debitRecord, true)
+                                await this.dataService.addRecord(incomeRecord, true)
+                                // 同步記憶體快取：同一次執行補跑多期時，
+                                // 末期差額分支才能看到本輪已記的款項（防多扣）
+                                const amortRecs =
+                                    recordsByAmortId.get(item.id) || []
+                                amortRecs.push(debitRecord, incomeRecord)
+                                recordsByAmortId.set(item.id, amortRecs)
+                            }
+                            // 無扣款帳戶：跳過紀錄、只推進期數（攤提頁顯示警示）
+                        } else {
+                            const newRecord = {
+                                type: item.recordType || 'expense',
+                                amount: generateAmount,
+                                category: item.category,
+                                description: `${item.name} (第 ${completedPeriods + 1}/${item.periods} 期)`,
+                                date: nextDueDate,
+                                accountId: item.accountId || undefined,
+                                ledgerId: item.ledgerId,
+                                amortizationId: item.id, // 標記關聯 ID
+                            }
 
-                        await this.dataService.addRecord(newRecord, true) // skipLog = true 以避免洗版
+                            await this.dataService.addRecord(newRecord, true) // skipLog = true 以避免洗版
+                            // 同步記憶體快取（同上：補跑多期時末期差額需看到本輪款項）
+                            const amortRecs =
+                                recordsByAmortId.get(item.id) || []
+                            amortRecs.push(newRecord)
+                            recordsByAmortId.set(item.id, amortRecs)
+                        }
                     }
 
                     completedPeriods++
@@ -719,6 +790,90 @@ export class EasyAccountingApp {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
 
+    /**
+     * 請求瀏覽器持久化本站儲存空間，降低 eviction 機率。
+     * Chromium/Brave 在磁碟壓力下會清除「非持久化」網站的 IndexedDB；
+     * persist() 成功後該網站被視為高價值，幾乎不會被自動清除。
+     * 結果記錄到 this.storagePersisted，供設定頁顯示狀態。
+     */
+    _requestStoragePersistence() {
+        const nav = typeof navigator !== 'undefined' ? navigator : null
+        if (!nav || !nav.storage || typeof nav.storage.persist !== 'function') {
+            this.storagePersisted = null
+            return
+        }
+        nav.storage
+            .persist()
+            .then(ok => {
+                this.storagePersisted = !!ok
+                console.log(
+                    `[Storage] persist() = ${ok}（true 代表已標記持久化，不易被瀏覽器清除）`
+                )
+            })
+            .catch(e => {
+                this.storagePersisted = false
+                console.warn('[Storage] persist() 失敗（不影響使用）:', e)
+            })
+    }
+
+    /**
+     * 資料庫初始化失敗時的警示畫面。
+     * 取代舊版「靜默降級 → 空 app」的體驗：明確告知用戶資料可能還在、
+     * 提供重新載入與（若有）備份還原指引，而不是讓用戶以為資料被清掉了。
+     */
+    showInitFailureScreen(error) {
+        const diagnostics =
+            (this.dataService && this.dataService.initDiagnostics) || null
+        const detail =
+            (diagnostics && diagnostics.error) ||
+            (error && error.message) ||
+            '未知錯誤'
+        const blocked =
+            diagnostics && diagnostics.blocked
+            ? '目前升級被其他分頁鎖定，請關閉所有分頁後重新載入。'
+            : ''
+
+        const skeleton = document.getElementById('skeleton-screen')
+        if (skeleton) skeleton.style.display = 'none'
+
+        const existing = document.getElementById('init-failure-screen')
+        if (existing) existing.remove()
+
+        const el = document.createElement('div')
+        el.id = 'init-failure-screen'
+        el.className =
+            'fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6'
+        el.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-center" role="alertdialog" aria-live="assertive">
+                <div class="mx-auto mb-3 h-12 w-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-2xl font-bold">!</div>
+                <h2 class="text-xl font-bold mb-2">資料載入失敗</h2>
+                <p class="text-sm text-gray-600 mb-1">
+                    應用程式無法開啟資料庫。你的資料<strong>可能仍然存在</strong>於裝置中，
+                    通常重新載入即可恢復。
+                </p>
+                <p class="text-xs text-gray-500 mb-4 break-words">${blocked}</p>
+                <p class="text-xs text-gray-400 mb-5 font-mono break-words">${detail}</p>
+                <div class="flex gap-3 justify-center">
+                    <button id="init-failure-reload"
+                        class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                        重新載入
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 mt-4">
+                    若多次重新載入仍失敗，請至「設定 → 資料管理」嘗試備份還原，
+                    或聯絡開發者（附上上述錯誤代號）。
+                </p>
+            </div>
+        `
+        document.body.appendChild(el)
+        const btn = document.getElementById('init-failure-reload')
+        if (btn) {
+            btn.addEventListener('click', () => {
+                if (typeof location !== 'undefined') location.reload()
+            })
+        }
+    }
+
     async registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
@@ -767,6 +922,34 @@ export class EasyAccountingApp {
                 console.error('Service Worker registration failed:', error)
             }
         }
+    }
+
+    // ==================== 離線狀態提示 ====================
+
+    /**
+     * 離線狀態列：斷網時頂部顯示細條「離線模式」，給使用者確定感
+     * （本地 IndexedDB 資料安全、記帳仍可用；僅雲端同步/備份暫停）。
+     * 監聽 online/offline 事件即時切換；無 emoji，依設計慣例用功能圖示。
+     */
+    setupOfflineBanner() {
+        const update = () => {
+            let banner = document.getElementById('offline-banner')
+            const isOnline = navigator.onLine
+            if (!isOnline && !banner) {
+                banner = document.createElement('div')
+                banner.id = 'offline-banner'
+                banner.className =
+                    'fixed top-0 left-0 right-0 z-[60] bg-amber-600 text-white text-xs text-center py-1.5 px-3 shadow-md flex items-center justify-center gap-1.5'
+                banner.innerHTML =
+                    '<i class="fa-solid fa-wifi fa-slash"></i><span>離線模式：資料安全存於本機，記帳照常可用（雲端同步暫停）</span>'
+                document.body.prepend(banner)
+            } else if (isOnline && banner) {
+                banner.remove()
+            }
+        }
+        window.addEventListener('online', update)
+        window.addEventListener('offline', update)
+        update()
     }
 
     // ==================== 帳本切換器 ====================

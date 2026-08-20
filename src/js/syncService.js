@@ -42,6 +42,41 @@ const isNative =
     typeof window !== 'undefined' &&
     window.Capacitor?.isNativePlatform?.() === true
 
+/**
+ * Google SDK 按需載入（批次 3：取代 index.html 的兩個 eager <script>，
+ * 讓首屏不載入登入/同步才需要的 Google 基建）。
+ * - GSI client → window.google.accounts（OAuth 登入，initCodeClient）
+ * - gapi api.js → window.gapi（Drive Picker，共用帳本選檔）
+ * 只載入一次：結果快取在 Promise 上；載入成功後兩者在 window 常駐。
+ * @returns {Promise<void>} resolve 當兩支 SDK 都載入完成；reject 當載入失敗
+ *   （僅影響需要網路的登入/同步操作，本機記帳不受影響）
+ */
+let googleSdkLoading = null
+function ensureGoogleSdk() {
+    if (window.google?.accounts?.oauth2 && window.gapi) {
+        return Promise.resolve()
+    }
+    if (googleSdkLoading) return googleSdkLoading
+    const inject = src =>
+        new Promise((resolve, reject) => {
+            const s = document.createElement('script')
+            s.src = src
+            s.async = true
+            s.onload = () => resolve()
+            s.onerror = () => reject(new Error(`Google SDK 載入失敗：${src}`))
+            document.head.appendChild(s)
+        })
+    googleSdkLoading = Promise.all([
+        inject('https://accounts.google.com/gsi/client'),
+        inject('https://apis.google.com/js/api.js'),
+    ])
+    // 失敗時清掉快取，讓下次操作可重試
+    googleSdkLoading.catch(() => {
+        googleSdkLoading = null
+    })
+    return googleSdkLoading
+}
+
 export class SyncService {
     /**
      * @param {import('./dataService.js').default} dataService
@@ -262,6 +297,15 @@ export class SyncService {
      * @param {boolean} [requestSharing=false]
      */
     async _signInWeb(requestSharing = false) {
+        // 批次 3：Google SDK 改按需載入（原 index.html eager <script>），
+        // 登入時才注入 GSI client + gapi
+        try {
+            await ensureGoogleSdk()
+        } catch (e) {
+            throw new Error(
+                'Google Identity Services SDK 尚未載入 (網路問題或 WebView 中不支援此方式)'
+            )
+        }
         return new Promise((resolve, reject) => {
             if (!window.google?.accounts?.oauth2) {
                 reject(
@@ -2414,6 +2458,12 @@ export class SyncService {
      */
     async openSharedLedgerPicker(fileIds = null) {
         await this.ensureSharingPermission()
+        // 批次 3：gapi（Google Picker）改按需載入
+        try {
+            await ensureGoogleSdk()
+        } catch (e) {
+            throw new Error('Google API 未載入（網路問題）')
+        }
         if (typeof gapi === 'undefined') {
             throw new Error('Google API 未載入')
         }

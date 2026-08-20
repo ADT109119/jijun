@@ -104,22 +104,37 @@ export class AccountsPage {
                 account.balance
             ) // Start with initial balance
 
+            // 信用卡：currentBalance 為淨現金流（消費為負、繳款為正）。
+            // 欠款（額度佔用）= 餘額為負時的欠款金額；餘額為正代表超繳，欠款為 0
+            const creditLimit = account.creditLimit || 0
+            const cardDebt = Math.max(
+                0,
+                -1 * (typeof currentBalance === 'number' ? currentBalance : 0)
+            )
+
             // 信用卡不計入總資產，而是計入總欠款
             if (account.type === 'credit_card') {
                 hasCreditCard = true
-                totalCreditDebt += currentBalance
+                totalCreditDebt += cardDebt
             } else {
                 totalAssets += currentBalance
             }
+
+            const availableCredit = Math.max(0, creditLimit - cardDebt)
 
             const accountEl = document.createElement('div')
             const isCreditCard = account.type === 'credit_card'
             accountEl.className =
                 'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border'
+            const isHex = account.color && account.color.startsWith('#')
+            const colorClass = isHex ? '' : (account.color || 'bg-gray-500')
+            const colorStyle = isHex
+                ? `style="background-color: ${escapeHTML(account.color)}"`
+                : ''
             accountEl.innerHTML = `
                 <div class="flex items-center gap-4">
                     <div class="relative">
-                        <div class="flex items-center justify-center rounded-lg ${account.color} text-wabi-surface shrink-0 size-12">
+                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-12" ${colorStyle}>
                             <i class="${account.icon} text-2xl"></i>
                         </div>
                         ${isCreditCard ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
@@ -129,7 +144,7 @@ export class AccountsPage {
                             <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
                             ${isCreditCard ? '<span class="text-xs bg-wabi-expense/10 text-wabi-expense px-2 py-0.5 rounded-full">信用卡</span>' : ''}
                         </div>
-                        <p class="text-sm ${isCreditCard ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${isCreditCard ? '欠款' : '餘額'}: ${formatCurrency(currentBalance)}</p>
+                        <p class="text-sm ${isCreditCard ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${isCreditCard ? '欠款' : '餘額'}: ${formatCurrency(isCreditCard ? cardDebt : currentBalance)}${isCreditCard && creditLimit > 0 ? ` <span class="text-wabi-text-secondary">(額度 ${formatCurrency(creditLimit)} / 可用 ${formatCurrency(availableCredit)})</span>` : ''}</p>
                     </div>
                 </div>
                 <div class="flex gap-2">

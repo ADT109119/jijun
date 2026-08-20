@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { showAmortizationModal } from '../../src/js/amortizationModal.js'
+import { showToast } from '../../src/js/utils.js'
 
 // ── Mock showToast ───────────────────────────────────────────
 vi.mock('../../src/js/utils.js', async () => {
@@ -512,6 +513,44 @@ describe('showAmortizationModal', () => {
 
         it('無 onSaved callback 時不拋錯', () => {
             expect(() => showAmortizationModal(app)).not.toThrow()
+        })
+    })
+
+    // ── 信用卡分期 upfront 編輯限制 ──────────────────────────────
+    describe('信用卡分期 upfront 編輯限制', () => {
+        it('upfront 計畫：不開啟 modal、顯示警示 toast', () => {
+            showAmortizationModal(app, {
+                id: 1, name: 'iPhone 分期', type: 'installment',
+                recordType: 'expense', category: '3C',
+                totalAmount: 30000, downPayment: 0, interestRate: 0,
+                periods: 12, completedPeriods: 0, amountPerPeriod: 2500,
+                frequency: 'monthly', startDate: '2026-08-01',
+                nextDueDate: '2026-09-01', status: 'active',
+                accountId: 5, chargeMode: 'upfront',
+            })
+            const showToastRef = showToast
+            expect(showToastRef).toHaveBeenCalledWith(
+                '信用卡分期不支援編輯，請刪除後重建', 'warning'
+            )
+            // modal 不應被建立
+            const modals = [...document.querySelectorAll('[class*="fixed"][class*="inset-0"]')]
+                .filter(el => el.querySelector('#amort-name'))
+            expect(modals.length).toBe(0)
+        })
+
+        it('periodic 計畫：正常開啟編輯 modal（不受影響）', () => {
+            showAmortizationModal(app, {
+                id: 2, name: '舊式分期', type: 'installment',
+                recordType: 'expense', category: '3C',
+                totalAmount: 3000, downPayment: 0, interestRate: 0,
+                periods: 3, completedPeriods: 0, amountPerPeriod: 1000,
+                frequency: 'monthly', startDate: '2026-08-01',
+                nextDueDate: '2026-08-01', status: 'active',
+                chargeMode: 'periodic',
+            })
+            const modals = [...document.querySelectorAll('[class*="fixed"][class*="inset-0"]')]
+                .filter(el => el.querySelector('#amort-name'))
+            expect(modals.length).toBe(1)
         })
     })
 })

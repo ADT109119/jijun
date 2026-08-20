@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GroupManager, getUniqueGroupName } from '../../src/js/groupManager.js'
+import { generateId } from '../../src/js/utils.js'
 
 // Mock utils
+// generateId 為 vi.fn()：createGroup 改用 generateId()（含舊 WebView fallback），
+// 不再呼叫裸 crypto.randomUUID()
 vi.mock('../../src/js/utils.js', () => ({
     formatCurrency: vi.fn((amount) => `$${amount}`),
     formatDate: vi.fn((date) => date),
     showToast: vi.fn(),
+    generateId: vi.fn(() => `mock-id-${Math.random().toString(36).slice(2)}`),
 }))
 
 describe('GroupManager', () => {
@@ -71,7 +75,7 @@ describe('GroupManager', () => {
     describe('createGroup', () => {
         it('建立新群組並回傳 groupId', async () => {
             const fakeId = 'group-uuid-123'
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue(fakeId)
+            generateId.mockReturnValue(fakeId)
             mockDataService.getAllGroupMeta.mockResolvedValue([])
 
             const result = await gm.createGroup('聚餐')
@@ -89,7 +93,7 @@ describe('GroupManager', () => {
 
         it('建立與既有群組同名的群組時，自動添加 (2) 編號後綴', async () => {
             const fakeId = 'group-uuid-456'
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue(fakeId)
+            generateId.mockReturnValue(fakeId)
             mockDataService.getAllGroupMeta.mockResolvedValue([
                 { id: 'g1', name: 'asd' },
             ])
@@ -106,7 +110,7 @@ describe('GroupManager', () => {
         })
 
         it('_trim_群組名稱', async () => {
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue('g1')
+            generateId.mockReturnValue('g1')
 
             await gm.createGroup('  旅行基金  ')
 
@@ -115,7 +119,7 @@ describe('GroupManager', () => {
         })
 
         it('指定 ledgerId 時使用指定值', async () => {
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue('g2')
+            generateId.mockReturnValue('g2')
 
             await gm.createGroup('公司聚餐', 5)
 
@@ -124,7 +128,7 @@ describe('GroupManager', () => {
         })
 
         it('未指定 ledgerId 時使用 activeLedgerId', async () => {
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue('g3')
+            generateId.mockReturnValue('g3')
             mockDataService.activeLedgerId = 99
 
             await gm.createGroup('個人聚餐')
@@ -134,7 +138,7 @@ describe('GroupManager', () => {
         })
 
         it('createdAt 為時間戳記', async () => {
-            vi.spyOn(crypto, 'randomUUID').mockReturnValue('g4')
+            generateId.mockReturnValue('g4')
 
             await gm.createGroup('測試')
 

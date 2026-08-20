@@ -3,7 +3,15 @@ import DataService from './dataService.js'
 export class NotificationService {
     constructor(dataService) {
         this.dataService = dataService
-        this.isNative = !!(window.Capacitor && window.Capacitor.isNative)
+        // 修正：Capacitor 8 沒有 isNative 屬性（永遠 undefined），
+        // 之前 isNative 恆為 false 導致 Android App 內提醒走 Web/SW 路徑、
+        // 而 Android WebView 不支援 SW → 每日提醒在 Android 上靜默失效。
+        // 與 main.js 一致改用 isNativePlatform() 方法。
+        this.isNative =
+            typeof window !== 'undefined' &&
+            window.Capacitor &&
+            typeof window.Capacitor.isNativePlatform === 'function' &&
+            window.Capacitor.isNativePlatform()
         this.hasPermission = false
 
         // Notification channel ID for Android

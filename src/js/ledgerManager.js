@@ -231,78 +231,33 @@ export class LedgerManager {
 
         const deviceId = this.app.syncService.deviceId
         const now = Date.now()
-        exported.ledgers.forEach(l =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'ledgers',
-                data: l,
-                timestamp: now,
-            })
-        )
-        exported.accounts.forEach(a =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'accounts',
-                data: a,
-                timestamp: now,
-            })
-        )
-        exported.contacts.forEach(c =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'contacts',
-                data: c,
-                timestamp: now,
-            })
-        )
-        exported.debts.forEach(d =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'debts',
-                data: d,
-                timestamp: now,
-            })
-        )
-        exported.recurring_transactions.forEach(r =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'recurring_transactions',
-                data: r,
-                timestamp: now,
-            })
-        )
-        exported.amortizations.forEach(a =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'amortizations',
-                data: a,
-                timestamp: now,
-            })
-        )
-        exported.credit_statements.forEach(s =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'credit_statements',
-                data: s,
-                timestamp: now,
-            })
-        )
-        exported.records.forEach(r =>
-            changes.push({
-                deviceId,
-                operation: 'add',
-                storeName: 'records',
-                data: r,
-                timestamp: now,
-            })
-        )
+        // 依固定拓撲順序建立所有資料 store 的初始 changes，
+        // 與 applyRemoteChanges 的 topoOrder 保持一致（groupMeta 在 records 之前）。
+        // 使用迴圈遍歷避免新增 store 時遺漏（曾遺漏 groupMeta）。
+        const storeOrder = [
+            'ledgers',
+            'groupMeta',
+            'accounts',
+            'contacts',
+            'debts',
+            'recurring_transactions',
+            'amortizations',
+            'credit_statements',
+            'records',
+        ]
+        for (const storeName of storeOrder) {
+            const items = exported[storeName]
+            if (!Array.isArray(items)) continue
+            items.forEach(item =>
+                changes.push({
+                    deviceId,
+                    operation: 'add',
+                    storeName,
+                    data: item,
+                    timestamp: now,
+                })
+            )
+        }
 
         const initSyncData = {
             deviceId,

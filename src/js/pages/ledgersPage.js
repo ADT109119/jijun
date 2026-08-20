@@ -1,6 +1,25 @@
 // ==================== 帳本管理頁面 ====================
 import { showToast, escapeHTML, customConfirm } from '../utils.js'
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
+// QRCode.js（davidshimjs, MIT）：純 IIFE 函式庫，ESM import 會因 minifier 重綁 this 而壞
+// （makeImage 讀 this._android 炸）。改用 ?url 讓 Vite 原封輸出為 asset，
+// 再以 classic <script> 注入（top-level var QRCode → window.QRCode，IIFE 原樣執行）。
+import qrcodeLibUrl from '../../vendor/qrcode.js?url'
+
+// classic script 載入器（只載一次；成功/失敗都快取結果避免重複注入）
+let qrcodeLibPromise = null
+function loadQRCodeLib() {
+    if (window.QRCode) return Promise.resolve()
+    if (qrcodeLibPromise) return qrcodeLibPromise
+    qrcodeLibPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = qrcodeLibUrl
+        s.onload = () => resolve()
+        s.onerror = () => reject(new Error('QRCode 載入失敗'))
+        document.head.appendChild(s)
+    })
+    return qrcodeLibPromise
+}
 
 export class LedgersPage {
     constructor(app) {
@@ -560,19 +579,22 @@ export class LedgersPage {
                 })
 
             // == QR Code ==
+            // QRCode.js 為本地 vendor（?url → classic script 注入，原 defer CDN script 的替代）
             const qrContainer = modal.querySelector('#qrcode-container')
-            if (typeof QRCode !== 'undefined') {
-                new QRCode(qrContainer, {
-                    text: ledger.sharedFileId,
-                    width: 120,
-                    height: 120,
-                    colorDark: '#2D3748',
-                    colorLight: '#ffffff',
+            loadQRCodeLib()
+                .then(() => {
+                    new window.QRCode(qrContainer, {
+                        text: ledger.sharedFileId,
+                        width: 120,
+                        height: 120,
+                        colorDark: '#2D3748',
+                        colorLight: '#ffffff',
+                    })
                 })
-            } else {
-                qrContainer.innerHTML =
-                    '<span class="text-xs text-gray-400 p-2">QRCode 載入失敗</span>'
-            }
+                .catch(() => {
+                    qrContainer.innerHTML =
+                        '<span class="text-xs text-gray-400 p-2">QRCode 載入失敗</span>'
+                })
 
             // == 讀取分享名單 ==
             const usersListEl = modal.querySelector('#shared-users-list')
@@ -810,14 +832,20 @@ export class LedgersPage {
         let authorizedCode = null
 
         // ==== 掃描 QR Code 邏輯 ====
-        scanBtn.addEventListener('click', () => {
-            if (typeof Html5Qrcode === 'undefined') {
-                showToast('掃描套件載入失敗', 'error')
-                return
-            }
-
+        // html5-qrcode 改為本地 npm 動態 import（code-split：只在點掃描時載入，
+        // 不進主 bundle）；原本靠 defer CDN script + typeof guard。
+        scanBtn.addEventListener('click', async () => {
             if (scannerContainer.classList.contains('hidden')) {
                 scannerContainer.classList.remove('hidden')
+
+                let Html5Qrcode
+                try {
+                    ;({ Html5Qrcode } = await import('html5-qrcode'))
+                } catch {
+                    showToast('掃描套件載入失敗', 'error')
+                    closeScanner()
+                    return
+                }
 
                 Html5Qrcode.getCameras()
                     .then(devices => {
