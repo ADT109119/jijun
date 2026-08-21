@@ -974,3 +974,102 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
         )
     })
 })
+
+describe('RecordsListManager - 群組標頭排版與折疊展開', () => {
+    let container, dataService, categoryManager, manager
+
+    beforeEach(() => {
+        sessionStorage.clear()
+        container = createDOMContainer()
+        dataService = createMockDataService()
+        dataService.getAllGroupMeta = vi.fn().mockResolvedValue([
+            { id: 'g-trip', name: '花蓮三天兩夜', settled: false },
+        ])
+        categoryManager = {
+            getCategories: vi.fn().mockReturnValue([]),
+            getCategoryById: vi.fn().mockReturnValue({ name: '測試類別', icon: 'fa-utensils' }),
+        }
+        manager = new RecordsListManager(
+            dataService,
+            categoryManager,
+            container
+        )
+    })
+
+    afterEach(() => {
+        manager.destroy()
+    })
+
+    it('群組紀錄正確渲染為群組區塊，包含標頭、筆數與折疊箭頭', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'transport',
+                amount: 1200,
+                date: '2026-06-15',
+                groupId: 'g-trip',
+                description: '火車票',
+            },
+            {
+                id: 2,
+                type: 'expense',
+                category: 'food',
+                amount: 800,
+                date: '2026-06-15',
+                groupId: 'g-trip',
+                description: '晚餐',
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        await manager.init()
+
+        const groupBlock = container.querySelector('.group-block[data-group-id="g-trip"]')
+        expect(groupBlock).not.toBeNull()
+
+        const header = groupBlock.querySelector('.group-header')
+        expect(header).not.toBeNull()
+        expect(header.textContent).toContain('花蓮三天兩夜')
+        expect(header.textContent).toContain('(2筆)')
+        expect(header.textContent).toContain('支出 $2,000')
+
+        // 驗證群組內兩組 chevron（手機版與桌面版）
+        const chevrons = header.querySelectorAll('.group-chevron')
+        expect(chevrons.length).toBe(2)
+    })
+
+    it('點擊群組標頭可正常收合與展開，並同步更新所有箭頭旋轉樣式', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 500,
+                date: '2026-06-15',
+                groupId: 'g-trip',
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        await manager.init()
+
+        const groupBlock = container.querySelector('.group-block[data-group-id="g-trip"]')
+        const header = groupBlock.querySelector('.group-header')
+        const body = groupBlock.querySelector('.group-body')
+        const chevrons = header.querySelectorAll('.group-chevron')
+
+        // 初始狀態：未折疊
+        expect(body.classList.contains('hidden')).toBe(false)
+        chevrons.forEach(c => expect(c.style.transform).toBe('rotate(180deg)'))
+
+        // 點擊第一次：折疊收起
+        header.click()
+        expect(body.classList.contains('hidden')).toBe(true)
+        chevrons.forEach(c => expect(c.style.transform).toBe(''))
+
+        // 點擊第二次：重新展開
+        header.click()
+        expect(body.classList.contains('hidden')).toBe(false)
+        chevrons.forEach(c => expect(c.style.transform).toBe('rotate(180deg)'))
+    })
+})
+

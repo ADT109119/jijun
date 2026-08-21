@@ -609,6 +609,7 @@ export class AddPage {
                 .length > 0
         const updateInstallmentBtn = () => {
             installmentEnabled = isInstallmentConfigured()
+            if (!installmentBtn) return
             installmentBtn.classList.toggle('text-blue-500', installmentEnabled)
             installmentBtn.classList.toggle('bg-blue-500/10', installmentEnabled)
             installmentBtn.classList.toggle(
@@ -618,6 +619,7 @@ export class AddPage {
         }
         const setInstallmentPanelOpen = open => {
             installmentPanelOpen = open
+            if (!installmentPanel) return
             installmentPanel.classList.toggle('hidden', !open)
         }
         const clearInstallmentConfig = () => {
@@ -858,12 +860,14 @@ export class AddPage {
         const isGroupConfigured = () => selectedGroupId !== null
         const updateGroupBtn = () => {
             groupEnabled = isGroupConfigured()
+            if (!toggleGroupBtn) return
             toggleGroupBtn.classList.toggle('text-emerald-500', groupEnabled)
             toggleGroupBtn.classList.toggle('bg-emerald-500/10', groupEnabled)
             toggleGroupBtn.classList.toggle('text-wabi-text-secondary', !groupEnabled)
         }
         const setGroupPanelOpen = open => {
             groupPanelOpen = open
+            if (!groupPanel) return
             groupPanel.classList.toggle('hidden', !open)
         }
 

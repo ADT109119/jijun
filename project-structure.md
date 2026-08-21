@@ -261,7 +261,9 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 
 所有的單元測試位於 `tests/unit/` 目錄下：
 
-- `recordsList.test.js` # 測試明細紀錄列表、預設時間範圍設定與搜尋清空按鈕
+- `recordsList.test.js` # 測試明細紀錄列表、群組標頭排版/折疊展開、預設時間範圍設定與搜尋清空按鈕
+- `addPagePanels.test.js` # 測試記帳頁面板獨立開啟、互斥關閉與空值安全防護
+- `homePage.test.js` # 測試首頁群組結餘小工具 (未結清群組展示、切片與 XSS 防護)
 - `amortization.test.js` # 測試折舊攤提分期邏輯
 - `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal
 - `budgetManager.test.js` # 測試預算管理邏輯
@@ -274,6 +276,6 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 36 個測試檔案，對應各主要模組的單元驗證）
-- 透過 `npx vitest run` 執行所有單元測試 (1529 測試項目)
+- ...等等（共有 38 個測試檔案，對應各主要模組的單元驗證）
+- 透過 `npx vitest run` 執行所有單元測試 (1541 測試項目)
 
