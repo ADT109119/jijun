@@ -1,7 +1,7 @@
 // 現代化 Service Worker（v2：precache + opaque cache-first）
 // 使用統一的版本號和 build hash 命名快取
-const APP_VERSION = '2.1.7.6' // build 時自動注入 package.json 的版本號
-const BUILD_HASH = 'f4b0d1f4' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
+const APP_VERSION = '2.1.7.7' // build 時自動注入 package.json 的版本號
+const BUILD_HASH = 'ccfe8a39' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
 
 // 快取命名帶 BUILD_HASH：新 build 的 SW 用新快取，舊快取在 activate 時清理
 const APP_CACHE = `app-v${APP_VERSION}-${BUILD_HASH}` // install 時的 precache（本機 assets + 核心 + CDN）
