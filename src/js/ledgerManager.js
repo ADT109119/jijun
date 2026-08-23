@@ -355,6 +355,19 @@ export class LedgerManager {
      */
     async getSharedUsers(ledgerId) {
         const ledger = await this.dataService.getLedger(ledgerId)
+        if (ledger?.sharedManifestId) {
+            const manifest = (
+                await this.app.syncService._downloadFile(
+                    ledger.sharedManifestId
+                )
+            )?.data
+            return (manifest?.members || []).map((m, i) => ({
+                id: m.deviceId,
+                emailAddress: m.ownerEmail,
+                displayName: '',
+                role: i === 0 ? 'owner' : 'writer',
+            }))
+        }
         if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')
         return await this.app.syncService.getFilePermissions(
             ledger.sharedFileId
@@ -366,12 +379,19 @@ export class LedgerManager {
      * @param {number} ledgerId
      * @param {string} permissionId
      */
-    async removeSharedUser(ledgerId, permissionId) {
+    async removeSharedUser(ledgerId, memberId) {
         const ledger = await this.dataService.getLedger(ledgerId)
+        if (ledger?.sharedManifestId) {
+            await this.app.syncService.removeManifestMember(
+                ledger.sharedManifestId,
+                memberId
+            )
+            return
+        }
         if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')
         await this.app.syncService.removeFilePermission(
             ledger.sharedFileId,
-            permissionId
+            memberId
         )
     }
 

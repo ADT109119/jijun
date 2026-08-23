@@ -741,9 +741,23 @@ describe('LedgerManager', () => {
                     ? { key, value: 'devlog_1' }
                     : null
             )
-            mockSyncService.getFilePermissions.mockResolvedValue([
-                { emailAddress: 'me@test.com', role: 'owner' },
-            ])
+            // 新架構：getSharedUsers 走 manifest 路徑（首位成員為擁有者）
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    members: [
+                        {
+                            deviceId: 'dev_me',
+                            ownerEmail: 'me@test.com',
+                            fileId: 'devlog_1',
+                        },
+                        {
+                            deviceId: 'dev_b',
+                            ownerEmail: 'b@test.com',
+                            fileId: 'devlog_2',
+                        },
+                    ],
+                },
+            })
 
             await ledgerManager.unshareLedger(1)
 
@@ -780,9 +794,18 @@ describe('LedgerManager', () => {
             mockDataService.getSetting.mockRejectedValue(
                 new Error('settings error')
             )
-            mockSyncService.getFilePermissions.mockResolvedValue([
-                { emailAddress: 'me@test.com', role: 'owner' },
-            ])
+            // 新架構：getSharedUsers 走 manifest 路徑（首位成員為擁有者）
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    members: [
+                        {
+                            deviceId: 'dev_me',
+                            ownerEmail: 'me@test.com',
+                            fileId: 'devlog_1',
+                        },
+                    ],
+                },
+            })
 
             await ledgerManager.unshareLedger(1)
 

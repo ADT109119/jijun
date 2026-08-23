@@ -1541,6 +1541,17 @@ export class SyncService {
     }
 
     /**
+     * 從 manifest 移除成員（公開給 ledgerManager 用）
+     * @param {string} manifestId
+     * @param {string} deviceId
+     * @returns {Promise<boolean>}
+     */
+    async removeManifestMember(manifestId, deviceId) {
+        await this.ensureSharingPermission()
+        return await this._removeManifestMember(manifestId, deviceId)
+    }
+
+    /**
      * 把自己的日誌檔授權（writer）給 manifest 中所有其他成員。
      * 以 settings 記錄已授權 email，之後新成員加入時只補授權差額（節省 API 配額）
      * @param {string} ledgerUuid
