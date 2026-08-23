@@ -1589,6 +1589,146 @@ export class SyncService {
     }
 
     /**
+     * 確保共用帳本的 per-device 基礎設施就緒：
+     * 1. 從舊式共用檔解析 manifest 指標與歷史變更
+     * 2. 建立/定位 manifest（多台競爭時以寫回舊檔的指標為準，輸家刪除孤兒檔）
+     * 3. 建立/定位自己的裝置日誌檔並授權給成員
+     * 4. （首次）將舊檔歷史併入自己的日誌並種入 appliedKeys
+     * @param {object} ledger 本地帳本記錄（isShared 且有 sharedFileId）
+     * @returns {Promise<{ledger: object, devLogId: string, manifestId: string}>}
+     */
+    async _ensureSharedInfra(ledger) {
+        const migratedKey = `shared_migrated_${ledger.uuid}`
+        const migrated = await this.dataService.getSetting(migratedKey)
+        let manifestId = ledger.sharedManifestId || null
+        let legacyChanges = []
+
+        // 1) 讀取舊式共用檔
+        if (ledger.sharedFileId) {
+            try {
+                const res = await this._downloadFile(ledger.sharedFileId)
+                const oldData = res?.data || {}
+                if (!manifestId && oldData.manifestFileId) {
+                    manifestId = oldData.manifestFileId
+                }
+                if (!migrated?.value && Array.isArray(oldData.changes)) {
+                    legacyChanges = oldData.changes
+                }
+            } catch (_) {
+                // 舊檔讀不到不阻擋流程
+            }
+        }
+
+        // 2) 解析或建立 manifest
+        if (!manifestId) {
+            const name = this._manifestFileName(ledger.uuid)
+            manifestId = await this._findFileInDrive(name)
+            if (!manifestId) {
+                const created = await this._createSharedFile(
+                    name,
+                    JSON.stringify({
+                        ledgerUuid: ledger.uuid,
+                        members: [
+                            {
+                                deviceId: this.deviceId,
+                                ownerEmail: this.userInfo?.email || '',
+                                fileId: null,
+                            },
+                        ],
+                    })
+                )
+                manifestId = created.id
+            }
+            // 把指標寫回舊檔協調其他裝置（多台同時建立時，最後寫入者為準）
+            if (ledger.sharedFileId) {
+                try {
+                    const res = await this._downloadFile(ledger.sharedFileId)
+                    const oldData = res?.data || {}
+                    if (!oldData.manifestFileId) {
+                        oldData.manifestFileId = manifestId
+                        oldData.timestamp = Date.now()
+                        await this._updateFile(
+                            ledger.sharedFileId,
+                            JSON.stringify(oldData)
+                        )
+                    } else if (oldData.manifestFileId !== manifestId) {
+                        // 他機先註冊 → 採用贏家，刪除自己的孤兒 manifest
+                        try {
+                            await this.deleteFile(manifestId)
+                        } catch (_) {}
+                        manifestId = oldData.manifestFileId
+                    }
+                } catch (_) {}
+            }
+        }
+
+        // 3) 確保自己的裝置日誌檔
+        const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+        let devLogId =
+            (await this.dataService.getSetting(devLogKey))?.value || null
+        if (!devLogId) {
+            const name = this._deviceLogFileName(ledger.uuid)
+            devLogId = await this._findFileInDrive(name)
+            if (!devLogId) {
+                const created = await this._createSharedFile(
+                    name,
+                    JSON.stringify({
+                        ledgerUuid: ledger.uuid,
+                        deviceId: this.deviceId,
+                        changes: [],
+                    })
+                )
+                devLogId = created.id
+            }
+            await this.dataService.saveSetting({
+                key: devLogKey,
+                value: devLogId,
+            })
+            await this._grantDevLogPermissions(
+                ledger.uuid,
+                manifestId,
+                devLogId
+            )
+        }
+
+        // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys
+        if (legacyChanges.length > 0) {
+            const mine = legacyChanges.map(c => ({
+                ...c,
+                deviceId: this.deviceId,
+            }))
+            await this._appendToDeviceLog(devLogId, mine)
+            const appliedSetting = await this.dataService.getSetting(
+                'sync_shared_applied_keys'
+            )
+            const appliedKeys = new Set(appliedSetting?.value || [])
+            legacyChanges.forEach(c => appliedKeys.add(this._changeKey(c)))
+            await this.dataService.saveSetting({
+                key: 'sync_shared_applied_keys',
+                value: [...appliedKeys],
+            })
+        }
+
+        // 5) 更新帳本記錄與遷移旗標
+        if (manifestId && manifestId !== ledger.sharedManifestId) {
+            await this.dataService.updateLedger(
+                ledger.id,
+                { sharedManifestId: manifestId },
+                true
+            )
+            ledger.sharedManifestId = manifestId
+        }
+        if (!migrated?.value) {
+            await this.dataService.saveSetting({
+                key: migratedKey,
+                value: true,
+            })
+        }
+
+        return { ledger, devLogId, manifestId }
+    }
+
+    /**
      * 在 appDataFolder 中搜尋指定名稱的檔案
      * @param {string} fileName
      * @returns {Promise<string|null>} file ID or null

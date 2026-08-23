@@ -1294,3 +1294,143 @@ describe('SyncService manifest 管理', () => {
         }
     })
 })
+
+describe('SyncService _ensureSharedInfra', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ds.getLedger = vi.fn()
+        ds.updateLedger = vi.fn(async () => true)
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+        // _createSharedFile / deleteFile 內部會走共享授權流程，測試中直接放行
+        ss.ensureSharingPermission = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('首次呼叫：讀舊檔歷史、建立 manifest 與日誌檔、種入 appliedKeys、寫遷移旗標', async () => {
+        const legacyChanges = [
+            { deviceId: 'old', timestamp: 111, operation: 'add', storeName: 'records', data: {} },
+        ]
+        let createdFiles = []
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({ changes: legacyChanges }),
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                const id = `new_${createdFiles.length++}`
+                return { ok: true, json: async () => ({ id }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 1,
+            uuid: 'uuuuuuuu-1',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('new_0')
+        expect(infra.devLogId).toBe('new_1')
+        // 歷史被併入自己的日誌
+        expect(ss._appendToDeviceLog).toHaveBeenCalled()
+        // appliedKeys 種入舊變更
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toContain('old|111|add|records')
+        // 帳本記錄寫入 sharedManifestId
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            { sharedManifestId: 'new_0' },
+            true
+        )
+        // 遷移旗標
+        expect((await ds.getSetting('shared_migrated_uuuuuuuu-1')).value).toBe(true)
+    })
+
+    it('舊檔已被他機註冊 manifest 時採用贏家的 manifestFileId', async () => {
+        let mediaReads = 0
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                mediaReads++
+                // 第一次讀：舊檔尚無指標（自己因此先建立了 manifest）；
+                // 寫回指標前再讀：發現他機已搶先註冊贏家 manifest
+                return {
+                    ok: true,
+                    json: async () =>
+                        mediaReads === 1
+                            ? { changes: [] }
+                            : { manifestFileId: 'winner_manifest', changes: [] },
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'orphan' }) }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss.deleteFile = vi.fn(async () => {})
+
+        const ledger = {
+            id: 2,
+            uuid: 'uuuuuuuu-2',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+        expect(infra.manifestId).toBe('winner_manifest')
+        expect(ss.deleteFile).toHaveBeenCalledWith('orphan')
+    })
+
+    it('舊檔已有 manifest 指標時直接採用，不重複建立', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'existing_manifest',
+                        changes: [],
+                    }),
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'dev_log_created' }) }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 3,
+            uuid: 'uuuuuuuu-3',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+        expect(infra.manifestId).toBe('existing_manifest')
+        // 僅建立自己的裝置日誌（一次 multipart），不重複建立 manifest
+        const creates = globalThis.fetch.mock.calls.filter(c =>
+            c[0].includes('uploadType=multipart')
+        )
+        expect(creates).toHaveLength(1)
+    })
+})
