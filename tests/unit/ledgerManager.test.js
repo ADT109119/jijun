@@ -506,6 +506,7 @@ describe('LedgerManager', () => {
             expect(mockDataService.updateLedger).toHaveBeenCalledWith(5, {
                 isShared: true,
                 sharedFileId: 'file456',
+                sharedManifestId: null,
                 type: 'shared',
             })
             expect(mockDataService.getLedgers).toHaveBeenCalled()

@@ -1727,3 +1727,160 @@ describe('SyncService pullChanges (appliedKeys 版)', () => {
         expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
     })
 })
+
+describe('SyncService joinViaManifest', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+        // _createSharedFile 內部會走共享授權流程，測試中直接放行
+        ss.ensureSharingPermission = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('加入成功：套用排序後變更、建立自己的日誌檔、種入 appliedKeys、回傳帳本 uuid', async () => {
+        const memberLog = {
+            changes: [
+                { deviceId: 'dev_a', timestamp: 200, operation: 'add', storeName: 'records', data: {} },
+                { deviceId: 'dev_a', timestamp: 100, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-9' } },
+            ],
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: null },
+                            { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'log_a' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_a') && url.includes('alt=media')) {
+                return { ok: true, json: async () => memberLog }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_1')
+
+        expect(uuid).toBe('uuuuuuuu-9')
+        // 變更按時間戳升冪套用
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(applied.map(c => c.timestamp)).toEqual([100, 200])
+        expect(applied[0].storeName).toBe('ledgers')
+        // 自己的日誌檔被建立並持久化（fileId 為 null 的成員被跳過）
+        expect(
+            (await ds.getSetting('sync_shared_devlog_uuuuuuuu-9')).value
+        ).toBe('my_new_log')
+        // 授權與註冊以正確參數呼叫
+        expect(ss._grantDevLogPermissions).toHaveBeenCalledWith(
+            'uuuuuuuu-9',
+            'mf_1',
+            'my_new_log'
+        )
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            'mf_1',
+            'my_new_log'
+        )
+        // appliedKeys 種入所有已見變更，之後 pull 不會重複套用
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toContain('dev_a|100|add|ledgers')
+        expect(keys).toContain('dev_a|200|add|records')
+    })
+
+    it('無效的 manifest（缺 members）拋出錯誤且不套用任何變更', async () => {
+        globalThis.fetch = vi.fn(async _url => ({
+            ok: true,
+            json: async () => ({ changes: [] }),
+        }))
+        ss.applyRemoteChanges = vi.fn(async () => {})
+
+        await expect(ss.joinViaManifest('bad_mf')).rejects.toThrow(
+            '無效的共用帳本清單檔'
+        )
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+    })
+
+    it('重複變更改用 key 去重；成員檔抓不到不阻擋加入', async () => {
+        const recordChange = {
+            deviceId: 'dev_b',
+            timestamp: 10,
+            operation: 'add',
+            storeName: 'records',
+            data: { uuid: 'r1' },
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_2') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                            { deviceId: 'dev_c', ownerEmail: 'c@t.com', fileId: null },
+                            { deviceId: 'dev_d', ownerEmail: 'd@t.com', fileId: 'log_d' },
+                            { deviceId: 'dev_e', ownerEmail: 'e@t.com', fileId: 'log_e' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_b', timestamp: 5, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-8' } },
+                            recordChange,
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_d') && url.includes('alt=media')) {
+                // 與 dev_b 完全相同的變更（同 key）→ 應被去重
+                return { ok: true, json: async () => ({ changes: [recordChange] }) }
+            }
+            // log_e：下載失敗 → 不阻擋加入流程
+            if (url.includes('files/log_e')) {
+                return { ok: false, status: 404, json: async () => ({}) }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_log_2' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_2')
+
+        expect(uuid).toBe('uuuuuuuu-8')
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(applied).toHaveLength(2)
+        expect(applied.map(c => c.timestamp)).toEqual([5, 10])
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toHaveLength(2)
+        expect(keys).toContain('dev_b|10|add|records')
+    })
+})

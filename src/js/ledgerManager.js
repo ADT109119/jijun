@@ -288,6 +288,24 @@ export class LedgerManager {
 
         const res = await this.app.syncService._downloadFile(fileId)
         const fileData = res?.data
+
+        // ── 新架構：manifest 成員清單檔 ──
+        if (fileData?.members) {
+            const uuid = await this.app.syncService.joinViaManifest(fileId)
+            await this.init()
+            const ledger = this.ledgers.find(l => l.uuid === uuid)
+            if (!ledger) throw new Error('無法從共用資料解析帳本')
+            await this.dataService.updateLedger(ledger.id, {
+                isShared: true,
+                sharedManifestId: fileId,
+                type: 'shared',
+            })
+            await this.init()
+            await this.app.syncService.ensureSharedSync()
+            return ledger.id
+        }
+
+        // ── 舊架構：單一共用變更檔 ──
         if (!fileData || !fileData.changes) {
             throw new Error('無效的共用帳本檔案或無讀取權限')
         }
@@ -310,19 +328,10 @@ export class LedgerManager {
                 await this.dataService.updateLedger(ledger.id, {
                     isShared: true,
                     sharedFileId: fileId,
+                    sharedManifestId: fileData.manifestFileId || null,
                     type: 'shared',
                 })
                 await this.init()
-
-                // Set last pull timestamp so we don't redownload the same logs
-                const lastPull = (await this.dataService.getSetting(
-                    'sync_last_pull_timestamps'
-                )) || { value: {} }
-                lastPull.value[`shared_${fileId}`] = Date.now()
-                await this.dataService.saveSetting({
-                    key: 'sync_last_pull_timestamps',
-                    value: lastPull.value,
-                })
 
                 // 確保共用帳本同步已啟動
                 await this.app.syncService.ensureSharedSync()

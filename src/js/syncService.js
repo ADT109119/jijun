@@ -1720,6 +1720,85 @@ export class SyncService {
     }
 
     /**
+     * 以 manifest 檔加入共用帳本：
+     * 套用所有成員日誌的變更 → 建立自己的日誌檔並授權 → 註冊進 manifest → 種入 appliedKeys
+     * @param {string} manifestId
+     * @returns {Promise<string>} 共用帳本的 uuid
+     */
+    async joinViaManifest(manifestId) {
+        await this.ensureValidToken()
+        const manifest = (await this._downloadFile(manifestId))?.data
+        if (!manifest?.members) throw new Error('無效的共用帳本清單檔')
+
+        // 1. 收集所有成員日誌的變更（key 去重）
+        const seen = new Set()
+        const allChanges = []
+        const collect = changes => {
+            for (const c of changes || []) {
+                const key = this._changeKey(c)
+                if (!seen.has(key)) {
+                    seen.add(key)
+                    allChanges.push(c)
+                }
+            }
+        }
+        for (const member of manifest.members) {
+            if (!member.fileId) continue
+            try {
+                const d = (await this._downloadFile(member.fileId))?.data
+                collect(d?.changes)
+            } catch (_) {
+                // 某成員檔抓不到不阻擋加入
+            }
+        }
+        if (manifest.legacySharedFileId) {
+            try {
+                const d = (
+                    await this._downloadFile(manifest.legacySharedFileId)
+                )?.data
+                collect(d?.changes)
+            } catch (_) {}
+        }
+        allChanges.sort((a, b) => a.timestamp - b.timestamp)
+        await this.applyRemoteChanges(allChanges)
+
+        const ledgerChange = allChanges.find(
+            c => c.storeName === 'ledgers' && c.data?.uuid
+        )
+        if (!ledgerChange) throw new Error('無法從共用資料解析帳本')
+        const ledgerUuid = ledgerChange.data.uuid
+
+        // 2. 建立自己的裝置日誌檔、授權、註冊進 manifest
+        const name = this._deviceLogFileName(ledgerUuid)
+        let devLogId = await this._findFileInDrive(name)
+        if (!devLogId) {
+            const created = await this._createSharedFile(
+                name,
+                JSON.stringify({
+                    ledgerUuid,
+                    deviceId: this.deviceId,
+                    changes: [],
+                })
+            )
+            devLogId = created.id
+        }
+        await this.dataService.saveSetting({
+            key: `sync_shared_devlog_${ledgerUuid}`,
+            value: devLogId,
+        })
+        await this._grantDevLogPermissions(ledgerUuid, manifestId, devLogId)
+        await this._registerSelfInManifest(manifestId, devLogId)
+
+        // 3. 種入 appliedKeys，之後 pull 不會重複套用這些變更
+        await this.dataService.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [...seen],
+        })
+
+        return ledgerUuid
+    }
+
+    /**
      * 在 appDataFolder 中搜尋指定名稱的檔案
      * @param {string} fileName
      * @returns {Promise<string|null>} file ID or null
