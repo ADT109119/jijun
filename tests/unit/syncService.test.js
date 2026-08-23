@@ -1215,3 +1215,55 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes).toHaveLength(1)
     })
 })
+
+describe('SyncService manifest 管理', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('_registerSelfInManifest 加入自己且不重複', async () => {
+        let stored = { members: [] }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                stored = JSON.parse(opts.body)
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: true, json: async () => stored }
+        })
+        const ok = await ss._registerSelfInManifest('mf_1', 'log_1')
+        expect(ok).toBe(true)
+        expect(stored.members).toEqual([
+            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: 'log_1' },
+        ])
+    })
+
+    it('_removeManifestMember 移除指定 deviceId', async () => {
+        let stored = {
+            members: [
+                { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'l1' },
+                { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'l2' },
+            ],
+        }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                stored = JSON.parse(opts.body)
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: true, json: async () => stored }
+        })
+        const ok = await ss._removeManifestMember('mf_1', 'dev_a')
+        expect(ok).toBe(true)
+        expect(stored.members.map(m => m.deviceId)).toEqual(['dev_b'])
+    })
+})

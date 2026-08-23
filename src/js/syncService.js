@@ -1473,6 +1473,123 @@ export class SyncService {
     }
 
     /**
+     * 把自己（deviceId + 日誌檔 ID）註冊進 manifest；競爭時重新下載合併重試
+     * @param {string} manifestId
+     * @param {string} devLogId
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<boolean>}
+     */
+    async _registerSelfInManifest(manifestId, devLogId, maxRetries = 3) {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const current =
+                    (await this._downloadFile(manifestId))?.data || {
+                        members: [],
+                    }
+                if (!Array.isArray(current.members)) {
+                    throw new Error('manifest 格式錯誤')
+                }
+                const me = current.members.find(
+                    m => m.deviceId === this.deviceId
+                )
+                if (me) {
+                    if (me.fileId !== devLogId) {
+                        me.fileId = devLogId
+                        current.timestamp = Date.now()
+                        await this._updateFile(
+                            manifestId,
+                            JSON.stringify(current)
+                        )
+                    }
+                } else {
+                    current.members.push({
+                        deviceId: this.deviceId,
+                        ownerEmail: this.userInfo?.email || '',
+                        fileId: devLogId,
+                    })
+                    current.timestamp = Date.now()
+                    await this._updateFile(manifestId, JSON.stringify(current))
+                }
+                return true
+            } catch (e) {
+                console.warn(
+                    `[SyncService] registerSelfInManifest 重試 ${attempt + 1}/${maxRetries}:`,
+                    e.message
+                )
+            }
+        }
+        console.error('[SyncService] registerSelfInManifest 重試次數用盡')
+        return false
+    }
+
+    /**
+     * 從 manifest 移除某個成員（取消共用單一成員用）
+     * @param {string} manifestId
+     * @param {string} deviceId
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<boolean>}
+     */
+    async _removeManifestMember(manifestId, deviceId, maxRetries = 3) {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const current = (await this._downloadFile(manifestId))?.data
+                if (!current?.members) return false
+                current.members = current.members.filter(
+                    m => m.deviceId !== deviceId
+                )
+                current.timestamp = Date.now()
+                await this._updateFile(manifestId, JSON.stringify(current))
+                return true
+            } catch (e) {
+                console.warn(
+                    `[SyncService] removeManifestMember 重試 ${attempt + 1}/${maxRetries}:`,
+                    e.message
+                )
+            }
+        }
+        return false
+    }
+
+    /**
+     * 把自己的日誌檔授權（reader）給 manifest 中所有其他成員。
+     * 以 settings 記錄已授權 email，之後新成員加入時只補授權差額（節省 API 配額）
+     * @param {string} ledgerUuid
+     * @param {string} manifestId
+     * @param {string} devLogId
+     */
+    async _grantDevLogPermissions(ledgerUuid, manifestId, devLogId) {
+        try {
+            const grantedKey = `sync_shared_granted_${ledgerUuid}`
+            const grantedSetting =
+                await this.dataService.getSetting(grantedKey)
+            const granted = new Set(grantedSetting?.value || [])
+            const m = (await this._downloadFile(manifestId))?.data
+            const myEmail = this.userInfo?.email || ''
+            const pending = (m?.members || []).filter(
+                member =>
+                    member.ownerEmail &&
+                    member.ownerEmail !== myEmail &&
+                    !granted.has(member.ownerEmail)
+            )
+            if (pending.length === 0) return
+            for (const member of pending) {
+                try {
+                    await this.grantFilePermission(devLogId, member.ownerEmail)
+                    granted.add(member.ownerEmail)
+                } catch (_) {
+                    // 已授權過或暫時性錯誤，靜默忽略（下次同步會再試）
+                }
+            }
+            await this.dataService.saveSetting({
+                key: grantedKey,
+                value: [...granted],
+            })
+        } catch (e) {
+            console.warn('[SyncService] grantDevLogPermissions failed:', e)
+        }
+    }
+
+    /**
      * 在 appDataFolder 中搜尋指定名稱的檔案
      * @param {string} fileName
      * @returns {Promise<string|null>} file ID or null
