@@ -1124,3 +1124,59 @@ describe('SyncService per-device helpers', () => {
         ).rejects.toThrow('Drive search failed (403)')
     })
 })
+
+describe('SyncService _appendToDeviceLog', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('合併雲端沒有的變更並回傳筆數', async () => {
+        const now = Date.now()
+        const cloud = {
+            ledgerUuid: 'u1',
+            deviceId: 'dev_x',
+            changes: [{ deviceId: 'dev_x', timestamp: now - 60000, operation: 'add', storeName: 'records', data: {} }],
+        }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return { ok: true, json: async () => cloud }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            cloud.changes[0], // 已存在
+            { deviceId: 'dev_x', timestamp: now, operation: 'add', storeName: 'records', data: {} }, // 新
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(2)
+    })
+
+    it('裁剪 90 天前的變更', async () => {
+        const old = Date.now() - 91 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [{ deviceId: 'a', timestamp: old, operation: 'add', storeName: 'records' }],
+                }),
+            }
+        })
+        await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+        ])
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1) // 舊變更被裁剪，僅剩新附加的
+        expect(sent.changes.every(c => c.timestamp >= Date.now() - 90 * 24 * 60 * 60 * 1000)).toBe(true)
+    })
+})
