@@ -32,3 +32,8 @@ android/capacitor-cordova-android-plugins/build/
 *.apk
 *.aab
 *.keystore
+
+.worktrees/
+
+# 本地規劃文件（不上傳）
+docs/superpowers/
