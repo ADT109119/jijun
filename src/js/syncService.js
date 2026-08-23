@@ -977,6 +977,7 @@ export class SyncService {
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
         let maxPushed = null
+        let allSucceeded = true
 
         for (const ledger of sharedLedgers) {
             try {
@@ -1002,13 +1003,16 @@ export class SyncService {
                     maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
                 }
             } catch (e) {
+                allSucceeded = false
                 console.error(
                     `[SyncService] pushSharedLedgerChanges failed for "${ledger.name}":`,
                     e
                 )
             }
         }
-        return maxPushed
+        // 任一帳本失敗即回傳 null，讓 performSync 跳過本地日誌清理，
+        // 避免誤刪未成功上傳的變更（下次同步會自動重試）
+        return allSucceeded ? maxPushed : null
     }
 
     /**

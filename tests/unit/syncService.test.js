@@ -1490,6 +1490,34 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         expect(await ss.pushSharedLedgerChanges()).toBeNull()
     })
 
+    it('任一帳本推送失敗時回傳 null 以保留本地日誌', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 1,
+                uuid: 'u-1',
+                name: 'A',
+                isShared: true,
+                sharedFileId: 'f1',
+            },
+            {
+                id: 2,
+                uuid: 'u-2',
+                name: 'B',
+                isShared: true,
+                sharedFileId: 'f2',
+            },
+        ])
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => {
+            if (ledger.id === 2) throw new Error('infra fail')
+            return { ledger, devLogId: `dl-${ledger.id}`, manifestId: 'mf' }
+        })
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const result = await ss.pushSharedLedgerChanges()
+        expect(result).toBeNull()
+    })
+
     it('performSync 兩條推送成功後清理本地日誌（取最小 cutoff）', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss.pushChanges = vi.fn(async () => 700)
