@@ -1482,10 +1482,8 @@ export class SyncService {
     async _registerSelfInManifest(manifestId, devLogId, maxRetries = 3) {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                const current =
-                    (await this._downloadFile(manifestId))?.data || {
-                        members: [],
-                    }
+                // 嚴格下載：任何失敗都拋出進入重試，絕不把雲端成員清單誤判為空而整份覆寫
+                const current = await this._downloadFileStrict(manifestId)
                 if (!Array.isArray(current.members)) {
                     throw new Error('manifest 格式錯誤')
                 }
@@ -1532,7 +1530,8 @@ export class SyncService {
     async _removeManifestMember(manifestId, deviceId, maxRetries = 3) {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                const current = (await this._downloadFile(manifestId))?.data
+                // 嚴格下載：任何失敗都拋出進入重試，與 _registerSelfInManifest 一致
+                const current = await this._downloadFileStrict(manifestId)
                 if (!current?.members) return false
                 current.members = current.members.filter(
                     m => m.deviceId !== deviceId
@@ -1551,7 +1550,7 @@ export class SyncService {
     }
 
     /**
-     * 把自己的日誌檔授權（reader）給 manifest 中所有其他成員。
+     * 把自己的日誌檔授權（writer）給 manifest 中所有其他成員。
      * 以 settings 記錄已授權 email，之後新成員加入時只補授權差額（節省 API 配額）
      * @param {string} ledgerUuid
      * @param {string} manifestId

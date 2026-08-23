@@ -1266,4 +1266,31 @@ describe('SyncService manifest 管理', () => {
         expect(ok).toBe(true)
         expect(stored.members.map(m => m.deviceId)).toEqual(['dev_b'])
     })
+
+    it('_registerSelfInManifest 下載失敗時重試且不覆寫成員清單', async () => {
+        const warnSpy = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => {})
+        const errorSpy = vi
+            .spyOn(console, 'error')
+            .mockImplementation(() => {})
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: false, status: 500 }
+        })
+        try {
+            const ok = await ss._registerSelfInManifest('mf_1', 'log_1')
+            expect(ok).toBe(false)
+            expect(
+                globalThis.fetch.mock.calls.some(
+                    c => c[1]?.method === 'PATCH'
+                )
+            ).toBe(false)
+        } finally {
+            warnSpy.mockRestore()
+            errorSpy.mockRestore()
+        }
+    })
 })
