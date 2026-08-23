@@ -731,7 +731,7 @@ export class SyncService {
         }
         // ============================================
 
-        if (changes.length === 0) return
+        if (changes.length === 0) return null
 
         const syncData = {
             deviceId: this.deviceId,
@@ -764,6 +764,8 @@ export class SyncService {
             key: 'sync_last_push_timestamp',
             value: maxTimestamp,
         })
+
+        return maxTimestamp
     }
 
     /**
@@ -961,106 +963,52 @@ export class SyncService {
     }
 
     /**
-     * 將共用帳本的本地變更推送到各自的 Drive 共享檔案
+     * 將共用帳本的本地變更推送到「自己的」per-device 日誌檔（零競爭）
+     * @returns {Promise<number|null>} 成功推送的最大時間戳；無推送時為 null
      */
     async pushSharedLedgerChanges() {
         await this.ensureValidToken()
 
-        const isAuthorized = await this.isSharingAuthorized()
-        if (!isAuthorized) {
-            console.warn(
-                '[SyncService] pushSharedLedgerChanges: No sharing permission authorized, skipping.'
-            )
-            return
+        if (!(await this.isSharingAuthorized())) {
+            console.warn('[SyncService] pushShared: 未授權共用權限，略過')
+            return null
         }
 
         const ledgers = await this.dataService.getLedgers()
-        console.log(
-            '[SyncService] pushShared: all ledgers =',
-            JSON.stringify(
-                ledgers.map(l => ({
-                    id: l.id,
-                    name: l.name,
-                    isShared: l.isShared,
-                    sharedFileId: l.sharedFileId,
-                    type: l.type,
-                }))
-            )
-        )
         const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
-        console.log(
-            '[SyncService] pushShared: filtered =',
-            sharedLedgers.length,
-            sharedLedgers.map(l => l.name)
-        )
+        let maxPushed = null
 
         for (const ledger of sharedLedgers) {
             try {
-                // ==================== 完整比對式推送 ====================
-                // 核心理念：不依賴 lastPushTimestamp，每次都比對「本地所有日誌」vs「雲端日誌」
-                // 如果本地有但雲端沒有 → 推送上去
-                // 好處：即使被其他裝置覆蓋，下次同步一定會發現缺漏並自動補回
-
-                // 1. 取得本機對此共用帳本的「全部」變更日誌
-                const allLocalChanges = await this.dataService.getChangesSince(
-                    0,
-                    { sharedLedgerUuid: ledger.uuid }
-                )
-                if (allLocalChanges.length === 0) continue
-
-                // 2. 下載雲端目前版本
-                const resFile = await this._downloadFile(ledger.sharedFileId)
-                if (!resFile) {
-                    console.warn(
-                        `[SyncService] pushShared: 無法下載 "${ledger.name}" 的雲端檔案，略過`
-                    )
-                    continue
-                }
-
-                const cloudData = resFile.data || { changes: [] }
-                const cloudChanges = cloudData.changes || []
-
-                // 3. 建立雲端日誌鍵集合
-                const cloudKeySet = new Set()
-                cloudChanges.forEach(log => {
-                    const key = `${log.deviceId || 'unknown'}|${log.timestamp}|${log.operation}|${log.storeName}`
-                    cloudKeySet.add(key)
+                const infra = await this._ensureSharedInfra(ledger)
+                const allLocal = await this.dataService.getChangesSince(0, {
+                    sharedLedgerUuid: infra.ledger.uuid,
                 })
+                if (allLocal.length === 0) continue
 
-                // 4. 找出「本地有但雲端沒有」的日誌
-                const myMissingChanges = allLocalChanges
-                    .map(log => ({ ...log, deviceId: this.deviceId }))
-                    .filter(log => {
-                        const key = `${this.deviceId}|${log.timestamp}|${log.operation}|${log.storeName}`
-                        return !cloudKeySet.has(key)
-                    })
-
-                if (myMissingChanges.length === 0) {
+                const mine = allLocal.map(log => ({
+                    ...log,
+                    deviceId: this.deviceId,
+                }))
+                const appended = await this._appendToDeviceLog(
+                    infra.devLogId,
+                    mine
+                )
+                if (appended > 0) {
                     console.log(
-                        `[SyncService] pushShared: "${ledger.name}" 已完全同步，無需推送`
+                        `[SyncService] pushShared: "${infra.ledger.name}" 推送 ${appended} 筆變更`
                     )
-                    continue
+                    const ts = Math.max(...mine.map(c => c.timestamp))
+                    maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
                 }
-
-                // 5. 合併並上傳
-                cloudData.changes = [...cloudChanges, ...myMissingChanges]
-                cloudData.timestamp = Date.now()
-                cloudData.deviceId = this.deviceId
-
-                await this._updateFile(
-                    ledger.sharedFileId,
-                    JSON.stringify(cloudData)
-                )
-                console.log(
-                    `[SyncService] pushShared: "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`
-                )
             } catch (e) {
                 console.error(
                     `[SyncService] pushSharedLedgerChanges failed for "${ledger.name}":`,
-                    e.message
+                    e
                 )
             }
         }
+        return maxPushed
     }
 
     /**
@@ -1139,8 +1087,9 @@ export class SyncService {
         this._syncing = true
 
         try {
-            const autoSyncSetting =
-                await this.dataService.getSetting('sync_auto_enabled')
+            const autoSyncSetting = await this.dataService.getSetting(
+                'sync_auto_enabled'
+            )
             const isPersonalEnabled = isManual || !!autoSyncSetting?.value
 
             console.log('[SyncService] performSync start', {
@@ -1148,11 +1097,22 @@ export class SyncService {
                 isPersonalEnabled,
             })
 
-            if (isPersonalEnabled) await this.pushChanges()
-            await this.pushSharedLedgerChanges()
+            let personalMaxTs = null
+            let sharedMaxTs = null
+            if (isPersonalEnabled) personalMaxTs = await this.pushChanges()
+            sharedMaxTs = await this.pushSharedLedgerChanges()
 
             if (isPersonalEnabled) await this.pullChanges()
             await this.pullSharedLedgerChanges()
+
+            // 兩條推送都完成後，清理已上雲的本地變更日誌
+            // （任一推送拋錯會中斷到 catch/finally，不會走到這裡）
+            const cutoffs = [personalMaxTs, sharedMaxTs].filter(
+                ts => typeof ts === 'number'
+            )
+            if (cutoffs.length > 0) {
+                await this.dataService.clearSyncLog(Math.min(...cutoffs))
+            }
 
             console.log('[SyncService] performSync complete')
         } finally {

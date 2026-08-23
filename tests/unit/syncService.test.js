@@ -1434,3 +1434,84 @@ describe('SyncService _ensureSharedInfra', () => {
         expect(creates).toHaveLength(1)
     })
 })
+
+describe('SyncService pushSharedLedgerChanges (per-device)', () => {
+    let ss, ds
+
+    beforeEach(async () => {
+        ds = createMockDataService({
+            getLedgers: vi.fn(async () => [
+                {
+                    id: 1,
+                    uuid: 'u-12345678',
+                    name: 'S',
+                    isShared: true,
+                    sharedFileId: 'f1',
+                },
+            ]),
+            getChangesSince: vi.fn(async () => [
+                {
+                    deviceId: 'other',
+                    timestamp: 500,
+                    operation: 'add',
+                    storeName: 'records',
+                    data: {},
+                },
+            ]),
+        })
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        await ds.saveSetting({
+            key: 'sync_drive_file_authorized',
+            value: true,
+        })
+        ds.clearSyncLog = vi.fn(async () => true)
+    })
+
+    it('推送後回傳最大時間戳，且 deviceId 一律改成自己', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl',
+            manifestId: 'mf',
+        }))
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+        expect(ss._appendToDeviceLog.mock.calls[0][1][0].deviceId).toBe(
+            ss.deviceId
+        )
+    })
+
+    it('未授權時回傳 null', async () => {
+        await ds.saveSetting({ key: 'sync_drive_file_authorized', value: false })
+        ss.ensureValidToken = vi.fn(async () => {})
+        expect(await ss.pushSharedLedgerChanges()).toBeNull()
+    })
+
+    it('performSync 兩條推送成功後清理本地日誌（取最小 cutoff）', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn(async () => 700)
+        ss.pushSharedLedgerChanges = vi.fn(async () => 500)
+        ss.pullChanges = vi.fn(async () => {})
+        ss.pullSharedLedgerChanges = vi.fn(async () => {})
+
+        await ss.performSync(true)
+        expect(ds.clearSyncLog).toHaveBeenCalledWith(500)
+    })
+
+    it('個人同步關閉時只跑共用流程，僅以共用 cutoff 清理', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn()
+        ss.pullChanges = vi.fn()
+        ss.pushSharedLedgerChanges = vi.fn(async () => 300)
+        ss.pullSharedLedgerChanges = vi.fn(async () => {})
+        await ds.saveSetting({ key: 'sync_auto_enabled', value: false })
+
+        await ss.performSync(false)
+        expect(ss.pushChanges).not.toHaveBeenCalled()
+        expect(ss.pullChanges).not.toHaveBeenCalled()
+        expect(ds.clearSyncLog).toHaveBeenCalledWith(300)
+    })
+})
