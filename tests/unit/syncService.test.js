@@ -1075,9 +1075,15 @@ describe('SyncService', () => {
 
 describe('SyncService per-device helpers', () => {
     let ss, ds
+    const originalFetch = globalThis.fetch
+
     beforeEach(() => {
         ds = createMockDataService()
         ss = createSyncService(ds)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
     })
 
     it('_changeKey 使用 deviceId|timestamp|operation|storeName 格式', () => {
@@ -1106,5 +1112,15 @@ describe('SyncService per-device helpers', () => {
         expect(ss._deviceLogFileName('abcdefghijk-1234')).toBe(
             'EasyAccounting_SharedLog_abcdefgh_dev_x.json'
         )
+    })
+
+    it('_findFileInDrive 遇 403 授權錯誤時拋出（不誤判為檔案不存在）', async () => {
+        globalThis.fetch = vi
+            .fn()
+            .mockResolvedValue({ ok: false, status: 403 })
+
+        await expect(
+            ss._findFileInDrive('EasyAccounting_SharedManifest_abcdefgh.json')
+        ).rejects.toThrow('Drive search failed (403)')
     })
 })

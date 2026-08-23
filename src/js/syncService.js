@@ -1409,7 +1409,14 @@ export class SyncService {
             `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${fileName}' and trashed=false`)}&fields=files(id)`,
             { headers: { Authorization: `Bearer ${this.accessToken}` } }
         )
-        if (!res.ok) return null
+        if (!res.ok) {
+            // 401/403 屬於授權問題，重試也不會好轉，直接拋出避免誤判為「檔案不存在」
+            if (res.status === 401 || res.status === 403) {
+                throw new Error(`Drive search failed (${res.status})`)
+            }
+            console.warn(`[SyncService] _findFileInDrive non-fatal error (${res.status}), treating as not found`)
+            return null
+        }
         const data = await res.json()
         return data.files?.[0]?.id || null
     }
