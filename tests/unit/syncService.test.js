@@ -1072,3 +1072,39 @@ describe('SyncService', () => {
         })
     })
 })
+
+describe('SyncService per-device helpers', () => {
+    let ss, ds
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+    })
+
+    it('_changeKey 使用 deviceId|timestamp|operation|storeName 格式', () => {
+        const k = ss._changeKey({
+            deviceId: 'dev_a',
+            timestamp: 123,
+            operation: 'add',
+            storeName: 'records',
+        })
+        expect(k).toBe('dev_a|123|add|records')
+    })
+
+    it('_changeKey 對缺少 deviceId 的變更改用 unknown', () => {
+        const k = ss._changeKey({ timestamp: 5, operation: 'delete', storeName: 'debts' })
+        expect(k).toBe('unknown|5|delete|debts')
+    })
+
+    it('_manifestFileName 取 uuid 前 8 碼', () => {
+        expect(ss._manifestFileName('abcdefghijk-1234')).toBe(
+            'EasyAccounting_SharedManifest_abcdefgh.json'
+        )
+    })
+
+    it('_deviceLogFileName 含 uuid 前 8 碼與 deviceId', () => {
+        ss.deviceId = 'dev_x'
+        expect(ss._deviceLogFileName('abcdefghijk-1234')).toBe(
+            'EasyAccounting_SharedLog_abcdefgh_dev_x.json'
+        )
+    })
+})

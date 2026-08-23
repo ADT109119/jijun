@@ -1373,6 +1373,63 @@ export class SyncService {
     // ──────────────────────────────────────────────
 
     /**
+     * 變更日誌的唯一鍵（去重用），格式：deviceId|timestamp|operation|storeName
+     * @param {object} change
+     * @returns {string}
+     */
+    _changeKey(change) {
+        return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
+    }
+
+    /**
+     * 共用帳本 manifest 檔名（uuid 前 8 碼足夠唯一且可讀）
+     * @param {string} ledgerUuid
+     * @returns {string}
+     */
+    _manifestFileName(ledgerUuid) {
+        return `EasyAccounting_SharedManifest_${String(ledgerUuid).slice(0, 8)}.json`
+    }
+
+    /**
+     * 自己裝置的共用日誌檔名
+     * @param {string} ledgerUuid
+     * @returns {string}
+     */
+    _deviceLogFileName(ledgerUuid) {
+        return `EasyAccounting_SharedLog_${String(ledgerUuid).slice(0, 8)}_${this.deviceId}.json`
+    }
+
+    /**
+     * 在自己的 Drive 根目錄（非 appDataFolder）搜尋指定名稱檔案
+     * @param {string} fileName
+     * @returns {Promise<string|null>} file ID or null
+     */
+    async _findFileInDrive(fileName) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${fileName}' and trashed=false`)}&fields=files(id)`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) return null
+        const data = await res.json()
+        return data.files?.[0]?.id || null
+    }
+
+    /**
+     * 取得檔案的 modifiedTime（epoch ms）；檔案不存在或無權限時 throw
+     * @param {string} fileId
+     * @returns {Promise<number>}
+     */
+    async _getFileModifiedTime(fileId) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) throw new Error(`Failed to get file meta (${res.status})`)
+        const data = await res.json()
+        return new Date(data.modifiedTime).getTime()
+    }
+
+    /**
      * 在 appDataFolder 中搜尋指定名稱的檔案
      * @param {string} fileName
      * @returns {Promise<string|null>} file ID or null
