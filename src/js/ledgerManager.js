@@ -271,6 +271,12 @@ export class LedgerManager {
             JSON.stringify(initSyncData)
         )
 
+        // 6. 建立新架構基礎設施（manifest + 自己的裝置日誌檔）
+        //    _ensureSharedInfra 會把剛寫入舊檔的初始變更併入自己的日誌，
+        //    並把 manifest 指標寫回舊檔
+        const updatedLedger = await this.dataService.getLedger(ledgerId)
+        await this.app.syncService._ensureSharedInfra(updatedLedger)
+
         // 確保共用帳本同步已啟動
         await this.app.syncService.ensureSharedSync()
 
@@ -399,6 +405,30 @@ export class LedgerManager {
         const isOwner = await this.isLedgerOwner(ledgerId)
         if (!isOwner) throw new Error('只有擁有者才能取消共用')
 
+        // 清理新架構檔案：自己的日誌檔 + manifest（擁有者才有 manifest 刪除權）
+        try {
+            const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+            const devLogId = (
+                await this.dataService.getSetting(devLogKey)
+            )?.value
+            if (devLogId) {
+                await this.app.syncService.deleteFile(devLogId)
+                await this.dataService.saveSetting({
+                    key: devLogKey,
+                    value: null,
+                })
+            }
+            if (ledger.sharedManifestId) {
+                await this.app.syncService.deleteFile(ledger.sharedManifestId)
+            }
+            await this.dataService.saveSetting({
+                key: `shared_migrated_${ledger.uuid}`,
+                value: null,
+            })
+        } catch (e) {
+            console.warn('[LedgerManager] 清理共用基礎設施失敗:', e)
+        }
+
         // 刪除雲端檔案
         await this.app.syncService.deleteFile(ledger.sharedFileId)
 
@@ -406,6 +436,7 @@ export class LedgerManager {
         await this.dataService.updateLedger(ledgerId, {
             isShared: false,
             sharedFileId: null,
+            sharedManifestId: null,
             type: 'personal',
         })
         await this.init()

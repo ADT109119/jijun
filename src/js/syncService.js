@@ -2734,6 +2734,9 @@ export class SyncService {
                         protectedData.isShared = localLedger.isShared
                     if (protectedData.sharedFileId === undefined)
                         protectedData.sharedFileId = localLedger.sharedFileId
+                    if (protectedData.sharedManifestId === undefined)
+                        protectedData.sharedManifestId =
+                            localLedger.sharedManifestId
                     if (protectedData.type === undefined)
                         protectedData.type = localLedger.type
                 }

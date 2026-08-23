@@ -1884,3 +1884,50 @@ describe('SyncService joinViaManifest', () => {
         expect(keys).toContain('dev_b|10|add|records')
     })
 })
+
+describe('SyncService _applyUpdateWithId ledgers 保護欄位', () => {
+    it('遠端更新缺少 sharedManifestId 時保留本地值', async () => {
+        const ds = createMockDataService({
+            getLedger: vi.fn(async () => ({
+                id: 1,
+                isShared: true,
+                sharedFileId: 'f',
+                sharedManifestId: 'mf',
+            })),
+            updateLedger: vi.fn(async () => true),
+        })
+        const ss = createSyncService(ds)
+
+        await ss._applyUpdateWithId('ledgers', 1, { uuid: 'x', name: 'n' })
+
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            expect.objectContaining({ sharedManifestId: 'mf' }),
+            true
+        )
+    })
+
+    it('遠端明確提供 sharedManifestId 時採用遠端值', async () => {
+        const ds = createMockDataService({
+            getLedger: vi.fn(async () => ({
+                id: 1,
+                isShared: true,
+                sharedFileId: 'f',
+                sharedManifestId: 'mf_local',
+            })),
+            updateLedger: vi.fn(async () => true),
+        })
+        const ss = createSyncService(ds)
+
+        await ss._applyUpdateWithId('ledgers', 1, {
+            uuid: 'x',
+            sharedManifestId: 'mf_remote',
+        })
+
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            expect.objectContaining({ sharedManifestId: 'mf_remote' }),
+            true
+        )
+    })
+})
