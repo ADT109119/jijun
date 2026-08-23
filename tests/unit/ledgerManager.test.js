@@ -576,6 +576,33 @@ describe('LedgerManager', () => {
                 '此帳本尚未共用'
             )
         })
+
+        it('manifest 含頂層 ownerEmail 時以 email 判定擁有者（位置非 0）', async () => {
+            const manifest = {
+                ledgerUuid: 'u-1',
+                ownerEmail: 'second@test.com',
+                members: [
+                    { deviceId: 'dev_a', ownerEmail: 'first@test.com' },
+                    { deviceId: 'dev_b', ownerEmail: 'second@test.com' },
+                ],
+            }
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                sharedManifestId: 'manifest123',
+            })
+            mockSyncService._downloadFile = vi
+                .fn()
+                .mockResolvedValue({ data: manifest })
+
+            const users = await ledgerManager.getSharedUsers(1)
+
+            expect(users.map(u => u.emailAddress)).toEqual([
+                'first@test.com',
+                'second@test.com',
+            ])
+            expect(users[0].role).toBe('writer')
+            expect(users[1].role).toBe('owner')
+        })
     })
 
     describe('removeSharedUser', () => {

@@ -1433,6 +1433,47 @@ describe('SyncService _ensureSharedInfra', () => {
         )
         expect(creates).toHaveLength(1)
     })
+
+    it('首次建立 manifest：從舊共用檔權限查詢真正擁有者寫入頂層 ownerEmail', async () => {
+        ss.getFilePermissions = vi.fn(async () => [
+            { role: 'writer', emailAddress: 'me@test.com' },
+            { role: 'owner', emailAddress: 'creator@t.com' },
+        ])
+        const contents = []
+        ss._createSharedFile = vi.fn(async (_name, content) => {
+            contents.push(JSON.parse(content))
+            return { id: `new_${contents.length - 1}` }
+        })
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [] }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 9,
+            uuid: 'uuuuuuuu-9',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('new_0')
+        expect(ss.getFilePermissions).toHaveBeenCalledWith('old_file')
+        // 頂層 ownerEmail 為舊檔 Drive 權限的真正擁有者，而非自己
+        expect(contents[0].ownerEmail).toBe('creator@t.com')
+        // 成員清單仍記錄自己的裝置與 email
+        expect(contents[0].members[0]).toMatchObject({
+            deviceId: 'dev_me',
+            ownerEmail: 'me@test.com',
+        })
+    })
 })
 
 describe('SyncService pushSharedLedgerChanges (per-device)', () => {

@@ -365,7 +365,14 @@ export class LedgerManager {
                 id: m.deviceId,
                 emailAddress: m.ownerEmail,
                 displayName: '',
-                role: i === 0 ? 'owner' : 'writer',
+                // 有頂層 ownerEmail 時僅以 email 判定；否則退回位置判定
+                role: manifest?.ownerEmail
+                    ? m.ownerEmail === manifest.ownerEmail
+                        ? 'owner'
+                        : 'writer'
+                    : i === 0
+                      ? 'owner'
+                      : 'writer',
             }))
         }
         if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')

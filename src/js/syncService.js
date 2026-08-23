@@ -1626,10 +1626,23 @@ export class SyncService {
             const name = this._manifestFileName(ledger.uuid)
             manifestId = await this._findFileInDrive(name)
             if (!manifestId) {
+                // 從舊共用檔權限查詢真正擁有者，避免位置判定的擁有者錯亂
+                let ownerEmail = this.userInfo?.email || ''
+                if (ledger.sharedFileId) {
+                    try {
+                        const perms =
+                            await this.getFilePermissions(ledger.sharedFileId)
+                        const owner = perms.find(p => p.role === 'owner')
+                        if (owner?.emailAddress) {
+                            ownerEmail = owner.emailAddress
+                        }
+                    } catch (_) {}
+                }
                 const created = await this._createSharedFile(
                     name,
                     JSON.stringify({
                         ledgerUuid: ledger.uuid,
+                        ownerEmail,
                         members: [
                             {
                                 deviceId: this.deviceId,
