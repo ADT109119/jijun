@@ -1179,4 +1179,39 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes).toHaveLength(1) // 舊變更被裁剪，僅剩新附加的
         expect(sent.changes.every(c => c.timestamp >= Date.now() - 90 * 24 * 60 * 60 * 1000)).toBe(true)
     })
+
+    it('下載失敗時拋出且不送出 PATCH', async () => {
+        globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
+        await expect(
+            ss._appendToDeviceLog('file_1', [
+                { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+            ])
+        ).rejects.toThrow('Failed to download file (500)')
+        expect(globalThis.fetch.mock.calls.some(c => c[1]?.method === 'PATCH')).toBe(false)
+    })
+
+    it('空參數早退', async () => {
+        globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))
+        const n = await ss._appendToDeviceLog(null, [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+        ])
+        expect(n).toBe(0)
+        expect(globalThis.fetch).not.toHaveBeenCalled()
+    })
+
+    it('批次內重複鍵只附加一筆', async () => {
+        const ts = Date.now()
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return { ok: true, json: async () => ({ deviceId: 'dev_x', changes: [] }) }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'dev_x', timestamp: ts, operation: 'add', storeName: 'records', data: {} },
+            { deviceId: 'dev_x', timestamp: ts, operation: 'add', storeName: 'records', data: {} },
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1)
+    })
 })

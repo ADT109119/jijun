@@ -1438,33 +1438,38 @@ export class SyncService {
 
     /**
      * 將變更附加到「自己的」裝置日誌檔。
-     * 只比對自己檔案的內容去重；超過 90 天的變更會被裁剪（完整歷史由每日備份保留）。
+     * 依 _changeKey 去重（雲端既有內容與傳入批次內部皆會去重）；
+     * 超過 90 天的變更會被裁剪（完整歷史由每日備份保留）。
      * @param {string} devLogId
      * @param {Array<object>} incomingChanges
-     * @returns {Promise<number>} 實際新附加的筆數
+     * @returns {Promise<number>} 實際寫入的新增筆數（不含被裁剪者）
      */
     async _appendToDeviceLog(devLogId, incomingChanges) {
         if (!devLogId || !incomingChanges.length) return 0
-        const res = await this._downloadFile(devLogId)
-        const cloud = res?.data || {
-            deviceId: this.deviceId,
-            changes: [],
-        }
+        // 嚴格下載：任何失敗都拋出，避免把雲端既有內容誤判為空而整份覆寫
+        const cloud = await this._downloadFileStrict(devLogId)
+        if (!Array.isArray(cloud.changes)) cloud.changes = []
         const existing = Array.isArray(cloud.changes) ? cloud.changes : []
         const cloudKeys = new Set(existing.map(c => this._changeKey(c)))
-        const missing = incomingChanges.filter(
-            c => !cloudKeys.has(this._changeKey(c))
-        )
+        const seenIncoming = new Set()
+        const missing = incomingChanges.filter(c => {
+            const key = this._changeKey(c)
+            if (cloudKeys.has(key) || seenIncoming.has(key)) return false
+            seenIncoming.add(key)
+            return true
+        })
         if (missing.length === 0) return 0
 
         const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
-        cloud.changes = [...existing, ...missing].filter(
+        const survivingExisting = existing.filter(
             c => (c.timestamp || 0) >= cutoff
         )
+        const persistedNew = missing.filter(c => (c.timestamp || 0) >= cutoff)
+        cloud.changes = [...survivingExisting, ...persistedNew]
         cloud.deviceId = this.deviceId
         cloud.timestamp = Date.now()
         await this._updateFile(devLogId, JSON.stringify(cloud))
-        return missing.length
+        return persistedNew.length
     }
 
     /**
@@ -1517,6 +1522,21 @@ export class SyncService {
         if (!res.ok) return null
         const data = await res.json()
         return { data }
+    }
+
+    /**
+     * 下載檔案內容；任何非 OK 狀態都拋出（與 _downloadFile 的寬鬆版不同，
+     * 用於「絕不能把雲端內容誤判為空」的讀寫路徑）
+     * @param {string} fileId
+     * @returns {Promise<object>} 解析後的 JSON 內容
+     */
+    async _downloadFileStrict(fileId) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) throw new Error(`Failed to download file (${res.status})`)
+        return await res.json()
     }
 
     /**
