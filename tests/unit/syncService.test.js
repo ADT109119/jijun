@@ -1660,3 +1660,70 @@ describe('SyncService pullSharedLedgerChanges', () => {
         expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
     })
 })
+
+describe('SyncService pullChanges (appliedKeys 版)', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ss.applyRemoteChanges = vi.fn(async () => {})
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('對方時鐘較慢的舊時間戳變更不再被丟棄', async () => {
+        const past = Date.now() - 60 * 60 * 1000 // 1 小時前（模擬慢時鐘裝置）
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes("name contains 'sync_log_'")) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        files: [{ id: 'f_other', name: 'sync_log_dev_slow.json' }],
+                    }),
+                }
+            }
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_slow', timestamp: past, operation: 'add', storeName: 'records', data: {} },
+                        ],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        expect(ss.applyRemoteChanges.mock.calls[0][0]).toHaveLength(1)
+    })
+
+    it('同一變更第二次拉取不重複套用', async () => {
+        // 使用新鮮時間戳：appliedKeys 持久化時會裁剪 30 天前的鍵，
+        // 過舊的字面值時間戳會導致第二次拉取重複套用
+        const change = { deviceId: 'dev_s', timestamp: Date.now() - 1000, operation: 'add', storeName: 'records', data: {} }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes("name contains 'sync_log_'")) {
+                return {
+                    ok: true,
+                    json: async () => ({ files: [{ id: 'f1', name: 'sync_log_dev_s.json' }] }),
+                }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [change] }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        await ss.pullChanges()
+        await ss.pullChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+    })
+})

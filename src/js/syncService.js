@@ -769,17 +769,15 @@ export class SyncService {
     }
 
     /**
-     * 從 Google Drive 拉取其他裝置的變更並合併
+     * 從其他裝置的 sync log 拉取變更並合併。
+     * 使用 appliedKeys 去重（而非時間戳水位），避免時鐘偏移造成静默遺失。
      */
     async pullChanges() {
         await this.ensureValidToken()
 
-        // 列出所有 sync log 檔案
         const resList = await fetch(
             `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
-            {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-            }
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
         )
 
         if (!resList.ok)
@@ -787,46 +785,42 @@ export class SyncService {
         const data = await resList.json()
         const files = data.files || []
 
-        const lastPull = await this.dataService.getSetting(
-            'sync_last_pull_timestamps'
+        const appliedSetting = await this.dataService.getSetting(
+            'sync_personal_applied_keys'
         )
-        const pullTimestamps = lastPull?.value || {}
-
+        const appliedKeys = new Set(appliedSetting?.value || [])
         const allRemoteChanges = []
 
         for (const file of files) {
-            // 跳過自己的 sync log
             if (file.name === `sync_log_${this.deviceId}.json`) continue
 
-            const lastPullTime = pullTimestamps[file.name] || 0
+            const resFile = await this._downloadFile(file.id)
+            const syncLog = resFile?.data
+            if (!syncLog?.changes) continue
 
-            // 如果檔案在上次拉取後有修改
-            if (new Date(file.modifiedTime).getTime() > lastPullTime) {
-                const resFile = await this._downloadFile(file.id)
-                const syncLog = resFile?.data
-                if (syncLog?.changes) {
-                    // 只取比上次拉取時間更新的變更
-                    const newChanges = syncLog.changes.filter(
-                        c => c.timestamp >= lastPullTime
-                    )
-                    allRemoteChanges.push(...newChanges)
-                }
-                pullTimestamps[file.name] = Date.now()
+            for (const change of syncLog.changes) {
+                const key = this._changeKey(change)
+                if (appliedKeys.has(key)) continue
+                allRemoteChanges.push(change)
+                appliedKeys.add(key)
             }
         }
 
         if (allRemoteChanges.length > 0) {
-            // 按時間排序
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
             await this.applyRemoteChanges(allRemoteChanges)
         }
 
+        // 持久化已套用鍵（保留最近 30 天；離線逾 30 天重套用是冪等的）
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
         await this.dataService.saveSetting({
-            key: 'sync_last_pull_timestamps',
-            value: pullTimestamps,
+            key: 'sync_personal_applied_keys',
+            value: [...appliedKeys].filter(k => {
+                const ts = parseInt(k.split('|')[1], 10)
+                return !isNaN(ts) && ts > thirtyDaysAgo
+            }),
         })
 
-        // 記錄最後同步時間
         await this.dataService.saveSetting({
             key: 'sync_last_sync',
             value: Date.now(),
@@ -925,7 +919,7 @@ export class SyncService {
     }
 
     /**
-     * 標記所有遠端變更為已拉取（用於 Restore 後避免重複套用舊變更）
+     * 將所有遠端變更標記為已套用（用於 Restore 後避免重複套用舊變更）
      */
     async markAllRemoteChangesAsPulled() {
         await this.ensureValidToken()
@@ -938,20 +932,28 @@ export class SyncService {
             const data = await resList.json()
             const files = data.files || []
 
-            const lastPull = await this.dataService.getSetting(
-                'sync_last_pull_timestamps'
+            const appliedSetting = await this.dataService.getSetting(
+                'sync_personal_applied_keys'
             )
-            const pullTimestamps = lastPull?.value || {}
+            const appliedKeys = new Set(appliedSetting?.value || [])
 
             for (const file of files) {
-                pullTimestamps[file.name] = new Date(
-                    file.modifiedTime
-                ).getTime()
+                if (file.name === `sync_log_${this.deviceId}.json`) continue
+                try {
+                    const resFile = await this._downloadFile(file.id)
+                    for (const c of resFile?.data?.changes || []) {
+                        appliedKeys.add(this._changeKey(c))
+                    }
+                } catch (_) {}
             }
 
+            const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
             await this.dataService.saveSetting({
-                key: 'sync_last_pull_timestamps',
-                value: pullTimestamps,
+                key: 'sync_personal_applied_keys',
+                value: [...appliedKeys].filter(k => {
+                    const ts = parseInt(k.split('|')[1], 10)
+                    return !isNaN(ts) && ts > thirtyDaysAgo
+                }),
             })
             console.log('[SyncService] Marked all remote changes as pulled.')
         } catch (err) {
