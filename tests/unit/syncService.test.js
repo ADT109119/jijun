@@ -1309,6 +1309,8 @@ describe('SyncService _ensureSharedInfra', () => {
         ss.deviceId = 'dev_me'
         // _createSharedFile / deleteFile 內部會走共享授權流程，測試中直接放行
         ss.ensureSharingPermission = vi.fn(async () => true)
+        // 預設 mock：避免 _ensureSharedInfra 內的註冊行為打到 fetch 路徑
+        ss._registerSelfInManifest = vi.fn(async () => true)
     })
 
     afterEach(() => {
@@ -1474,6 +1476,124 @@ describe('SyncService _ensureSharedInfra', () => {
             ownerEmail: 'me@test.com',
         })
     })
+
+    it('建立日誌檔後將自己註冊進 manifest', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 4,
+            uuid: 'uuuuuuuu-4',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            infra.manifestId,
+            infra.devLogId
+        )
+    })
+
+    it('日誌檔已存在時仍補授權並註冊（晚加入成員）', async () => {
+        await ds.saveSetting({
+            key: 'sync_shared_devlog_uuuuuuuu-5',
+            value: 'known_log',
+        })
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'mf_known',
+                        changes: [],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 5,
+            uuid: 'uuuuuuuu-5',
+            isShared: true,
+            sharedFileId: 'old_file',
+            sharedManifestId: 'mf_known',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.devLogId).toBe('known_log')
+        // 日誌檔已存在仍要補授權（manifest 可能已有新成員）
+        expect(ss._grantDevLogPermissions).toHaveBeenCalledWith(
+            'uuuuuuuu-5',
+            'mf_known',
+            'known_log'
+        )
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            'mf_known',
+            'known_log'
+        )
+    })
+
+    it('既有 manifest 指標與帳本記錄不一致時採用舊檔指標', async () => {
+        // 建立分支不應被觸發（權限查詢/搜尋若被呼叫即失敗）
+        ss.getFilePermissions = vi.fn(async () => {
+            throw new Error('getFilePermissions should not be called')
+        })
+        ss._findFileInDrive = vi.fn(async () => null)
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'winner_mf',
+                        changes: [],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._createSharedFile = vi.fn(async () => ({ id: 'dev_log_6' }))
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 6,
+            uuid: 'uuuuuuuu-6',
+            isShared: true,
+            sharedFileId: 'old_file',
+            sharedManifestId: 'stale_mf',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('winner_mf')
+        // 步驟 5 的帳本記錄更新應持久化校正後的指標
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            6,
+            { sharedManifestId: 'winner_mf' },
+            true
+        )
+        // 穩態：整輪只對舊檔做一次 GET
+        const oldReads = globalThis.fetch.mock.calls.filter(c =>
+            c[0].includes('files/old_file')
+        )
+        expect(oldReads).toHaveLength(1)
+    })
 })
 
 describe('SyncService pushSharedLedgerChanges (per-device)', () => {
@@ -1570,7 +1690,20 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         expect(ds.clearSyncLog).toHaveBeenCalledWith(500)
     })
 
-    it('個人同步關閉時只跑共用流程，僅以共用 cutoff 清理', async () => {
+    it('自動同步開啟且兩條推送成功時以最小 cutoff 清理', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn(async () => 900)
+        ss.pushSharedLedgerChanges = vi.fn(async () => 400)
+        ss.pullChanges = vi.fn()
+        ss.pullSharedLedgerChanges = vi.fn()
+        await ds.saveSetting({ key: 'sync_auto_enabled', value: true })
+
+        await ss.performSync(false)
+        expect(ss.pushChanges).toHaveBeenCalledTimes(1)
+        expect(ds.clearSyncLog).toHaveBeenCalledWith(400)
+    })
+
+    it('個人同步關閉時不清理本地日誌以保留未上傳變更', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss.pushChanges = vi.fn()
         ss.pullChanges = vi.fn()
@@ -1581,7 +1714,8 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         await ss.performSync(false)
         expect(ss.pushChanges).not.toHaveBeenCalled()
         expect(ss.pullChanges).not.toHaveBeenCalled()
-        expect(ds.clearSyncLog).toHaveBeenCalledWith(300)
+        // 共用專用同步未推送個人變更，清理會誤刪尚未上傳的個人變更
+        expect(ds.clearSyncLog).not.toHaveBeenCalled()
     })
 })
 
@@ -1844,6 +1978,54 @@ describe('SyncService joinViaManifest', () => {
         )
         // appliedKeys 種入所有已見變更，之後 pull 不會重複套用
         const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toContain('dev_a|100|add|ledgers')
+        expect(keys).toContain('dev_a|200|add|records')
+    })
+
+    it('套用後併入而非覆蓋既有 appliedKeys', async () => {
+        // 預先存在的鍵（其他共用帳本）不可被清除
+        await ds.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: ['other|1|add|records'],
+        })
+        const memberLog = {
+            changes: [
+                { deviceId: 'dev_a', timestamp: 200, operation: 'add', storeName: 'records', data: {} },
+                { deviceId: 'dev_a', timestamp: 100, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-9' } },
+            ],
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: null },
+                            { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'log_a' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_a') && url.includes('alt=media')) {
+                return { ok: true, json: async () => memberLog }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        await ss.joinViaManifest('mf_1')
+
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        // 既有鍵保留 + 新鍵併入
+        expect(keys).toContain('other|1|add|records')
         expect(keys).toContain('dev_a|100|add|ledgers')
         expect(keys).toContain('dev_a|200|add|records')
     })

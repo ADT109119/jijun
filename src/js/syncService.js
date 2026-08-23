@@ -1136,11 +1136,15 @@ export class SyncService {
             if (isPersonalEnabled) await this.pullChanges()
             await this.pullSharedLedgerChanges()
 
-            // 兩條推送都完成後，清理已上雲的本地變更日誌
-            // （任一推送拋錯會中斷到 catch/finally，不會走到這裡）
-            const cutoffs = [personalMaxTs, sharedMaxTs].filter(
-                ts => typeof ts === 'number'
-            )
+            // 僅在個人同步也執行過時才清理本地日誌：
+            // 共用專用同步（自動同步關閉）不會推送個人變更，
+            // 此時清理會誤刪尚未上傳的個人變更
+            const cutoffs =
+                isPersonalEnabled
+                    ? [personalMaxTs, sharedMaxTs].filter(
+                          ts => typeof ts === 'number'
+                      )
+                    : []
             if (cutoffs.length > 0) {
                 await this.dataService.clearSyncLog(Math.min(...cutoffs))
             }
@@ -1593,8 +1597,9 @@ export class SyncService {
     /**
      * 確保共用帳本的 per-device 基礎設施就緒：
      * 1. 從舊式共用檔解析 manifest 指標與歷史變更
-     * 2. 建立/定位 manifest（多台競爭時以寫回舊檔的指標為準，輸家刪除孤兒檔）
-     * 3. 建立/定位自己的裝置日誌檔並授權給成員
+     * 2. 建立/定位 manifest（僅在本機尚無指標時建立；每輪依舊檔指標重校準，
+     *    多台競爭時輸家採用贏家並刪除孤兒檔）
+     * 3. 建立/定位自己的裝置日誌檔、補授權並註冊進 manifest
      * 4. （首次）將舊檔歷史併入自己的日誌並種入 appliedKeys
      * @param {object} ledger 本地帳本記錄（isShared 且有 sharedFileId）
      * @returns {Promise<{ledger: object, devLogId: string, manifestId: string}>}
@@ -1604,24 +1609,27 @@ export class SyncService {
         const migrated = await this.dataService.getSetting(migratedKey)
         let manifestId = ledger.sharedManifestId || null
         let legacyChanges = []
+        let oldData = null
 
-        // 1) 讀取舊式共用檔
+        // 1) 讀取舊式共用檔（每輪至多一次 GET：歷史變更與指標共用這份資料）
         if (ledger.sharedFileId) {
             try {
-                const res = await this._downloadFile(ledger.sharedFileId)
-                const oldData = res?.data || {}
-                if (!manifestId && oldData.manifestFileId) {
+                oldData =
+                    (await this._downloadFile(ledger.sharedFileId))?.data ||
+                    null
+                if (!manifestId && oldData?.manifestFileId) {
                     manifestId = oldData.manifestFileId
                 }
-                if (!migrated?.value && Array.isArray(oldData.changes)) {
+                if (!migrated?.value && Array.isArray(oldData?.changes)) {
                     legacyChanges = oldData.changes
                 }
             } catch (_) {
                 // 舊檔讀不到不阻擋流程
+                oldData = null
             }
         }
 
-        // 2) 解析或建立 manifest
+        // 2) 解析或建立 manifest（建立僅發生在本機尚無任何指標時）
         if (!manifestId) {
             const name = this._manifestFileName(ledger.uuid)
             manifestId = await this._findFileInDrive(name)
@@ -1654,25 +1662,44 @@ export class SyncService {
                 )
                 manifestId = created.id
             }
-            // 把指標寫回舊檔協調其他裝置（多台同時建立時，最後寫入者為準）
+            // 把指標寫回舊檔協調其他裝置（多台同時建立時，最後寫入者為準）；
+            // 若他機已搶先註冊則採用贏家，並刪除自己剛建立的孤兒 manifest
             if (ledger.sharedFileId) {
                 try {
                     const res = await this._downloadFile(ledger.sharedFileId)
-                    const oldData = res?.data || {}
-                    if (!oldData.manifestFileId) {
-                        oldData.manifestFileId = manifestId
-                        oldData.timestamp = Date.now()
+                    const latest = res?.data || {}
+                    if (!latest.manifestFileId) {
+                        latest.manifestFileId = manifestId
+                        latest.timestamp = Date.now()
                         await this._updateFile(
                             ledger.sharedFileId,
-                            JSON.stringify(oldData)
+                            JSON.stringify(latest)
                         )
-                    } else if (oldData.manifestFileId !== manifestId) {
-                        // 他機先註冊 → 採用贏家，刪除自己的孤兒 manifest
+                    } else if (latest.manifestFileId !== manifestId) {
                         try {
                             await this.deleteFile(manifestId)
                         } catch (_) {}
-                        manifestId = oldData.manifestFileId
+                        manifestId = latest.manifestFileId
                     }
+                } catch (_) {}
+            }
+        } else if (oldData) {
+            // 指標重校準（每次執行都檢查）：帳本記錄的指標可能已過期，
+            // 以本次讀到的舊檔指標為準，確保分裂的 manifest 收斂到同一個
+            if (
+                oldData.manifestFileId &&
+                oldData.manifestFileId !== manifestId
+            ) {
+                manifestId = oldData.manifestFileId
+            } else if (!oldData.manifestFileId) {
+                // 舊檔缺指標：補寫回目前已知指標，協調尚未升級的裝置
+                try {
+                    oldData.manifestFileId = manifestId
+                    oldData.timestamp = Date.now()
+                    await this._updateFile(
+                        ledger.sharedFileId,
+                        JSON.stringify(oldData)
+                    )
                 } catch (_) {}
             }
         }
@@ -1699,12 +1726,17 @@ export class SyncService {
                 key: devLogKey,
                 value: devLogId,
             })
-            await this._grantDevLogPermissions(
-                ledger.uuid,
-                manifestId,
-                devLogId
-            )
         }
+        // 補授權給 manifest 中尚未授權的成員（日誌檔已存在時也要跑，
+        // 處理晚加入的成員；內部以 granted-email 快取節省 API 配額）
+        await this._grantDevLogPermissions(
+            ledger.uuid,
+            manifestId,
+            devLogId
+        )
+
+        // 將自己的日誌檔註冊進 manifest（含首次建立與 fileId 變更的補登）
+        await this._registerSelfInManifest(manifestId, devLogId)
 
         // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys
         if (legacyChanges.length > 0) {
@@ -1814,9 +1846,14 @@ export class SyncService {
         await this._registerSelfInManifest(manifestId, devLogId)
 
         // 3. 種入 appliedKeys，之後 pull 不會重複套用這些變更
+        // 併入現有 appliedKeys（其他共用帳本的鍵不可清除）
+        const appliedSetting = await this.dataService.getSetting(
+            'sync_shared_applied_keys'
+        )
+        const merged = new Set([...(appliedSetting?.value || []), ...seen])
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
-            value: [...seen],
+            value: [...merged],
         })
 
         return ledgerUuid
