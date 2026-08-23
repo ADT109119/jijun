@@ -1543,3 +1543,120 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         expect(ds.clearSyncLog).toHaveBeenCalledWith(300)
     })
 })
+
+describe('SyncService pullSharedLedgerChanges', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ds.saveSetting({
+            key: 'sync_drive_file_authorized',
+            value: true,
+        })
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 1,
+                uuid: 'u-1',
+                name: 'S',
+                isShared: true,
+                sharedFileId: 'f1',
+                sharedManifestId: 'mf1',
+            },
+        ])
+        ss.applyRemoteChanges = vi.fn(async () => {})
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('套用他人變更、略過自己推的、appliedKeys 去重', async () => {
+        // 使用新鮮時間戳：appliedKeys 持久化時會裁剪 30 天前的鍵，
+        // 過舊的字面值時間戳會導致第二次拉取重複套用
+        const now = Date.now()
+        const memberChanges = [
+            {
+                deviceId: 'dev_me',
+                timestamp: now - 5000,
+                operation: 'add',
+                storeName: 'records',
+                data: {},
+            },
+            {
+                deviceId: 'dev_b',
+                timestamp: now - 1000,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'r1' },
+            },
+        ]
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@t', fileId: 'my_log' },
+                            { deviceId: 'dev_b', ownerEmail: 'b@t', fileId: 'b_log' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('b_log') && url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: memberChanges }) }
+            }
+            if (url.includes('fields=modifiedTime')) {
+                return { ok: true, json: async () => ({ modifiedTime: new Date().toISOString() }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullSharedLedgerChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        // 只剩 dev_b 的那筆
+        expect(applied).toHaveLength(1)
+        expect(applied[0].deviceId).toBe('dev_b')
+
+        // 第二次拉取：同內容不重複套用（appliedKeys 已持久化）
+        await ss.pullSharedLedgerChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+    })
+
+    it('成員檔抓不到時跳過不中斷', async () => {
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@t', fileId: 'my_log' },
+                            { deviceId: 'dev_b', ownerEmail: 'b@t', fileId: 'gone_log' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('gone_log') && url.includes('fields=modifiedTime')) {
+                return { ok: false, status: 404 }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await expect(ss.pullSharedLedgerChanges()).resolves.toBeUndefined()
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+    })
+})

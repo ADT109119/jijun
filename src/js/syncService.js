@@ -1016,46 +1016,71 @@ export class SyncService {
     }
 
     /**
-     * 從各個共用帳本檔案拉取遠端變更（完整比對式）
+     * 從 manifest 列出的各成員日誌檔拉取遠端變更（appliedKeys 去重 + modifiedTime 快取）
      */
     async pullSharedLedgerChanges() {
         await this.ensureValidToken()
 
-        const isAuthorized = await this.isSharingAuthorized()
-        if (!isAuthorized) {
-            console.warn(
-                '[SyncService] pullSharedLedgerChanges: No sharing permission authorized, skipping.'
-            )
+        if (!(await this.isSharingAuthorized())) {
+            console.warn('[SyncService] pullShared: 未授權共用權限，略過')
             return
         }
 
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
 
-        // 讀取「已套用過的遠端日誌鍵」集合，避免重複 apply
-        const appliedKeysSetting = await this.dataService.getSetting(
+        const appliedSetting = await this.dataService.getSetting(
             'sync_shared_applied_keys'
         )
-        const appliedKeys = new Set(appliedKeysSetting?.value || [])
+        const appliedKeys = new Set(appliedSetting?.value || [])
         const allRemoteChanges = []
 
         for (const ledger of sharedLedgers) {
             try {
-                const resFile = await this._downloadFile(ledger.sharedFileId)
-                const fileData = resFile?.data
-                if (!fileData?.changes) continue
+                const infra = await this._ensureSharedInfra(ledger)
+                const manifest = (await this._downloadFile(infra.manifestId))
+                    ?.data
+                if (!manifest?.members) continue
 
-                // 從雲端日誌中找出「不是自己推的」且「尚未套用過」的變更
-                for (const change of fileData.changes) {
-                    if (change.deviceId === this.deviceId) continue // 自己推的，略過
-                    const key = `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
-                    if (appliedKeys.has(key)) continue // 已套用過，略過
-                    allRemoteChanges.push(change)
-                    appliedKeys.add(key) // 標記為已套用
+                const checkedKey = `sync_shared_member_checked_${infra.ledger.uuid}`
+                const checkedMap =
+                    (await this.dataService.getSetting(checkedKey))?.value || {}
+
+                for (const member of manifest.members) {
+                    if (member.deviceId === this.deviceId) continue
+                    if (!member.fileId) continue
+
+                    let modifiedMs = 0
+                    try {
+                        modifiedMs = await this._getFileModifiedTime(
+                            member.fileId
+                        )
+                    } catch (_) {
+                        continue // 檔案不存在（成員刪除帳號等），保守跳過
+                    }
+                    if ((checkedMap[member.fileId] || 0) >= modifiedMs) {
+                        continue // 自上次檢查後沒有修改
+                    }
+
+                    const data = (
+                        await this._downloadFile(member.fileId)
+                    )?.data
+                    for (const change of data?.changes || []) {
+                        if (change.deviceId === this.deviceId) continue
+                        const key = this._changeKey(change)
+                        if (appliedKeys.has(key)) continue
+                        allRemoteChanges.push(change)
+                        appliedKeys.add(key)
+                    }
+                    checkedMap[member.fileId] = modifiedMs
                 }
+                await this.dataService.saveSetting({
+                    key: checkedKey,
+                    value: checkedMap,
+                })
             } catch (e) {
                 console.warn(
-                    `[SyncService] pullSharedLedgerChanges failed for ledger ${ledger.name}:`,
+                    `[SyncService] pullShared failed for "${ledger.name}":`,
                     e
                 )
             }
@@ -1063,14 +1088,14 @@ export class SyncService {
 
         if (allRemoteChanges.length > 0) {
             console.log(
-                `[SyncService] pullShared: 收到 ${allRemoteChanges.length} 筆遠端變更，準備套用...`
+                `[SyncService] pullShared: 套用 ${allRemoteChanges.length} 筆遠端變更`
             )
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
             await this.applyRemoteChanges(allRemoteChanges)
         }
 
-        // 持久化已套用鍵集合（轉為 Array 存入 settings）
-        // 為避免無限增長，只保留最近 30 天的鍵
+        // 持久化已套用鍵集合（保留最近 30 天，避免無限增長；
+        // 離線逾 30 天可能重套用，但 UUID upsert 使其冪等）
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
         const trimmedKeys = [...appliedKeys].filter(key => {
             const ts = parseInt(key.split('|')[1], 10)
