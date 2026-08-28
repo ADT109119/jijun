@@ -42,16 +42,16 @@ export class SettingsPage {
                                     <p id="theme-mode-desc-text" class="text-xs text-wabi-text-secondary">配合系統設定自動切換深淺色</p>
                                 </div>
                             </div>
-                            <div class="flex items-center bg-wabi-bg p-1 rounded-xl border border-wabi-border/60 shrink-0 self-end sm:self-auto" id="theme-mode-segmented">
-                                <button type="button" data-mode="system" class="theme-mode-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="跟隨系統設定自動切換深淺色">
+                            <div class="w-full sm:w-auto flex items-center justify-between bg-wabi-bg p-1 rounded-xl border border-wabi-border/60 shrink-0" id="theme-mode-segmented">
+                                <button type="button" data-mode="system" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="跟隨系統設定自動切換深淺色">
                                     <i class="fa-solid fa-circle-half-stroke"></i>
                                     <span>跟隨系統</span>
                                 </button>
-                                <button type="button" data-mode="light" class="theme-mode-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用淺色模式">
+                                <button type="button" data-mode="light" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用淺色模式">
                                     <i class="fa-solid fa-sun"></i>
                                     <span>淺色</span>
                                 </button>
-                                <button type="button" data-mode="dark" class="theme-mode-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用深色模式">
+                                <button type="button" data-mode="dark" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用深色模式">
                                     <i class="fa-solid fa-moon"></i>
                                     <span>深色</span>
                                 </button>
@@ -530,10 +530,10 @@ export class SettingsPage {
                     const mode = btn.dataset.mode
                     if (mode === currentMode) {
                         btn.className =
-                            'theme-mode-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-wabi-surface text-wabi-primary shadow-sm cursor-pointer'
+                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-wabi-surface text-wabi-primary shadow-sm cursor-pointer'
                     } else {
                         btn.className =
-                            'theme-mode-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer'
+                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer'
                     }
                 })
 
