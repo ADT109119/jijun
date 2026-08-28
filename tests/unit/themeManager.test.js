@@ -1,16 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ThemeManager, DARK_THEME_ID } from '../../src/js/themeManager.js'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+    ThemeManager,
+    DARK_THEME_ID,
+    THEME_MODES,
+} from '../../src/js/themeManager.js'
 
 // ── Helper: create a mock dataService ──────────────────────────────
 function createMockDataService() {
     const store = {}
+    const themeStore = {}
     return {
         getSetting: async key => store[key] || null,
         saveSetting: async ({ key, value }) => {
             store[key] = { key, value }
         },
-        getTheme: async () => null,
-        installTheme: async () => {},
+        getTheme: async id => themeStore[id] || null,
+        installTheme: async theme => {
+            if (theme && theme.id) {
+                themeStore[theme.id] = theme
+            }
+        },
+        _store: store,
+        _themeStore: themeStore,
     }
 }
 
@@ -71,14 +82,240 @@ describe('isBuiltinTheme', () => {
     })
 })
 
-// ── DARK_THEME_ID constant ─────────────────────────────────────────
-describe('DARK_THEME_ID constant', () => {
-    it('equals expected value', () => {
+// ── Constants ──────────────────────────────────────────────────────
+describe('Theme constants', () => {
+    it('DARK_THEME_ID equals expected value', () => {
         expect(DARK_THEME_ID).toBe('com.walkingfish.theme.dark')
+    })
+
+    it('THEME_MODES contains system, light, dark, custom', () => {
+        expect(THEME_MODES.SYSTEM).toBe('system')
+        expect(THEME_MODES.LIGHT).toBe('light')
+        expect(THEME_MODES.DARK).toBe('dark')
+        expect(THEME_MODES.CUSTOM).toBe('custom')
     })
 })
 
-// ── applyTheme ─────────────────────────────────────────────────────
+// ── setThemeMode & Appearance Modes ────────────────────────────────
+describe('Theme Modes & System Appearance', () => {
+    let mockDS, tm
+
+    beforeEach(() => {
+        mockDS = createMockDataService()
+        vi.spyOn(mockDS, 'getSetting')
+        vi.spyOn(mockDS, 'saveSetting')
+        vi.spyOn(mockDS, 'getTheme')
+        vi.spyOn(mockDS, 'installTheme')
+
+        const old = document.getElementById('dynamic-theme-styles')
+        if (old) old.remove()
+        document.body.innerHTML = ''
+        document.documentElement.className = ''
+
+        tm = new ThemeManager(mockDS)
+    })
+
+    it('defaults to SYSTEM mode in constructor', () => {
+        expect(tm.themeMode).toBe(THEME_MODES.SYSTEM)
+    })
+
+    it('setThemeMode(LIGHT) clears dark class and resets styles', async () => {
+        document.documentElement.classList.add('dark')
+        await tm.setThemeMode(THEME_MODES.LIGHT)
+
+        expect(tm.themeMode).toBe(THEME_MODES.LIGHT)
+        expect(document.documentElement.classList.contains('dark')).toBe(false)
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'themeMode', value: 'light' })
+        )
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'activeThemeId', value: null })
+        )
+    })
+
+    it('setThemeMode(DARK) applies dark theme and sets dark class', async () => {
+        const darkTheme = {
+            id: DARK_THEME_ID,
+            colors: {
+                'wabi-bg': '#0f172a',
+                'wabi-primary': '#f8fafc',
+            },
+        }
+        await mockDS.installTheme(darkTheme)
+
+        await tm.setThemeMode(THEME_MODES.DARK)
+
+        expect(tm.themeMode).toBe(THEME_MODES.DARK)
+        expect(document.documentElement.classList.contains('dark')).toBe(true)
+        const css = document.getElementById('dynamic-theme-styles').textContent
+        expect(css).toContain('--theme-bg: 15 23 42')
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'themeMode', value: 'dark' })
+        )
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({
+                key: 'activeThemeId',
+                value: DARK_THEME_ID,
+            })
+        )
+    })
+
+    it('setThemeMode(SYSTEM) applies dark when system prefers dark', async () => {
+        const darkTheme = {
+            id: DARK_THEME_ID,
+            colors: {
+                'wabi-bg': '#0f172a',
+            },
+        }
+        await mockDS.installTheme(darkTheme)
+
+        // Mock system dark
+        vi.spyOn(tm, 'isSystemDarkMode').mockReturnValue(true)
+
+        await tm.setThemeMode(THEME_MODES.SYSTEM)
+
+        expect(tm.themeMode).toBe(THEME_MODES.SYSTEM)
+        expect(document.documentElement.classList.contains('dark')).toBe(true)
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'themeMode', value: 'system' })
+        )
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'activeThemeId', value: null })
+        )
+    })
+
+    it('setThemeMode(SYSTEM) applies light when system prefers light', async () => {
+        // Mock system light
+        vi.spyOn(tm, 'isSystemDarkMode').mockReturnValue(false)
+
+        await tm.setThemeMode(THEME_MODES.SYSTEM)
+
+        expect(tm.themeMode).toBe(THEME_MODES.SYSTEM)
+        expect(document.documentElement.classList.contains('dark')).toBe(false)
+    })
+
+    it('setThemeMode(CUSTOM) applies custom theme', async () => {
+        const customTheme = {
+            id: 'com.theme.sakura',
+            name: 'Sakura',
+            colors: {
+                'wabi-bg': '#fff5f7',
+                'wabi-primary': '#d946ef',
+            },
+        }
+        await mockDS.installTheme(customTheme)
+
+        await tm.setThemeMode(THEME_MODES.CUSTOM, 'com.theme.sakura')
+
+        expect(tm.themeMode).toBe(THEME_MODES.CUSTOM)
+        expect(tm.activeTheme).toEqual(customTheme)
+        const css = document.getElementById('dynamic-theme-styles').textContent
+        expect(css).toContain('--theme-bg: 255 245 247')
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({ key: 'themeMode', value: 'custom' })
+        )
+        expect(mockDS.saveSetting).toHaveBeenCalledWith(
+            expect.objectContaining({
+                key: 'activeThemeId',
+                value: 'com.theme.sakura',
+            })
+        )
+    })
+
+    it('dispatches themechange event on mode change', async () => {
+        const eventListener = vi.fn()
+        window.addEventListener('themechange', eventListener)
+
+        await tm.setThemeMode(THEME_MODES.LIGHT)
+
+        expect(eventListener).toHaveBeenCalled()
+        const event = eventListener.mock.calls[0][0]
+        expect(event.detail.mode).toBe('light')
+
+        window.removeEventListener('themechange', eventListener)
+    })
+
+    it('updates meta[name="theme-color"] correctly', async () => {
+        const darkTheme = {
+            id: DARK_THEME_ID,
+            colors: {
+                'wabi-bg': '#0f172a',
+            },
+        }
+        await mockDS.installTheme(darkTheme)
+
+        await tm.setThemeMode(THEME_MODES.DARK)
+        let meta = document.querySelector('meta[name="theme-color"]')
+        expect(meta).not.toBeNull()
+        expect(meta.getAttribute('content')).toBe('#0f172a')
+
+        await tm.setThemeMode(THEME_MODES.LIGHT)
+        meta = document.querySelector('meta[name="theme-color"]')
+        expect(meta.getAttribute('content')).toBe('#f5f5f3')
+    })
+})
+
+// ── init migration and restoration ─────────────────────────────────
+describe('ThemeManager init()', () => {
+    let mockDS, tm
+
+    beforeEach(() => {
+        mockDS = createMockDataService()
+        const old = document.getElementById('dynamic-theme-styles')
+        if (old) old.remove()
+        document.body.innerHTML = ''
+        document.documentElement.className = ''
+        tm = new ThemeManager(mockDS)
+    })
+
+    it('migrates legacy activeThemeId=DARK_THEME_ID to DARK mode if themeMode not set', async () => {
+        await mockDS.saveSetting({
+            key: 'activeThemeId',
+            value: DARK_THEME_ID,
+        })
+        const darkTheme = { id: DARK_THEME_ID, colors: { 'wabi-bg': '#0f172a' } }
+        await mockDS.installTheme(darkTheme)
+
+        // Mock fetch to avoid real network call
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => darkTheme,
+        })
+
+        await tm.init()
+        expect(tm.themeMode).toBe(THEME_MODES.DARK)
+        expect(document.documentElement.classList.contains('dark')).toBe(true)
+    })
+
+    it('migrates legacy custom activeThemeId to CUSTOM mode if themeMode not set', async () => {
+        await mockDS.saveSetting({
+            key: 'activeThemeId',
+            value: 'com.theme.blue',
+        })
+        const customTheme = {
+            id: 'com.theme.blue',
+            colors: { 'wabi-bg': '#001122' },
+        }
+        await mockDS.installTheme(customTheme)
+
+        global.fetch = vi.fn().mockResolvedValue({ ok: false })
+
+        await tm.init()
+        expect(tm.themeMode).toBe(THEME_MODES.CUSTOM)
+        expect(tm.activeTheme).toEqual(customTheme)
+    })
+
+    it('defaults to SYSTEM mode when no settings exist', async () => {
+        global.fetch = vi.fn().mockResolvedValue({ ok: false })
+        vi.spyOn(tm, 'isSystemDarkMode').mockReturnValue(false)
+
+        await tm.init()
+        expect(tm.themeMode).toBe(THEME_MODES.SYSTEM)
+        expect(document.documentElement.classList.contains('dark')).toBe(false)
+    })
+})
+
+// ── applyTheme & clearTheme (backward compatibility) ───────────────
 describe('applyTheme', () => {
     let mockDS, tm
 
@@ -108,6 +345,7 @@ describe('applyTheme', () => {
             id: 'test-theme',
             colors: { 'wabi-bg': '#1a1a2e', 'wabi-fg': '#e0e0e0' },
         }
+        await mockDS.installTheme(theme)
         await tm.applyTheme(theme)
 
         const css = document.getElementById('dynamic-theme-styles').textContent
@@ -117,12 +355,14 @@ describe('applyTheme', () => {
 
     it('sets activeTheme reference', async () => {
         const theme = { id: 'test-theme', colors: {} }
+        await mockDS.installTheme(theme)
         await tm.applyTheme(theme)
-        expect(tm.activeTheme).toBe(theme)
+        expect(tm.activeTheme).toEqual(theme)
     })
 
     it('saves activeThemeId setting', async () => {
         const theme = { id: 'my-theme', colors: {} }
+        await mockDS.installTheme(theme)
         await tm.applyTheme(theme)
         expect(mockDS.saveSetting).toHaveBeenCalledWith(
             expect.objectContaining({ key: 'activeThemeId', value: 'my-theme' })
@@ -142,6 +382,7 @@ describe('applyTheme', () => {
             id: 't',
             colors: { 'wabi-text-shadow': '2px 2px 4px rgba(0,0,0,0.5)' },
         }
+        await mockDS.installTheme(theme)
         await tm.applyTheme(theme)
         const css = document.getElementById('dynamic-theme-styles').textContent
         expect(css).toContain(
