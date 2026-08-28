@@ -112,6 +112,12 @@ export class CategoryManager {
     }
 
     getAllCategories(type, includeHidden = false) {
+        if (!type || type === 'all') {
+            return [
+                ...this.getAllCategories('expense', includeHidden),
+                ...this.getAllCategories('income', includeHidden)
+            ]
+        }
         const defaultCategories = CATEGORIES[type] || []
         const customCategories = this.customCategories[type] || []
         let merged = [...defaultCategories, ...customCategories]
