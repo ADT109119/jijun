@@ -3,19 +3,33 @@ import { debounce } from './utils.js'
 // 內建深色主題 ID（不可刪除、自動更新）
 export const DARK_THEME_ID = 'com.walkingfish.theme.dark'
 
+// 主題模式常數
+export const THEME_MODES = {
+    SYSTEM: 'system',
+    LIGHT: 'light',
+    DARK: 'dark',
+    CUSTOM: 'custom',
+}
+
 export class ThemeManager {
     constructor(dataService) {
         this.dataService = dataService
         this.activeTheme = null
+        this.themeMode = THEME_MODES.SYSTEM // 預設為跟隨系統
         this.styleElement = null
         this.observer = null
+        this.mediaQueryList = null
+        this.mediaQueryHandler = null
+        this.darkThemeCache = null
 
         // Ensure style element exists
-        this.styleElement = document.getElementById('dynamic-theme-styles')
-        if (!this.styleElement) {
-            this.styleElement = document.createElement('style')
-            this.styleElement.id = 'dynamic-theme-styles'
-            document.head.appendChild(this.styleElement)
+        if (typeof document !== 'undefined') {
+            this.styleElement = document.getElementById('dynamic-theme-styles')
+            if (!this.styleElement) {
+                this.styleElement = document.createElement('style')
+                this.styleElement.id = 'dynamic-theme-styles'
+                document.head.appendChild(this.styleElement)
+            }
         }
     }
 
@@ -24,12 +38,73 @@ export class ThemeManager {
         return themeId === DARK_THEME_ID
     }
 
+    // 判斷系統目前是否偏好深色模式
+    isSystemDarkMode() {
+        if (typeof window !== 'undefined' && window.matchMedia) {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches
+        }
+        return false
+    }
+
+    // 初始化並監聽系統色彩偏好設定變更
+    _initMediaListener() {
+        if (typeof window === 'undefined' || !window.matchMedia) return
+        if (this.mediaQueryHandler) return // 避免重複註冊
+
+        this.mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)')
+        this.mediaQueryHandler = async e => {
+            if (this.themeMode === THEME_MODES.SYSTEM) {
+                await this._applySystemTheme(e.matches)
+            }
+        }
+
+        if (this.mediaQueryList.addEventListener) {
+            this.mediaQueryList.addEventListener('change', this.mediaQueryHandler)
+        } else if (this.mediaQueryList.addListener) {
+            this.mediaQueryList.addListener(this.mediaQueryHandler)
+        }
+    }
+
+    // 移除系統色彩偏好監聽器
+    _removeMediaListener() {
+        if (this.mediaQueryList && this.mediaQueryHandler) {
+            if (this.mediaQueryList.removeEventListener) {
+                this.mediaQueryList.removeEventListener(
+                    'change',
+                    this.mediaQueryHandler
+                )
+            } else if (this.mediaQueryList.removeListener) {
+                this.mediaQueryList.removeListener(this.mediaQueryHandler)
+            }
+            this.mediaQueryHandler = null
+            this.mediaQueryList = null
+        }
+    }
+
+    // 取得內建深色主題物件
+    async getDarkTheme() {
+        if (this.darkThemeCache) return this.darkThemeCache
+        if (this.dataService && this.dataService.getTheme) {
+            try {
+                const theme = await this.dataService.getTheme(DARK_THEME_ID)
+                if (theme) {
+                    this.darkThemeCache = theme
+                    return theme
+                }
+            } catch (e) {
+                console.warn('Failed to load dark theme from dataService', e)
+            }
+        }
+        return null
+    }
+
     async init() {
         // 總是重新抓取 dark.json，確保內建深色主題保持最新版本
         try {
             const response = await fetch('themes/dark.json')
             if (response.ok) {
                 const latestDark = await response.json()
+                this.darkThemeCache = latestDark
                 await this.dataService.installTheme(latestDark) // installTheme 有 upsert 語意
                 console.log('Built-in Dark Mode theme updated.')
             }
@@ -37,14 +112,126 @@ export class ThemeManager {
             console.warn('Failed to auto-update dark theme', e)
         }
 
-        const setting = await this.dataService.getSetting('activeThemeId')
-        const activeThemeId = setting ? setting.value : null
+        // 初始化系統深淺色媒體查詢監聽
+        this._initMediaListener()
 
-        if (activeThemeId) {
+        const modeSetting = await this.dataService.getSetting('themeMode')
+        const activeSetting = await this.dataService.getSetting('activeThemeId')
+        const activeThemeId = activeSetting ? activeSetting.value : null
+
+        // 判定初始外觀模式（向後相容舊設定）
+        if (modeSetting && modeSetting.value) {
+            this.themeMode = modeSetting.value
+        } else if (activeThemeId === DARK_THEME_ID) {
+            this.themeMode = THEME_MODES.DARK
+        } else if (activeThemeId) {
+            this.themeMode = THEME_MODES.CUSTOM
+        } else {
+            this.themeMode = THEME_MODES.SYSTEM
+        }
+
+        // 依據模式套用對應主題
+        if (this.themeMode === THEME_MODES.SYSTEM) {
+            await this._applySystemTheme(this.isSystemDarkMode())
+        } else if (this.themeMode === THEME_MODES.DARK) {
+            const darkTheme = await this.getDarkTheme()
+            if (darkTheme) {
+                await this._applyThemeStyles(darkTheme)
+            }
+        } else if (this.themeMode === THEME_MODES.LIGHT) {
+            await this._clearThemeStyles()
+        } else if (this.themeMode === THEME_MODES.CUSTOM && activeThemeId) {
             const theme = await this.dataService.getTheme(activeThemeId)
             if (theme) {
-                await this.applyTheme(theme)
+                await this._applyThemeStyles(theme)
             }
+        }
+    }
+
+    // 系統深淺色動態切換處理
+    async _applySystemTheme(isDark) {
+        if (isDark) {
+            const darkTheme = await this.getDarkTheme()
+            if (darkTheme) {
+                await this._applyThemeStyles(darkTheme)
+            }
+        } else {
+            await this._clearThemeStyles()
+        }
+        this._dispatchThemeChange()
+    }
+
+    // 設定主題模式
+    async setThemeMode(mode, customThemeId = null) {
+        this.themeMode = mode
+        await this.dataService.saveSetting({
+            key: 'themeMode',
+            value: mode,
+        })
+
+        if (mode === THEME_MODES.SYSTEM) {
+            await this.dataService.saveSetting({
+                key: 'activeThemeId',
+                value: null,
+            })
+            await this._applySystemTheme(this.isSystemDarkMode())
+        } else if (mode === THEME_MODES.LIGHT) {
+            await this.dataService.saveSetting({
+                key: 'activeThemeId',
+                value: null,
+            })
+            await this._clearThemeStyles()
+        } else if (mode === THEME_MODES.DARK) {
+            await this.dataService.saveSetting({
+                key: 'activeThemeId',
+                value: DARK_THEME_ID,
+            })
+            const darkTheme = await this.getDarkTheme()
+            if (darkTheme) {
+                await this._applyThemeStyles(darkTheme)
+            }
+        } else if (mode === THEME_MODES.CUSTOM && customThemeId) {
+            await this.dataService.saveSetting({
+                key: 'activeThemeId',
+                value: customThemeId,
+            })
+            const theme = await this.dataService.getTheme(customThemeId)
+            if (theme) {
+                await this._applyThemeStyles(theme)
+            }
+        }
+        this._dispatchThemeChange()
+    }
+
+    // 更新 meta theme-color 標籤
+    updateMetaThemeColor(color) {
+        if (typeof document === 'undefined') return
+        let meta = document.querySelector('meta[name="theme-color"]')
+        if (!meta) {
+            meta = document.createElement('meta')
+            meta.name = 'theme-color'
+            document.head.appendChild(meta)
+        }
+        if (meta) {
+            meta.setAttribute('content', color)
+        }
+    }
+
+    // 分派主題變更事件，讓活躍頁面同步更新狀態
+    _dispatchThemeChange() {
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+            const isDark =
+                typeof document !== 'undefined' &&
+                document.documentElement.classList.contains('dark')
+            window.dispatchEvent(
+                new CustomEvent('themechange', {
+                    detail: {
+                        mode: this.themeMode,
+                        activeTheme: this.activeTheme,
+                        isDark,
+                    },
+                })
+            )
         }
     }
 
@@ -65,34 +252,31 @@ export class ThemeManager {
             : null
     }
 
-    async applyTheme(theme) {
+    // 套用特定主題樣式（內部核心渲染方法）
+    async _applyThemeStyles(theme) {
         this.activeTheme = theme
 
         // Apply CSS Variables
         let cssText = ':root {\n'
         if (theme && theme.colors) {
             for (const [key, value] of Object.entries(theme.colors)) {
-                // key is like "wabi-bg", we want "--theme-bg"
-                // Sanitize the variable name to a safe CSS identifier to prevent
-                // injection via crafted theme color keys (CSS Injection, H-01)
                 const cssVarName = String(key)
                     .replace(/^wabi-/, '')
                     .replace(/[^a-zA-Z0-9_-]/g, '')
                 if (!cssVarName) continue
-                // Try converting hex to RGB triplet
                 const rgbValue = this.hexToRgbTriplet(value)
                 if (rgbValue) {
                     cssText += `  --theme-${cssVarName}: ${rgbValue};\n`
                 } else {
-                    // Fallback if not a hex code. Strip characters that can break
-                    // out of the declaration or inject @rules (CSS Injection, H-01)
                     const sanitized = String(value).replace(/[;{}@<>]/g, '')
                     cssText += `  --theme-${cssVarName}: ${sanitized};\n`
                 }
             }
         }
         cssText += '}\n'
-        this.styleElement.textContent = cssText
+        if (this.styleElement) {
+            this.styleElement.textContent = cssText
+        }
 
         // Toggle dark-theme class on body based on theme properties or luminance
         const isDark =
@@ -121,22 +305,21 @@ export class ThemeManager {
                     return false
                 })())
 
-        if (isDark) {
-            document.documentElement.classList.add('dark')
-        } else {
-            document.documentElement.classList.remove('dark')
+        if (typeof document !== 'undefined') {
+            if (isDark) {
+                document.documentElement.classList.add('dark')
+            } else {
+                document.documentElement.classList.remove('dark')
+            }
         }
 
-        // Save active theme ID
-        await this.dataService.saveSetting({
-            key: 'activeThemeId',
-            value: theme ? theme.id : null,
-        })
+        // 更新 meta theme-color
+        const themeBg =
+            theme?.colors?.['wabi-bg'] || (isDark ? '#0f172a' : '#f5f5f3')
+        this.updateMetaThemeColor(themeBg)
 
         // Apply Icon Replacements
         this.stopIconObserver()
-
-        // Remove existing theme replacements
         this.clearReplacedIcons()
 
         if (theme && theme.icons && Object.keys(theme.icons).length > 0) {
@@ -145,11 +328,38 @@ export class ThemeManager {
         }
     }
 
+    // 清除自訂樣式，恢復預設淺色風格（內部核心方法）
+    async _clearThemeStyles() {
+        this.activeTheme = null
+        if (this.styleElement) {
+            this.styleElement.textContent = ''
+        }
+        if (typeof document !== 'undefined') {
+            document.documentElement.classList.remove('dark')
+        }
+        this.updateMetaThemeColor('#f5f5f3')
+        this.stopIconObserver()
+        this.clearReplacedIcons()
+    }
+
+    // 向後相容方法：外部呼叫 applyTheme
+    async applyTheme(theme) {
+        if (!theme) {
+            await this.setThemeMode(THEME_MODES.LIGHT)
+        } else if (theme.id === DARK_THEME_ID) {
+            await this.setThemeMode(THEME_MODES.DARK)
+        } else {
+            await this.setThemeMode(THEME_MODES.CUSTOM, theme.id)
+        }
+    }
+
+    // 向後相容方法：外部呼叫 clearTheme
     async clearTheme() {
-        await this.applyTheme(null)
+        await this.setThemeMode(THEME_MODES.LIGHT)
     }
 
     clearReplacedIcons() {
+        if (typeof document === 'undefined') return
         // Remove our injected replacements
         document
             .querySelectorAll('.theme-icon-replacement')
