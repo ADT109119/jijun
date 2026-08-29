@@ -1,5 +1,5 @@
 import { showToast, customConfirm } from '../utils.js'
-import { DARK_THEME_ID } from '../themeManager.js'
+import { THEME_MODES } from '../themeManager.js'
 
 export class SettingsPage {
     constructor(app) {
@@ -31,22 +31,31 @@ export class SettingsPage {
                         ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
                         ${isAndroidApk ? this.createSettingItem('fa-solid fa-barcode', '設定發票載具', 'set-invoice-carrier-btn') : ''}
                     
-                        <!-- 深色模式快速切換 -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/30">
+                        <!-- 外觀模式快速切換 (跟隨系統 / 淺色 / 深色) -->
+                        <div class="w-full flex flex-col sm:flex-row sm:items-center gap-3 bg-transparent px-4 py-3.5 justify-between border-b border-wabi-border/30">
                             <div class="flex items-center gap-4">
                                 <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-moon"></i>
+                                    <i id="theme-mode-main-icon" class="fa-solid fa-circle-half-stroke"></i>
                                 </div>
                                 <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">深色模式</p>
-                                    <p class="text-xs text-wabi-text-secondary">開啟即自動套用內建深色主題</p>
+                                    <p class="text-wabi-text-primary text-base font-normal">外觀模式</p>
+                                    <p id="theme-mode-desc-text" class="text-xs text-wabi-text-secondary">配合系統設定自動切換深淺色</p>
                                 </div>
                             </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="dark-mode-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
+                            <div class="w-full sm:w-auto flex items-center justify-between bg-wabi-bg p-1 rounded-xl border border-wabi-border/60 shrink-0" id="theme-mode-segmented">
+                                <button type="button" data-mode="system" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="跟隨系統設定自動切換深淺色">
+                                    <i class="fa-solid fa-circle-half-stroke"></i>
+                                    <span>跟隨系統</span>
+                                </button>
+                                <button type="button" data-mode="light" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用淺色模式">
+                                    <i class="fa-solid fa-sun"></i>
+                                    <span>淺色</span>
+                                </button>
+                                <button type="button" data-mode="dark" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="固定使用深色模式">
+                                    <i class="fa-solid fa-moon"></i>
+                                    <span>深色</span>
+                                </button>
+                            </div>
                         </div>
                         
                     </div>
@@ -506,36 +515,72 @@ export class SettingsPage {
                 })
         }
 
-        // 深色模式快速切換
-        const darkModeToggle = document.getElementById('dark-mode-toggle')
-        if (darkModeToggle) {
-            // 標記目前是否已是深色主題
-            const activeSetting =
-                await this.app.dataService.getSetting('activeThemeId')
-            darkModeToggle.checked = activeSetting?.value === DARK_THEME_ID
+        // 外觀模式快速切換 (跟隨系統 / 淺色 / 深色)
+        const updateThemeModeUI = () => {
+            const currentMode =
+                this.app.themeManager.themeMode || THEME_MODES.SYSTEM
+            const isDark = document.documentElement.classList.contains('dark')
+            const descEl = document.getElementById('theme-mode-desc-text')
+            const iconEl = document.getElementById('theme-mode-main-icon')
 
-            darkModeToggle.addEventListener('change', async e => {
-                if (e.target.checked) {
-                    // 套用深色主題
-                    const darkTheme =
-                        await this.app.dataService.getTheme(DARK_THEME_ID)
-                    if (darkTheme) {
-                        await this.app.themeManager.applyTheme(darkTheme)
-                        showToast('已切換為深色模式', 'success')
+            // 更新按鈕樣式
+            document
+                .querySelectorAll('#theme-mode-segmented .theme-mode-btn')
+                .forEach(btn => {
+                    const mode = btn.dataset.mode
+                    if (mode === currentMode) {
+                        btn.className =
+                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-wabi-surface text-wabi-primary shadow-sm cursor-pointer'
                     } else {
-                        showToast(
-                            '深色主題沒有安裝，請先從主題商店下載',
-                            'error'
-                        )
-                        e.target.checked = false
+                        btn.className =
+                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer'
                     }
-                } else {
-                    // 切回預設亮色主題
-                    await this.app.themeManager.clearTheme()
-                    showToast('已切換為亮色模式', 'success')
+                })
+
+            // 更新說明文字與圖示
+            if (iconEl && descEl) {
+                if (currentMode === THEME_MODES.SYSTEM) {
+                    iconEl.className = 'fa-solid fa-circle-half-stroke'
+                    descEl.textContent = `跟隨系統自動切換 (目前：${isDark ? '深色' : '淺色'})`
+                } else if (currentMode === THEME_MODES.LIGHT) {
+                    iconEl.className = 'fa-solid fa-sun'
+                    descEl.textContent = '固定使用淺色模式'
+                } else if (currentMode === THEME_MODES.DARK) {
+                    iconEl.className = 'fa-solid fa-moon'
+                    descEl.textContent = '固定使用深色模式'
+                } else if (currentMode === THEME_MODES.CUSTOM) {
+                    iconEl.className = 'fa-solid fa-palette'
+                    const themeName =
+                        this.app.themeManager.activeTheme?.name || '自訂'
+                    descEl.textContent = `目前套用自訂主題：${themeName}`
                 }
-            })
+            }
         }
+
+        updateThemeModeUI()
+
+        document
+            .querySelectorAll('#theme-mode-segmented .theme-mode-btn')
+            .forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const targetMode = btn.dataset.mode
+                    await this.app.themeManager.setThemeMode(targetMode)
+                    updateThemeModeUI()
+                    const toastMsg =
+                        targetMode === THEME_MODES.SYSTEM
+                            ? '已設定為跟隨系統模式'
+                            : targetMode === THEME_MODES.LIGHT
+                              ? '已切換為淺色模式'
+                              : '已切換為深色模式'
+                    showToast(toastMsg, 'success')
+                })
+            })
+
+        // 監聽系統或全域主題切換事件同步 UI
+        const themeChangeListener = () => {
+            updateThemeModeUI()
+        }
+        window.addEventListener('themechange', themeChangeListener)
 
         const advancedModeToggle = document.getElementById(
             'advanced-account-mode-toggle'
