@@ -42,7 +42,7 @@ export class SettingsPage {
                                     <p id="theme-mode-desc-text" class="text-xs text-wabi-text-secondary">配合系統設定自動切換深淺色</p>
                                 </div>
                             </div>
-                            <div class="w-full sm:w-auto flex items-center justify-between bg-wabi-bg p-1 rounded-xl border border-wabi-border/60 shrink-0" id="theme-mode-segmented">
+                            <div class="w-full sm:w-auto flex items-center justify-between bg-wabi-bg p-1 rounded-xl border border-wabi-border/60 shrink-0 break-keep" id="theme-mode-segmented">
                                 <button type="button" data-mode="system" class="theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer" title="跟隨系統設定自動切換深淺色">
                                     <i class="fa-solid fa-circle-half-stroke"></i>
                                     <span>跟隨系統</span>
