@@ -1293,6 +1293,57 @@ describe('SyncService manifest 管理', () => {
             errorSpy.mockRestore()
         }
     })
+
+    it('_registerSelfInManifest 遭遇 ETag 412 衝突時自動重試並成功', async () => {
+        let attempts = 0
+        let stored = {
+            members: [
+                { deviceId: 'other', ownerEmail: 'o@t.com', fileId: 'f1' },
+            ],
+        }
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            globalThis.fetch = vi.fn(async (_url, opts) => {
+                if (opts?.method === 'PATCH') {
+                    attempts++
+                    if (attempts === 1) {
+                        // 第一次 PATCH 模擬 ETag 412 衝突
+                        return {
+                            ok: false,
+                            status: 412,
+                            json: async () => ({
+                                error: { message: 'Precondition Failed' },
+                            }),
+                        }
+                    }
+                    stored = JSON.parse(opts.body)
+                    return { ok: true, json: async () => ({}) }
+                }
+                // 下載回傳目前內容副本與 ETag
+                return {
+                    ok: true,
+                    headers: {
+                        get: name =>
+                            name.toLowerCase() === 'etag'
+                                ? `etag_${attempts}`
+                                : null,
+                    },
+                    json: async () => JSON.parse(JSON.stringify(stored)),
+                }
+            })
+
+            const ok = await ss._registerSelfInManifest('mf_1', 'my_log')
+            expect(ok).toBe(true)
+            expect(attempts).toBe(2)
+            expect(stored.members.some(m => m.deviceId === ss.deviceId)).toBe(
+                true
+            )
+        } finally {
+            warnSpy.mockRestore()
+            errorSpy.mockRestore()
+        }
+    })
 })
 
 describe('SyncService _ensureSharedInfra', () => {
@@ -1717,6 +1768,45 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         // 共用專用同步未推送個人變更，清理會誤刪尚未上傳的個人變更
         expect(ds.clearSyncLog).not.toHaveBeenCalled()
     })
+
+    it('帳本僅具 sharedManifestId（無 sharedFileId）仍可正常推送', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 10,
+                uuid: 'u-manifest-only',
+                name: 'ManifestOnly',
+                isShared: true,
+                sharedFileId: null,
+                sharedManifestId: 'mf_only_10',
+            },
+        ])
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl-10',
+            manifestId: 'mf_only_10',
+        }))
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+        expect(ss._ensureSharedInfra).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 10 })
+        )
+    })
+
+    it('本地變更皆已在雲端（appended===0）時仍回傳 maxPushed', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl',
+            manifestId: 'mf',
+        }))
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+    })
 })
 
 describe('SyncService pullSharedLedgerChanges', () => {
@@ -1833,6 +1923,65 @@ describe('SyncService pullSharedLedgerChanges', () => {
 
         await expect(ss.pullSharedLedgerChanges()).resolves.toBeUndefined()
         expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+    })
+
+    it('帳本僅具 sharedManifestId（無 sharedFileId）仍可正常拉取', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 11,
+                uuid: 'u-manifest-only',
+                name: 'ManifestOnly',
+                isShared: true,
+                sharedFileId: null,
+                sharedManifestId: 'mf1',
+            },
+        ])
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', fileId: 'f_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('f_b') && url.includes('fields=modifiedTime')) {
+                return {
+                    ok: true,
+                    json: async () => ({ modifiedTime: new Date().toISOString() }),
+                }
+            }
+            if (url.includes('f_b') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            {
+                                deviceId: 'dev_b',
+                                timestamp: Date.now() - 100,
+                                operation: 'add',
+                                storeName: 'records',
+                                data: { uuid: 'rec-pull' },
+                            },
+                        ],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullSharedLedgerChanges()
+
+        expect(ss.applyRemoteChanges).toHaveBeenCalledWith([
+            expect.objectContaining({ data: { uuid: 'rec-pull' } }),
+        ])
     })
 })
 

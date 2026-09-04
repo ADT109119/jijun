@@ -175,13 +175,24 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - **批次查詢**: 避免 N+1 查詢，使用 `getDebts()`、`getRecords()` 批次載入
 - **無障礙**: Modal 使用 `role="dialog"`、`aria-modal="true"`、`aria-labelledby`
 
+## 關鍵設計決策
+
+- **多帳本與共用架構 (Per-Device Sync)**:
+    - 每個裝置維護自己獨立的 `sync_shared_devlog_<uuid>` 雲端變更日誌檔，避免共用單一檔案引發並行寫入覆蓋
+    - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態
+    - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
+    - 向後相容：manifest 記錄 `legacySharedFileId` 指向舊檔，拉取時以 `appliedKeys` 本地集合自動去重與防回溯
+    - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
+
 ## 測試結構
 
 所有的單元測試位於 `tests/unit/` 目錄下：
 
 - `creditInstallment.test.js` # 測試信用卡分期 (upfront 模式、轉帳對生成、額度釋放、末期差額與補跑快取同步)
 - `dataServiceInit.test.js` # 測試 IndexedDB 初始化安全 (版本探測、VersionError 防護、blocked 偵測與持久化)
-- `recordsList.test.js` # 測試明細紀錄列表、預設時間範圍設定與搜尋清空按鈕
+- `recordsList.test.js` # 測試明細紀錄列表、群組標頭排版/折疊展開、預設時間範圍設定與搜尋清空按鈕
+- `addPagePanels.test.js` # 測試記帳頁面板獨立開啟、互斥關閉與空值安全防護
+- `homePage.test.js` # 測試首頁群組結餘小工具 (未結清群組展示、切片與 XSS 防護)
 - `amortization.test.js` # 測試折舊攤提分期邏輯
 - `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal (含 upfront 編輯防護)
 - `budgetManager.test.js` # 測試預算管理邏輯
@@ -193,89 +204,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重)
+- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 36 個測試檔案，1529 項測試全部通過）
-- 透過 `npm test` (`npx vitest run`) 執行所有單元測試citor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
-index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, IDB, GIS)
-```
-
-## 模組依賴
-
-- `main.js` → 所有模組 (中心樞紐)，**動態 import** `@capacitor/app`
-- `ledgerManager.js` → `dataService.js`, `utils.js`
-- `rewardService.js` → `utils.js` (showToast), 動態 import `@capacitor-community/admob`
-- `syncService.js` → `dataService.js`
-- `pluginManager.js` → `dataService.js`, `pluginStorage.js`
-
-## 路由 (src/js/router.js)
-
-| 路由 | 頁面 | 說明 |
-|------|------|------|
-| `#home` | HomePage | 首頁 |
-| `#records` | RecordsPage | 明細列表 |
-| `#add` | AddPage | 新增/編輯紀錄 |
-| `#stats` | StatsPage | 統計 |
-| `#settings` | SettingsPage | 設定 |
-| `#accounts` | AccountsPage | 帳戶 |
-| `#recurring` | RecurringPage | 定期收支 |
-| `#debts` | DebtsPage | 欠款 |
-| `#amortizations` | AmortizationsPage | 攤提 |
-| `#comparison` | ComparisonPage | 比較報表 |
-| `#contacts` | ContactsPage | 聯絡人 |
-| `#ledgers` | LedgersPage | 帳本 |
-| `#plugins` | PluginsPage | 外掛 |
-| `#themes` | ThemesPage | 主題 |
-| `#themeStore` | ThemeStorePage | 主題商店 |
-| `#store` | StorePage | 商店 |
-| `#sync` | SyncSettingsPage | 同步設定 |
-| `#privacy` | PrivacyPage | 隱私權 |
-| `#license` | LicensePage | 授權 |
-
-## IndexedDB Schema
-
-**Database**: `easy-accounting-db`
-
-| Store | KeyPath | 說明 |
-|-------|---------|------|
-| `records` | `id` (autoIncrement) | 收支明細 |
-| `accounts` | `id` (autoIncrement) | 帳戶 |
-| `categories` | `id` | 分類 |
-| `settings` | `key` | 設定鍵值對 |
-| `contacts` | `id` (autoIncrement) | 聯絡人 |
-| `debts` | `id` (autoIncrement) | 欠款 |
-| `amortizations` | `id` (autoIncrement) | 攤提計畫 |
-| `ledgers` | `id` (autoIncrement) | 帳本 |
-| `theme` | `id` | 主題 |
-| `pluginState` | `id` | 外掛狀態 |
-
-## 程式碼慣例
-
-- **語法**: 不使用分號 (no semicolons)，ES Module
-- **縮排**: 4 個空格
-- **命名**: camelCase（函數/變數）、PascalCase（class）、snake_case（資料庫欄位）
-- **XSS 防護**: 使用者輸入嵌入 innerHTML 時必須使用 `escapeHTML()`（import from `utils.js`）
-- **批次查詢**: 避免 N+1 查詢，使用 `getDebts()`、`getRecords()` 批次載入
-- **無障礙**: Modal 使用 `role="dialog"`、`aria-modal="true"`、`aria-labelledby`
-
-## 測試結構
-
-所有的單元測試位於 `tests/unit/` 目錄下：
-
-- `recordsList.test.js` # 測試明細紀錄列表、群組標頭排版/折疊展開、預設時間範圍設定與搜尋清空按鈕
-- `addPagePanels.test.js` # 測試記帳頁面板獨立開啟、互斥關閉與空值安全防護
-- `homePage.test.js` # 測試首頁群組結餘小工具 (未結清群組展示、切片與 XSS 防護)
-- `amortization.test.js` # 測試折舊攤提分期邏輯
-- `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal
-- `budgetManager.test.js` # 測試預算管理邏輯
-- `categoryManager.test.js` # 測試分類管理邏輯
-- `changelog.test.js` # 測試更新日誌解析與渲染
-- `themeManager.test.js` # 測試主題管理 (含 HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
-- `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
-- `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
-- `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
-- `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
-- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，對應各主要模組的單元驗證）
-- 透過 `npx vitest run` 執行所有單元測試 (1541 測試項目)
+- ...等等（共有 38 個測試檔案，1590 項測試全部通過）
+- 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

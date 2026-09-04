@@ -977,7 +977,9 @@ export class SyncService {
         }
 
         const ledgers = await this.dataService.getLedgers()
-        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+        )
         let maxPushed = null
         let allSucceeded = true
 
@@ -1001,6 +1003,10 @@ export class SyncService {
                     console.log(
                         `[SyncService] pushShared: "${infra.ledger.name}" 推送 ${appended} 筆變更`
                     )
+                    const ts = Math.max(...mine.map(c => c.timestamp))
+                    maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
+                } else if (mine.length > 0) {
+                    // 本地變更已存在於雲端日誌，時間戳亦可安全視為已同步
                     const ts = Math.max(...mine.map(c => c.timestamp))
                     maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
                 }
@@ -1029,7 +1035,9 @@ export class SyncService {
         }
 
         const ledgers = await this.dataService.getLedgers()
-        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+        )
 
         const appliedSetting = await this.dataService.getSetting(
             'sync_shared_applied_keys'
@@ -1477,8 +1485,11 @@ export class SyncService {
     async _registerSelfInManifest(manifestId, devLogId, maxRetries = 3) {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                // 嚴格下載：任何失敗都拋出進入重試，絕不把雲端成員清單誤判為空而整份覆寫
-                const current = await this._downloadFileStrict(manifestId)
+                // 嚴格下載：任何失敗都拋出進入重試，絕不把雲端成員清單誤判為空而整份覆寫；獲取 ETag 用於樂觀鎖
+                const { data: current, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
                 if (!Array.isArray(current.members)) {
                     throw new Error('manifest 格式錯誤')
                 }
@@ -1491,7 +1502,8 @@ export class SyncService {
                         current.timestamp = Date.now()
                         await this._updateFile(
                             manifestId,
-                            JSON.stringify(current)
+                            JSON.stringify(current),
+                            etag
                         )
                     }
                 } else {
@@ -1501,7 +1513,11 @@ export class SyncService {
                         fileId: devLogId,
                     })
                     current.timestamp = Date.now()
-                    await this._updateFile(manifestId, JSON.stringify(current))
+                    await this._updateFile(
+                        manifestId,
+                        JSON.stringify(current),
+                        etag
+                    )
                 }
                 return true
             } catch (e) {
@@ -1520,19 +1536,33 @@ export class SyncService {
      * @param {string} manifestId
      * @param {string} deviceId
      * @param {number} [maxRetries=3]
-     * @returns {Promise<boolean>}
+     * @returns {Promise<{success: boolean, removedEmail: string|null}|boolean>}
      */
     async _removeManifestMember(manifestId, deviceId, maxRetries = 3) {
+        let removedEmail = null
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
-                // 嚴格下載：任何失敗都拋出進入重試，與 _registerSelfInManifest 一致
-                const current = await this._downloadFileStrict(manifestId)
+                // 嚴格下載：獲取 ETag 用於樂觀鎖
+                const { data: current, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
                 if (!current?.members) return false
+                const target = current.members.find(
+                    m => m.deviceId === deviceId
+                )
+                if (target?.ownerEmail) {
+                    removedEmail = target.ownerEmail
+                }
                 current.members = current.members.filter(
                     m => m.deviceId !== deviceId
                 )
                 current.timestamp = Date.now()
-                await this._updateFile(manifestId, JSON.stringify(current))
+                await this._updateFile(
+                    manifestId,
+                    JSON.stringify(current),
+                    etag
+                )
                 return true
             } catch (e) {
                 console.warn(
@@ -1548,7 +1578,7 @@ export class SyncService {
      * 從 manifest 移除成員（公開給 ledgerManager 用）
      * @param {string} manifestId
      * @param {string} deviceId
-     * @returns {Promise<boolean>}
+     * @returns {Promise<{success: boolean, removedEmail: string|null}|boolean>}
      */
     async removeManifestMember(manifestId, deviceId) {
         await this.ensureSharingPermission()
@@ -1651,6 +1681,7 @@ export class SyncService {
                     JSON.stringify({
                         ledgerUuid: ledger.uuid,
                         ownerEmail,
+                        legacySharedFileId: ledger.sharedFileId || null,
                         members: [
                             {
                                 deviceId: this.deviceId,
@@ -1702,6 +1733,19 @@ export class SyncService {
                     )
                 } catch (_) {}
             }
+        }
+
+        // 確保 manifest 記錄了 legacySharedFileId
+        if (manifestId && ledger.sharedFileId) {
+            try {
+                const resMf = await this._downloadFile(manifestId)
+                const mfData = resMf?.data
+                if (mfData && !mfData.legacySharedFileId) {
+                    mfData.legacySharedFileId = ledger.sharedFileId
+                    mfData.timestamp = Date.now()
+                    await this._updateFile(manifestId, JSON.stringify(mfData))
+                }
+            } catch (_) {}
         }
 
         // 3) 確保自己的裝置日誌檔
@@ -1915,15 +1959,27 @@ export class SyncService {
      * 下載檔案內容；任何非 OK 狀態都拋出（與 _downloadFile 的寬鬆版不同，
      * 用於「絕不能把雲端內容誤判為空」的讀寫路徑）
      * @param {string} fileId
-     * @returns {Promise<object>} 解析後的 JSON 內容
+     * @param {object} [options={}]
+     * @param {boolean} [options.withMeta=false] - 是否一併回傳 ETag 等中繼資訊
+     * @returns {Promise<object>} 解析後的 JSON 內容（若 withMeta 為 true 則回傳 { data, etag }）
      */
-    async _downloadFileStrict(fileId) {
+    async _downloadFileStrict(fileId, { withMeta = false } = {}) {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
             { headers: { Authorization: `Bearer ${this.accessToken}` } }
         )
         if (!res.ok) throw new Error(`Failed to download file (${res.status})`)
-        return await res.json()
+        const data = await res.json()
+        if (withMeta) {
+            return {
+                data,
+                etag:
+                    res.headers?.get('ETag') ||
+                    res.headers?.get('etag') ||
+                    null,
+            }
+        }
+        return data
     }
 
     /**
@@ -2090,17 +2146,21 @@ export class SyncService {
      * 更新既有檔案內容
      * @param {string} fileId
      * @param {string} content
-     * @param {string|null} matchTag - 用於樂觀鎖的 ETag
+     * @param {string|null} [matchTag=null] - 用於樂觀鎖的 ETag
      */
-    async _updateFile(fileId, content) {
+    async _updateFile(fileId, content, matchTag = null) {
+        const headers = {
+            Authorization: `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+        }
+        if (matchTag) {
+            headers['If-Match'] = matchTag
+        }
         const res = await fetch(
             `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
             {
                 method: 'PATCH',
-                headers: {
-                    Authorization: `Bearer ${this.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
+                headers,
                 body: content,
             }
         )
@@ -2113,7 +2173,9 @@ export class SyncService {
                 console.warn('Failed to parse error', _)
             }
             console.error('[SyncService] _updateFile error:', errMsg)
-            throw new Error(errMsg)
+            const err = new Error(errMsg)
+            err.status = res.status
+            throw err
         }
     }
 

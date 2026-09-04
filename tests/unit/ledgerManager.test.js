@@ -467,11 +467,51 @@ describe('LedgerManager', () => {
                 expect.objectContaining({ id: 1, uuid: 'ledger-uuid' })
             )
             // 基礎設施須在啟動共用同步之前就緒
-            expect(
-                mockSyncService._ensureSharedInfra.mock.invocationCallOrder[0]
-            ).toBeLessThan(
-                mockSyncService.ensureSharedSync.mock.invocationCallOrder[0]
-            )
+            expect(mockSyncService._ensureSharedInfra.mock.invocationCallOrder[0])
+                .toBeLessThan(
+                    mockSyncService.ensureSharedSync.mock.invocationCallOrder[0]
+                )
+        })
+
+        it('首次建立共用時對 manifest 與 devLog 補授權', async () => {
+            const mockLedger = {
+                id: 1,
+                name: '個人帳本',
+                uuid: 'ledger-uuid',
+                isShared: false,
+            }
+            mockDataService.getLedger.mockResolvedValue(mockLedger)
+            mockSyncService._ensureSharedInfra.mockResolvedValue({
+                manifestId: 'mf_created',
+                devLogId: 'dl_created',
+            })
+
+            const result = await ledgerManager.shareLedger(1, 'user@test.com')
+
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('file123', 'user@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('mf_created', 'user@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('dl_created', 'user@test.com')
+            expect(result).toBe('mf_created')
+        })
+
+        it('已共用帳本再次分享時對全部檔案授權', async () => {
+            const mockLedger = {
+                id: 1,
+                name: '共用帳本',
+                uuid: 'ledger-uuid',
+                isShared: true,
+                sharedFileId: 'existing-file',
+                sharedManifestId: 'existing-manifest',
+            }
+            mockDataService.getLedger.mockResolvedValue(mockLedger)
+            mockDataService.getSetting = vi.fn().mockResolvedValue({ value: 'existing-devlog' })
+
+            const result = await ledgerManager.shareLedger(1, 'new@test.com')
+
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-file', 'new@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-manifest', 'new@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-devlog', 'new@test.com')
+            expect(result).toBe('existing-manifest')
         })
     })
 
@@ -504,6 +544,31 @@ describe('LedgerManager', () => {
             await expect(
                 ledgerManager.joinSharedLedger('file456')
             ).rejects.toThrow('無效的共用帳本檔案或無讀取權限')
+        })
+
+        it('新架構：透過 manifest 加入共用帳本，並記錄 sharedManifestId 與 legacySharedFileId', async () => {
+            mockSyncService._downloadFile.mockResolvedValue({
+                data: {
+                    members: [{ deviceId: 'dev-1', ownerEmail: 'owner@test.com' }],
+                    legacySharedFileId: 'legacy-file-123',
+                },
+            })
+            mockSyncService.joinViaManifest = vi.fn().mockResolvedValue('shared-manifest-uuid')
+            mockDataService.getLedgers.mockResolvedValue([
+                { id: 7, uuid: 'shared-manifest-uuid', name: 'Manifest帳本' },
+            ])
+
+            const result = await ledgerManager.joinSharedLedger('manifest-file-999')
+
+            expect(mockSyncService.joinViaManifest).toHaveBeenCalledWith('manifest-file-999')
+            expect(mockDataService.updateLedger).toHaveBeenCalledWith(7, {
+                isShared: true,
+                sharedManifestId: 'manifest-file-999',
+                sharedFileId: 'legacy-file-123',
+                type: 'shared',
+            })
+            expect(mockSyncService.ensureSharedSync).toHaveBeenCalled()
+            expect(result).toBe(7)
         })
 
         it('成功加入共用帳本後呼叫 init', async () => {
@@ -637,6 +702,39 @@ describe('LedgerManager', () => {
             await expect(
                 ledgerManager.removeSharedUser(1, 'perm456')
             ).rejects.toThrow('此帳本尚未共用')
+        })
+
+        it('移除 manifest 成員時一併撤銷 Google Drive 權限', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                uuid: 'ledger-uuid',
+                sharedManifestId: 'mf_123',
+                sharedFileId: 'f_123',
+            })
+            mockDataService.getSetting = vi.fn().mockResolvedValue({ value: 'devlog_123' })
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    members: [
+                        { deviceId: 'dev_me', ownerEmail: 'me@test.com' },
+                        { deviceId: 'dev_other', ownerEmail: 'other@test.com' },
+                    ],
+                },
+            })
+            mockSyncService.removeManifestMember = vi.fn().mockResolvedValue(true)
+            mockSyncService.getFilePermissions = vi.fn(async fileId => {
+                if (fileId === 'mf_123') return [{ id: 'perm_mf_other', emailAddress: 'other@test.com' }]
+                if (fileId === 'f_123') return [{ id: 'perm_f_other', emailAddress: 'other@test.com' }]
+                if (fileId === 'devlog_123') return [{ id: 'perm_dl_other', emailAddress: 'other@test.com' }]
+                return []
+            })
+            mockSyncService.removeFilePermission = vi.fn().mockResolvedValue()
+
+            await ledgerManager.removeSharedUser(1, 'dev_other')
+
+            expect(mockSyncService.removeManifestMember).toHaveBeenCalledWith('mf_123', 'dev_other')
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('mf_123', 'perm_mf_other')
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('f_123', 'perm_f_other')
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('devlog_123', 'perm_dl_other')
         })
     })
 
@@ -842,6 +940,34 @@ describe('LedgerManager', () => {
                 1,
                 expect.objectContaining({ isShared: false })
             )
+        })
+
+        it('帳本僅具 sharedManifestId（無 sharedFileId）時仍可正常取消共用', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 2,
+                uuid: 'uuid-manifest-only',
+                name: '純Manifest帳本',
+                isShared: true,
+                sharedFileId: null,
+                sharedManifestId: 'mf_only',
+            })
+            mockDataService.getSetting.mockResolvedValue(null)
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    ownerEmail: 'me@test.com',
+                    members: [{ deviceId: 'dev_1', ownerEmail: 'me@test.com' }],
+                },
+            })
+
+            await ledgerManager.unshareLedger(2)
+
+            expect(mockSyncService.deleteFile).toHaveBeenCalledWith('mf_only')
+            expect(mockDataService.updateLedger).toHaveBeenCalledWith(2, {
+                isShared: false,
+                sharedFileId: null,
+                sharedManifestId: null,
+                type: 'personal',
+            })
         })
     })
 
