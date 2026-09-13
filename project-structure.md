@@ -208,6 +208,6 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1617 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1605 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 
