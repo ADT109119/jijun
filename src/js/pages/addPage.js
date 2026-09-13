@@ -2776,7 +2776,7 @@ export class AddPage {
             try {
                 const categoryManager = this.app.categoryManager
                 const accountNames = accounts.map(a => a.name)
-                const allCatNames = categoryManager.getAllCategories().map(c => c.name)
+                const allCatNames = [...categoryManager.getAllCategories('expense'), ...categoryManager.getAllCategories('income')].map(c => c.name)
 
                 // 首次推論：提供全部分類供模型參考 (含流式輸出)
                 let parsed = await aiService.parseRecord(text, allCatNames, accountNames, new Date(), onTokenCallback)
@@ -2787,8 +2787,11 @@ export class AddPage {
                 const oppositeType = recognizedType === 'income' ? 'expense' : 'income'
                 const oppositeCatNames = categoryManager.getAllCategories(oppositeType).map(c => c.name)
 
-                // 若生成的類別不存在，或者辨識出來的類別其實屬於相反收支類型的分類中：
-                if (parsed.category && (!targetCatNames.includes(parsed.category) || oppositeCatNames.includes(parsed.category))) {
+                // 若生成的類別在目標收支類型中不存在，且明確屬於相反收支類型（排除兩邊皆有的分類如「其他」）或兩邊皆不存在：
+                const isOnlyInOpposite = oppositeCatNames.includes(parsed.category) && !targetCatNames.includes(parsed.category)
+                const isNotFoundAnywhere = !targetCatNames.includes(parsed.category) && !oppositeCatNames.includes(parsed.category)
+
+                if (parsed.category && (isOnlyInOpposite || isNotFoundAnywhere)) {
                     console.warn(`[AI 防呆驗證] 分類 "${parsed.category}" 未能在 ${recognizedType} 分類中匹配，移除無關收支類型的分類重新執行 AI 解析...`)
                     if (streamText) streamText.textContent = ''
                     // 移除無關收支類型的分類，只把目標收支類型的分類放進 System Prompt 重跑一次

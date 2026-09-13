@@ -74,4 +74,13 @@ index.html               # 入口 HTML (CDN: Tailwind, FontAwesome, Chart.js, ID
     - **原生** → 動態 import `@capacitor-community/admob`，使用 AdMob SDK 的 Banner 和 Rewarded Video
     - **Web** → 保留 AdSense 橫幅 + GPT 獎勵廣告 + 內建推廣廣告備案
     - 24 小時無廣告狀態存於 `localStorage`
+- **主題系統與深淺色模式 (themeManager.js)**:
+    - 支援四態外觀模式 (`THEME_MODES`: `system` 跟隨系統, `light` 淺色, `dark` 深色, `custom` 自訂主題)，預設採用 `system`
+    - 透過 `window.matchMedia('(prefers-color-scheme: dark)')` 實作系統色彩偏好即時動態監聽
+    - 自動同步更新 `<meta name="theme-color">` 保持手機狀態列/標題列色彩一體化
+    - 具備舊版 `activeThemeId` 平滑遷移機制（Legacy Migration）並提供完整 `destroy()` 監聽器清理防記憶體洩漏
+- **端側 AI 語意記帳 (aiService.js)**:
+    - 整合端側 58M LLM (WASM/wllama) 離線推論、OPFS 快取與規則引擎降級
+    - 具備 `applySemanticGuardrail()` 前端語意守門校準，防止小模型因幻覺將「花了/買了/付了」消費口語誤判為收入
+    - 支援跨收支重疊分類（如「其他」）防呆驗證與 `CategoryManager.getAllCategories()` 無參數調用
 - **Capacitor Android**: Web 資產打包進 `android/app/src/main/assets/public/`，透過 WebView 載入本地檔案，AdMob 為原生 overlay

@@ -7,8 +7,8 @@
 ```
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
-├── themeManager.js      # 主題管理 (套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
-├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，包含對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
+├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
+├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援 + 群組分帳與單筆個別還款)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── groupManager.js      # 群組分帳管理商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
@@ -196,9 +196,10 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `amortization.test.js` # 測試折舊攤提分期邏輯
 - `amortizationModal.test.js` # 測試攤提/分期新增編輯 Modal (含 upfront 編輯防護)
 - `budgetManager.test.js` # 測試預算管理邏輯
-- `categoryManager.test.js` # 測試分類管理邏輯
+- `categoryManager.test.js` # 測試分類管理邏輯 (含無參數調用與雙向合併)
 - `changelog.test.js` # 測試更新日誌解析與渲染
-- `themeManager.test.js` # 測試主題管理 (含 HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
+- `themeManager.test.js` # 測試主題管理 (含深淺色多模式切換、舊設定遷移、prefers-color-scheme 監聽、HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
+- `aiService.test.js` # 測試 AI 端側記帳 (含語意守門校正 applySemanticGuardrail、口語支出解析與降級規則推論)
 - `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
@@ -207,6 +208,6 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1590 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1617 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

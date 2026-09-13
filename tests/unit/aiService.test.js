@@ -12,7 +12,8 @@ describe('AIService - generateSystemPrompt', () => {
         const prompt = aiService.generateSystemPrompt(categories, accounts, testDate)
 
         expect(prompt).toContain('今天是 2026-08-03（星期一）')
-        expect(prompt).toContain('你是一個記帳助理。你被賦予了以下 tools:')
+        expect(prompt).toContain('你是一個記帳助理。')
+        expect(prompt).toContain('你被賦予了以下 tools:')
         expect(prompt).toContain('餐飲')
         expect(prompt).toContain('交通')
         expect(prompt).toContain('貓咪用品')
@@ -222,5 +223,49 @@ describe('AIService - 繁體/簡體关键词兼容 (簡体输入支持)', () => 
         const aiService = new AIService({})
         const result = await aiService.parseRecord('買貓糧花了 200 元', ['宠物', '其他'], ['現金'], new Date('2026-08-03T12:00:00'))
         expect(result.type).toBe('expense')
+    })
+})
+
+describe('AIService - 「花了100元」支出語意守門與糾錯機制', () => {
+    const aiService = new AIService({})
+
+    it('「花了100元」口語輸入精確解析為支出 (expense)', async () => {
+        const result = await aiService.parseRecord('花了100元', ['飲食', '其他'], ['現金'], new Date('2026-08-03T12:00:00'))
+        expect(result.amount).toBe(100)
+        expect(result.type).toBe('expense')
+    })
+
+    it('「花100元買飲料」解析為支出 (expense)', async () => {
+        const result = await aiService.parseRecord('花100元買飲料', ['飲食', '其他'], ['現金'], new Date('2026-08-03T12:00:00'))
+        expect(result.amount).toBe(100)
+        expect(result.type).toBe('expense')
+    })
+
+    it('「買了早餐花費80元」解析為支出 (expense)', async () => {
+        const result = await aiService.parseRecord('買了早餐花費80元', ['飲食', '其他'], ['現金'], new Date('2026-08-03T12:00:00'))
+        expect(result.amount).toBe(80)
+        expect(result.type).toBe('expense')
+    })
+
+    it('當模型因幻覺輸出 income 時，前端語意守門能將「花了100元」自動校正為 expense', () => {
+        const hallucinatedOutput = '<tool_call>{"name":"add_record","args":{"amount":100,"category":"其他","account":"現金","description":"100元","type":"income"}}</tool_call>'
+        const record = aiService.extractToolCall(hallucinatedOutput, '花了100元')
+        expect(record.type).toBe('expense')
+        expect(record.amount).toBe(100)
+    })
+
+    it('當模型因幻覺輸出 expense 時，前端語意守門能將「領了獎金5000元」自動校正為 income', () => {
+        const hallucinatedOutput = '<tool_call>{"name":"add_record","args":{"amount":5000,"category":"獎金","account":"現金","description":"獎金","type":"expense"}}</tool_call>'
+        const record = aiService.extractToolCall(hallucinatedOutput, '領了獎金5000元')
+        expect(record.type).toBe('income')
+        expect(record.amount).toBe(5000)
+    })
+
+    it('System Prompt 內包含收支類型規則與 type 描述說明', () => {
+        const prompt = aiService.generateSystemPrompt(['飲食', '其他'], ['現金'], new Date('2026-08-03'))
+        expect(prompt).toContain('type 必須為 expense')
+        expect(prompt).toContain('才為 income')
+        const toolDef = JSON.parse(prompt.split('被賦予了以下 tools:\n')[1].trim())
+        expect(toolDef.parameters.properties.type.description).toBeDefined()
     })
 })

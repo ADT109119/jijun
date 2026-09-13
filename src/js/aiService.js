@@ -392,7 +392,7 @@ export class AIService {
      * @returns {string} - 組裝好的 System Prompt
      */
     generateSystemPrompt(categories, accounts, currentDate) {
-        const cleanCategories = Array.isArray(categories) && categories.length > 0 ? categories : ['餐飲', '日常', '交通', '娛樂', '醫療', '教育', '還款', '薪水', '獎金', '零用錢', '兼職', '投資', '利息', '欠款回收', '其他'];
+        const cleanCategories = Array.isArray(categories) && categories.length > 0 ? categories : ['飲食', '日常', '交通', '娛樂', '醫療', '教育', '還款', '薪水', '獎金', '零用錢', '兼職', '投資', '利息', '欠款回收', '其他'];
         const cleanAccounts = Array.isArray(accounts) && accounts.length > 0 ? accounts : ['現金', '信用卡', '悠遊卡', '一卡通', '街口支付', 'LINE Pay', 'Apple Pay', 'Google Pay', '郵局帳戶', '銀行存款', '外幣帳戶', '加密貨幣', '悠遊付', 'icash'];
         const { formattedStr } = this.getCurrentDateAnchor(currentDate);
 
@@ -402,18 +402,41 @@ export class AIService {
             parameters: {
                 type: "object",
                 properties: {
-                    amount: { type: "number" },
-                    category: { type: "string", enum: cleanCategories },
-                    account: { type: "string", enum: cleanAccounts },
-                    description: { type: "string" },
-                    type: { type: "string", enum: ["expense", "income"] },
+                    amount: { type: "number", description: "交易金額數值（大於0）" },
+                    category: { type: "string", enum: cleanCategories, description: "交易分類名稱" },
+                    account: { type: "string", enum: cleanAccounts, description: "支付或入帳帳戶" },
+                    description: { type: "string", description: "交易詳細說明與品項" },
+                    type: { type: "string", enum: ["expense", "income"], description: "收支類型：消費花費（如花了、買、付、吃喝、搭乘等）填 expense；收入（如賺、領薪水、獎金、投資等）填 income。預設為 expense" },
                     date: { type: "string", description: "ISO 8601 格式日期，例如 YYYY-MM-DD" }
                 },
                 required: ["amount", "category", "account", "type", "date"]
             }
         };
 
-        return `${formattedStr}。你是一個記帳助理。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
+        return `${formattedStr}。你是一個記帳助理。規則：凡是「花了」、「買了」、「消費」、「付了」、「吃」等消費行為，type 必須為 expense；「領了」、「賺了」、「薪水」、「入帳」等才為 income。未明確指明時預設為 expense。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
+    }
+
+    /**
+     * 前端語意守門校正：針對高確信度關鍵字進行收支類型校準，防止小模型幻覺
+     * @param {object} record - 解析後的記帳物件
+     * @param {string} rawText - 原始使用者輸入文字
+     * @returns {object}
+     */
+    applySemanticGuardrail(record, rawText) {
+        if (!record || !rawText || typeof rawText !== 'string') return record;
+        const text = rawText.trim();
+        const expenseRegex = /(?:花了?|花費|花费|買了?|买了?|購買|购买|付了?|支付|消費|消费|支出|刷了?|結帳|结账|吃了?|喝了?|搭乘?|繳費?|缴费?|扣款)/;
+        const incomeRegex = /(?:領了?|領到|领了?|领到|賺了?|賺到|赚了?|赚到|領薪|领薪|發薪|发薪|薪水|工資|工资|入帳|入账|進帳|进账|獎金|奖金|退款|利息)/;
+
+        const hasExpense = expenseRegex.test(text);
+        const hasIncome = incomeRegex.test(text);
+
+        if (hasExpense && !hasIncome) {
+            record.type = 'expense';
+        } else if (hasIncome && !hasExpense) {
+            record.type = 'income';
+        }
+        return record;
     }
 
     /**
@@ -467,27 +490,30 @@ export class AIService {
                 throw error;
             }
             this.lastMode = 'llm';
-            return this.extractToolCall(responseText);
+            return this.extractToolCall(responseText, text);
         } catch (error) {
             if (!this.lastErrorStage) this.lastErrorStage = 'init';
             console.warn(`wllama ${this.lastErrorStage} 失敗，降級為離線規則模組:`, error);
             this.lastMode = 'rules';
-            return this.extractToolCall(this._ruleInference(text, categories, accounts, currentDate));
+            return this.extractToolCall(this._ruleInference(text, categories, accounts, currentDate), text);
         }
     }
 
     /**
      * 雙軌容錯解析模型輸出的 Tool Call (支援 JSON 格式與特殊 Token 壓縮格式)
      * @param {string} responseText - 模型產生的文字
+     * @param {string} [rawText] - 原始使用者輸入文字（用於語意守門校準）
      * @returns {object}
      */
-    extractToolCall(responseText) {
+    extractToolCall(responseText, rawText = '') {
         if (!responseText) {
             throw new Error('模型輸出為空');
         }
 
         // 0. 剔除思考鏈標籤以相容 Reasoning/Thinking 模型 (如 DeepSeek-R1 / Qwen3 推理系列)
         responseText = responseText.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, '').trim();
+
+        let result = null;
 
         // 1. 檢測是否為「特殊標記壓縮格式」 [AMT] / [CAT]
         if (responseText.includes('[AMT]') || responseText.includes('[CAT]')) {
@@ -515,7 +541,51 @@ export class AIService {
                 throw new Error('AI 未能提取有效的記帳金額');
             }
 
-            return {
+            result = {
+                amount: amount,
+                category: args.category || '其他',
+                account: args.account || '現金',
+                description: args.description || '',
+                type: args.type === 'income' ? 'income' : 'expense',
+                date: args.date || undefined
+            };
+        } else {
+            // 2. 通用 JSON 格式解析
+            let jsonStr = '';
+            const toolCallMatch = responseText.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
+            if (toolCallMatch && toolCallMatch[1]) {
+                jsonStr = toolCallMatch[1].trim();
+            } else {
+                const braceMatch = responseText.match(/\{[\s\S]*?\}/);
+                if (braceMatch) {
+                    jsonStr = braceMatch[0].trim();
+                }
+            }
+
+            if (!jsonStr) {
+                throw new Error('無法從 AI 輸出中提取 Tool Call 格式。原始輸出: ' + responseText);
+            }
+
+            let parsed;
+            try {
+                parsed = JSON.parse(jsonStr);
+            } catch (e) {
+                throw new Error('解析 JSON 失敗: ' + e.message + '，提取的內容為: ' + jsonStr);
+            }
+
+            let args = parsed;
+            if (parsed.name === 'add_record' && parsed.args) {
+                args = parsed.args;
+            } else if (parsed.args) {
+                args = parsed.args;
+            }
+
+            const amount = Number(args.amount);
+            if (isNaN(amount) || amount <= 0) {
+                throw new Error('AI 未能提取有效的記帳金額');
+            }
+
+            result = {
                 amount: amount,
                 category: args.category || '其他',
                 account: args.account || '現金',
@@ -525,49 +595,11 @@ export class AIService {
             };
         }
 
-        // 2. 通用 JSON 格式解析
-        let jsonStr = '';
-        const toolCallMatch = responseText.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
-        if (toolCallMatch && toolCallMatch[1]) {
-            jsonStr = toolCallMatch[1].trim();
-        } else {
-            const braceMatch = responseText.match(/\{[\s\S]*?\}/);
-            if (braceMatch) {
-                jsonStr = braceMatch[0].trim();
-            }
+        if (rawText) {
+            result = this.applySemanticGuardrail(result, rawText);
         }
 
-        if (!jsonStr) {
-            throw new Error('無法從 AI 輸出中提取 Tool Call 格式。原始輸出: ' + responseText);
-        }
-
-        let parsed;
-        try {
-            parsed = JSON.parse(jsonStr);
-        } catch (e) {
-            throw new Error('解析 JSON 失敗: ' + e.message + '，提取的內容為: ' + jsonStr);
-        }
-
-        let args = parsed;
-        if (parsed.name === 'add_record' && parsed.args) {
-            args = parsed.args;
-        } else if (parsed.args) {
-            args = parsed.args;
-        }
-
-        const amount = Number(args.amount);
-        if (isNaN(amount) || amount <= 0) {
-            throw new Error('AI 未能提取有效的記帳金額');
-        }
-
-        return {
-            amount: amount,
-            category: args.category || '其他',
-            account: args.account || '現金',
-            description: args.description || '',
-            type: args.type === 'income' ? 'income' : 'expense',
-            date: args.date || undefined
-        };
+        return result;
     }
 
     /**
@@ -578,7 +610,7 @@ export class AIService {
         const amountMatch = text.match(/\d+/);
         const amount = amountMatch ? parseInt(amountMatch[0], 10) : 100;
 
-        const matchedCategory = categories.find(c => text.includes(c)) || categories[0] || '餐飲';
+        const matchedCategory = categories.find(c => text.includes(c)) || categories[0] || '飲食';
         const matchedAccount = accounts.find(a => text.includes(a)) || accounts[0] || '現金';
 
         const isIncome = text.includes('領') || text.includes('领') || text.includes('賺') || text.includes('赚') || text.includes('收入') || text.includes('薪水');
