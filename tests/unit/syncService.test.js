@@ -2127,7 +2127,7 @@ describe('SyncService joinViaManifest', () => {
         )
         // appliedKeys 種入所有已見變更，之後 pull 不會重複套用
         const keys = (await ds.getSetting('sync_shared_applied_keys')).value
-        expect(keys).toContain('dev_a|100|add|ledgers')
+        expect(keys).toContain('dev_a|100|add|ledgers|uuuuuuuu-9')
         expect(keys).toContain('dev_a|200|add|records')
     })
 
@@ -2175,7 +2175,7 @@ describe('SyncService joinViaManifest', () => {
         const keys = (await ds.getSetting('sync_shared_applied_keys')).value
         // 既有鍵保留 + 新鍵併入
         expect(keys).toContain('other|1|add|records')
-        expect(keys).toContain('dev_a|100|add|ledgers')
+        expect(keys).toContain('dev_a|100|add|ledgers|uuuuuuuu-9')
         expect(keys).toContain('dev_a|200|add|records')
     })
 
@@ -2253,7 +2253,7 @@ describe('SyncService joinViaManifest', () => {
         expect(applied.map(c => c.timestamp)).toEqual([5, 10])
         const keys = (await ds.getSetting('sync_shared_applied_keys')).value
         expect(keys).toHaveLength(2)
-        expect(keys).toContain('dev_b|10|add|records')
+        expect(keys).toContain('dev_b|10|add|records|r1')
     })
 })
 
@@ -2301,5 +2301,256 @@ describe('SyncService _applyUpdateWithId ledgers 保護欄位', () => {
             expect.objectContaining({ sharedManifestId: 'mf_remote' }),
             true
         )
+    })
+})
+
+describe('PR #69 External Review Verified Fixes', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'test-token'
+        ss.deviceId = 'dev_me'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.ensureSharingPermission = vi.fn(async () => true)
+        ss.isSharingAuthorized = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    describe('Issue 1 & 2: pullSharedLedgerChanges premature appliedKeys and checkedMap cache', () => {
+        it('當 applyRemoteChanges 僅成功部分變更時，僅將成功的鍵寫入 appliedKeys', async () => {
+            const now = Date.now()
+            const memberLog = {
+                changes: [
+                    { deviceId: 'dev_b', timestamp: now - 1000, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
+                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec2' } },
+                ],
+            }
+
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') {
+                    return { data: memberLog }
+                }
+                return null
+            })
+
+            // 模擬 applyRemoteChanges 僅成功第一筆
+            const key1 = ss._changeKey(memberLog.changes[0])
+            ss.applyRemoteChanges = vi.fn(async () => new Set([key1]))
+
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const applied = (await ds.getSetting('sync_shared_applied_keys'))?.value || []
+            expect(applied).toContain(key1)
+            expect(applied).not.toContain(ss._changeKey(memberLog.changes[1]))
+        })
+
+        it('當 member log 下載失敗時，不更新 checkedMap 以便後續重試', async () => {
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') {
+                    return null // 模擬下載失敗
+                }
+                return null
+            })
+            ss.applyRemoteChanges = vi.fn(async () => new Set())
+
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBeUndefined()
+        })
+    })
+
+    describe('Issue 3 & 4: _ensureSharedInfra legacy migration and manifest registration failure', () => {
+        it('舊式共用檔下載失敗（非 404）時拋錯且不寫入 shared_migrated 旗標', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-mig-fail',
+                name: 'Test Ledger',
+                isShared: true,
+                sharedFileId: 'legacy-file-id',
+            }
+
+            ss._downloadFileStrict = vi.fn(async id => {
+                if (id === 'legacy-file-id') {
+                    throw new Error('Failed to download file (500)')
+                }
+                return {}
+            })
+
+            await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow('Failed to download legacy shared file')
+            const migrated = await ds.getSetting('shared_migrated_u-mig-fail')
+            expect(migrated).toBeNull()
+        })
+
+        it('舊式共用檔回傳 404 時視為無歷史資料，可安全完成遷移並標記 migrated', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-mig-404',
+                name: 'Test Ledger',
+                isShared: true,
+                sharedFileId: 'legacy-404-id',
+            }
+
+            ss._downloadFileStrict = vi.fn(async id => {
+                if (id === 'legacy-404-id') {
+                    throw new Error('Failed to download file (404)')
+                }
+                return {}
+            })
+            ss._findFileInDrive = vi.fn(async () => 'found-mf')
+            ss._registerSelfInManifest = vi.fn(async () => true)
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._createSharedFile = vi.fn(async () => ({ id: 'new-dev-log' }))
+            ds.updateLedger = vi.fn(async () => true)
+
+            const infra = await ss._ensureSharedInfra(ledger)
+            expect(infra.manifestId).toBe('found-mf')
+            const migrated = await ds.getSetting('shared_migrated_u-mig-404')
+            expect(migrated?.value).toBe(true)
+        })
+
+        it('若 _registerSelfInManifest 重試用盡失敗，_ensureSharedInfra 應拋出錯誤', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-reg-fail',
+                name: 'Register Fail Ledger',
+                isShared: true,
+                sharedManifestId: 'mf-exists',
+            }
+
+            ss._registerSelfInManifest = vi.fn(async () => false)
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._findFileInDrive = vi.fn(async () => 'my-dev-log')
+
+            await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow('Failed to register device in manifest')
+        })
+    })
+
+    describe('Issue 5: _appendToDeviceLog ETag CAS optimistic lock', () => {
+        it('遭遇 412 併發衝突時自動重試並在第二次成功帶入最新 ETag', async () => {
+            let attempt = 0
+            const patchCalls = []
+
+            globalThis.fetch = vi.fn(async (url, opts) => {
+                if (opts?.method === 'PATCH') {
+                    patchCalls.push(opts)
+                    if (attempt === 0) {
+                        attempt++
+                        return { ok: false, status: 412, json: async () => ({ error: { message: 'etag mismatch' } }) }
+                    }
+                    return { ok: true, json: async () => ({}) }
+                }
+                // GET request
+                const etag = attempt === 0 ? '"etag-v1"' : '"etag-v2"'
+                return {
+                    ok: true,
+                    headers: new Headers({ ETag: etag }),
+                    json: async () => ({
+                        deviceId: 'dev_me',
+                        changes: attempt === 0 ? [] : [{ deviceId: 'dev_me', timestamp: 10, operation: 'add', storeName: 'records' }],
+                    }),
+                }
+            })
+
+            const now = Date.now()
+            const incoming = [
+                { deviceId: 'dev_me', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'r2' } },
+            ]
+
+            const written = await ss._appendToDeviceLog('log-id', incoming)
+            expect(written).toBe(1)
+            expect(patchCalls).toHaveLength(2)
+            expect(patchCalls[0].headers['If-Match']).toBe('"etag-v1"')
+            expect(patchCalls[1].headers['If-Match']).toBe('"etag-v2"')
+        })
+    })
+
+    describe('Issue 6: _changeKey 同毫秒防碰撞', () => {
+        it('同毫秒內不同 record UUID 能產生相異鍵', () => {
+            const ts = 1700000000000
+            const change1 = {
+                deviceId: 'dev_a',
+                timestamp: ts,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'uuid-alpha' },
+            }
+            const change2 = {
+                deviceId: 'dev_a',
+                timestamp: ts,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'uuid-beta' },
+            }
+
+            const k1 = ss._changeKey(change1)
+            const k2 = ss._changeKey(change2)
+
+            expect(k1).not.toBe(k2)
+            expect(k1).toBe(`dev_a|${ts}|add|records|uuid-alpha`)
+            expect(k2).toBe(`dev_a|${ts}|add|records|uuid-beta`)
+        })
+
+        it('支援使用 recordId 作為識別碼且相容 30 天時間戳解析', () => {
+            const ts = 1700000000000
+            const change = {
+                deviceId: 'dev_b',
+                timestamp: ts,
+                operation: 'update',
+                storeName: 'accounts',
+                recordId: 42,
+            }
+            const k = ss._changeKey(change)
+            expect(k).toBe(`dev_b|${ts}|update|accounts|42`)
+
+            const parsedTs = parseInt(k.split('|')[1], 10)
+            expect(parsedTs).toBe(ts)
+        })
     })
 })

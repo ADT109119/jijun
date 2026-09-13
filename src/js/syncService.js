@@ -789,6 +789,7 @@ export class SyncService {
             'sync_personal_applied_keys'
         )
         const appliedKeys = new Set(appliedSetting?.value || [])
+        const pendingKeys = new Set(appliedKeys)
         const allRemoteChanges = []
 
         for (const file of files) {
@@ -800,15 +801,22 @@ export class SyncService {
 
             for (const change of syncLog.changes) {
                 const key = this._changeKey(change)
-                if (appliedKeys.has(key)) continue
+                if (pendingKeys.has(key)) continue
+                pendingKeys.add(key)
                 allRemoteChanges.push(change)
-                appliedKeys.add(key)
             }
         }
 
         if (allRemoteChanges.length > 0) {
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
-            await this.applyRemoteChanges(allRemoteChanges)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+            }
         }
 
         // 持久化已套用鍵（保留最近 30 天；離線逾 30 天重套用是冪等的）
@@ -832,7 +840,7 @@ export class SyncService {
      * @param {Array} changes 變更列表
      */
     async applyRemoteChanges(changes) {
-        if (!changes || changes.length === 0) return
+        if (!changes || changes.length === 0) return new Set()
 
         // 定義建立依賴的拓撲順序
         const topoOrder = [
@@ -868,6 +876,8 @@ export class SyncService {
             return orderA - orderB
         })
 
+        const appliedKeys = new Set()
+
         for (const change of sortedChanges) {
             try {
                 const { operation, storeName, recordId, data } = change
@@ -877,7 +887,7 @@ export class SyncService {
                 )
 
                 // 預檢測：如果是 add 且 UUID 已存在，自動轉向 update，避免 Unique Constraint 失敗導致同步中斷
-                if (operation === 'add' && data.uuid) {
+                if (operation === 'add' && data?.uuid) {
                     const existing = await this.dataService.getByUUID(
                         storeName,
                         data.uuid
@@ -888,6 +898,7 @@ export class SyncService {
                             existing.id,
                             data
                         )
+                        appliedKeys.add(this._changeKey(change))
                         continue
                     }
                 }
@@ -908,6 +919,7 @@ export class SyncService {
                             operation
                         )
                 }
+                appliedKeys.add(this._changeKey(change))
             } catch (err) {
                 console.error(
                     '[SyncService] Error applying change:',
@@ -916,6 +928,7 @@ export class SyncService {
                 )
             }
         }
+        return appliedKeys
     }
 
     /**
@@ -1043,6 +1056,7 @@ export class SyncService {
             'sync_shared_applied_keys'
         )
         const appliedKeys = new Set(appliedSetting?.value || [])
+        const pendingKeys = new Set(appliedKeys)
         const allRemoteChanges = []
 
         for (const ledger of sharedLedgers) {
@@ -1072,15 +1086,17 @@ export class SyncService {
                         continue // 自上次檢查後沒有修改
                     }
 
-                    const data = (
-                        await this._downloadFile(member.fileId)
-                    )?.data
+                    const resFile = await this._downloadFile(member.fileId)
+                    if (!resFile || !resFile.data) {
+                        continue // 下載失敗（網路短暫中斷/500等），不更新 checkedMap 以便下次重試
+                    }
+                    const data = resFile.data
                     for (const change of data?.changes || []) {
                         if (change.deviceId === this.deviceId) continue
                         const key = this._changeKey(change)
-                        if (appliedKeys.has(key)) continue
+                        if (pendingKeys.has(key)) continue
+                        pendingKeys.add(key)
                         allRemoteChanges.push(change)
-                        appliedKeys.add(key)
                     }
                     checkedMap[member.fileId] = modifiedMs
                 }
@@ -1101,7 +1117,14 @@ export class SyncService {
                 `[SyncService] pullShared: 套用 ${allRemoteChanges.length} 筆遠端變更`
             )
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
-            await this.applyRemoteChanges(allRemoteChanges)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+            }
         }
 
         // 持久化已套用鍵集合（保留最近 30 天，避免無限增長；
@@ -1376,12 +1399,17 @@ export class SyncService {
     // ──────────────────────────────────────────────
 
     /**
-     * 變更日誌的唯一鍵（去重用），格式：deviceId|timestamp|operation|storeName
+     * 變更日誌的唯一鍵（去重用），格式：deviceId|timestamp|operation|storeName[|recordIdentifier]
      * @param {object} change
      * @returns {string}
      */
     _changeKey(change) {
-        return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
+        const recordIdentifier =
+            change.data?.uuid ??
+            (change.recordId !== undefined && change.recordId !== null
+                ? change.recordId
+                : '')
+        return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}${recordIdentifier ? `|${recordIdentifier}` : ''}`
     }
 
     /**
@@ -1443,36 +1471,58 @@ export class SyncService {
      * 將變更附加到「自己的」裝置日誌檔。
      * 依 _changeKey 去重（雲端既有內容與傳入批次內部皆會去重）；
      * 超過 90 天的變更會被裁剪（完整歷史由每日備份保留）。
+     * 支援 ETag CAS 樂觀鎖與 412 衝突重試。
      * @param {string} devLogId
      * @param {Array<object>} incomingChanges
+     * @param {number} [maxRetries=3]
      * @returns {Promise<number>} 實際寫入的新增筆數（不含被裁剪者）
      */
-    async _appendToDeviceLog(devLogId, incomingChanges) {
+    async _appendToDeviceLog(devLogId, incomingChanges, maxRetries = 3) {
         if (!devLogId || !incomingChanges.length) return 0
-        // 嚴格下載：任何失敗都拋出，避免把雲端既有內容誤判為空而整份覆寫
-        const cloud = await this._downloadFileStrict(devLogId)
-        if (!Array.isArray(cloud.changes)) cloud.changes = []
-        const existing = Array.isArray(cloud.changes) ? cloud.changes : []
-        const cloudKeys = new Set(existing.map(c => this._changeKey(c)))
-        const seenIncoming = new Set()
-        const missing = incomingChanges.filter(c => {
-            const key = this._changeKey(c)
-            if (cloudKeys.has(key) || seenIncoming.has(key)) return false
-            seenIncoming.add(key)
-            return true
-        })
-        if (missing.length === 0) return 0
 
-        const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
-        const survivingExisting = existing.filter(
-            c => (c.timestamp || 0) >= cutoff
-        )
-        const persistedNew = missing.filter(c => (c.timestamp || 0) >= cutoff)
-        cloud.changes = [...survivingExisting, ...persistedNew]
-        cloud.deviceId = this.deviceId
-        cloud.timestamp = Date.now()
-        await this._updateFile(devLogId, JSON.stringify(cloud))
-        return persistedNew.length
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // 嚴格下載：任何失敗都拋出，避免把雲端既有內容誤判為空而整份覆寫；附帶 ETag 進行樂觀鎖更新
+                const { data: cloud, etag } = await this._downloadFileStrict(
+                    devLogId,
+                    { withMeta: true }
+                )
+                if (!Array.isArray(cloud.changes)) cloud.changes = []
+                const existing = Array.isArray(cloud.changes) ? cloud.changes : []
+                const cloudKeys = new Set(existing.map(c => this._changeKey(c)))
+                const seenIncoming = new Set()
+                const missing = incomingChanges.filter(c => {
+                    const key = this._changeKey(c)
+                    if (cloudKeys.has(key) || seenIncoming.has(key)) return false
+                    seenIncoming.add(key)
+                    return true
+                })
+                if (missing.length === 0) return 0
+
+                const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
+                const survivingExisting = existing.filter(
+                    c => (c.timestamp || 0) >= cutoff
+                )
+                const persistedNew = missing.filter(c => (c.timestamp || 0) >= cutoff)
+                cloud.changes = [...survivingExisting, ...persistedNew]
+                cloud.deviceId = this.deviceId
+                cloud.timestamp = Date.now()
+                await this._updateFile(devLogId, JSON.stringify(cloud), etag)
+                return persistedNew.length
+            } catch (e) {
+                if (
+                    attempt < maxRetries - 1 &&
+                    (e.status === 412 || e.message?.includes('412'))
+                ) {
+                    console.warn(
+                        `[SyncService] appendToDeviceLog 併發衝突，進行重試 ${attempt + 1}/${maxRetries}`
+                    )
+                    continue
+                }
+                throw e
+            }
+        }
+        return 0
     }
 
     /**
@@ -1594,9 +1644,12 @@ export class SyncService {
      */
     async _grantDevLogPermissions(ledgerUuid, manifestId, devLogId) {
         try {
-            const grantedKey = `sync_shared_granted_${ledgerUuid}`
+            const grantedKey = `sync_shared_granted_${ledgerUuid}_${devLogId}`
             const grantedSetting =
-                await this.dataService.getSetting(grantedKey)
+                (await this.dataService.getSetting(grantedKey)) ||
+                (await this.dataService.getSetting(
+                    `sync_shared_granted_${ledgerUuid}`
+                ))
             const granted = new Set(grantedSetting?.value || [])
             const m = (await this._downloadFile(manifestId))?.data
             const myEmail = this.userInfo?.email || ''
@@ -1642,20 +1695,25 @@ export class SyncService {
         let oldData = null
 
         // 1) 讀取舊式共用檔（每輪至多一次 GET：歷史變更與指標共用這份資料）
-        if (ledger.sharedFileId) {
+        if (ledger.sharedFileId && (!migrated?.value || !manifestId)) {
             try {
-                oldData =
-                    (await this._downloadFile(ledger.sharedFileId))?.data ||
-                    null
+                oldData = await this._downloadFileStrict(ledger.sharedFileId)
                 if (!manifestId && oldData?.manifestFileId) {
                     manifestId = oldData.manifestFileId
                 }
                 if (!migrated?.value && Array.isArray(oldData?.changes)) {
                     legacyChanges = oldData.changes
                 }
-            } catch (_) {
-                // 舊檔讀不到不阻擋流程
-                oldData = null
+            } catch (err) {
+                if (err.message && err.message.includes('404')) {
+                    // 舊檔在雲端已被刪除，視為已無歷史資料可遷移
+                    oldData = { changes: [] }
+                } else {
+                    // 暫時性網路錯誤/500 等，拋錯中斷當次同步，絕不可將 migrated 標記為 true
+                    throw new Error(
+                        `Failed to download legacy shared file for "${ledger.name}": ${err.message}`
+                    )
+                }
             }
         }
 
@@ -1780,7 +1838,15 @@ export class SyncService {
         )
 
         // 將自己的日誌檔註冊進 manifest（含首次建立與 fileId 變更的補登）
-        await this._registerSelfInManifest(manifestId, devLogId)
+        const registered = await this._registerSelfInManifest(
+            manifestId,
+            devLogId
+        )
+        if (!registered) {
+            throw new Error(
+                `Failed to register device in manifest for "${ledger.name}"`
+            )
+        }
 
         // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys
         if (legacyChanges.length > 0) {
@@ -1809,7 +1875,7 @@ export class SyncService {
             )
             ledger.sharedManifestId = manifestId
         }
-        if (!migrated?.value) {
+        if (!migrated?.value && (!ledger.sharedFileId || oldData !== null)) {
             await this.dataService.saveSetting({
                 key: migratedKey,
                 value: true,
@@ -1887,7 +1953,13 @@ export class SyncService {
             value: devLogId,
         })
         await this._grantDevLogPermissions(ledgerUuid, manifestId, devLogId)
-        await this._registerSelfInManifest(manifestId, devLogId)
+        const registered = await this._registerSelfInManifest(
+            manifestId,
+            devLogId
+        )
+        if (!registered) {
+            throw new Error(`Failed to register device in manifest ${manifestId}`)
+        }
 
         // 3. 種入 appliedKeys，之後 pull 不會重複套用這些變更
         // 併入現有 appliedKeys（其他共用帳本的鍵不可清除）
