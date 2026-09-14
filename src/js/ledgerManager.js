@@ -201,10 +201,30 @@ export class LedgerManager {
 
         let fileId = ledger.sharedFileId
 
-        if (ledger.isShared && fileId) {
-            // Already shared, just add permission
-            await this.app.syncService.grantFilePermission(fileId, email)
-            return fileId
+        if (ledger.isShared && (fileId || ledger.sharedManifestId)) {
+            // 已共用帳本：對舊檔、manifest 與自己的日誌檔補授權
+            if (fileId) {
+                await this.app.syncService.grantFilePermission(fileId, email)
+            }
+            if (ledger.sharedManifestId) {
+                await this.app.syncService.grantFilePermission(
+                    ledger.sharedManifestId,
+                    email
+                )
+            }
+            const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+            let devLogId = null
+            if (typeof this.dataService?.getSetting === 'function') {
+                devLogId = (await this.dataService.getSetting(devLogKey))?.value
+            }
+            if (devLogId) {
+                await this.app.syncService.grantFilePermission(
+                    devLogId,
+                    email,
+                    'reader'
+                )
+            }
+            return ledger.sharedManifestId || fileId
         }
 
         // 1. 先建立一個空的雲端共用檔案以取得 fileId
@@ -271,10 +291,32 @@ export class LedgerManager {
             JSON.stringify(initSyncData)
         )
 
+        // 6. 建立新架構基礎設施（manifest + 自己的裝置日誌檔）
+        //    _ensureSharedInfra 會把剛寫入舊檔的初始變更併入自己的日誌，
+        //    並把 manifest 指標寫回舊檔
+        const updatedLedger = await this.dataService.getLedger(ledgerId)
+        const infra =
+            await this.app.syncService._ensureSharedInfra(updatedLedger)
+
+        // 7. 同時對受邀者授權 manifest 與自己的日誌檔，避免權限死鎖
+        if (infra?.manifestId) {
+            await this.app.syncService.grantFilePermission(
+                infra.manifestId,
+                email
+            )
+        }
+        if (infra?.devLogId) {
+            await this.app.syncService.grantFilePermission(
+                infra.devLogId,
+                email,
+                'reader'
+            )
+        }
+
         // 確保共用帳本同步已啟動
         await this.app.syncService.ensureSharedSync()
 
-        return fileId
+        return infra?.manifestId || fileId
     }
 
     /**
@@ -288,6 +330,25 @@ export class LedgerManager {
 
         const res = await this.app.syncService._downloadFile(fileId)
         const fileData = res?.data
+
+        // ── 新架構：manifest 成員清單檔 ──
+        if (fileData?.members) {
+            const uuid = await this.app.syncService.joinViaManifest(fileId)
+            await this.init()
+            const ledger = this.ledgers.find(l => l.uuid === uuid)
+            if (!ledger) throw new Error('無法從共用資料解析帳本')
+            await this.dataService.updateLedger(ledger.id, {
+                isShared: true,
+                sharedManifestId: fileId,
+                sharedFileId: fileData.legacySharedFileId || null,
+                type: 'shared',
+            })
+            await this.init()
+            await this.app.syncService.ensureSharedSync()
+            return ledger.id
+        }
+
+        // ── 舊架構：單一共用變更檔 ──
         if (!fileData || !fileData.changes) {
             throw new Error('無效的共用帳本檔案或無讀取權限')
         }
@@ -310,19 +371,10 @@ export class LedgerManager {
                 await this.dataService.updateLedger(ledger.id, {
                     isShared: true,
                     sharedFileId: fileId,
+                    sharedManifestId: fileData.manifestFileId || null,
                     type: 'shared',
                 })
                 await this.init()
-
-                // Set last pull timestamp so we don't redownload the same logs
-                const lastPull = (await this.dataService.getSetting(
-                    'sync_last_pull_timestamps'
-                )) || { value: {} }
-                lastPull.value[`shared_${fileId}`] = Date.now()
-                await this.dataService.saveSetting({
-                    key: 'sync_last_pull_timestamps',
-                    value: lastPull.value,
-                })
 
                 // 確保共用帳本同步已啟動
                 await this.app.syncService.ensureSharedSync()
@@ -340,7 +392,56 @@ export class LedgerManager {
      */
     async getSharedUsers(ledgerId) {
         const ledger = await this.dataService.getLedger(ledgerId)
-        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')
+        if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
+            throw new Error('此帳本尚未共用')
+        }
+        if (ledger?.sharedManifestId) {
+            const manifest = (
+                await this.app.syncService._downloadFile(
+                    ledger.sharedManifestId
+                )
+            )?.data
+            const memberList = (manifest?.members || []).map((m, i) => ({
+                id: m.deviceId,
+                emailAddress: m.ownerEmail,
+                displayName: '',
+                // 有頂層 ownerEmail 時僅以 email 判定；否則退回位置判定
+                role: manifest?.ownerEmail
+                    ? m.ownerEmail === manifest.ownerEmail
+                        ? 'owner'
+                        : 'writer'
+                    : i === 0
+                      ? 'owner'
+                      : 'writer',
+            }))
+
+            // 合併 Google Drive 尚未註冊進 manifest 的已邀請使用者（如受邀但尚未開啟 App 加入者）
+            try {
+                const drivePerms =
+                    await this.app.syncService.getFilePermissions(
+                        ledger.sharedManifestId
+                    )
+                const knownEmails = new Set(
+                    memberList.map(m => m.emailAddress).filter(Boolean)
+                )
+                for (const perm of drivePerms) {
+                    if (
+                        perm.emailAddress &&
+                        !knownEmails.has(perm.emailAddress)
+                    ) {
+                        memberList.push({
+                            id: perm.id,
+                            emailAddress: perm.emailAddress,
+                            displayName: perm.displayName || '',
+                            role: perm.role === 'owner' ? 'owner' : 'writer',
+                        })
+                        knownEmails.add(perm.emailAddress)
+                    }
+                }
+            } catch (_) {}
+
+            return memberList
+        }
         return await this.app.syncService.getFilePermissions(
             ledger.sharedFileId
         )
@@ -349,14 +450,114 @@ export class LedgerManager {
     /**
      * 移除共用帳本的某個授權對象
      * @param {number} ledgerId
-     * @param {string} permissionId
+     * @param {string} memberId
      */
-    async removeSharedUser(ledgerId, permissionId) {
+    async removeSharedUser(ledgerId, memberId) {
         const ledger = await this.dataService.getLedger(ledgerId)
-        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')
+        if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
+            throw new Error('此帳本尚未共用')
+        }
+        const isOwner = await this.isLedgerOwner(ledgerId)
+        if (!isOwner) {
+            throw new Error('只有帳本擁有者可以移除成員')
+        }
+        if (ledger?.sharedManifestId) {
+            let removedEmail = null
+            try {
+                const manifest = (
+                    await this.app.syncService._downloadFile(
+                        ledger.sharedManifestId
+                    )
+                )?.data
+                const target = manifest?.members?.find(
+                    m => m.deviceId === memberId
+                )
+                if (target?.ownerEmail) {
+                    removedEmail = target.ownerEmail
+                }
+            } catch (_) {}
+
+            await this.app.syncService.removeManifestMember(
+                ledger.sharedManifestId,
+                memberId
+            )
+            if (removedEmail) {
+                // 撤銷該成員在 Google Drive Manifest、舊檔案及本地 devLog 上的權限
+                try {
+                    const manifestPerms =
+                        await this.app.syncService.getFilePermissions(
+                            ledger.sharedManifestId
+                        )
+                    const p = manifestPerms.find(
+                        x => x.emailAddress === removedEmail
+                    )
+                    if (p) {
+                        await this.app.syncService.removeFilePermission(
+                            ledger.sharedManifestId,
+                            p.id
+                        )
+                    }
+                } catch (e) {
+                    console.warn('[LedgerManager] 撤銷 Manifest 權限失敗:', e)
+                }
+
+                if (ledger.sharedFileId) {
+                    try {
+                        const filePerms =
+                            await this.app.syncService.getFilePermissions(
+                                ledger.sharedFileId
+                            )
+                        const p = filePerms.find(
+                            x => x.emailAddress === removedEmail
+                        )
+                        if (p) {
+                            await this.app.syncService.removeFilePermission(
+                                ledger.sharedFileId,
+                                p.id
+                            )
+                        }
+                    } catch (e) {
+                        console.warn('[LedgerManager] 撤銷共用舊檔權限失敗:', e)
+                    }
+                }
+
+                try {
+                    const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                    const devLogId = (
+                        await this.dataService.getSetting(devLogKey)
+                    )?.value
+                    if (devLogId) {
+                        const devLogPerms =
+                            await this.app.syncService.getFilePermissions(
+                                devLogId
+                            )
+                        const p = devLogPerms.find(
+                            x => x.emailAddress === removedEmail
+                        )
+                        if (p) {
+                            await this.app.syncService.removeFilePermission(
+                                devLogId,
+                                p.id
+                            )
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[LedgerManager] 撤銷日誌檔權限失敗:', e)
+                }
+            } else {
+                // 如果在 manifest 沒找到對應 deviceId，嘗試當作 Drive permissionId 撤銷
+                try {
+                    await this.app.syncService.removeFilePermission(
+                        ledger.sharedManifestId,
+                        memberId
+                    )
+                } catch (_) {}
+            }
+            return
+        }
         await this.app.syncService.removeFilePermission(
             ledger.sharedFileId,
-            permissionId
+            memberId
         )
     }
 
@@ -384,19 +585,52 @@ export class LedgerManager {
      */
     async unshareLedger(ledgerId) {
         const ledger = await this.dataService.getLedger(ledgerId)
-        if (!ledger || !ledger.sharedFileId) throw new Error('此帳本尚未共用')
+        if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
+            throw new Error('此帳本尚未共用')
+        }
 
         // 確認是擁有者
         const isOwner = await this.isLedgerOwner(ledgerId)
         if (!isOwner) throw new Error('只有擁有者才能取消共用')
 
-        // 刪除雲端檔案
-        await this.app.syncService.deleteFile(ledger.sharedFileId)
+        // 清理新架構檔案：自己的日誌檔 + manifest（擁有者才有 manifest 刪除權）
+        try {
+            const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+            const devLogId = (
+                await this.dataService.getSetting(devLogKey)
+            )?.value
+            if (devLogId) {
+                await this.app.syncService.deleteFile(devLogId)
+                await this.dataService.saveSetting({
+                    key: devLogKey,
+                    value: null,
+                })
+            }
+            if (ledger.sharedManifestId) {
+                await this.app.syncService.deleteFile(ledger.sharedManifestId)
+            }
+            await this.dataService.saveSetting({
+                key: `shared_migrated_${ledger.uuid}`,
+                value: null,
+            })
+        } catch (e) {
+            console.warn('[LedgerManager] 清理共用基礎設施失敗:', e)
+        }
+
+        // 刪除雲端檔案（若有）
+        if (ledger.sharedFileId) {
+            try {
+                await this.app.syncService.deleteFile(ledger.sharedFileId)
+            } catch (e) {
+                console.warn('[LedgerManager] 刪除共用舊檔失敗:', e)
+            }
+        }
 
         // 將本地帳本還原為個人帳本
         await this.dataService.updateLedger(ledgerId, {
             isShared: false,
             sharedFileId: null,
+            sharedManifestId: null,
             type: 'personal',
         })
         await this.init()

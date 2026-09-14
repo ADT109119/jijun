@@ -731,7 +731,7 @@ export class SyncService {
         }
         // ============================================
 
-        if (changes.length === 0) return
+        if (changes.length === 0) return null
 
         const syncData = {
             deviceId: this.deviceId,
@@ -764,20 +764,20 @@ export class SyncService {
             key: 'sync_last_push_timestamp',
             value: maxTimestamp,
         })
+
+        return maxTimestamp
     }
 
     /**
-     * 從 Google Drive 拉取其他裝置的變更並合併
+     * 從其他裝置的 sync log 拉取變更並合併。
+     * 使用 appliedKeys 去重（而非時間戳水位），避免時鐘偏移造成静默遺失。
      */
     async pullChanges() {
         await this.ensureValidToken()
 
-        // 列出所有 sync log 檔案
         const resList = await fetch(
             `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
-            {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-            }
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
         )
 
         if (!resList.ok)
@@ -785,46 +785,50 @@ export class SyncService {
         const data = await resList.json()
         const files = data.files || []
 
-        const lastPull = await this.dataService.getSetting(
-            'sync_last_pull_timestamps'
+        const appliedSetting = await this.dataService.getSetting(
+            'sync_personal_applied_keys'
         )
-        const pullTimestamps = lastPull?.value || {}
-
+        const appliedKeys = new Set(appliedSetting?.value || [])
+        const pendingKeys = new Set(appliedKeys)
         const allRemoteChanges = []
 
         for (const file of files) {
-            // 跳過自己的 sync log
             if (file.name === `sync_log_${this.deviceId}.json`) continue
 
-            const lastPullTime = pullTimestamps[file.name] || 0
+            const resFile = await this._downloadFile(file.id)
+            const syncLog = resFile?.data
+            if (!syncLog?.changes) continue
 
-            // 如果檔案在上次拉取後有修改
-            if (new Date(file.modifiedTime).getTime() > lastPullTime) {
-                const resFile = await this._downloadFile(file.id)
-                const syncLog = resFile?.data
-                if (syncLog?.changes) {
-                    // 只取比上次拉取時間更新的變更
-                    const newChanges = syncLog.changes.filter(
-                        c => c.timestamp >= lastPullTime
-                    )
-                    allRemoteChanges.push(...newChanges)
-                }
-                pullTimestamps[file.name] = Date.now()
+            for (const change of syncLog.changes) {
+                const key = this._changeKey(change)
+                if (pendingKeys.has(key)) continue
+                pendingKeys.add(key)
+                allRemoteChanges.push(change)
             }
         }
 
         if (allRemoteChanges.length > 0) {
-            // 按時間排序
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
-            await this.applyRemoteChanges(allRemoteChanges)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+            }
         }
 
+        // 持久化已套用鍵（保留最近 30 天；離線逾 30 天重套用是冪等的）
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
         await this.dataService.saveSetting({
-            key: 'sync_last_pull_timestamps',
-            value: pullTimestamps,
+            key: 'sync_personal_applied_keys',
+            value: [...appliedKeys].filter(k => {
+                const ts = parseInt(k.split('|')[1], 10)
+                return !isNaN(ts) && ts > thirtyDaysAgo
+            }),
         })
 
-        // 記錄最後同步時間
         await this.dataService.saveSetting({
             key: 'sync_last_sync',
             value: Date.now(),
@@ -836,7 +840,7 @@ export class SyncService {
      * @param {Array} changes 變更列表
      */
     async applyRemoteChanges(changes) {
-        if (!changes || changes.length === 0) return
+        if (!changes || changes.length === 0) return new Set()
 
         // 定義建立依賴的拓撲順序
         const topoOrder = [
@@ -872,6 +876,8 @@ export class SyncService {
             return orderA - orderB
         })
 
+        const appliedKeys = new Set()
+
         for (const change of sortedChanges) {
             try {
                 const { operation, storeName, recordId, data } = change
@@ -881,7 +887,7 @@ export class SyncService {
                 )
 
                 // 預檢測：如果是 add 且 UUID 已存在，自動轉向 update，避免 Unique Constraint 失敗導致同步中斷
-                if (operation === 'add' && data.uuid) {
+                if (operation === 'add' && data?.uuid) {
                     const existing = await this.dataService.getByUUID(
                         storeName,
                         data.uuid
@@ -892,6 +898,7 @@ export class SyncService {
                             existing.id,
                             data
                         )
+                        appliedKeys.add(this._changeKey(change))
                         continue
                     }
                 }
@@ -912,6 +919,7 @@ export class SyncService {
                             operation
                         )
                 }
+                appliedKeys.add(this._changeKey(change))
             } catch (err) {
                 console.error(
                     '[SyncService] Error applying change:',
@@ -920,10 +928,11 @@ export class SyncService {
                 )
             }
         }
+        return appliedKeys
     }
 
     /**
-     * 標記所有遠端變更為已拉取（用於 Restore 後避免重複套用舊變更）
+     * 將所有遠端變更標記為已套用（用於 Restore 後避免重複套用舊變更）
      */
     async markAllRemoteChangesAsPulled() {
         await this.ensureValidToken()
@@ -936,20 +945,28 @@ export class SyncService {
             const data = await resList.json()
             const files = data.files || []
 
-            const lastPull = await this.dataService.getSetting(
-                'sync_last_pull_timestamps'
+            const appliedSetting = await this.dataService.getSetting(
+                'sync_personal_applied_keys'
             )
-            const pullTimestamps = lastPull?.value || {}
+            const appliedKeys = new Set(appliedSetting?.value || [])
 
             for (const file of files) {
-                pullTimestamps[file.name] = new Date(
-                    file.modifiedTime
-                ).getTime()
+                if (file.name === `sync_log_${this.deviceId}.json`) continue
+                try {
+                    const resFile = await this._downloadFile(file.id)
+                    for (const c of resFile?.data?.changes || []) {
+                        appliedKeys.add(this._changeKey(c))
+                    }
+                } catch (_) {}
             }
 
+            const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
             await this.dataService.saveSetting({
-                key: 'sync_last_pull_timestamps',
-                value: pullTimestamps,
+                key: 'sync_personal_applied_keys',
+                value: [...appliedKeys].filter(k => {
+                    const ts = parseInt(k.split('|')[1], 10)
+                    return !isNaN(ts) && ts > thirtyDaysAgo
+                }),
             })
             console.log('[SyncService] Marked all remote changes as pulled.')
         } catch (err) {
@@ -961,168 +978,188 @@ export class SyncService {
     }
 
     /**
-     * 將共用帳本的本地變更推送到各自的 Drive 共享檔案
+     * 將共用帳本的本地變更推送到「自己的」per-device 日誌檔（零競爭）
+     * @returns {Promise<number|null>} 成功推送的最大時間戳；無推送時為 null
      */
     async pushSharedLedgerChanges() {
         await this.ensureValidToken()
 
-        const isAuthorized = await this.isSharingAuthorized()
-        if (!isAuthorized) {
-            console.warn(
-                '[SyncService] pushSharedLedgerChanges: No sharing permission authorized, skipping.'
-            )
-            return
+        if (!(await this.isSharingAuthorized())) {
+            console.warn('[SyncService] pushShared: 未授權共用權限，略過')
+            return null
         }
 
         const ledgers = await this.dataService.getLedgers()
-        console.log(
-            '[SyncService] pushShared: all ledgers =',
-            JSON.stringify(
-                ledgers.map(l => ({
-                    id: l.id,
-                    name: l.name,
-                    isShared: l.isShared,
-                    sharedFileId: l.sharedFileId,
-                    type: l.type,
-                }))
-            )
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
         )
-        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
-        console.log(
-            '[SyncService] pushShared: filtered =',
-            sharedLedgers.length,
-            sharedLedgers.map(l => l.name)
-        )
+        let maxPushed = null
+        let allSucceeded = true
 
         for (const ledger of sharedLedgers) {
             try {
-                // ==================== 完整比對式推送 ====================
-                // 核心理念：不依賴 lastPushTimestamp，每次都比對「本地所有日誌」vs「雲端日誌」
-                // 如果本地有但雲端沒有 → 推送上去
-                // 好處：即使被其他裝置覆蓋，下次同步一定會發現缺漏並自動補回
-
-                // 1. 取得本機對此共用帳本的「全部」變更日誌
-                const allLocalChanges = await this.dataService.getChangesSince(
-                    0,
-                    { sharedLedgerUuid: ledger.uuid }
-                )
-                if (allLocalChanges.length === 0) continue
-
-                // 2. 下載雲端目前版本
-                const resFile = await this._downloadFile(ledger.sharedFileId)
-                if (!resFile) {
-                    console.warn(
-                        `[SyncService] pushShared: 無法下載 "${ledger.name}" 的雲端檔案，略過`
-                    )
-                    continue
-                }
-
-                const cloudData = resFile.data || { changes: [] }
-                const cloudChanges = cloudData.changes || []
-
-                // 3. 建立雲端日誌鍵集合
-                const cloudKeySet = new Set()
-                cloudChanges.forEach(log => {
-                    const key = `${log.deviceId || 'unknown'}|${log.timestamp}|${log.operation}|${log.storeName}`
-                    cloudKeySet.add(key)
+                const infra = await this._ensureSharedInfra(ledger)
+                const allLocal = await this.dataService.getChangesSince(0, {
+                    sharedLedgerUuid: infra.ledger.uuid,
                 })
+                if (allLocal.length === 0) continue
 
-                // 4. 找出「本地有但雲端沒有」的日誌
-                const myMissingChanges = allLocalChanges
-                    .map(log => ({ ...log, deviceId: this.deviceId }))
-                    .filter(log => {
-                        const key = `${this.deviceId}|${log.timestamp}|${log.operation}|${log.storeName}`
-                        return !cloudKeySet.has(key)
-                    })
-
-                if (myMissingChanges.length === 0) {
+                const mine = allLocal.map(log => ({
+                    ...log,
+                    deviceId: this.deviceId,
+                }))
+                const appended = await this._appendToDeviceLog(
+                    infra.devLogId,
+                    mine
+                )
+                if (appended > 0) {
                     console.log(
-                        `[SyncService] pushShared: "${ledger.name}" 已完全同步，無需推送`
+                        `[SyncService] pushShared: "${infra.ledger.name}" 推送 ${appended} 筆變更`
                     )
-                    continue
                 }
-
-                // 5. 合併並上傳
-                cloudData.changes = [...cloudChanges, ...myMissingChanges]
-                cloudData.timestamp = Date.now()
-                cloudData.deviceId = this.deviceId
-
-                await this._updateFile(
-                    ledger.sharedFileId,
-                    JSON.stringify(cloudData)
-                )
-                console.log(
-                    `[SyncService] pushShared: "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`
-                )
+                // appended > 0 表示有新變更寫入；appended === 0 且 mine.length > 0
+                // 表示本地變更已全數存在於雲端日誌，兩者皆可安全推進時間戳
+                if (mine.length > 0) {
+                    const ts = Math.max(...mine.map(c => c.timestamp))
+                    maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
+                }
             } catch (e) {
+                allSucceeded = false
                 console.error(
                     `[SyncService] pushSharedLedgerChanges failed for "${ledger.name}":`,
-                    e.message
+                    e
                 )
             }
         }
+        // 任一帳本失敗即回傳 null，讓 performSync 跳過本地日誌清理，
+        // 避免誤刪未成功上傳的變更（下次同步會自動重試）
+        return allSucceeded ? maxPushed : null
     }
 
     /**
-     * 從各個共用帳本檔案拉取遠端變更（完整比對式）
+     * 從 manifest 列出的各成員日誌檔拉取遠端變更（appliedKeys 去重 + modifiedTime 快取）
      */
     async pullSharedLedgerChanges() {
         await this.ensureValidToken()
 
-        const isAuthorized = await this.isSharingAuthorized()
-        if (!isAuthorized) {
-            console.warn(
-                '[SyncService] pullSharedLedgerChanges: No sharing permission authorized, skipping.'
-            )
+        if (!(await this.isSharingAuthorized())) {
+            console.warn('[SyncService] pullShared: 未授權共用權限，略過')
             return
         }
 
         const ledgers = await this.dataService.getLedgers()
-        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+        )
 
-        // 讀取「已套用過的遠端日誌鍵」集合，避免重複 apply
-        const appliedKeysSetting = await this.dataService.getSetting(
+        const appliedSetting = await this.dataService.getSetting(
             'sync_shared_applied_keys'
         )
-        const appliedKeys = new Set(appliedKeysSetting?.value || [])
+        const appliedKeys = new Set(appliedSetting?.value || [])
+        const pendingKeys = new Set(appliedKeys)
         const allRemoteChanges = []
+        const pendingCheckpoints = []
 
         for (const ledger of sharedLedgers) {
             try {
-                const resFile = await this._downloadFile(ledger.sharedFileId)
-                const fileData = resFile?.data
-                if (!fileData?.changes) continue
+                const infra = await this._ensureSharedInfra(ledger)
+                const manifest = (await this._downloadFile(infra.manifestId))
+                    ?.data
+                if (!manifest?.members) continue
 
-                // 從雲端日誌中找出「不是自己推的」且「尚未套用過」的變更
-                for (const change of fileData.changes) {
-                    if (change.deviceId === this.deviceId) continue // 自己推的，略過
-                    const key = `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
-                    if (appliedKeys.has(key)) continue // 已套用過，略過
-                    allRemoteChanges.push(change)
-                    appliedKeys.add(key) // 標記為已套用
+                const checkedKey = `sync_shared_member_checked_${infra.ledger.uuid}`
+                const checkedMap =
+                    (await this.dataService.getSetting(checkedKey))?.value || {}
+
+                for (const member of manifest.members) {
+                    if (member.deviceId === this.deviceId) continue
+                    if (!member.fileId) continue
+
+                    let modifiedMs = 0
+                    try {
+                        modifiedMs = await this._getFileModifiedTime(
+                            member.fileId
+                        )
+                    } catch (_) {
+                        continue // 檔案不存在（成員刪除帳號等），保守跳過
+                    }
+                    if ((checkedMap[member.fileId] || 0) >= modifiedMs) {
+                        continue // 自上次檢查後沒有修改
+                    }
+
+                    const resFile = await this._downloadFile(member.fileId)
+                    if (!resFile || !resFile.data) {
+                        continue // 下載失敗（網路短暫中斷/500等），不更新 checkedMap 以便下次重試
+                    }
+                    const data = resFile.data
+                    const memberKeys = []
+                    for (const change of data?.changes || []) {
+                        if (change.deviceId === this.deviceId) continue
+                        const key = this._changeKey(change)
+                        if (pendingKeys.has(key)) continue
+                        pendingKeys.add(key)
+                        memberKeys.push(key)
+                        allRemoteChanges.push(change)
+                    }
+                    pendingCheckpoints.push({
+                        checkedKey,
+                        checkedMap,
+                        fileId: member.fileId,
+                        modifiedMs,
+                        keys: memberKeys,
+                    })
                 }
             } catch (e) {
                 console.warn(
-                    `[SyncService] pullSharedLedgerChanges failed for ledger ${ledger.name}:`,
+                    `[SyncService] pullShared failed for "${ledger.name}":`,
                     e
                 )
             }
         }
 
+        const successfulKeySet = new Set()
         if (allRemoteChanges.length > 0) {
             console.log(
-                `[SyncService] pullShared: 收到 ${allRemoteChanges.length} 筆遠端變更，準備套用...`
+                `[SyncService] pullShared: 套用 ${allRemoteChanges.length} 筆遠端變更`
             )
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
-            await this.applyRemoteChanges(allRemoteChanges)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+                successfulKeySet.add(key)
+            }
         }
 
-        // 持久化已套用鍵集合（轉為 Array 存入 settings）
-        // 為避免無限增長，只保留最近 30 天的鍵
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+        // 僅在該成員日誌中所有待套用變更均成功寫入本地後，才推進該成員的 checkedMap checkpoint；
+        // 若有任何變更套用失敗，保留舊時間戳使下次能重新下載並重試失敗項目（成功項目由 appliedKeys 去重）
+        const updatedCheckedKeys = new Set()
+        for (const cp of pendingCheckpoints) {
+            const allSucceeded = cp.keys.every(k => successfulKeySet.has(k))
+            if (allSucceeded) {
+                cp.checkedMap[cp.fileId] = cp.modifiedMs
+                updatedCheckedKeys.add(cp.checkedKey)
+            }
+        }
+        for (const cp of pendingCheckpoints) {
+            if (updatedCheckedKeys.has(cp.checkedKey)) {
+                await this.dataService.saveSetting({
+                    key: cp.checkedKey,
+                    value: cp.checkedMap,
+                })
+                updatedCheckedKeys.delete(cp.checkedKey)
+            }
+        }
+
+        // 持久化已套用鍵集合（保留最近 100 天，嚴格大於雲端日誌的 90 天保留期，
+        // 確保雲端仍在的變更本機不會因提早過期而重播舊 update 覆蓋新資料）
+        const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
         const trimmedKeys = [...appliedKeys].filter(key => {
             const ts = parseInt(key.split('|')[1], 10)
-            return !isNaN(ts) && ts > thirtyDaysAgo
+            return !isNaN(ts) && ts > hundredDaysAgo
         })
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
@@ -1137,10 +1174,12 @@ export class SyncService {
     async performSync(isManual = false) {
         if (this._syncing) return
         this._syncing = true
+        this._syncInfraCache = new Map()
 
         try {
-            const autoSyncSetting =
-                await this.dataService.getSetting('sync_auto_enabled')
+            const autoSyncSetting = await this.dataService.getSetting(
+                'sync_auto_enabled'
+            )
             const isPersonalEnabled = isManual || !!autoSyncSetting?.value
 
             console.log('[SyncService] performSync start', {
@@ -1148,14 +1187,30 @@ export class SyncService {
                 isPersonalEnabled,
             })
 
-            if (isPersonalEnabled) await this.pushChanges()
-            await this.pushSharedLedgerChanges()
+            let personalMaxTs = null
+            let sharedMaxTs = null
+            if (isPersonalEnabled) personalMaxTs = await this.pushChanges()
+            sharedMaxTs = await this.pushSharedLedgerChanges()
 
             if (isPersonalEnabled) await this.pullChanges()
             await this.pullSharedLedgerChanges()
 
+            // 僅在個人同步也執行過時才清理本地日誌：
+            // 共用專用同步（自動同步關閉）不會推送個人變更，
+            // 此時清理會誤刪尚未上傳的個人變更
+            const cutoffs =
+                isPersonalEnabled
+                    ? [personalMaxTs, sharedMaxTs].filter(
+                          ts => typeof ts === 'number'
+                      )
+                    : []
+            if (cutoffs.length > 0) {
+                await this.dataService.clearSyncLog(Math.min(...cutoffs))
+            }
+
             console.log('[SyncService] performSync complete')
         } finally {
+            this._syncInfraCache = null
             this._syncing = false
         }
     }
@@ -1373,6 +1428,699 @@ export class SyncService {
     // ──────────────────────────────────────────────
 
     /**
+     * 變更日誌的唯一鍵（去重用），格式：deviceId|timestamp|operation|storeName[|recordIdentifier]
+     * @param {object} change
+     * @returns {string}
+     */
+    _changeKey(change) {
+        const recordIdentifier =
+            change.data?.uuid ??
+            (change.recordId !== undefined && change.recordId !== null
+                ? change.recordId
+                : '')
+        return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}${recordIdentifier ? `|${recordIdentifier}` : ''}`
+    }
+
+    /**
+     * 共用帳本 manifest 檔名（uuid 前 8 碼足夠唯一且可讀）
+     * @param {string} ledgerUuid
+     * @returns {string}
+     */
+    _manifestFileName(ledgerUuid) {
+        return `EasyAccounting_SharedManifest_${String(ledgerUuid).slice(0, 8)}.json`
+    }
+
+    /**
+     * 自己裝置的共用日誌檔名
+     * @param {string} ledgerUuid
+     * @returns {string}
+     */
+    _deviceLogFileName(ledgerUuid) {
+        return `EasyAccounting_SharedLog_${String(ledgerUuid).slice(0, 8)}_${this.deviceId}.json`
+    }
+
+    /**
+     * 在自己的 Drive 根目錄（非 appDataFolder）搜尋指定名稱檔案
+     * @param {string} fileName
+     * @returns {Promise<string|null>} file ID or null
+     */
+    async _findFileInDrive(fileName) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${fileName}' and trashed=false`)}&fields=files(id)`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) {
+            // 401/403 屬於授權問題，重試也不會好轉，直接拋出避免誤判為「檔案不存在」
+            if (res.status === 401 || res.status === 403) {
+                throw new Error(`Drive search failed (${res.status})`)
+            }
+            console.warn(`[SyncService] _findFileInDrive non-fatal error (${res.status}), treating as not found`)
+            return null
+        }
+        const data = await res.json()
+        return data.files?.[0]?.id || null
+    }
+
+    /**
+     * 取得檔案的 modifiedTime（epoch ms）；檔案不存在或無權限時 throw
+     * @param {string} fileId
+     * @returns {Promise<number>}
+     */
+    async _getFileModifiedTime(fileId) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) throw new Error(`Failed to get file meta (${res.status})`)
+        const data = await res.json()
+        return new Date(data.modifiedTime).getTime()
+    }
+
+    /**
+     * 將變更附加到「自己的」裝置日誌檔。
+     * 依 _changeKey 去重（雲端既有內容與傳入批次內部皆會去重）；
+     * 超過 90 天的變更會被裁剪（完整歷史由每日備份保留）。
+     * 支援 ETag CAS 樂觀鎖與 412 衝突重試。
+     * @param {string} devLogId
+     * @param {Array<object>} incomingChanges
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<number>} 實際寫入的新增筆數（不含被裁剪者）
+     */
+    async _appendToDeviceLog(devLogId, incomingChanges, maxRetries = 3) {
+        if (!devLogId || !incomingChanges.length) return 0
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // 嚴格下載：任何失敗都拋出，避免把雲端既有內容誤判為空而整份覆寫；附帶 ETag 進行樂觀鎖更新
+                const { data: cloud, etag } = await this._downloadFileStrict(
+                    devLogId,
+                    { withMeta: true }
+                )
+                if (!Array.isArray(cloud.changes)) cloud.changes = []
+                const existing = Array.isArray(cloud.changes) ? cloud.changes : []
+                const cloudKeys = new Set(existing.map(c => this._changeKey(c)))
+                const seenIncoming = new Set()
+                const missing = incomingChanges.filter(c => {
+                    const key = this._changeKey(c)
+                    if (cloudKeys.has(key) || seenIncoming.has(key)) return false
+                    seenIncoming.add(key)
+                    return true
+                })
+                if (missing.length === 0) return 0
+
+                const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
+                const survivingExisting = existing.filter(
+                    c =>
+                        c.storeName === 'ledgers' ||
+                        (c.timestamp || 0) >= cutoff
+                )
+                // 僅對雲端既有歷史 (existing) 非帳本元資料項目進行 90 天清理（帳本定義永久保留）；
+                // 本地未同步新變更 (missing) 絕不裁切，全數持久化至雲端，避免離線逾 90 天資料遺失
+                cloud.changes = [...survivingExisting, ...missing]
+                cloud.deviceId = this.deviceId
+                cloud.timestamp = Date.now()
+                await this._updateFile(devLogId, JSON.stringify(cloud), etag)
+                return missing.length
+            } catch (e) {
+                if (
+                    attempt < maxRetries - 1 &&
+                    (e.status === 412 || e.message?.includes('412'))
+                ) {
+                    console.warn(
+                        `[SyncService] appendToDeviceLog 併發衝突，進行重試 ${attempt + 1}/${maxRetries}`
+                    )
+                    continue
+                }
+                throw e
+            }
+        }
+        return 0
+    }
+
+    /**
+     * 把自己（deviceId + 日誌檔 ID）註冊進 manifest；競爭時重新下載合併重試
+     * @param {string} manifestId
+     * @param {string} devLogId
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<boolean>}
+     */
+    async _registerSelfInManifest(manifestId, devLogId, maxRetries = 3) {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // 嚴格下載：任何失敗都拋出進入重試，絕不把雲端成員清單誤判為空而整份覆寫；獲取 ETag 用於樂觀鎖
+                const { data: current, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
+                if (!Array.isArray(current.members)) {
+                    throw new Error('manifest 格式錯誤')
+                }
+                const me = current.members.find(
+                    m => m.deviceId === this.deviceId
+                )
+                if (me) {
+                    if (me.fileId !== devLogId) {
+                        me.fileId = devLogId
+                        current.timestamp = Date.now()
+                        await this._updateFile(
+                            manifestId,
+                            JSON.stringify(current),
+                            etag
+                        )
+                    }
+                } else {
+                    current.members.push({
+                        deviceId: this.deviceId,
+                        ownerEmail: this.userInfo?.email || '',
+                        fileId: devLogId,
+                    })
+                    current.timestamp = Date.now()
+                    await this._updateFile(
+                        manifestId,
+                        JSON.stringify(current),
+                        etag
+                    )
+                }
+                return true
+            } catch (e) {
+                console.warn(
+                    `[SyncService] registerSelfInManifest 重試 ${attempt + 1}/${maxRetries}:`,
+                    e.message
+                )
+            }
+        }
+        console.error('[SyncService] registerSelfInManifest 重試次數用盡')
+        return false
+    }
+
+    /**
+     * 從 manifest 移除某個成員（取消共用單一成員用）
+     * @param {string} manifestId
+     * @param {string} deviceId
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<{success: boolean, removedEmail: string|null}|boolean>}
+     */
+    async _removeManifestMember(manifestId, deviceId, maxRetries = 3) {
+        let removedEmail = null
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                // 嚴格下載：獲取 ETag 用於樂觀鎖
+                const { data: current, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
+                if (!current?.members) return false
+                const target = current.members.find(
+                    m => m.deviceId === deviceId
+                )
+                if (target?.ownerEmail) {
+                    removedEmail = target.ownerEmail
+                }
+                current.members = current.members.filter(
+                    m => m.deviceId !== deviceId
+                )
+                current.timestamp = Date.now()
+                await this._updateFile(
+                    manifestId,
+                    JSON.stringify(current),
+                    etag
+                )
+                return true
+            } catch (e) {
+                console.warn(
+                    `[SyncService] removeManifestMember 重試 ${attempt + 1}/${maxRetries}:`,
+                    e.message
+                )
+            }
+        }
+        return false
+    }
+
+    /**
+     * 從 manifest 移除成員（公開給 ledgerManager 用）
+     * @param {string} manifestId
+     * @param {string} deviceId
+     * @returns {Promise<{success: boolean, removedEmail: string|null}|boolean>}
+     */
+    async removeManifestMember(manifestId, deviceId) {
+        await this.ensureSharingPermission()
+        return await this._removeManifestMember(manifestId, deviceId)
+    }
+
+    /**
+     * 把自己的日誌檔授權（writer）給 manifest 中所有其他成員。
+     * 以 settings 記錄已授權 email，之後新成員加入時只補授權差額（節省 API 配額）
+     * @param {string} ledgerUuid
+     * @param {string} manifestId
+     * @param {string} devLogId
+     */
+    async _grantDevLogPermissions(ledgerUuid, manifestId, devLogId) {
+        try {
+            const grantedKey = `sync_shared_granted_${ledgerUuid}_${devLogId}`
+            const grantedSetting =
+                (await this.dataService.getSetting(grantedKey)) ||
+                (await this.dataService.getSetting(
+                    `sync_shared_granted_${ledgerUuid}`
+                ))
+            const granted = new Set(grantedSetting?.value || [])
+            const m = (await this._downloadFile(manifestId))?.data
+            const myEmail = this.userInfo?.email || ''
+
+            const activeMembers = m?.members || []
+            const activeEmails = new Set(
+                activeMembers.map(item => item.ownerEmail).filter(Boolean)
+            )
+
+            let changed = false
+
+            // 1. 去中心化撤銷對齊：若已授權成員從 manifest 移除，主動撤銷其對自己日誌檔的讀取權限
+            const toRevoke = [...granted].filter(email => !activeEmails.has(email))
+            if (toRevoke.length > 0) {
+                try {
+                    const permissions = await this.getFilePermissions(devLogId)
+                    for (const email of toRevoke) {
+                        const p = (permissions || []).find(
+                            item =>
+                                item.emailAddress?.toLowerCase() === email.toLowerCase()
+                        )
+                        if (p?.id) {
+                            try {
+                                await this.removeFilePermission(devLogId, p.id)
+                            } catch (_) {}
+                        }
+                        granted.delete(email)
+                        changed = true
+                    }
+                } catch (revErr) {
+                    console.warn(
+                        '[SyncService] Reconcile revoked permissions failed:',
+                        revErr
+                    )
+                }
+            }
+
+            // 2. 差額補授權：每台裝置日誌僅需給其他成員 'reader' 唯讀權限
+            const pending = activeMembers.filter(
+                member =>
+                    member.ownerEmail &&
+                    member.ownerEmail !== myEmail &&
+                    !granted.has(member.ownerEmail)
+            )
+            for (const member of pending) {
+                try {
+                    await this.grantFilePermission(
+                        devLogId,
+                        member.ownerEmail,
+                        'reader'
+                    )
+                    granted.add(member.ownerEmail)
+                    changed = true
+                } catch (_) {
+                    // 已授權過或暫時性錯誤，靜默忽略（下次同步會再試）
+                }
+            }
+            if (changed) {
+                await this.dataService.saveSetting({
+                    key: grantedKey,
+                    value: [...granted],
+                })
+            }
+        } catch (e) {
+            console.warn('[SyncService] grantDevLogPermissions failed:', e)
+        }
+    }
+
+    /**
+     * 確保共用帳本的 per-device 基礎設施就緒：
+     * 1. 從舊式共用檔解析 manifest 指標與歷史變更
+     * 2. 建立/定位 manifest（僅在本機尚無指標時建立；每輪依舊檔指標重校準，
+     *    多台競爭時輸家採用贏家並刪除孤兒檔）
+     * 3. 建立/定位自己的裝置日誌檔、補授權並註冊進 manifest
+     * 4. （首次）將舊檔歷史併入自己的日誌並種入 appliedKeys
+     * @param {object} ledger 本地帳本記錄（isShared 且有 sharedFileId）
+     * @returns {Promise<{ledger: object, devLogId: string, manifestId: string}>}
+     */
+    async _ensureSharedInfra(ledger) {
+        if (this._syncInfraCache?.has(ledger.uuid)) {
+            return this._syncInfraCache.get(ledger.uuid)
+        }
+
+        const migratedKey = `shared_migrated_${ledger.uuid}`
+        const migrated = await this.dataService.getSetting(migratedKey)
+        let manifestId = ledger.sharedManifestId || null
+        let legacyChanges = []
+        let oldData = null
+
+        // 1) 讀取舊式共用檔（每輪至多一次 GET：歷史變更與指標共用這份資料）
+        if (ledger.sharedFileId && (!migrated?.value || !manifestId)) {
+            try {
+                oldData = await this._downloadFileStrict(ledger.sharedFileId)
+                if (!manifestId && oldData?.manifestFileId) {
+                    manifestId = oldData.manifestFileId
+                }
+                if (!migrated?.value && Array.isArray(oldData?.changes)) {
+                    legacyChanges = oldData.changes
+                }
+            } catch (err) {
+                if (err.message && err.message.includes('404')) {
+                    // 舊檔在雲端已被刪除，視為已無歷史資料可遷移
+                    oldData = { changes: [] }
+                } else {
+                    // 暫時性網路錯誤/500 等，拋錯中斷當次同步，絕不可將 migrated 標記為 true
+                    throw new Error(
+                        `Failed to download legacy shared file for "${ledger.name}": ${err.message}`
+                    )
+                }
+            }
+        }
+
+        // 2) 解析或建立 manifest（建立僅發生在本機尚無任何指標時）
+        if (!manifestId) {
+            const name = this._manifestFileName(ledger.uuid)
+            manifestId = await this._findFileInDrive(name)
+            if (!manifestId) {
+                // 從舊共用檔權限查詢真正擁有者，避免位置判定的擁有者錯亂
+                let ownerEmail = this.userInfo?.email || ''
+                if (ledger.sharedFileId) {
+                    try {
+                        const perms =
+                            await this.getFilePermissions(ledger.sharedFileId)
+                        const owner = perms.find(p => p.role === 'owner')
+                        if (owner?.emailAddress) {
+                            ownerEmail = owner.emailAddress
+                        }
+                    } catch (_) {}
+                }
+                const created = await this._createSharedFile(
+                    name,
+                    JSON.stringify({
+                        ledgerUuid: ledger.uuid,
+                        ownerEmail,
+                        legacySharedFileId: ledger.sharedFileId || null,
+                        ledgerMeta: {
+                            name: ledger.name,
+                            color: ledger.color,
+                            icon: ledger.icon,
+                            currency: ledger.currency || 'TWD',
+                        },
+                        members: [
+                            {
+                                deviceId: this.deviceId,
+                                ownerEmail: this.userInfo?.email || '',
+                                fileId: null,
+                            },
+                        ],
+                    })
+                )
+                manifestId = created.id
+            }
+            // 把指標寫回舊檔協調其他裝置（帶 ETag 樂觀鎖；多台同時建立時，412 衝突者自動採用贏家指標並刪除孤兒 manifest）
+            if (ledger.sharedFileId) {
+                try {
+                    const { data: latest, etag } =
+                        await this._downloadFileStrict(ledger.sharedFileId, {
+                            withMeta: true,
+                        })
+                    if (!latest.manifestFileId) {
+                        latest.manifestFileId = manifestId
+                        latest.timestamp = Date.now()
+                        await this._updateFile(
+                            ledger.sharedFileId,
+                            JSON.stringify(latest),
+                            etag
+                        )
+                    } else if (latest.manifestFileId !== manifestId) {
+                        try {
+                            await this.deleteFile(manifestId)
+                        } catch (_) {}
+                        manifestId = latest.manifestFileId
+                    }
+                } catch (confErr) {
+                    if (
+                        confErr.status === 412 ||
+                        confErr.message?.includes('412')
+                    ) {
+                        try {
+                            const fresh = await this._downloadFileStrict(
+                                ledger.sharedFileId
+                            )
+                            if (
+                                fresh?.manifestFileId &&
+                                fresh.manifestFileId !== manifestId
+                            ) {
+                                try {
+                                    await this.deleteFile(manifestId)
+                                } catch (_) {}
+                                manifestId = fresh.manifestFileId
+                            }
+                        } catch (_) {}
+                    }
+                }
+            }
+        } else if (oldData) {
+            // 指標重校準（每次執行都檢查）：帳本記錄的指標可能已過期，
+            // 以本次讀到的舊檔指標為準，確保分裂的 manifest 收斂到同一個
+            if (
+                oldData.manifestFileId &&
+                oldData.manifestFileId !== manifestId
+            ) {
+                manifestId = oldData.manifestFileId
+            } else if (!oldData.manifestFileId) {
+                // 舊檔缺指標：補寫回目前已知指標，協調尚未升級的裝置
+                try {
+                    oldData.manifestFileId = manifestId
+                    oldData.timestamp = Date.now()
+                    await this._updateFile(
+                        ledger.sharedFileId,
+                        JSON.stringify(oldData)
+                    )
+                } catch (_) {}
+            }
+        }
+
+        // 確保 manifest 記錄了 legacySharedFileId
+        if (manifestId && ledger.sharedFileId) {
+            try {
+                const resMf = await this._downloadFile(manifestId)
+                const mfData = resMf?.data
+                if (mfData && !mfData.legacySharedFileId) {
+                    mfData.legacySharedFileId = ledger.sharedFileId
+                    mfData.timestamp = Date.now()
+                    await this._updateFile(manifestId, JSON.stringify(mfData))
+                }
+            } catch (_) {}
+        }
+
+        // 3) 確保自己的裝置日誌檔
+        const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+        let devLogId =
+            (await this.dataService.getSetting(devLogKey))?.value || null
+        if (!devLogId) {
+            const name = this._deviceLogFileName(ledger.uuid)
+            devLogId = await this._findFileInDrive(name)
+            if (!devLogId) {
+                const created = await this._createSharedFile(
+                    name,
+                    JSON.stringify({
+                        ledgerUuid: ledger.uuid,
+                        deviceId: this.deviceId,
+                        changes: [],
+                    })
+                )
+                devLogId = created.id
+            }
+            await this.dataService.saveSetting({
+                key: devLogKey,
+                value: devLogId,
+            })
+        }
+        // 補授權給 manifest 中尚未授權的成員（日誌檔已存在時也要跑，
+        // 處理晚加入的成員；內部以 granted-email 快取節省 API 配額）
+        await this._grantDevLogPermissions(
+            ledger.uuid,
+            manifestId,
+            devLogId
+        )
+
+        // 將自己的日誌檔註冊進 manifest（含首次建立與 fileId 變更的補登）
+        const registered = await this._registerSelfInManifest(
+            manifestId,
+            devLogId
+        )
+        if (!registered) {
+            throw new Error(
+                `Failed to register device in manifest for "${ledger.name}"`
+            )
+        }
+
+        // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys
+        if (legacyChanges.length > 0) {
+            const mine = legacyChanges.map(c => ({
+                ...c,
+                deviceId: this.deviceId,
+            }))
+            await this._appendToDeviceLog(devLogId, mine)
+            const appliedSetting = await this.dataService.getSetting(
+                'sync_shared_applied_keys'
+            )
+            const appliedKeys = new Set(appliedSetting?.value || [])
+            legacyChanges.forEach(c => appliedKeys.add(this._changeKey(c)))
+            await this.dataService.saveSetting({
+                key: 'sync_shared_applied_keys',
+                value: [...appliedKeys],
+            })
+        }
+
+        // 5) 更新帳本記錄與遷移旗標
+        if (manifestId && manifestId !== ledger.sharedManifestId) {
+            await this.dataService.updateLedger(
+                ledger.id,
+                { sharedManifestId: manifestId },
+                true
+            )
+            ledger.sharedManifestId = manifestId
+        }
+        if (!migrated?.value && (!ledger.sharedFileId || oldData !== null)) {
+            await this.dataService.saveSetting({
+                key: migratedKey,
+                value: true,
+            })
+        }
+
+        const result = { ledger, devLogId, manifestId }
+        this._syncInfraCache?.set(ledger.uuid, result)
+        return result
+    }
+
+    /**
+     * 以 manifest 檔加入共用帳本：
+     * 套用所有成員日誌的變更 → 建立自己的日誌檔並授權 → 註冊進 manifest → 種入 appliedKeys
+     * @param {string} manifestId
+     * @returns {Promise<string>} 共用帳本的 uuid
+     */
+    async joinViaManifest(manifestId) {
+        await this.ensureValidToken()
+        const manifest = (await this._downloadFile(manifestId))?.data
+        if (!manifest?.members) throw new Error('無效的共用帳本清單檔')
+
+        // 1. 收集所有成員日誌的變更（key 去重）
+        const seen = new Set()
+        const allChanges = []
+        const collect = changes => {
+            for (const c of changes || []) {
+                const key = this._changeKey(c)
+                if (!seen.has(key)) {
+                    seen.add(key)
+                    allChanges.push(c)
+                }
+            }
+        }
+        for (const member of manifest.members) {
+            if (!member.fileId) continue
+            try {
+                const d = await this._downloadFileStrict(member.fileId)
+                collect(d?.changes)
+            } catch (err) {
+                // 404/403 表示該成員日誌檔已被刪除或權限已失效，略過不阻擋加入
+                if (
+                    err.message &&
+                    (err.message.includes('404') || err.message.includes('403'))
+                ) {
+                    console.warn(
+                        `[SyncService] joinViaManifest member log ${member.fileId} not accessible, skipping:`,
+                        err.message
+                    )
+                } else {
+                    // 網路異常或 5xx 錯誤應拋出終止加入，避免造成本地歷史資料缺漏
+                    throw err
+                }
+            }
+        }
+        if (manifest.legacySharedFileId) {
+            try {
+                const d = await this._downloadFileStrict(
+                    manifest.legacySharedFileId
+                )
+                collect(d?.changes)
+            } catch (err) {
+                if (
+                    err.message &&
+                    (err.message.includes('404') || err.message.includes('403'))
+                ) {
+                    console.warn(
+                        `[SyncService] joinViaManifest legacy file not accessible, skipping:`,
+                        err.message
+                    )
+                } else {
+                    throw err
+                }
+            }
+        }
+        allChanges.sort((a, b) => a.timestamp - b.timestamp)
+        await this.applyRemoteChanges(allChanges)
+
+        let ledgerChange = allChanges.find(
+            c => c.storeName === 'ledgers' && c.data?.uuid
+        )
+        if (!ledgerChange && manifest.ledgerMeta && manifest.ledgerUuid) {
+            const fallbackLedger = {
+                uuid: manifest.ledgerUuid,
+                name: manifest.ledgerMeta.name || '共用帳本',
+                color: manifest.ledgerMeta.color || '#3b82f6',
+                icon: manifest.ledgerMeta.icon || 'fa-book',
+                type: 'shared',
+                isShared: true,
+                sharedManifestId: manifestId,
+                currency: manifest.ledgerMeta.currency || 'TWD',
+            }
+            await this.dataService.addLedger(fallbackLedger)
+            ledgerChange = { data: fallbackLedger }
+        }
+        if (!ledgerChange) throw new Error('無法從共用資料解析帳本')
+        const ledgerUuid = ledgerChange.data.uuid
+
+        // 2. 建立自己的裝置日誌檔、授權、註冊進 manifest
+        const name = this._deviceLogFileName(ledgerUuid)
+        let devLogId = await this._findFileInDrive(name)
+        if (!devLogId) {
+            const created = await this._createSharedFile(
+                name,
+                JSON.stringify({
+                    ledgerUuid,
+                    deviceId: this.deviceId,
+                    changes: [],
+                })
+            )
+            devLogId = created.id
+        }
+        await this.dataService.saveSetting({
+            key: `sync_shared_devlog_${ledgerUuid}`,
+            value: devLogId,
+        })
+        await this._grantDevLogPermissions(ledgerUuid, manifestId, devLogId)
+        const registered = await this._registerSelfInManifest(
+            manifestId,
+            devLogId
+        )
+        if (!registered) {
+            throw new Error(`Failed to register device in manifest ${manifestId}`)
+        }
+
+        // 3. 種入 appliedKeys，之後 pull 不會重複套用這些變更
+        // 併入現有 appliedKeys（其他共用帳本的鍵不可清除）
+        const appliedSetting = await this.dataService.getSetting(
+            'sync_shared_applied_keys'
+        )
+        const merged = new Set([...(appliedSetting?.value || []), ...seen])
+        await this.dataService.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [...merged],
+        })
+
+        return ledgerUuid
+    }
+
+    /**
      * 在 appDataFolder 中搜尋指定名稱的檔案
      * @param {string} fileName
      * @returns {Promise<string|null>} file ID or null
@@ -1422,6 +2170,33 @@ export class SyncService {
         if (!res.ok) return null
         const data = await res.json()
         return { data }
+    }
+
+    /**
+     * 下載檔案內容；任何非 OK 狀態都拋出（與 _downloadFile 的寬鬆版不同，
+     * 用於「絕不能把雲端內容誤判為空」的讀寫路徑）
+     * @param {string} fileId
+     * @param {object} [options={}]
+     * @param {boolean} [options.withMeta=false] - 是否一併回傳 ETag 等中繼資訊
+     * @returns {Promise<object>} 解析後的 JSON 內容（若 withMeta 為 true 則回傳 { data, etag }）
+     */
+    async _downloadFileStrict(fileId, { withMeta = false } = {}) {
+        const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+        )
+        if (!res.ok) throw new Error(`Failed to download file (${res.status})`)
+        const data = await res.json()
+        if (withMeta) {
+            return {
+                data,
+                etag:
+                    res.headers?.get('ETag') ||
+                    res.headers?.get('etag') ||
+                    null,
+            }
+        }
+        return data
     }
 
     /**
@@ -1511,15 +2286,16 @@ export class SyncService {
     }
 
     /**
-     * 將指定檔案授權給其他 Email (Writer)
+     * 將指定檔案授權給其他 Email (預設 writer，日誌檔可指定 reader)
      * @param {string} fileId
      * @param {string} emailAddress
+     * @param {string} [role='writer']
      */
-    async grantFilePermission(fileId, emailAddress) {
+    async grantFilePermission(fileId, emailAddress, role = 'writer') {
         await this.ensureSharingPermission()
 
         const body = {
-            role: 'writer',
+            role,
             type: 'user',
             emailAddress: emailAddress,
         }
@@ -1588,17 +2364,21 @@ export class SyncService {
      * 更新既有檔案內容
      * @param {string} fileId
      * @param {string} content
-     * @param {string|null} matchTag - 用於樂觀鎖的 ETag
+     * @param {string|null} [matchTag=null] - 用於樂觀鎖的 ETag
      */
-    async _updateFile(fileId, content) {
+    async _updateFile(fileId, content, matchTag = null) {
+        const headers = {
+            Authorization: `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+        }
+        if (matchTag) {
+            headers['If-Match'] = matchTag
+        }
         const res = await fetch(
             `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
             {
                 method: 'PATCH',
-                headers: {
-                    Authorization: `Bearer ${this.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
+                headers,
                 body: content,
             }
         )
@@ -1611,7 +2391,9 @@ export class SyncService {
                 console.warn('Failed to parse error', _)
             }
             console.error('[SyncService] _updateFile error:', errMsg)
-            throw new Error(errMsg)
+            const err = new Error(errMsg)
+            err.status = res.status
+            throw err
         }
     }
 
@@ -2293,6 +3075,9 @@ export class SyncService {
                         protectedData.isShared = localLedger.isShared
                     if (protectedData.sharedFileId === undefined)
                         protectedData.sharedFileId = localLedger.sharedFileId
+                    if (protectedData.sharedManifestId === undefined)
+                        protectedData.sharedManifestId =
+                            localLedger.sharedManifestId
                     if (protectedData.type === undefined)
                         protectedData.type = localLedger.type
                 }

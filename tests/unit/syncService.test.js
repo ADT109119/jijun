@@ -61,6 +61,11 @@ function createMockDataService(overrides = {}) {
         saveCategorySetting: vi.fn(async () => true),
         logChange: vi.fn(),
         getLedgers: vi.fn(async () => ledgers),
+        addLedger: vi.fn(async ledger => {
+            ledgers.push(ledger)
+            return ledgers.length
+        }),
+        updateLedger: vi.fn(async () => true),
         exportDataForSync: vi.fn(async () => ({ records: [] })),
         importDataFromSync: vi.fn(async () => true),
         ...overrides,
@@ -1072,3 +1077,1805 @@ describe('SyncService', () => {
         })
     })
 })
+
+describe('SyncService per-device helpers', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('_changeKey 使用 deviceId|timestamp|operation|storeName 格式', () => {
+        const k = ss._changeKey({
+            deviceId: 'dev_a',
+            timestamp: 123,
+            operation: 'add',
+            storeName: 'records',
+        })
+        expect(k).toBe('dev_a|123|add|records')
+    })
+
+    it('_changeKey 對缺少 deviceId 的變更改用 unknown', () => {
+        const k = ss._changeKey({ timestamp: 5, operation: 'delete', storeName: 'debts' })
+        expect(k).toBe('unknown|5|delete|debts')
+    })
+
+    it('_manifestFileName 取 uuid 前 8 碼', () => {
+        expect(ss._manifestFileName('abcdefghijk-1234')).toBe(
+            'EasyAccounting_SharedManifest_abcdefgh.json'
+        )
+    })
+
+    it('_deviceLogFileName 含 uuid 前 8 碼與 deviceId', () => {
+        ss.deviceId = 'dev_x'
+        expect(ss._deviceLogFileName('abcdefghijk-1234')).toBe(
+            'EasyAccounting_SharedLog_abcdefgh_dev_x.json'
+        )
+    })
+
+    it('_findFileInDrive 遇 403 授權錯誤時拋出（不誤判為檔案不存在）', async () => {
+        globalThis.fetch = vi
+            .fn()
+            .mockResolvedValue({ ok: false, status: 403 })
+
+        await expect(
+            ss._findFileInDrive('EasyAccounting_SharedManifest_abcdefgh.json')
+        ).rejects.toThrow('Drive search failed (403)')
+    })
+})
+
+describe('SyncService _appendToDeviceLog', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('合併雲端沒有的變更並回傳筆數', async () => {
+        const now = Date.now()
+        const cloud = {
+            ledgerUuid: 'u1',
+            deviceId: 'dev_x',
+            changes: [{ deviceId: 'dev_x', timestamp: now - 60000, operation: 'add', storeName: 'records', data: {} }],
+        }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return { ok: true, json: async () => cloud }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            cloud.changes[0], // 已存在
+            { deviceId: 'dev_x', timestamp: now, operation: 'add', storeName: 'records', data: {} }, // 新
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(2)
+    })
+
+    it('裁剪 90 天前的變更', async () => {
+        const old = Date.now() - 91 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [{ deviceId: 'a', timestamp: old, operation: 'add', storeName: 'records' }],
+                }),
+            }
+        })
+        await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+        ])
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1) // 舊變更被裁剪，僅剩新附加的
+        expect(sent.changes.every(c => c.timestamp >= Date.now() - 90 * 24 * 60 * 60 * 1000)).toBe(true)
+    })
+
+    it('超過 90 天的未同步本地變更仍全數寫入雲端不被裁切', async () => {
+        const veryOld = Date.now() - 120 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [],
+                }),
+            }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: veryOld, operation: 'add', storeName: 'records', data: { id: 1 } },
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1)
+        expect(sent.changes[0].timestamp).toBe(veryOld)
+    })
+
+    it('雲端既有變更即使超過 90 天，只要為 ledgers 變更即永久保留不被裁切', async () => {
+        const veryOld = Date.now() - 150 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [
+                        { deviceId: 'a', timestamp: veryOld, operation: 'add', storeName: 'ledgers', data: { uuid: 'u1' } },
+                        { deviceId: 'a', timestamp: veryOld, operation: 'add', storeName: 'records', data: { uuid: 'r1' } },
+                    ],
+                }),
+            }
+        })
+        await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records', data: { uuid: 'r2' } },
+        ])
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        // 舊 records 被裁剪，但舊 ledgers 與新 records 一同保留
+        expect(sent.changes).toHaveLength(2)
+        expect(sent.changes.find(c => c.storeName === 'ledgers')).toBeDefined()
+        expect(sent.changes.find(c => c.data?.uuid === 'r2')).toBeDefined()
+    })
+
+    it('下載失敗時拋出且不送出 PATCH', async () => {
+        globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
+        await expect(
+            ss._appendToDeviceLog('file_1', [
+                { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+            ])
+        ).rejects.toThrow('Failed to download file (500)')
+        expect(globalThis.fetch.mock.calls.some(c => c[1]?.method === 'PATCH')).toBe(false)
+    })
+
+    it('空參數早退', async () => {
+        globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))
+        const n = await ss._appendToDeviceLog(null, [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records' },
+        ])
+        expect(n).toBe(0)
+        expect(globalThis.fetch).not.toHaveBeenCalled()
+    })
+
+    it('批次內重複鍵只附加一筆', async () => {
+        const ts = Date.now()
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return { ok: true, json: async () => ({ deviceId: 'dev_x', changes: [] }) }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'dev_x', timestamp: ts, operation: 'add', storeName: 'records', data: {} },
+            { deviceId: 'dev_x', timestamp: ts, operation: 'add', storeName: 'records', data: {} },
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1)
+    })
+})
+
+describe('SyncService manifest 管理', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('_registerSelfInManifest 加入自己且不重複', async () => {
+        let stored = { members: [] }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                stored = JSON.parse(opts.body)
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: true, json: async () => stored }
+        })
+        const ok = await ss._registerSelfInManifest('mf_1', 'log_1')
+        expect(ok).toBe(true)
+        expect(stored.members).toEqual([
+            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: 'log_1' },
+        ])
+    })
+
+    it('_removeManifestMember 移除指定 deviceId', async () => {
+        let stored = {
+            members: [
+                { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'l1' },
+                { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'l2' },
+            ],
+        }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                stored = JSON.parse(opts.body)
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: true, json: async () => stored }
+        })
+        const ok = await ss._removeManifestMember('mf_1', 'dev_a')
+        expect(ok).toBe(true)
+        expect(stored.members.map(m => m.deviceId)).toEqual(['dev_b'])
+    })
+
+    it('_registerSelfInManifest 下載失敗時重試且不覆寫成員清單', async () => {
+        const warnSpy = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => {})
+        const errorSpy = vi
+            .spyOn(console, 'error')
+            .mockImplementation(() => {})
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: false, status: 500 }
+        })
+        try {
+            const ok = await ss._registerSelfInManifest('mf_1', 'log_1')
+            expect(ok).toBe(false)
+            expect(
+                globalThis.fetch.mock.calls.some(
+                    c => c[1]?.method === 'PATCH'
+                )
+            ).toBe(false)
+        } finally {
+            warnSpy.mockRestore()
+            errorSpy.mockRestore()
+        }
+    })
+
+    it('_registerSelfInManifest 遭遇 ETag 412 衝突時自動重試並成功', async () => {
+        let attempts = 0
+        let stored = {
+            members: [
+                { deviceId: 'other', ownerEmail: 'o@t.com', fileId: 'f1' },
+            ],
+        }
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            globalThis.fetch = vi.fn(async (_url, opts) => {
+                if (opts?.method === 'PATCH') {
+                    attempts++
+                    if (attempts === 1) {
+                        // 第一次 PATCH 模擬 ETag 412 衝突
+                        return {
+                            ok: false,
+                            status: 412,
+                            json: async () => ({
+                                error: { message: 'Precondition Failed' },
+                            }),
+                        }
+                    }
+                    stored = JSON.parse(opts.body)
+                    return { ok: true, json: async () => ({}) }
+                }
+                // 下載回傳目前內容副本與 ETag
+                return {
+                    ok: true,
+                    headers: {
+                        get: name =>
+                            name.toLowerCase() === 'etag'
+                                ? `etag_${attempts}`
+                                : null,
+                    },
+                    json: async () => JSON.parse(JSON.stringify(stored)),
+                }
+            })
+
+            const ok = await ss._registerSelfInManifest('mf_1', 'my_log')
+            expect(ok).toBe(true)
+            expect(attempts).toBe(2)
+            expect(stored.members.some(m => m.deviceId === ss.deviceId)).toBe(
+                true
+            )
+        } finally {
+            warnSpy.mockRestore()
+            errorSpy.mockRestore()
+        }
+    })
+})
+
+describe('SyncService _ensureSharedInfra', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ds.getLedger = vi.fn()
+        ds.updateLedger = vi.fn(async () => true)
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+        // _createSharedFile / deleteFile 內部會走共享授權流程，測試中直接放行
+        ss.ensureSharingPermission = vi.fn(async () => true)
+        // 預設 mock：避免 _ensureSharedInfra 內的註冊行為打到 fetch 路徑
+        ss._registerSelfInManifest = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('首次呼叫：讀舊檔歷史、建立 manifest 與日誌檔、種入 appliedKeys、寫遷移旗標', async () => {
+        const legacyChanges = [
+            { deviceId: 'old', timestamp: 111, operation: 'add', storeName: 'records', data: {} },
+        ]
+        let createdFiles = []
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({ changes: legacyChanges }),
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                const id = `new_${createdFiles.length++}`
+                return { ok: true, json: async () => ({ id }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 1,
+            uuid: 'uuuuuuuu-1',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('new_0')
+        expect(infra.devLogId).toBe('new_1')
+        // 歷史被併入自己的日誌
+        expect(ss._appendToDeviceLog).toHaveBeenCalled()
+        // appliedKeys 種入舊變更
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toContain('old|111|add|records')
+        // 帳本記錄寫入 sharedManifestId
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            { sharedManifestId: 'new_0' },
+            true
+        )
+        // 遷移旗標
+        expect((await ds.getSetting('shared_migrated_uuuuuuuu-1')).value).toBe(true)
+    })
+
+    it('舊檔已被他機註冊 manifest 時採用贏家的 manifestFileId', async () => {
+        let mediaReads = 0
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                mediaReads++
+                // 第一次讀：舊檔尚無指標（自己因此先建立了 manifest）；
+                // 寫回指標前再讀：發現他機已搶先註冊贏家 manifest
+                return {
+                    ok: true,
+                    json: async () =>
+                        mediaReads === 1
+                            ? { changes: [] }
+                            : { manifestFileId: 'winner_manifest', changes: [] },
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'orphan' }) }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss.deleteFile = vi.fn(async () => {})
+
+        const ledger = {
+            id: 2,
+            uuid: 'uuuuuuuu-2',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+        expect(infra.manifestId).toBe('winner_manifest')
+        expect(ss.deleteFile).toHaveBeenCalledWith('orphan')
+    })
+
+    it('舊檔已有 manifest 指標時直接採用，不重複建立', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'existing_manifest',
+                        changes: [],
+                    }),
+                }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'dev_log_created' }) }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 3,
+            uuid: 'uuuuuuuu-3',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+        expect(infra.manifestId).toBe('existing_manifest')
+        // 僅建立自己的裝置日誌（一次 multipart），不重複建立 manifest
+        const creates = globalThis.fetch.mock.calls.filter(c =>
+            c[0].includes('uploadType=multipart')
+        )
+        expect(creates).toHaveLength(1)
+    })
+
+    it('首次建立 manifest：從舊共用檔權限查詢真正擁有者寫入頂層 ownerEmail', async () => {
+        ss.getFilePermissions = vi.fn(async () => [
+            { role: 'writer', emailAddress: 'me@test.com' },
+            { role: 'owner', emailAddress: 'creator@t.com' },
+        ])
+        const contents = []
+        ss._createSharedFile = vi.fn(async (_name, content) => {
+            contents.push(JSON.parse(content))
+            return { id: `new_${contents.length - 1}` }
+        })
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [] }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 9,
+            uuid: 'uuuuuuuu-9',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('new_0')
+        expect(ss.getFilePermissions).toHaveBeenCalledWith('old_file')
+        // 頂層 ownerEmail 為舊檔 Drive 權限的真正擁有者，而非自己
+        expect(contents[0].ownerEmail).toBe('creator@t.com')
+        // 成員清單仍記錄自己的裝置與 email
+        expect(contents[0].members[0]).toMatchObject({
+            deviceId: 'dev_me',
+            ownerEmail: 'me@test.com',
+        })
+    })
+
+    it('建立日誌檔後將自己註冊進 manifest', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss._updateFile = vi.fn(async () => {})
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 4,
+            uuid: 'uuuuuuuu-4',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            infra.manifestId,
+            infra.devLogId
+        )
+    })
+
+    it('日誌檔已存在時仍補授權並註冊（晚加入成員）', async () => {
+        await ds.saveSetting({
+            key: 'sync_shared_devlog_uuuuuuuu-5',
+            value: 'known_log',
+        })
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'mf_known',
+                        changes: [],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 5,
+            uuid: 'uuuuuuuu-5',
+            isShared: true,
+            sharedFileId: 'old_file',
+            sharedManifestId: 'mf_known',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.devLogId).toBe('known_log')
+        // 日誌檔已存在仍要補授權（manifest 可能已有新成員）
+        expect(ss._grantDevLogPermissions).toHaveBeenCalledWith(
+            'uuuuuuuu-5',
+            'mf_known',
+            'known_log'
+        )
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            'mf_known',
+            'known_log'
+        )
+    })
+
+    it('既有 manifest 指標與帳本記錄不一致時採用舊檔指標', async () => {
+        // 建立分支不應被觸發（權限查詢/搜尋若被呼叫即失敗）
+        ss.getFilePermissions = vi.fn(async () => {
+            throw new Error('getFilePermissions should not be called')
+        })
+        ss._findFileInDrive = vi.fn(async () => null)
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        manifestFileId: 'winner_mf',
+                        changes: [],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({ files: [] }) }
+        })
+        ss._createSharedFile = vi.fn(async () => ({ id: 'dev_log_6' }))
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+
+        const ledger = {
+            id: 6,
+            uuid: 'uuuuuuuu-6',
+            isShared: true,
+            sharedFileId: 'old_file',
+            sharedManifestId: 'stale_mf',
+        }
+        const infra = await ss._ensureSharedInfra(ledger)
+
+        expect(infra.manifestId).toBe('winner_mf')
+        // 步驟 5 的帳本記錄更新應持久化校正後的指標
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            6,
+            { sharedManifestId: 'winner_mf' },
+            true
+        )
+        // 穩態：整輪只對舊檔做一次 GET
+        const oldReads = globalThis.fetch.mock.calls.filter(c =>
+            c[0].includes('files/old_file')
+        )
+        expect(oldReads).toHaveLength(1)
+    })
+})
+
+describe('SyncService pushSharedLedgerChanges (per-device)', () => {
+    let ss, ds
+
+    beforeEach(async () => {
+        ds = createMockDataService({
+            getLedgers: vi.fn(async () => [
+                {
+                    id: 1,
+                    uuid: 'u-12345678',
+                    name: 'S',
+                    isShared: true,
+                    sharedFileId: 'f1',
+                },
+            ]),
+            getChangesSince: vi.fn(async () => [
+                {
+                    deviceId: 'other',
+                    timestamp: 500,
+                    operation: 'add',
+                    storeName: 'records',
+                    data: {},
+                },
+            ]),
+        })
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        await ds.saveSetting({
+            key: 'sync_drive_file_authorized',
+            value: true,
+        })
+        ds.clearSyncLog = vi.fn(async () => true)
+    })
+
+    it('推送後回傳最大時間戳，且 deviceId 一律改成自己', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl',
+            manifestId: 'mf',
+        }))
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+        expect(ss._appendToDeviceLog.mock.calls[0][1][0].deviceId).toBe(
+            ss.deviceId
+        )
+    })
+
+    it('未授權時回傳 null', async () => {
+        await ds.saveSetting({ key: 'sync_drive_file_authorized', value: false })
+        ss.ensureValidToken = vi.fn(async () => {})
+        expect(await ss.pushSharedLedgerChanges()).toBeNull()
+    })
+
+    it('任一帳本推送失敗時回傳 null 以保留本地日誌', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 1,
+                uuid: 'u-1',
+                name: 'A',
+                isShared: true,
+                sharedFileId: 'f1',
+            },
+            {
+                id: 2,
+                uuid: 'u-2',
+                name: 'B',
+                isShared: true,
+                sharedFileId: 'f2',
+            },
+        ])
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => {
+            if (ledger.id === 2) throw new Error('infra fail')
+            return { ledger, devLogId: `dl-${ledger.id}`, manifestId: 'mf' }
+        })
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const result = await ss.pushSharedLedgerChanges()
+        expect(result).toBeNull()
+    })
+
+    it('performSync 兩條推送成功後清理本地日誌（取最小 cutoff）', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn(async () => 700)
+        ss.pushSharedLedgerChanges = vi.fn(async () => 500)
+        ss.pullChanges = vi.fn(async () => {})
+        ss.pullSharedLedgerChanges = vi.fn(async () => {})
+
+        await ss.performSync(true)
+        expect(ds.clearSyncLog).toHaveBeenCalledWith(500)
+    })
+
+    it('自動同步開啟且兩條推送成功時以最小 cutoff 清理', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn(async () => 900)
+        ss.pushSharedLedgerChanges = vi.fn(async () => 400)
+        ss.pullChanges = vi.fn()
+        ss.pullSharedLedgerChanges = vi.fn()
+        await ds.saveSetting({ key: 'sync_auto_enabled', value: true })
+
+        await ss.performSync(false)
+        expect(ss.pushChanges).toHaveBeenCalledTimes(1)
+        expect(ds.clearSyncLog).toHaveBeenCalledWith(400)
+    })
+
+    it('個人同步關閉時不清理本地日誌以保留未上傳變更', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.pushChanges = vi.fn()
+        ss.pullChanges = vi.fn()
+        ss.pushSharedLedgerChanges = vi.fn(async () => 300)
+        ss.pullSharedLedgerChanges = vi.fn(async () => {})
+        await ds.saveSetting({ key: 'sync_auto_enabled', value: false })
+
+        await ss.performSync(false)
+        expect(ss.pushChanges).not.toHaveBeenCalled()
+        expect(ss.pullChanges).not.toHaveBeenCalled()
+        // 共用專用同步未推送個人變更，清理會誤刪尚未上傳的個人變更
+        expect(ds.clearSyncLog).not.toHaveBeenCalled()
+    })
+
+    it('帳本僅具 sharedManifestId（無 sharedFileId）仍可正常推送', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 10,
+                uuid: 'u-manifest-only',
+                name: 'ManifestOnly',
+                isShared: true,
+                sharedFileId: null,
+                sharedManifestId: 'mf_only_10',
+            },
+        ])
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl-10',
+            manifestId: 'mf_only_10',
+        }))
+        ss._appendToDeviceLog = vi.fn(async (_id, changes) => changes.length)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+        expect(ss._ensureSharedInfra).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 10 })
+        )
+    })
+
+    it('本地變更皆已在雲端（appended===0）時仍回傳 maxPushed', async () => {
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'dl',
+            manifestId: 'mf',
+        }))
+        ss._appendToDeviceLog = vi.fn(async () => 0)
+
+        const max = await ss.pushSharedLedgerChanges()
+        expect(max).toBe(500)
+    })
+})
+
+describe('SyncService pullSharedLedgerChanges', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ds.saveSetting({
+            key: 'sync_drive_file_authorized',
+            value: true,
+        })
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 1,
+                uuid: 'u-1',
+                name: 'S',
+                isShared: true,
+                sharedFileId: 'f1',
+                sharedManifestId: 'mf1',
+            },
+        ])
+        ss.applyRemoteChanges = vi.fn(async () => {})
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('套用他人變更、略過自己推的、appliedKeys 去重', async () => {
+        // 使用新鮮時間戳：appliedKeys 持久化時會裁剪 30 天前的鍵，
+        // 過舊的字面值時間戳會導致第二次拉取重複套用
+        const now = Date.now()
+        const memberChanges = [
+            {
+                deviceId: 'dev_me',
+                timestamp: now - 5000,
+                operation: 'add',
+                storeName: 'records',
+                data: {},
+            },
+            {
+                deviceId: 'dev_b',
+                timestamp: now - 1000,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'r1' },
+            },
+        ]
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@t', fileId: 'my_log' },
+                            { deviceId: 'dev_b', ownerEmail: 'b@t', fileId: 'b_log' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('b_log') && url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: memberChanges }) }
+            }
+            if (url.includes('fields=modifiedTime')) {
+                return { ok: true, json: async () => ({ modifiedTime: new Date().toISOString() }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullSharedLedgerChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        // 只剩 dev_b 的那筆
+        expect(applied).toHaveLength(1)
+        expect(applied[0].deviceId).toBe('dev_b')
+
+        // 第二次拉取：同內容不重複套用（appliedKeys 已持久化）
+        await ss.pullSharedLedgerChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+    })
+
+    it('成員檔抓不到時跳過不中斷', async () => {
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@t', fileId: 'my_log' },
+                            { deviceId: 'dev_b', ownerEmail: 'b@t', fileId: 'gone_log' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('gone_log') && url.includes('fields=modifiedTime')) {
+                return { ok: false, status: 404 }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await expect(ss.pullSharedLedgerChanges()).resolves.toBeUndefined()
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+    })
+
+    it('帳本僅具 sharedManifestId（無 sharedFileId）仍可正常拉取', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 11,
+                uuid: 'u-manifest-only',
+                name: 'ManifestOnly',
+                isShared: true,
+                sharedFileId: null,
+                sharedManifestId: 'mf1',
+            },
+        ])
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            devLogId: 'my_log',
+            manifestId: ledger.sharedManifestId,
+        }))
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('mf1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', fileId: 'f_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('f_b') && url.includes('fields=modifiedTime')) {
+                return {
+                    ok: true,
+                    json: async () => ({ modifiedTime: new Date().toISOString() }),
+                }
+            }
+            if (url.includes('f_b') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            {
+                                deviceId: 'dev_b',
+                                timestamp: Date.now() - 100,
+                                operation: 'add',
+                                storeName: 'records',
+                                data: { uuid: 'rec-pull' },
+                            },
+                        ],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullSharedLedgerChanges()
+
+        expect(ss.applyRemoteChanges).toHaveBeenCalledWith([
+            expect.objectContaining({ data: { uuid: 'rec-pull' } }),
+        ])
+    })
+})
+
+describe('SyncService pullChanges (appliedKeys 版)', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ss.applyRemoteChanges = vi.fn(async () => {})
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('對方時鐘較慢的舊時間戳變更不再被丟棄', async () => {
+        const past = Date.now() - 60 * 60 * 1000 // 1 小時前（模擬慢時鐘裝置）
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes("name contains 'sync_log_'")) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        files: [{ id: 'f_other', name: 'sync_log_dev_slow.json' }],
+                    }),
+                }
+            }
+            if (url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_slow', timestamp: past, operation: 'add', storeName: 'records', data: {} },
+                        ],
+                    }),
+                }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+
+        await ss.pullChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        expect(ss.applyRemoteChanges.mock.calls[0][0]).toHaveLength(1)
+    })
+
+    it('同一變更第二次拉取不重複套用', async () => {
+        // 使用新鮮時間戳：appliedKeys 持久化時會裁剪 30 天前的鍵，
+        // 過舊的字面值時間戳會導致第二次拉取重複套用
+        const change = { deviceId: 'dev_s', timestamp: Date.now() - 1000, operation: 'add', storeName: 'records', data: {} }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes("name contains 'sync_log_'")) {
+                return {
+                    ok: true,
+                    json: async () => ({ files: [{ id: 'f1', name: 'sync_log_dev_s.json' }] }),
+                }
+            }
+            if (url.includes('alt=media')) {
+                return { ok: true, json: async () => ({ changes: [change] }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        await ss.pullChanges()
+        await ss.pullChanges()
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('SyncService joinViaManifest', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.deviceId = 'dev_me'
+        // _createSharedFile 內部會走共享授權流程，測試中直接放行
+        ss.ensureSharingPermission = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    it('加入成功：套用排序後變更、建立自己的日誌檔、種入 appliedKeys、回傳帳本 uuid', async () => {
+        const memberLog = {
+            changes: [
+                { deviceId: 'dev_a', timestamp: 200, operation: 'add', storeName: 'records', data: {} },
+                { deviceId: 'dev_a', timestamp: 100, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-9' } },
+            ],
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: null },
+                            { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'log_a' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_a') && url.includes('alt=media')) {
+                return { ok: true, json: async () => memberLog }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_1')
+
+        expect(uuid).toBe('uuuuuuuu-9')
+        // 變更按時間戳升冪套用
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(applied.map(c => c.timestamp)).toEqual([100, 200])
+        expect(applied[0].storeName).toBe('ledgers')
+        // 自己的日誌檔被建立並持久化（fileId 為 null 的成員被跳過）
+        expect(
+            (await ds.getSetting('sync_shared_devlog_uuuuuuuu-9')).value
+        ).toBe('my_new_log')
+        // 授權與註冊以正確參數呼叫
+        expect(ss._grantDevLogPermissions).toHaveBeenCalledWith(
+            'uuuuuuuu-9',
+            'mf_1',
+            'my_new_log'
+        )
+        expect(ss._registerSelfInManifest).toHaveBeenCalledWith(
+            'mf_1',
+            'my_new_log'
+        )
+        // appliedKeys 種入所有已見變更，之後 pull 不會重複套用
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toContain('dev_a|100|add|ledgers|uuuuuuuu-9')
+        expect(keys).toContain('dev_a|200|add|records')
+    })
+
+    it('套用後併入而非覆蓋既有 appliedKeys', async () => {
+        // 預先存在的鍵（其他共用帳本）不可被清除
+        await ds.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: ['other|1|add|records'],
+        })
+        const memberLog = {
+            changes: [
+                { deviceId: 'dev_a', timestamp: 200, operation: 'add', storeName: 'records', data: {} },
+                { deviceId: 'dev_a', timestamp: 100, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-9' } },
+            ],
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_1') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: null },
+                            { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'log_a' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_a') && url.includes('alt=media')) {
+                return { ok: true, json: async () => memberLog }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        await ss.joinViaManifest('mf_1')
+
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        // 既有鍵保留 + 新鍵併入
+        expect(keys).toContain('other|1|add|records')
+        expect(keys).toContain('dev_a|100|add|ledgers|uuuuuuuu-9')
+        expect(keys).toContain('dev_a|200|add|records')
+    })
+
+    it('無效的 manifest（缺 members）拋出錯誤且不套用任何變更', async () => {
+        globalThis.fetch = vi.fn(async _url => ({
+            ok: true,
+            json: async () => ({ changes: [] }),
+        }))
+        ss.applyRemoteChanges = vi.fn(async () => {})
+
+        await expect(ss.joinViaManifest('bad_mf')).rejects.toThrow(
+            '無效的共用帳本清單檔'
+        )
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+    })
+
+    it('重複變更改用 key 去重；成員檔抓不到不阻擋加入', async () => {
+        const recordChange = {
+            deviceId: 'dev_b',
+            timestamp: 10,
+            operation: 'add',
+            storeName: 'records',
+            data: { uuid: 'r1' },
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_2') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                            { deviceId: 'dev_c', ownerEmail: 'c@t.com', fileId: null },
+                            { deviceId: 'dev_d', ownerEmail: 'd@t.com', fileId: 'log_d' },
+                            { deviceId: 'dev_e', ownerEmail: 'e@t.com', fileId: 'log_e' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_b', timestamp: 5, operation: 'add', storeName: 'ledgers', data: { uuid: 'uuuuuuuu-8' } },
+                            recordChange,
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_d') && url.includes('alt=media')) {
+                // 與 dev_b 完全相同的變更（同 key）→ 應被去重
+                return { ok: true, json: async () => ({ changes: [recordChange] }) }
+            }
+            // log_e：下載失敗 → 不阻擋加入流程
+            if (url.includes('files/log_e')) {
+                return { ok: false, status: 404, json: async () => ({}) }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_log_2' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_2')
+
+        expect(uuid).toBe('uuuuuuuu-8')
+        const applied = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(applied).toHaveLength(2)
+        expect(applied.map(c => c.timestamp)).toEqual([5, 10])
+        const keys = (await ds.getSetting('sync_shared_applied_keys')).value
+        expect(keys).toHaveLength(2)
+        expect(keys).toContain('dev_b|10|add|records|r1')
+    })
+
+    it('成員日誌遇到 500 等暫時性錯誤時拋出例外終止加入（不建立殘缺帳本）', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_err') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b')) {
+                return { ok: false, status: 500 }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        await expect(ss.joinViaManifest('mf_err')).rejects.toThrow(
+            'Failed to download file (500)'
+        )
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+        expect(ss._registerSelfInManifest).not.toHaveBeenCalled()
+    })
+
+    it('日誌中缺乏 ledgers 變更（如因 90 天前建立已被舊版裁剪）時，成功從 manifest.ledgerMeta 快照還原帳本', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_fallback') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        ledgerUuid: 'u-fallback-99',
+                        ledgerMeta: {
+                            name: '久遠的共用帳本',
+                            color: '#10b981',
+                            icon: 'fa-wallet',
+                            currency: 'USD',
+                        },
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b') && url.includes('alt=media')) {
+                // 日誌中只有 records，沒有 ledgers
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_b', timestamp: 50, operation: 'add', storeName: 'records', data: { uuid: 'r99' } },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_log_fb' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_fallback')
+
+        expect(uuid).toBe('u-fallback-99')
+        const addedLedger = (await ds.getLedgers()).find(l => l.uuid === 'u-fallback-99')
+        expect(addedLedger).toBeDefined()
+        expect(addedLedger.name).toBe('久遠的共用帳本')
+        expect(addedLedger.currency).toBe('USD')
+    })
+})
+
+describe('SyncService _applyUpdateWithId ledgers 保護欄位', () => {
+    it('遠端更新缺少 sharedManifestId 時保留本地值', async () => {
+        const ds = createMockDataService({
+            getLedger: vi.fn(async () => ({
+                id: 1,
+                isShared: true,
+                sharedFileId: 'f',
+                sharedManifestId: 'mf',
+            })),
+            updateLedger: vi.fn(async () => true),
+        })
+        const ss = createSyncService(ds)
+
+        await ss._applyUpdateWithId('ledgers', 1, { uuid: 'x', name: 'n' })
+
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            expect.objectContaining({ sharedManifestId: 'mf' }),
+            true
+        )
+    })
+
+    it('遠端明確提供 sharedManifestId 時採用遠端值', async () => {
+        const ds = createMockDataService({
+            getLedger: vi.fn(async () => ({
+                id: 1,
+                isShared: true,
+                sharedFileId: 'f',
+                sharedManifestId: 'mf_local',
+            })),
+            updateLedger: vi.fn(async () => true),
+        })
+        const ss = createSyncService(ds)
+
+        await ss._applyUpdateWithId('ledgers', 1, {
+            uuid: 'x',
+            sharedManifestId: 'mf_remote',
+        })
+
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            1,
+            expect.objectContaining({ sharedManifestId: 'mf_remote' }),
+            true
+        )
+    })
+})
+
+describe('PR #69 External Review Verified Fixes', () => {
+    let ss, ds
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'test-token'
+        ss.deviceId = 'dev_me'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.ensureSharingPermission = vi.fn(async () => true)
+        ss.isSharingAuthorized = vi.fn(async () => true)
+    })
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    describe('Issue 1 & 2: pullSharedLedgerChanges premature appliedKeys and checkedMap cache', () => {
+        it('當 applyRemoteChanges 僅成功部分變更時，僅將成功的鍵寫入 appliedKeys', async () => {
+            const now = Date.now()
+            const memberLog = {
+                changes: [
+                    { deviceId: 'dev_b', timestamp: now - 1000, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
+                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec2' } },
+                ],
+            }
+
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') {
+                    return { data: memberLog }
+                }
+                return null
+            })
+
+            // 模擬 applyRemoteChanges 僅成功第一筆
+            const key1 = ss._changeKey(memberLog.changes[0])
+            ss.applyRemoteChanges = vi.fn(async () => new Set([key1]))
+
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const applied = (await ds.getSetting('sync_shared_applied_keys'))?.value || []
+            expect(applied).toContain(key1)
+            expect(applied).not.toContain(ss._changeKey(memberLog.changes[1]))
+            // 關鍵回歸驗證：部分套用失敗時，checkedMap 不應前進，使下一輪能重新下載並重試失敗項目
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBeUndefined()
+        })
+
+        it('當 member log 所有變更成功套用時，checkedMap 正確推進時間戳', async () => {
+            const now = Date.now()
+            const memberLog = {
+                changes: [
+                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
+                ],
+            }
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') return { data: memberLog }
+                return null
+            })
+            const key1 = ss._changeKey(memberLog.changes[0])
+            ss.applyRemoteChanges = vi.fn(async () => new Set([key1]))
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBe(5000)
+        })
+
+        it('當 member log 下載失敗時，不更新 checkedMap 以便後續重試', async () => {
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') {
+                    return null // 模擬下載失敗
+                }
+                return null
+            })
+            ss.applyRemoteChanges = vi.fn(async () => new Set())
+
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBeUndefined()
+        })
+    })
+
+    describe('Issue 3 & 4: _ensureSharedInfra legacy migration and manifest registration failure', () => {
+        it('舊式共用檔下載失敗（非 404）時拋錯且不寫入 shared_migrated 旗標', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-mig-fail',
+                name: 'Test Ledger',
+                isShared: true,
+                sharedFileId: 'legacy-file-id',
+            }
+
+            ss._downloadFileStrict = vi.fn(async id => {
+                if (id === 'legacy-file-id') {
+                    throw new Error('Failed to download file (500)')
+                }
+                return {}
+            })
+
+            await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow('Failed to download legacy shared file')
+            const migrated = await ds.getSetting('shared_migrated_u-mig-fail')
+            expect(migrated).toBeNull()
+        })
+
+        it('舊式共用檔回傳 404 時視為無歷史資料，可安全完成遷移並標記 migrated', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-mig-404',
+                name: 'Test Ledger',
+                isShared: true,
+                sharedFileId: 'legacy-404-id',
+            }
+
+            ss._downloadFileStrict = vi.fn(async id => {
+                if (id === 'legacy-404-id') {
+                    throw new Error('Failed to download file (404)')
+                }
+                return {}
+            })
+            ss._findFileInDrive = vi.fn(async () => 'found-mf')
+            ss._registerSelfInManifest = vi.fn(async () => true)
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._createSharedFile = vi.fn(async () => ({ id: 'new-dev-log' }))
+            ds.updateLedger = vi.fn(async () => true)
+
+            const infra = await ss._ensureSharedInfra(ledger)
+            expect(infra.manifestId).toBe('found-mf')
+            const migrated = await ds.getSetting('shared_migrated_u-mig-404')
+            expect(migrated?.value).toBe(true)
+        })
+
+        it('若 _registerSelfInManifest 重試用盡失敗，_ensureSharedInfra 應拋出錯誤', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'u-reg-fail',
+                name: 'Register Fail Ledger',
+                isShared: true,
+                sharedManifestId: 'mf-exists',
+            }
+
+            ss._registerSelfInManifest = vi.fn(async () => false)
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._findFileInDrive = vi.fn(async () => 'my-dev-log')
+
+            await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow('Failed to register device in manifest')
+        })
+    })
+
+    describe('Issue 5: _appendToDeviceLog ETag CAS optimistic lock', () => {
+        it('遭遇 412 併發衝突時自動重試並在第二次成功帶入最新 ETag', async () => {
+            let attempt = 0
+            const patchCalls = []
+
+            globalThis.fetch = vi.fn(async (url, opts) => {
+                if (opts?.method === 'PATCH') {
+                    patchCalls.push(opts)
+                    if (attempt === 0) {
+                        attempt++
+                        return { ok: false, status: 412, json: async () => ({ error: { message: 'etag mismatch' } }) }
+                    }
+                    return { ok: true, json: async () => ({}) }
+                }
+                // GET request
+                const etag = attempt === 0 ? '"etag-v1"' : '"etag-v2"'
+                return {
+                    ok: true,
+                    headers: new Headers({ ETag: etag }),
+                    json: async () => ({
+                        deviceId: 'dev_me',
+                        changes: attempt === 0 ? [] : [{ deviceId: 'dev_me', timestamp: 10, operation: 'add', storeName: 'records' }],
+                    }),
+                }
+            })
+
+            const now = Date.now()
+            const incoming = [
+                { deviceId: 'dev_me', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'r2' } },
+            ]
+
+            const written = await ss._appendToDeviceLog('log-id', incoming)
+            expect(written).toBe(1)
+            expect(patchCalls).toHaveLength(2)
+            expect(patchCalls[0].headers['If-Match']).toBe('"etag-v1"')
+            expect(patchCalls[1].headers['If-Match']).toBe('"etag-v2"')
+        })
+    })
+
+    describe('Issue 6: _changeKey 同毫秒防碰撞', () => {
+        it('同毫秒內不同 record UUID 能產生相異鍵', () => {
+            const ts = 1700000000000
+            const change1 = {
+                deviceId: 'dev_a',
+                timestamp: ts,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'uuid-alpha' },
+            }
+            const change2 = {
+                deviceId: 'dev_a',
+                timestamp: ts,
+                operation: 'add',
+                storeName: 'records',
+                data: { uuid: 'uuid-beta' },
+            }
+
+            const k1 = ss._changeKey(change1)
+            const k2 = ss._changeKey(change2)
+
+            expect(k1).not.toBe(k2)
+            expect(k1).toBe(`dev_a|${ts}|add|records|uuid-alpha`)
+            expect(k2).toBe(`dev_a|${ts}|add|records|uuid-beta`)
+        })
+
+        it('支援使用 recordId 作為識別碼且相容 30 天時間戳解析', () => {
+            const ts = 1700000000000
+            const change = {
+                deviceId: 'dev_b',
+                timestamp: ts,
+                operation: 'update',
+                storeName: 'accounts',
+                recordId: 42,
+            }
+            const k = ss._changeKey(change)
+            expect(k).toBe(`dev_b|${ts}|update|accounts|42`)
+
+            const parsedTs = parseInt(k.split('|')[1], 10)
+            expect(parsedTs).toBe(ts)
+        })
+    })
+})
+
+describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.grantFilePermission = vi.fn(async () => ({}))
+        ss.getFilePermissions = vi.fn(async () => [])
+        ss.removeFilePermission = vi.fn(async () => {})
+    })
+
+    it('對新成員授予 reader 唯讀權限', async () => {
+        ss._downloadFile = vi.fn(async () => ({
+            data: {
+                members: [
+                    { ownerEmail: 'me@test.com', fileId: 'my_log' },
+                    { ownerEmail: 'member1@test.com', fileId: 'log_1' },
+                ],
+            },
+        }))
+
+        await ss._grantDevLogPermissions('u1', 'mf_1', 'my_devlog')
+
+        expect(ss.grantFilePermission).toHaveBeenCalledWith(
+            'my_devlog',
+            'member1@test.com',
+            'reader'
+        )
+        const saved = (
+            await ds.getSetting('sync_shared_granted_u1_my_devlog')
+        ).value
+        expect(saved).toContain('member1@test.com')
+    })
+
+    it('當既有成員從 manifest 移除時，自動撤銷其對 DevLog 的權限', async () => {
+        // 先前已經授權過 member2@test.com
+        await ds.saveSetting({
+            key: 'sync_shared_granted_u2_my_devlog',
+            value: ['member2@test.com', 'keep@test.com'],
+        })
+
+        // 雲端 manifest 中 member2 已被移除，僅剩 keep@test.com
+        ss._downloadFile = vi.fn(async () => ({
+            data: {
+                members: [
+                    { ownerEmail: 'me@test.com', fileId: 'my_log' },
+                    { ownerEmail: 'keep@test.com', fileId: 'log_k' },
+                ],
+            },
+        }))
+
+        // mock getFilePermissions
+        ss.getFilePermissions = vi.fn(async () => [
+            { id: 'perm_m2', emailAddress: 'member2@test.com', role: 'reader' },
+            { id: 'perm_keep', emailAddress: 'keep@test.com', role: 'reader' },
+        ])
+
+        await ss._grantDevLogPermissions('u2', 'mf_2', 'my_devlog')
+
+        expect(ss.getFilePermissions).toHaveBeenCalledWith('my_devlog')
+        expect(ss.removeFilePermission).toHaveBeenCalledWith('my_devlog', 'perm_m2')
+        expect(ss.removeFilePermission).not.toHaveBeenCalledWith('my_devlog', 'perm_keep')
+
+        const saved = (
+            await ds.getSetting('sync_shared_granted_u2_my_devlog')
+        ).value
+        expect(saved).not.toContain('member2@test.com')
+        expect(saved).toContain('keep@test.com')
+    })
+})
+
+describe('SyncService performSync 單次同步基礎設施快取', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+    })
+
+    it('performSync 在 push 與 pull 之間共用 _ensureSharedInfra 快取', async () => {
+        const sharedLedger = {
+            id: 1,
+            name: '共用帳本',
+            uuid: 'ledger-uuid-cache',
+            isShared: true,
+            sharedManifestId: 'mf-cache',
+        }
+        ds.getLedgers = vi.fn(async () => [sharedLedger])
+        ds.getChangesSince = vi.fn(async () => [])
+        ds.getSetting = vi.fn(async key => {
+            if (key === 'sync_auto_enabled') return { value: false }
+            return null
+        })
+        ss.isSharingAuthorized = vi.fn(async () => true)
+
+        let ensureCount = 0
+        ss._ensureSharedInfra = vi.fn(async ledger => {
+            if (ss._syncInfraCache?.has(ledger.uuid)) {
+                return ss._syncInfraCache.get(ledger.uuid)
+            }
+            ensureCount++
+            const res = { ledger, devLogId: 'dl', manifestId: 'mf-cache' }
+            ss._syncInfraCache?.set(ledger.uuid, res)
+            return res
+        })
+        ss._downloadFile = vi.fn(async () => ({ data: { members: [] } }))
+
+        await ss.performSync(false)
+
+        // push 和 pull 都處理同一個共用帳本，但 _ensureSharedInfra 只實質計算一次
+        expect(ensureCount).toBe(1)
+        expect(ss._syncInfraCache).toBeNull() // 結束後清理快取
+    })
+})
+
+describe('SyncService appliedKeys 100 天保留期', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ss.isSharingAuthorized = vi.fn(async () => true)
+        ds.getLedgers = vi.fn(async () => [])
+    })
+
+    it('appliedKeys 保留 100 天（保留 60 天前的鍵，清理 110 天前的鍵）', async () => {
+        const now = Date.now()
+        const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000
+        const oneHundredTenDaysAgo = now - 110 * 24 * 60 * 60 * 1000
+
+        await ds.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [
+                `dev_a|${sixtyDaysAgo}|update|records|r1`,
+                `dev_b|${oneHundredTenDaysAgo}|add|records|r2`,
+            ],
+        })
+
+        await ss.pullSharedLedgerChanges()
+
+        const saved = (await ds.getSetting('sync_shared_applied_keys'))?.value
+        expect(saved).toContain(`dev_a|${sixtyDaysAgo}|update|records|r1`)
+        expect(saved).not.toContain(
+            `dev_b|${oneHundredTenDaysAgo}|add|records|r2`
+        )
+    })
+})
+
