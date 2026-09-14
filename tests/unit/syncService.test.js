@@ -1180,6 +1180,27 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes.every(c => c.timestamp >= Date.now() - 90 * 24 * 60 * 60 * 1000)).toBe(true)
     })
 
+    it('超過 90 天的未同步本地變更仍全數寫入雲端不被裁切', async () => {
+        const veryOld = Date.now() - 120 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [],
+                }),
+            }
+        })
+        const n = await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: veryOld, operation: 'add', storeName: 'records', data: { id: 1 } },
+        ])
+        expect(n).toBe(1)
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        expect(sent.changes).toHaveLength(1)
+        expect(sent.changes[0].timestamp).toBe(veryOld)
+    })
+
     it('下載失敗時拋出且不送出 PATCH', async () => {
         globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
         await expect(
@@ -2255,6 +2276,33 @@ describe('SyncService joinViaManifest', () => {
         expect(keys).toHaveLength(2)
         expect(keys).toContain('dev_b|10|add|records|r1')
     })
+
+    it('成員日誌遇到 500 等暫時性錯誤時拋出例外終止加入（不建立殘缺帳本）', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_err') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b')) {
+                return { ok: false, status: 500 }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        await expect(ss.joinViaManifest('mf_err')).rejects.toThrow(
+            'Failed to download file (500)'
+        )
+        expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
+        expect(ss._registerSelfInManifest).not.toHaveBeenCalled()
+    })
 })
 
 describe('SyncService _applyUpdateWithId ledgers 保護欄位', () => {
@@ -2552,5 +2600,123 @@ describe('PR #69 External Review Verified Fixes', () => {
             const parsedTs = parseInt(k.split('|')[1], 10)
             expect(parsedTs).toBe(ts)
         })
+    })
+})
+
+describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.userInfo = { email: 'me@test.com' }
+        ss.grantFilePermission = vi.fn(async () => ({}))
+        ss.getFilePermissions = vi.fn(async () => [])
+        ss.removeFilePermission = vi.fn(async () => {})
+    })
+
+    it('對新成員授予 reader 唯讀權限', async () => {
+        ss._downloadFile = vi.fn(async () => ({
+            data: {
+                members: [
+                    { ownerEmail: 'me@test.com', fileId: 'my_log' },
+                    { ownerEmail: 'member1@test.com', fileId: 'log_1' },
+                ],
+            },
+        }))
+
+        await ss._grantDevLogPermissions('u1', 'mf_1', 'my_devlog')
+
+        expect(ss.grantFilePermission).toHaveBeenCalledWith(
+            'my_devlog',
+            'member1@test.com',
+            'reader'
+        )
+        const saved = (
+            await ds.getSetting('sync_shared_granted_u1_my_devlog')
+        ).value
+        expect(saved).toContain('member1@test.com')
+    })
+
+    it('當既有成員從 manifest 移除時，自動撤銷其對 DevLog 的權限', async () => {
+        // 先前已經授權過 member2@test.com
+        await ds.saveSetting({
+            key: 'sync_shared_granted_u2_my_devlog',
+            value: ['member2@test.com', 'keep@test.com'],
+        })
+
+        // 雲端 manifest 中 member2 已被移除，僅剩 keep@test.com
+        ss._downloadFile = vi.fn(async () => ({
+            data: {
+                members: [
+                    { ownerEmail: 'me@test.com', fileId: 'my_log' },
+                    { ownerEmail: 'keep@test.com', fileId: 'log_k' },
+                ],
+            },
+        }))
+
+        // mock getFilePermissions
+        ss.getFilePermissions = vi.fn(async () => [
+            { id: 'perm_m2', emailAddress: 'member2@test.com', role: 'reader' },
+            { id: 'perm_keep', emailAddress: 'keep@test.com', role: 'reader' },
+        ])
+
+        await ss._grantDevLogPermissions('u2', 'mf_2', 'my_devlog')
+
+        expect(ss.getFilePermissions).toHaveBeenCalledWith('my_devlog')
+        expect(ss.removeFilePermission).toHaveBeenCalledWith('my_devlog', 'perm_m2')
+        expect(ss.removeFilePermission).not.toHaveBeenCalledWith('my_devlog', 'perm_keep')
+
+        const saved = (
+            await ds.getSetting('sync_shared_granted_u2_my_devlog')
+        ).value
+        expect(saved).not.toContain('member2@test.com')
+        expect(saved).toContain('keep@test.com')
+    })
+})
+
+describe('SyncService performSync 單次同步基礎設施快取', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+    })
+
+    it('performSync 在 push 與 pull 之間共用 _ensureSharedInfra 快取', async () => {
+        const sharedLedger = {
+            id: 1,
+            name: '共用帳本',
+            uuid: 'ledger-uuid-cache',
+            isShared: true,
+            sharedManifestId: 'mf-cache',
+        }
+        ds.getLedgers = vi.fn(async () => [sharedLedger])
+        ds.getChangesSince = vi.fn(async () => [])
+        ds.getSetting = vi.fn(async key => {
+            if (key === 'sync_auto_enabled') return { value: false }
+            return null
+        })
+        ss.isSharingAuthorized = vi.fn(async () => true)
+
+        let ensureCount = 0
+        ss._ensureSharedInfra = vi.fn(async ledger => {
+            if (ss._syncInfraCache?.has(ledger.uuid)) {
+                return ss._syncInfraCache.get(ledger.uuid)
+            }
+            ensureCount++
+            const res = { ledger, devLogId: 'dl', manifestId: 'mf-cache' }
+            ss._syncInfraCache?.set(ledger.uuid, res)
+            return res
+        })
+        ss._downloadFile = vi.fn(async () => ({ data: { members: [] } }))
+
+        await ss.performSync(false)
+
+        // push 和 pull 都處理同一個共用帳本，但 _ensureSharedInfra 只實質計算一次
+        expect(ensureCount).toBe(1)
+        expect(ss._syncInfraCache).toBeNull() // 結束後清理快取
     })
 })

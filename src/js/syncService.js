@@ -1016,10 +1016,10 @@ export class SyncService {
                     console.log(
                         `[SyncService] pushShared: "${infra.ledger.name}" 推送 ${appended} 筆變更`
                     )
-                    const ts = Math.max(...mine.map(c => c.timestamp))
-                    maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
-                } else if (mine.length > 0) {
-                    // 本地變更已存在於雲端日誌，時間戳亦可安全視為已同步
+                }
+                // appended > 0 表示有新變更寫入；appended === 0 且 mine.length > 0
+                // 表示本地變更已全數存在於雲端日誌，兩者皆可安全推進時間戳
+                if (mine.length > 0) {
                     const ts = Math.max(...mine.map(c => c.timestamp))
                     maxPushed = maxPushed === null ? ts : Math.max(maxPushed, ts)
                 }
@@ -1147,6 +1147,7 @@ export class SyncService {
     async performSync(isManual = false) {
         if (this._syncing) return
         this._syncing = true
+        this._syncInfraCache = new Map()
 
         try {
             const autoSyncSetting = await this.dataService.getSetting(
@@ -1182,6 +1183,7 @@ export class SyncService {
 
             console.log('[SyncService] performSync complete')
         } finally {
+            this._syncInfraCache = null
             this._syncing = false
         }
     }
@@ -1503,12 +1505,13 @@ export class SyncService {
                 const survivingExisting = existing.filter(
                     c => (c.timestamp || 0) >= cutoff
                 )
-                const persistedNew = missing.filter(c => (c.timestamp || 0) >= cutoff)
-                cloud.changes = [...survivingExisting, ...persistedNew]
+                // 僅對雲端既有歷史 (existing) 進行 90 天清理；
+                // 本地未同步新變更 (missing) 絕不裁切，全數持久化至雲端，避免離線逾 90 天資料遺失
+                cloud.changes = [...survivingExisting, ...missing]
                 cloud.deviceId = this.deviceId
                 cloud.timestamp = Date.now()
                 await this._updateFile(devLogId, JSON.stringify(cloud), etag)
-                return persistedNew.length
+                return missing.length
             } catch (e) {
                 if (
                     attempt < maxRetries - 1 &&
@@ -1653,25 +1656,66 @@ export class SyncService {
             const granted = new Set(grantedSetting?.value || [])
             const m = (await this._downloadFile(manifestId))?.data
             const myEmail = this.userInfo?.email || ''
-            const pending = (m?.members || []).filter(
+
+            const activeMembers = m?.members || []
+            const activeEmails = new Set(
+                activeMembers.map(item => item.ownerEmail).filter(Boolean)
+            )
+
+            let changed = false
+
+            // 1. 去中心化撤銷對齊：若已授權成員從 manifest 移除，主動撤銷其對自己日誌檔的讀取權限
+            const toRevoke = [...granted].filter(email => !activeEmails.has(email))
+            if (toRevoke.length > 0) {
+                try {
+                    const permissions = await this.getFilePermissions(devLogId)
+                    for (const email of toRevoke) {
+                        const p = (permissions || []).find(
+                            item =>
+                                item.emailAddress?.toLowerCase() === email.toLowerCase()
+                        )
+                        if (p?.id) {
+                            try {
+                                await this.removeFilePermission(devLogId, p.id)
+                            } catch (_) {}
+                        }
+                        granted.delete(email)
+                        changed = true
+                    }
+                } catch (revErr) {
+                    console.warn(
+                        '[SyncService] Reconcile revoked permissions failed:',
+                        revErr
+                    )
+                }
+            }
+
+            // 2. 差額補授權：每台裝置日誌僅需給其他成員 'reader' 唯讀權限
+            const pending = activeMembers.filter(
                 member =>
                     member.ownerEmail &&
                     member.ownerEmail !== myEmail &&
                     !granted.has(member.ownerEmail)
             )
-            if (pending.length === 0) return
             for (const member of pending) {
                 try {
-                    await this.grantFilePermission(devLogId, member.ownerEmail)
+                    await this.grantFilePermission(
+                        devLogId,
+                        member.ownerEmail,
+                        'reader'
+                    )
                     granted.add(member.ownerEmail)
+                    changed = true
                 } catch (_) {
                     // 已授權過或暫時性錯誤，靜默忽略（下次同步會再試）
                 }
             }
-            await this.dataService.saveSetting({
-                key: grantedKey,
-                value: [...granted],
-            })
+            if (changed) {
+                await this.dataService.saveSetting({
+                    key: grantedKey,
+                    value: [...granted],
+                })
+            }
         } catch (e) {
             console.warn('[SyncService] grantDevLogPermissions failed:', e)
         }
@@ -1688,6 +1732,10 @@ export class SyncService {
      * @returns {Promise<{ledger: object, devLogId: string, manifestId: string}>}
      */
     async _ensureSharedInfra(ledger) {
+        if (this._syncInfraCache?.has(ledger.uuid)) {
+            return this._syncInfraCache.get(ledger.uuid)
+        }
+
         const migratedKey = `shared_migrated_${ledger.uuid}`
         const migrated = await this.dataService.getSetting(migratedKey)
         let manifestId = ledger.sharedManifestId || null
@@ -1882,7 +1930,9 @@ export class SyncService {
             })
         }
 
-        return { ledger, devLogId, manifestId }
+        const result = { ledger, devLogId, manifestId }
+        this._syncInfraCache?.set(ledger.uuid, result)
+        return result
     }
 
     /**
@@ -1911,19 +1961,43 @@ export class SyncService {
         for (const member of manifest.members) {
             if (!member.fileId) continue
             try {
-                const d = (await this._downloadFile(member.fileId))?.data
+                const d = await this._downloadFileStrict(member.fileId)
                 collect(d?.changes)
-            } catch (_) {
-                // 某成員檔抓不到不阻擋加入
+            } catch (err) {
+                // 404/403 表示該成員日誌檔已被刪除或權限已失效，略過不阻擋加入
+                if (
+                    err.message &&
+                    (err.message.includes('404') || err.message.includes('403'))
+                ) {
+                    console.warn(
+                        `[SyncService] joinViaManifest member log ${member.fileId} not accessible, skipping:`,
+                        err.message
+                    )
+                } else {
+                    // 網路異常或 5xx 錯誤應拋出終止加入，避免造成本地歷史資料缺漏
+                    throw err
+                }
             }
         }
         if (manifest.legacySharedFileId) {
             try {
-                const d = (
-                    await this._downloadFile(manifest.legacySharedFileId)
-                )?.data
+                const d = await this._downloadFileStrict(
+                    manifest.legacySharedFileId
+                )
                 collect(d?.changes)
-            } catch (_) {}
+            } catch (err) {
+                if (
+                    err.message &&
+                    (err.message.includes('404') || err.message.includes('403'))
+                ) {
+                    console.warn(
+                        `[SyncService] joinViaManifest legacy file not accessible, skipping:`,
+                        err.message
+                    )
+                } else {
+                    throw err
+                }
+            }
         }
         allChanges.sort((a, b) => a.timestamp - b.timestamp)
         await this.applyRemoteChanges(allChanges)
@@ -2141,15 +2215,16 @@ export class SyncService {
     }
 
     /**
-     * 將指定檔案授權給其他 Email (Writer)
+     * 將指定檔案授權給其他 Email (預設 writer，日誌檔可指定 reader)
      * @param {string} fileId
      * @param {string} emailAddress
+     * @param {string} [role='writer']
      */
-    async grantFilePermission(fileId, emailAddress) {
+    async grantFilePermission(fileId, emailAddress, role = 'writer') {
         await this.ensureSharingPermission()
 
         const body = {
-            role: 'writer',
+            role,
             type: 'user',
             emailAddress: emailAddress,
         }

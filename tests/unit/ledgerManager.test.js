@@ -490,7 +490,7 @@ describe('LedgerManager', () => {
 
             expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('file123', 'user@test.com')
             expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('mf_created', 'user@test.com')
-            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('dl_created', 'user@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('dl_created', 'user@test.com', 'reader')
             expect(result).toBe('mf_created')
         })
 
@@ -510,7 +510,7 @@ describe('LedgerManager', () => {
 
             expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-file', 'new@test.com')
             expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-manifest', 'new@test.com')
-            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-devlog', 'new@test.com')
+            expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-devlog', 'new@test.com', 'reader')
             expect(result).toBe('existing-manifest')
         })
     })

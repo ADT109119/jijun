@@ -179,6 +179,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 
 - **多帳本與共用架構 (Per-Device Sync)**:
     - 每個裝置維護自己獨立的 `sync_shared_devlog_<uuid>` 雲端變更日誌檔，避免共用單一檔案引發並行寫入覆蓋；裝置日誌寫入時同樣支援 ETag / If-Match 樂觀鎖與 412 衝突重試
+    - **最小權限與權限撤銷對齊**：DevLog 僅授予其他成員 `reader` 唯讀權限（只有裝置本機具備寫入權限）；同步時各裝置主動比對 manifest 活躍成員清單，自動撤銷已移除成員對本機 DevLog 的讀取權限，達成完全去中心化的安全閉環
+    - **歷史裁切防護**：雲端日誌 90 天裁切過濾僅套用於雲端既有歷史紀錄，本地未同步新變更（`missing`）一律全數寫入雲端，徹底杜絕離線逾 90 天變更遺失與 `clearSyncLog` 誤刪
+    - **加入強韌性與單次快取**：`joinViaManifest` 區分 404/403（略過）與 500/網路錯誤（中斷終止並提示重試），防範因成員日誌下載異常造成殘缺帳本；`performSync` 內建 `_syncInfraCache` 消除同一輪同步 push/pull 重複執行 Drive 基礎設施解析
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 向後相容：manifest 記錄 `legacySharedFileId` 指向舊檔，拉取時以 `appliedKeys` 本地集合（結合 recordId/UUID 防同毫秒碰撞）在確實套用成功後才持久化，舊檔遷移時防範網路中斷造成資料遺失
@@ -205,9 +208,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重、舊帳本防斷網遷移)
-- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重、舊帳本防斷網遷移、reader 權限與撤銷對齊、90 天新變更防裁切、500 錯誤防殘缺、performSync 快取)
+- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷及 reader 權限指派)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1613 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1618 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

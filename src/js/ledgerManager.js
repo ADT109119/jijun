@@ -218,7 +218,11 @@ export class LedgerManager {
                 devLogId = (await this.dataService.getSetting(devLogKey))?.value
             }
             if (devLogId) {
-                await this.app.syncService.grantFilePermission(devLogId, email)
+                await this.app.syncService.grantFilePermission(
+                    devLogId,
+                    email,
+                    'reader'
+                )
             }
             return ledger.sharedManifestId || fileId
         }
@@ -304,7 +308,8 @@ export class LedgerManager {
         if (infra?.devLogId) {
             await this.app.syncService.grantFilePermission(
                 infra.devLogId,
-                email
+                email,
+                'reader'
             )
         }
 
