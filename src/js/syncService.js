@@ -1058,6 +1058,7 @@ export class SyncService {
         const appliedKeys = new Set(appliedSetting?.value || [])
         const pendingKeys = new Set(appliedKeys)
         const allRemoteChanges = []
+        const pendingCheckpoints = []
 
         for (const ledger of sharedLedgers) {
             try {
@@ -1091,19 +1092,23 @@ export class SyncService {
                         continue // 下載失敗（網路短暫中斷/500等），不更新 checkedMap 以便下次重試
                     }
                     const data = resFile.data
+                    const memberKeys = []
                     for (const change of data?.changes || []) {
                         if (change.deviceId === this.deviceId) continue
                         const key = this._changeKey(change)
                         if (pendingKeys.has(key)) continue
                         pendingKeys.add(key)
+                        memberKeys.push(key)
                         allRemoteChanges.push(change)
                     }
-                    checkedMap[member.fileId] = modifiedMs
+                    pendingCheckpoints.push({
+                        checkedKey,
+                        checkedMap,
+                        fileId: member.fileId,
+                        modifiedMs,
+                        keys: memberKeys,
+                    })
                 }
-                await this.dataService.saveSetting({
-                    key: checkedKey,
-                    value: checkedMap,
-                })
             } catch (e) {
                 console.warn(
                     `[SyncService] pullShared failed for "${ledger.name}":`,
@@ -1112,6 +1117,7 @@ export class SyncService {
             }
         }
 
+        const successfulKeySet = new Set()
         if (allRemoteChanges.length > 0) {
             console.log(
                 `[SyncService] pullShared: 套用 ${allRemoteChanges.length} 筆遠端變更`
@@ -1124,15 +1130,36 @@ export class SyncService {
                     : allRemoteChanges.map(c => this._changeKey(c))
             for (const key of successfulKeys) {
                 appliedKeys.add(key)
+                successfulKeySet.add(key)
             }
         }
 
-        // 持久化已套用鍵集合（保留最近 30 天，避免無限增長；
-        // 離線逾 30 天可能重套用，但 UUID upsert 使其冪等）
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+        // 僅在該成員日誌中所有待套用變更均成功寫入本地後，才推進該成員的 checkedMap checkpoint；
+        // 若有任何變更套用失敗，保留舊時間戳使下次能重新下載並重試失敗項目（成功項目由 appliedKeys 去重）
+        const updatedCheckedKeys = new Set()
+        for (const cp of pendingCheckpoints) {
+            const allSucceeded = cp.keys.every(k => successfulKeySet.has(k))
+            if (allSucceeded) {
+                cp.checkedMap[cp.fileId] = cp.modifiedMs
+                updatedCheckedKeys.add(cp.checkedKey)
+            }
+        }
+        for (const cp of pendingCheckpoints) {
+            if (updatedCheckedKeys.has(cp.checkedKey)) {
+                await this.dataService.saveSetting({
+                    key: cp.checkedKey,
+                    value: cp.checkedMap,
+                })
+                updatedCheckedKeys.delete(cp.checkedKey)
+            }
+        }
+
+        // 持久化已套用鍵集合（保留最近 100 天，嚴格大於雲端日誌的 90 天保留期，
+        // 確保雲端仍在的變更本機不會因提早過期而重播舊 update 覆蓋新資料）
+        const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
         const trimmedKeys = [...appliedKeys].filter(key => {
             const ts = parseInt(key.split('|')[1], 10)
-            return !isNaN(ts) && ts > thirtyDaysAgo
+            return !isNaN(ts) && ts > hundredDaysAgo
         })
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
@@ -1503,9 +1530,11 @@ export class SyncService {
 
                 const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
                 const survivingExisting = existing.filter(
-                    c => (c.timestamp || 0) >= cutoff
+                    c =>
+                        c.storeName === 'ledgers' ||
+                        (c.timestamp || 0) >= cutoff
                 )
-                // 僅對雲端既有歷史 (existing) 進行 90 天清理；
+                // 僅對雲端既有歷史 (existing) 非帳本元資料項目進行 90 天清理（帳本定義永久保留）；
                 // 本地未同步新變更 (missing) 絕不裁切，全數持久化至雲端，避免離線逾 90 天資料遺失
                 cloud.changes = [...survivingExisting, ...missing]
                 cloud.deviceId = this.deviceId
@@ -1788,6 +1817,12 @@ export class SyncService {
                         ledgerUuid: ledger.uuid,
                         ownerEmail,
                         legacySharedFileId: ledger.sharedFileId || null,
+                        ledgerMeta: {
+                            name: ledger.name,
+                            color: ledger.color,
+                            icon: ledger.icon,
+                            currency: ledger.currency || 'TWD',
+                        },
                         members: [
                             {
                                 deviceId: this.deviceId,
@@ -1799,18 +1834,20 @@ export class SyncService {
                 )
                 manifestId = created.id
             }
-            // 把指標寫回舊檔協調其他裝置（多台同時建立時，最後寫入者為準）；
-            // 若他機已搶先註冊則採用贏家，並刪除自己剛建立的孤兒 manifest
+            // 把指標寫回舊檔協調其他裝置（帶 ETag 樂觀鎖；多台同時建立時，412 衝突者自動採用贏家指標並刪除孤兒 manifest）
             if (ledger.sharedFileId) {
                 try {
-                    const res = await this._downloadFile(ledger.sharedFileId)
-                    const latest = res?.data || {}
+                    const { data: latest, etag } =
+                        await this._downloadFileStrict(ledger.sharedFileId, {
+                            withMeta: true,
+                        })
                     if (!latest.manifestFileId) {
                         latest.manifestFileId = manifestId
                         latest.timestamp = Date.now()
                         await this._updateFile(
                             ledger.sharedFileId,
-                            JSON.stringify(latest)
+                            JSON.stringify(latest),
+                            etag
                         )
                     } else if (latest.manifestFileId !== manifestId) {
                         try {
@@ -1818,7 +1855,27 @@ export class SyncService {
                         } catch (_) {}
                         manifestId = latest.manifestFileId
                     }
-                } catch (_) {}
+                } catch (confErr) {
+                    if (
+                        confErr.status === 412 ||
+                        confErr.message?.includes('412')
+                    ) {
+                        try {
+                            const fresh = await this._downloadFileStrict(
+                                ledger.sharedFileId
+                            )
+                            if (
+                                fresh?.manifestFileId &&
+                                fresh.manifestFileId !== manifestId
+                            ) {
+                                try {
+                                    await this.deleteFile(manifestId)
+                                } catch (_) {}
+                                manifestId = fresh.manifestFileId
+                            }
+                        } catch (_) {}
+                    }
+                }
             }
         } else if (oldData) {
             // 指標重校準（每次執行都檢查）：帳本記錄的指標可能已過期，
@@ -2002,9 +2059,23 @@ export class SyncService {
         allChanges.sort((a, b) => a.timestamp - b.timestamp)
         await this.applyRemoteChanges(allChanges)
 
-        const ledgerChange = allChanges.find(
+        let ledgerChange = allChanges.find(
             c => c.storeName === 'ledgers' && c.data?.uuid
         )
+        if (!ledgerChange && manifest.ledgerMeta && manifest.ledgerUuid) {
+            const fallbackLedger = {
+                uuid: manifest.ledgerUuid,
+                name: manifest.ledgerMeta.name || '共用帳本',
+                color: manifest.ledgerMeta.color || '#3b82f6',
+                icon: manifest.ledgerMeta.icon || 'fa-book',
+                type: 'shared',
+                isShared: true,
+                sharedManifestId: manifestId,
+                currency: manifest.ledgerMeta.currency || 'TWD',
+            }
+            await this.dataService.addLedger(fallbackLedger)
+            ledgerChange = { data: fallbackLedger }
+        }
         if (!ledgerChange) throw new Error('無法從共用資料解析帳本')
         const ledgerUuid = ledgerChange.data.uuid
 

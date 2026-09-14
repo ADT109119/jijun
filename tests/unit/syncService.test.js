@@ -61,6 +61,11 @@ function createMockDataService(overrides = {}) {
         saveCategorySetting: vi.fn(async () => true),
         logChange: vi.fn(),
         getLedgers: vi.fn(async () => ledgers),
+        addLedger: vi.fn(async ledger => {
+            ledgers.push(ledger)
+            return ledgers.length
+        }),
+        updateLedger: vi.fn(async () => true),
         exportDataForSync: vi.fn(async () => ({ records: [] })),
         importDataFromSync: vi.fn(async () => true),
         ...overrides,
@@ -1201,6 +1206,31 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes[0].timestamp).toBe(veryOld)
     })
 
+    it('雲端既有變更即使超過 90 天，只要為 ledgers 變更即永久保留不被裁切', async () => {
+        const veryOld = Date.now() - 150 * 24 * 60 * 60 * 1000
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
+            return {
+                ok: true,
+                json: async () => ({
+                    changes: [
+                        { deviceId: 'a', timestamp: veryOld, operation: 'add', storeName: 'ledgers', data: { uuid: 'u1' } },
+                        { deviceId: 'a', timestamp: veryOld, operation: 'add', storeName: 'records', data: { uuid: 'r1' } },
+                    ],
+                }),
+            }
+        })
+        await ss._appendToDeviceLog('file_1', [
+            { deviceId: 'x', timestamp: Date.now(), operation: 'add', storeName: 'records', data: { uuid: 'r2' } },
+        ])
+        const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
+        const sent = JSON.parse(patchCall[1].body)
+        // 舊 records 被裁剪，但舊 ledgers 與新 records 一同保留
+        expect(sent.changes).toHaveLength(2)
+        expect(sent.changes.find(c => c.storeName === 'ledgers')).toBeDefined()
+        expect(sent.changes.find(c => c.data?.uuid === 'r2')).toBeDefined()
+    })
+
     it('下載失敗時拋出且不送出 PATCH', async () => {
         globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
         await expect(
@@ -2303,6 +2333,57 @@ describe('SyncService joinViaManifest', () => {
         expect(ss.applyRemoteChanges).not.toHaveBeenCalled()
         expect(ss._registerSelfInManifest).not.toHaveBeenCalled()
     })
+
+    it('日誌中缺乏 ledgers 變更（如因 90 天前建立已被舊版裁剪）時，成功從 manifest.ledgerMeta 快照還原帳本', async () => {
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_fallback') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        ledgerUuid: 'u-fallback-99',
+                        ledgerMeta: {
+                            name: '久遠的共用帳本',
+                            color: '#10b981',
+                            icon: 'fa-wallet',
+                            currency: 'USD',
+                        },
+                        members: [
+                            { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'log_b' },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('files/log_b') && url.includes('alt=media')) {
+                // 日誌中只有 records，沒有 ledgers
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            { deviceId: 'dev_b', timestamp: 50, operation: 'add', storeName: 'records', data: { uuid: 'r99' } },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_log_fb' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_fallback')
+
+        expect(uuid).toBe('u-fallback-99')
+        const addedLedger = (await ds.getLedgers()).find(l => l.uuid === 'u-fallback-99')
+        expect(addedLedger).toBeDefined()
+        expect(addedLedger.name).toBe('久遠的共用帳本')
+        expect(addedLedger.currency).toBe('USD')
+    })
 })
 
 describe('SyncService _applyUpdateWithId ledgers 保護欄位', () => {
@@ -2416,6 +2497,48 @@ describe('PR #69 External Review Verified Fixes', () => {
             const applied = (await ds.getSetting('sync_shared_applied_keys'))?.value || []
             expect(applied).toContain(key1)
             expect(applied).not.toContain(ss._changeKey(memberLog.changes[1]))
+            // 關鍵回歸驗證：部分套用失敗時，checkedMap 不應前進，使下一輪能重新下載並重試失敗項目
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBeUndefined()
+        })
+
+        it('當 member log 所有變更成功套用時，checkedMap 正確推進時間戳', async () => {
+            const now = Date.now()
+            const memberLog = {
+                changes: [
+                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
+                ],
+            }
+            ss._ensureSharedInfra = vi.fn(async ledger => ({
+                ledger,
+                devLogId: 'my_log',
+                manifestId: ledger.sharedManifestId,
+            }))
+            ss._getFileModifiedTime = vi.fn(async () => 5000)
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf1') {
+                    return {
+                        data: {
+                            members: [
+                                { deviceId: 'dev_me', fileId: 'my_log' },
+                                { deviceId: 'dev_b', fileId: 'b_log' },
+                            ],
+                        },
+                    }
+                }
+                if (id === 'b_log') return { data: memberLog }
+                return null
+            })
+            const key1 = ss._changeKey(memberLog.changes[0])
+            ss.applyRemoteChanges = vi.fn(async () => new Set([key1]))
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'led-1', name: 'L1', isShared: true, sharedManifestId: 'mf1' },
+            ])
+
+            await ss.pullSharedLedgerChanges()
+
+            const checkedMap = (await ds.getSetting('sync_shared_member_checked_led-1'))?.value || {}
+            expect(checkedMap['b_log']).toBe(5000)
         })
 
         it('當 member log 下載失敗時，不更新 checkedMap 以便後續重試', async () => {
@@ -2720,3 +2843,39 @@ describe('SyncService performSync 單次同步基礎設施快取', () => {
         expect(ss._syncInfraCache).toBeNull() // 結束後清理快取
     })
 })
+
+describe('SyncService appliedKeys 100 天保留期', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ss.isSharingAuthorized = vi.fn(async () => true)
+        ds.getLedgers = vi.fn(async () => [])
+    })
+
+    it('appliedKeys 保留 100 天（保留 60 天前的鍵，清理 110 天前的鍵）', async () => {
+        const now = Date.now()
+        const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000
+        const oneHundredTenDaysAgo = now - 110 * 24 * 60 * 60 * 1000
+
+        await ds.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [
+                `dev_a|${sixtyDaysAgo}|update|records|r1`,
+                `dev_b|${oneHundredTenDaysAgo}|add|records|r2`,
+            ],
+        })
+
+        await ss.pullSharedLedgerChanges()
+
+        const saved = (await ds.getSetting('sync_shared_applied_keys'))?.value
+        expect(saved).toContain(`dev_a|${sixtyDaysAgo}|update|records|r1`)
+        expect(saved).not.toContain(
+            `dev_b|${oneHundredTenDaysAgo}|add|records|r2`
+        )
+    })
+})
+

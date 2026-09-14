@@ -678,6 +678,19 @@ describe('LedgerManager', () => {
                 removeFilePermission: vi.fn(),
             }
             mockApp.syncService = mockSyncService
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+        })
+
+        it('非擁有者呼叫時拋出錯誤拒絕移除', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                sharedFileId: 'file123',
+            })
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(false)
+
+            await expect(
+                ledgerManager.removeSharedUser(1, 'perm456')
+            ).rejects.toThrow('只有帳本擁有者可以移除成員')
         })
 
         it('呼叫 syncService.removeFilePermission', async () => {

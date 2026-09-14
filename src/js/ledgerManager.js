@@ -457,6 +457,10 @@ export class LedgerManager {
         if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
             throw new Error('此帳本尚未共用')
         }
+        const isOwner = await this.isLedgerOwner(ledgerId)
+        if (!isOwner) {
+            throw new Error('只有帳本擁有者可以移除成員')
+        }
         if (ledger?.sharedManifestId) {
             let removedEmail = null
             try {
