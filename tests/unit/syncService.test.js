@@ -2922,3 +2922,199 @@ describe('SyncService appliedKeys 100 天保留期', () => {
     })
 })
 
+describe('SyncService Architectural Hardening & Bug Fixes', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+        ss.isSharingAuthorized = vi.fn(async () => true)
+        ss.ensureValidToken = vi.fn(async () => {})
+    })
+
+    it('performSync 在 pushSharedLedgerChanges 回傳 null (失敗) 時跳過 clearSyncLog', async () => {
+        ss.pushChanges = vi.fn(async () => 700)
+        ss.pushSharedLedgerChanges = vi.fn(async () => null)
+        ss.pullChanges = vi.fn(async () => {})
+        ss.pullSharedLedgerChanges = vi.fn(async () => {})
+        ds.clearSyncLog = vi.fn(async () => true)
+
+        await ss.performSync(true)
+        expect(ds.clearSyncLog).not.toHaveBeenCalled()
+    })
+
+    it('joinViaManifest 僅將 applyRemoteChanges 成功套用的鍵記錄入 appliedKeys', async () => {
+        const manifest = {
+            ledgerUuid: 'u-strict',
+            ledgerMeta: { id: 1, name: 'L1', uuid: 'u-strict' },
+            members: [{ deviceId: 'dev_peer', fileId: 'f_peer' }],
+        }
+        ss._downloadFile = vi.fn(async () => ({ data: manifest }))
+        const peerChanges = [
+            { deviceId: 'dev_peer', timestamp: 100, operation: 'add', storeName: 'records', recordId: 'r1', data: { uuid: 'u-r1' } },
+            { deviceId: 'dev_peer', timestamp: 200, operation: 'add', storeName: 'records', recordId: 'r2', data: { uuid: 'u-r2' } },
+        ]
+        ss._downloadFileStrict = vi.fn(async (fileId) => {
+            if (fileId === 'f_peer') return { data: { changes: peerChanges } }
+            if (fileId === 'mf_strict') return { data: manifest, etag: 'e1' }
+            return { data: {} }
+        })
+        const key1 = ss._changeKey(peerChanges[0])
+        // 模擬 applyRemoteChanges 只成功套用第 1 筆變更
+        ss.applyRemoteChanges = vi.fn(async () => new Set([key1]))
+        ss._findFileInDrive = vi.fn(async () => null)
+        ss._createSharedFile = vi.fn(async () => ({ id: 'my_log_id' }))
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        await ss.joinViaManifest('mf_strict')
+
+        const applied = (await ds.getSetting('sync_shared_applied_keys'))?.value
+        expect(applied).toContain(key1)
+        expect(applied).not.toContain(ss._changeKey(peerChanges[1]))
+    })
+
+    it('_grantDevLogPermissions 在 removeFilePermission 失敗時保留於 granted 快取', async () => {
+        const ledgerUuid = 'u-grant-fail'
+        const manifestId = 'mf-grant'
+        const devLogId = 'dl-grant'
+
+        await ds.saveSetting({
+            key: `sync_shared_granted_${ledgerUuid}_${devLogId}`,
+            value: ['left_member@test.com'],
+        })
+
+        // manifest 中已無 left_member@test.com
+        ss._downloadFile = vi.fn(async () => ({
+            data: { members: [{ deviceId: 'dev_me', ownerEmail: 'me@test.com' }] },
+        }))
+        ss.getFilePermissions = vi.fn(async () => [
+            { id: 'perm-left', emailAddress: 'left_member@test.com' },
+        ])
+        ss.removeFilePermission = vi.fn(async () => {
+            throw new Error('Network error on revoke')
+        })
+
+        await ss._grantDevLogPermissions(ledgerUuid, manifestId, devLogId)
+
+        const granted = (
+            await ds.getSetting(`sync_shared_granted_${ledgerUuid}_${devLogId}`)
+        )?.value
+        expect(granted).toContain('left_member@test.com')
+    })
+
+    it('_registerSelfInManifest 封鎖存在於 removedMembers 黑名單的裝置與 email', async () => {
+        ss.userInfo = { email: 'kicked@test.com' }
+        ss.deviceId = 'dev_kicked'
+        const manifest = {
+            ledgerUuid: 'u-block',
+            members: [],
+            removedMembers: ['dev_kicked', 'kicked@test.com'],
+        }
+        ss._downloadFileStrict = vi.fn(async () => ({ data: manifest, etag: 'e1' }))
+        ss._updateFile = vi.fn(async () => {})
+
+        const res = await ss._registerSelfInManifest('mf_block', 'dl_any')
+        expect(res).toBe(false)
+        expect(ss._updateFile).not.toHaveBeenCalled()
+    })
+
+    it('_unblockManifestMember 將指定 email 自 removedMembers 移除', async () => {
+        const manifest = {
+            ledgerUuid: 'u-unblock',
+            members: [],
+            removedMembers: ['reinvited@test.com', 'other@test.com'],
+        }
+        ss._downloadFileStrict = vi.fn(async () => ({ data: manifest, etag: 'e1' }))
+        ss._updateFile = vi.fn(async () => {})
+
+        const res = await ss._unblockManifestMember('mf_unblock', 'reinvited@test.com')
+        expect(res).toBe(true)
+        expect(manifest.removedMembers).toEqual(['other@test.com'])
+        expect(ss._updateFile).toHaveBeenCalledWith(
+            'mf_unblock',
+            expect.stringContaining('"other@test.com"'),
+            'e1'
+        )
+    })
+
+    it('pushChanges 依 90 天清理過期日誌，但永久保留 ledgers 帳本定義', async () => {
+        const now = Date.now()
+        const oneHundredDaysAgo = now - 100 * 24 * 60 * 60 * 1000
+        const oldChanges = [
+            {
+                deviceId: 'dev_me',
+                storeName: 'ledgers',
+                recordId: 1,
+                timestamp: oneHundredDaysAgo,
+                data: { id: 1, name: 'Old Ledger' },
+            },
+            {
+                deviceId: 'dev_me',
+                storeName: 'records',
+                recordId: 99,
+                timestamp: oneHundredDaysAgo,
+                data: { id: 99, amount: 50 },
+            },
+        ]
+        ss._findFile = vi.fn(async () => 'existing_log_file_id')
+        ss._downloadFile = vi.fn(async () => ({
+            data: { changes: oldChanges },
+        }))
+        let updatedContent = null
+        ss._updateFile = vi.fn(async (_id, content) => {
+            updatedContent = JSON.parse(content)
+        })
+
+        // 本地新增一筆變更
+        ds.getChangesSince = vi.fn(async () => [
+            {
+                deviceId: 'dev_me',
+                storeName: 'records',
+                recordId: 101,
+                timestamp: now,
+                data: { id: 101, amount: 200 },
+            },
+        ])
+
+        await ss.pushChanges()
+
+        expect(ss._updateFile).toHaveBeenCalled()
+        const stores = updatedContent.changes.map(c => c.storeName)
+        expect(stores).toContain('ledgers')
+        expect(stores).toContain('records')
+        // 舊 records (100 天前) 應被裁掉，而舊 ledgers 應被保留
+        const oldRecord = updatedContent.changes.find(
+            c => c.recordId === 99 && c.storeName === 'records'
+        )
+        const oldLedger = updatedContent.changes.find(
+            c => c.recordId === 1 && c.storeName === 'ledgers'
+        )
+        expect(oldRecord).toBeUndefined()
+        expect(oldLedger).toBeDefined()
+    })
+
+    it('pullChanges 藉由 sync_personal_checked_map 與 modifiedTime 跳過未變動的檔案', async () => {
+        const fileList = [
+            { id: 'f_peer1', name: 'sync_log_dev_peer1.json', modifiedTime: '2026-09-20T10:00:00Z' },
+        ]
+        global.fetch = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ files: fileList }),
+        }))
+        // 已檢查過相同的 modifiedTime
+        await ds.saveSetting({
+            key: 'sync_personal_checked_map',
+            value: { f_peer1: new Date('2026-09-20T10:00:00Z').getTime() },
+        })
+        ss._downloadFile = vi.fn()
+
+        await ss.pullChanges()
+
+        expect(ss._downloadFile).not.toHaveBeenCalled()
+    })
+})
+

@@ -745,10 +745,16 @@ export class SyncService {
         const existingFileId = await this._findFile(fileName)
 
         if (existingFileId) {
-            // 下載現有內容，合併後更新
+            // 下載現有內容，合併後更新（對雲端既有歷史進行 90 天清理，永久保留 ledgers 帳本定義）
             const res = await this._downloadFile(existingFileId)
             const existing = res?.data || { changes: [] }
-            existing.changes = [...(existing.changes || []), ...changes]
+            const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
+            const survivingExisting = (existing.changes || []).filter(
+                c =>
+                    c.storeName === 'ledgers' ||
+                    (c.timestamp || 0) >= cutoff
+            )
+            existing.changes = [...survivingExisting, ...changes]
             existing.timestamp = Date.now()
             existing.deviceId = this.deviceId
 
@@ -770,7 +776,7 @@ export class SyncService {
 
     /**
      * 從其他裝置的 sync log 拉取變更並合併。
-     * 使用 appliedKeys 去重（而非時間戳水位），避免時鐘偏移造成静默遺失。
+     * 使用 checkedMap (依 modifiedTime 跳過未變更檔) 與 appliedKeys 去重。
      */
     async pullChanges() {
         await this.ensureValidToken()
@@ -785,6 +791,12 @@ export class SyncService {
         const data = await resList.json()
         const files = data.files || []
 
+        const checkedSetting = await this.dataService.getSetting(
+            'sync_personal_checked_map'
+        )
+        const checkedMap = checkedSetting?.value || {}
+        const pendingCheckpoints = []
+
         const appliedSetting = await this.dataService.getSetting(
             'sync_personal_applied_keys'
         )
@@ -795,18 +807,39 @@ export class SyncService {
         for (const file of files) {
             if (file.name === `sync_log_${this.deviceId}.json`) continue
 
+            const modifiedMs = file.modifiedTime
+                ? new Date(file.modifiedTime).getTime()
+                : 0
+            if (
+                modifiedMs &&
+                checkedMap[file.id] &&
+                modifiedMs <= checkedMap[file.id]
+            ) {
+                continue
+            }
+
             const resFile = await this._downloadFile(file.id)
             const syncLog = resFile?.data
             if (!syncLog?.changes) continue
 
+            const fileKeys = []
             for (const change of syncLog.changes) {
                 const key = this._changeKey(change)
                 if (pendingKeys.has(key)) continue
                 pendingKeys.add(key)
+                fileKeys.push(key)
                 allRemoteChanges.push(change)
+            }
+            if (modifiedMs) {
+                pendingCheckpoints.push({
+                    fileId: file.id,
+                    modifiedMs,
+                    keys: fileKeys,
+                })
             }
         }
 
+        const successfulKeySet = new Set()
         if (allRemoteChanges.length > 0) {
             allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
             const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
@@ -816,16 +849,33 @@ export class SyncService {
                     : allRemoteChanges.map(c => this._changeKey(c))
             for (const key of successfulKeys) {
                 appliedKeys.add(key)
+                successfulKeySet.add(key)
             }
         }
 
-        // 持久化已套用鍵（保留最近 30 天；離線逾 30 天重套用是冪等的）
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+        // 僅在該檔案的所有變更均成功套用後，才推進 checkedMap
+        let checkedChanged = false
+        for (const cp of pendingCheckpoints) {
+            const allSucceeded = cp.keys.every(k => successfulKeySet.has(k))
+            if (allSucceeded) {
+                checkedMap[cp.fileId] = cp.modifiedMs
+                checkedChanged = true
+            }
+        }
+        if (checkedChanged) {
+            await this.dataService.saveSetting({
+                key: 'sync_personal_checked_map',
+                value: checkedMap,
+            })
+        }
+
+        // 持久化已套用鍵（保留最近 100 天，嚴格大於日誌的 90 天清理期）
+        const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
         await this.dataService.saveSetting({
             key: 'sync_personal_applied_keys',
             value: [...appliedKeys].filter(k => {
                 const ts = parseInt(k.split('|')[1], 10)
-                return !isNaN(ts) && ts > thirtyDaysAgo
+                return !isNaN(ts) && ts > hundredDaysAgo
             }),
         })
 
@@ -955,12 +1005,12 @@ export class SyncService {
                 } catch (_) {}
             }
 
-            const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+            const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
             await this.dataService.saveSetting({
                 key: 'sync_personal_applied_keys',
                 value: [...appliedKeys].filter(k => {
                     const ts = parseInt(k.split('|')[1], 10)
-                    return !isNaN(ts) && ts > thirtyDaysAgo
+                    return !isNaN(ts) && ts > hundredDaysAgo
                 }),
             })
             console.log('[SyncService] Marked all remote changes as pulled.')
@@ -974,7 +1024,7 @@ export class SyncService {
 
     /**
      * 將共用帳本的本地變更推送到「自己的」per-device 日誌檔（零競爭）
-     * @returns {Promise<number|null>} 成功推送的最大時間戳；無推送時為 null
+     * @returns {Promise<{ok: boolean, maxTs: number|null}>} 推送狀態與最大時間戳
      */
     async pushSharedLedgerChanges() {
         await this.ensureValidToken()
@@ -1026,9 +1076,8 @@ export class SyncService {
                 )
             }
         }
-        // 任一帳本失敗即回傳 null，讓 performSync 跳過本地日誌清理，
-        // 避免誤刪未成功上傳的變更（下次同步會自動重試）
-        return allSucceeded ? maxPushed : null
+        // 任一帳本失敗即回傳 null，讓 performSync 跳過本地日誌清理，避免誤刪未成功上傳的變更
+        return allSucceeded ? (maxPushed !== null ? maxPushed : undefined) : null
     }
 
     /**
@@ -1183,24 +1232,27 @@ export class SyncService {
             })
 
             let personalMaxTs = null
-            let sharedMaxTs = null
+            let sharedMaxTs = undefined
             if (isPersonalEnabled) personalMaxTs = await this.pushChanges()
             sharedMaxTs = await this.pushSharedLedgerChanges()
 
             if (isPersonalEnabled) await this.pullChanges()
             await this.pullSharedLedgerChanges()
 
-            // 僅在個人同步也執行過時才清理本地日誌：
-            // 共用專用同步（自動同步關閉）不會推送個人變更，
-            // 此時清理會誤刪尚未上傳的個人變更
-            const cutoffs =
-                isPersonalEnabled
-                    ? [personalMaxTs, sharedMaxTs].filter(
-                          ts => typeof ts === 'number'
-                      )
-                    : []
-            if (cutoffs.length > 0) {
-                await this.dataService.clearSyncLog(Math.min(...cutoffs))
+            // 僅在個人同步也啟用且共用帳本推送未失敗時才清理本地日誌：
+            // 1. 共用專用同步（isPersonalEnabled 為 false）不推送個人變更，此時清理會誤刪未上傳的個人變更
+            // 2. 共用帳本推送若失敗（sharedMaxTs === null），絕對不可清理，以防未上傳的共用變更被誤刪
+            if (sharedMaxTs === null) {
+                console.warn(
+                    '[SyncService] 共用帳本推送失敗，略過本地日誌清理以防資料遺失'
+                )
+            } else if (isPersonalEnabled) {
+                const cutoffs = [personalMaxTs, sharedMaxTs].filter(
+                    ts => typeof ts === 'number'
+                )
+                if (cutoffs.length > 0) {
+                    await this.dataService.clearSyncLog(Math.min(...cutoffs))
+                }
             }
 
             console.log('[SyncService] performSync complete')
@@ -1570,6 +1622,19 @@ export class SyncService {
                 if (!Array.isArray(current.members)) {
                     throw new Error('manifest 格式錯誤')
                 }
+                const myEmail = this.userInfo?.email?.toLowerCase() || ''
+                const isBlocked = (current.removedMembers || []).some(
+                    rm =>
+                        rm === this.deviceId ||
+                        (myEmail && rm === myEmail)
+                )
+                if (isBlocked) {
+                    console.warn(
+                        '[SyncService] registerSelfInManifest: 裝置或使用者在黑名單中，略過註冊'
+                    )
+                    return false
+                }
+
                 const me = current.members.find(
                     m => m.deviceId === this.deviceId
                 )
@@ -1634,6 +1699,18 @@ export class SyncService {
                 current.members = current.members.filter(
                     m => m.deviceId !== deviceId
                 )
+                current.removedMembers = Array.isArray(current.removedMembers)
+                    ? current.removedMembers
+                    : []
+                if (!current.removedMembers.includes(deviceId)) {
+                    current.removedMembers.push(deviceId)
+                }
+                if (
+                    removedEmail &&
+                    !current.removedMembers.includes(removedEmail.toLowerCase())
+                ) {
+                    current.removedMembers.push(removedEmail.toLowerCase())
+                }
                 current.timestamp = Date.now()
                 await this._updateFile(
                     manifestId,
@@ -1660,6 +1737,60 @@ export class SyncService {
     async removeManifestMember(manifestId, deviceId) {
         await this.ensureSharingPermission()
         return await this._removeManifestMember(manifestId, deviceId)
+    }
+
+    /**
+     * 從 manifest.removedMembers 解除封鎖（當擁有者重新邀請成員時調用）
+     * @param {string} manifestId
+     * @param {string} email
+     * @param {number} [maxRetries=3]
+     * @returns {Promise<boolean>}
+     */
+    async _unblockManifestMember(manifestId, email, maxRetries = 3) {
+        if (!email) return false
+        const targetEmail = email.toLowerCase()
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const { data: current, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
+                if (!current?.removedMembers || !Array.isArray(current.removedMembers)) {
+                    return true
+                }
+                const originalLength = current.removedMembers.length
+                current.removedMembers = current.removedMembers.filter(
+                    x => typeof x !== 'string' || x.toLowerCase() !== targetEmail
+                )
+                if (current.removedMembers.length === originalLength) {
+                    return true
+                }
+                current.timestamp = Date.now()
+                await this._updateFile(
+                    manifestId,
+                    JSON.stringify(current),
+                    etag
+                )
+                return true
+            } catch (e) {
+                console.warn(
+                    `[SyncService] unblockManifestMember 重試 ${attempt + 1}/${maxRetries}:`,
+                    e.message
+                )
+            }
+        }
+        return false
+    }
+
+    /**
+     * 解除成員在 manifest 上的封鎖（公開給 ledgerManager 用）
+     * @param {string} manifestId
+     * @param {string} email
+     * @returns {Promise<boolean>}
+     */
+    async unblockManifestMember(manifestId, email) {
+        await this.ensureSharingPermission()
+        return await this._unblockManifestMember(manifestId, email)
     }
 
     /**
@@ -1701,10 +1832,19 @@ export class SyncService {
                         if (p?.id) {
                             try {
                                 await this.removeFilePermission(devLogId, p.id)
-                            } catch (_) {}
+                                granted.delete(email)
+                                changed = true
+                            } catch (revErr) {
+                                console.warn(
+                                    `[SyncService] 撤銷日誌權限失敗 (${email})，保留於快取待下輪重試:`,
+                                    revErr
+                                )
+                            }
+                        } else {
+                            // 權限在 Google Drive 上已不存在，安全從快取移除
+                            granted.delete(email)
+                            changed = true
                         }
-                        granted.delete(email)
-                        changed = true
                     }
                 } catch (revErr) {
                     console.warn(
@@ -1893,15 +2033,21 @@ export class SyncService {
             }
         }
 
-        // 確保 manifest 記錄了 legacySharedFileId
+        // 確保 manifest 記錄了 legacySharedFileId（以 ETag 樂觀鎖更新）
         if (manifestId && ledger.sharedFileId) {
             try {
-                const resMf = await this._downloadFile(manifestId)
-                const mfData = resMf?.data
+                const { data: mfData, etag } =
+                    await this._downloadFileStrict(manifestId, {
+                        withMeta: true,
+                    })
                 if (mfData && !mfData.legacySharedFileId) {
                     mfData.legacySharedFileId = ledger.sharedFileId
                     mfData.timestamp = Date.now()
-                    await this._updateFile(manifestId, JSON.stringify(mfData))
+                    await this._updateFile(
+                        manifestId,
+                        JSON.stringify(mfData),
+                        etag
+                    )
                 }
             } catch (_) {}
         }
@@ -1948,18 +2094,18 @@ export class SyncService {
             )
         }
 
-        // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys
+        // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys（保留原始 deviceId 消除重播差異）
         if (legacyChanges.length > 0) {
             const mine = legacyChanges.map(c => ({
                 ...c,
-                deviceId: this.deviceId,
+                deviceId: c.deviceId || this.deviceId,
             }))
             await this._appendToDeviceLog(devLogId, mine)
             const appliedSetting = await this.dataService.getSetting(
                 'sync_shared_applied_keys'
             )
             const appliedKeys = new Set(appliedSetting?.value || [])
-            legacyChanges.forEach(c => appliedKeys.add(this._changeKey(c)))
+            mine.forEach(c => appliedKeys.add(this._changeKey(c)))
             await this.dataService.saveSetting({
                 key: 'sync_shared_applied_keys',
                 value: [...appliedKeys],
@@ -2052,7 +2198,11 @@ export class SyncService {
             }
         }
         allChanges.sort((a, b) => a.timestamp - b.timestamp)
-        await this.applyRemoteChanges(allChanges)
+        const appliedNow = await this.applyRemoteChanges(allChanges)
+        const successfulKeys =
+            appliedNow instanceof Set || Array.isArray(appliedNow)
+                ? appliedNow
+                : allChanges.map(c => this._changeKey(c))
 
         let ledgerChange = allChanges.find(
             c => c.storeName === 'ledgers' && c.data?.uuid
@@ -2106,7 +2256,10 @@ export class SyncService {
         const appliedSetting = await this.dataService.getSetting(
             'sync_shared_applied_keys'
         )
-        const merged = new Set([...(appliedSetting?.value || []), ...seen])
+        const merged = new Set([
+            ...(appliedSetting?.value || []),
+            ...successfulKeys,
+        ])
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
             value: [...merged],

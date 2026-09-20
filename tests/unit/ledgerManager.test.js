@@ -530,6 +530,26 @@ describe('LedgerManager', () => {
             expect(mockSyncService.grantFilePermission).toHaveBeenCalledWith('existing-devlog', 'new@test.com', 'reader')
             expect(result).toBe('existing-manifest')
         })
+
+        it('已共用帳本重新邀請成員時，調用 unblockManifestMember 解除黑名單', async () => {
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+            const mockLedger = {
+                id: 1,
+                uuid: 'ledger-uuid',
+                isShared: true,
+                sharedFileId: 'existing-file',
+                sharedManifestId: 'existing-manifest',
+            }
+            mockDataService.getLedger.mockResolvedValue(mockLedger)
+            mockSyncService.unblockManifestMember = vi.fn().mockResolvedValue(true)
+
+            await ledgerManager.shareLedger(1, 'reinvited@test.com')
+
+            expect(mockSyncService.unblockManifestMember).toHaveBeenCalledWith(
+                'existing-manifest',
+                'reinvited@test.com'
+            )
+        })
     })
 
     describe('joinSharedLedger', () => {
@@ -800,6 +820,21 @@ describe('LedgerManager', () => {
                 value: ['me@test.com'],
             })
         })
+
+        it('當 removeManifestMember 回傳 false (失敗) 時拋出錯誤', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                sharedManifestId: 'manifest123',
+            })
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+            mockSyncService.removeManifestMember = vi
+                .fn()
+                .mockResolvedValue(false)
+
+            await expect(
+                ledgerManager.removeSharedUser(1, 'dev_target')
+            ).rejects.toThrow('移除成員失敗')
+        })
     })
 
     describe('isLedgerOwner', () => {
@@ -853,6 +888,30 @@ describe('LedgerManager', () => {
             const result = await ledgerManager.isLedgerOwner(1)
 
             expect(result).toBe(false)
+        })
+
+        it('Manifest 的 ownerEmail 被竄改時，優先採信 Google Drive role: owner 權限', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                sharedManifestId: 'manifest123',
+            })
+            // Drive API 證明真擁有者是 me@test.com
+            mockSyncService.getFilePermissions.mockResolvedValue([
+                { emailAddress: 'me@test.com', role: 'owner' },
+                { emailAddress: 'attacker@test.com', role: 'writer' },
+            ])
+            // 被竄改的 manifest JSON 宣稱 attacker 是擁有者
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    ownerEmail: 'attacker@test.com',
+                    members: [
+                        { deviceId: 'dev_att', ownerEmail: 'attacker@test.com' },
+                    ],
+                },
+            })
+
+            const result = await ledgerManager.isLedgerOwner(1)
+            expect(result).toBe(true)
         })
     })
 

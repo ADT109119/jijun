@@ -215,6 +215,12 @@ export class LedgerManager {
                     ledger.sharedManifestId,
                     email
                 )
+                try {
+                    await this.app.syncService.unblockManifestMember(
+                        ledger.sharedManifestId,
+                        email
+                    )
+                } catch (_) {}
             }
             const devLogKey = `sync_shared_devlog_${ledger.uuid}`
             let devLogId = null
@@ -326,6 +332,12 @@ export class LedgerManager {
                 infra.manifestId,
                 email
             )
+            try {
+                await this.app.syncService.unblockManifestMember(
+                    infra.manifestId,
+                    email
+                )
+            } catch (_) {}
         }
         if (infra?.devLogId) {
             await this.app.syncService.grantFilePermission(
@@ -418,18 +430,40 @@ export class LedgerManager {
             throw new Error('此帳本尚未共用')
         }
         if (ledger?.sharedManifestId) {
-            const manifest = (
-                await this.app.syncService._downloadFile(
-                    ledger.sharedManifestId
-                )
-            )?.data
+            let drivePerms = []
+            try {
+                drivePerms =
+                    (await this.app.syncService.getFilePermissions(
+                        ledger.sharedManifestId
+                    )) || []
+            } catch (_) {}
+
+            const driveOwner = Array.isArray(drivePerms)
+                ? drivePerms.find(p => p.role === 'owner')
+                : null
+            const verifiedOwnerEmail = driveOwner?.emailAddress
+
+            let manifest = null
+            try {
+                manifest = (
+                    await this.app.syncService._downloadFile(
+                        ledger.sharedManifestId
+                    )
+                )?.data
+            } catch (_) {}
+
+            const effectiveOwnerEmail =
+                verifiedOwnerEmail || manifest?.ownerEmail
+
             const memberList = (manifest?.members || []).map((m, i) => ({
                 id: m.deviceId,
                 emailAddress: m.ownerEmail,
                 displayName: '',
-                // 有頂層 ownerEmail 時僅以 email 判定；否則退回位置判定
-                role: manifest?.ownerEmail
-                    ? m.ownerEmail === manifest.ownerEmail
+                // 優先以 Drive 伺服器端驗證的 owner 判定；否則頂層 ownerEmail；否則退回位置判定
+                role: effectiveOwnerEmail
+                    ? m.ownerEmail &&
+                      m.ownerEmail.toLowerCase() ===
+                          effectiveOwnerEmail.toLowerCase()
                         ? 'owner'
                         : 'writer'
                     : i === 0
@@ -438,29 +472,23 @@ export class LedgerManager {
             }))
 
             // 合併 Google Drive 尚未註冊進 manifest 的已邀請使用者（如受邀但尚未開啟 App 加入者）
-            try {
-                const drivePerms =
-                    await this.app.syncService.getFilePermissions(
-                        ledger.sharedManifestId
-                    )
-                const knownEmails = new Set(
-                    memberList.map(m => m.emailAddress).filter(Boolean)
-                )
-                for (const perm of drivePerms) {
-                    if (
-                        perm.emailAddress &&
-                        !knownEmails.has(perm.emailAddress)
-                    ) {
-                        memberList.push({
-                            id: perm.id,
-                            emailAddress: perm.emailAddress,
-                            displayName: perm.displayName || '',
-                            role: perm.role === 'owner' ? 'owner' : 'writer',
-                        })
-                        knownEmails.add(perm.emailAddress)
-                    }
+            const knownEmails = new Set(
+                memberList.map(m => m.emailAddress?.toLowerCase()).filter(Boolean)
+            )
+            for (const perm of drivePerms || []) {
+                if (
+                    perm.emailAddress &&
+                    !knownEmails.has(perm.emailAddress.toLowerCase())
+                ) {
+                    memberList.push({
+                        id: perm.id,
+                        emailAddress: perm.emailAddress,
+                        displayName: perm.displayName || '',
+                        role: perm.role === 'owner' ? 'owner' : 'writer',
+                    })
+                    knownEmails.add(perm.emailAddress.toLowerCase())
                 }
-            } catch (_) {}
+            }
 
             return memberList
         }
@@ -514,10 +542,13 @@ export class LedgerManager {
                 } catch (_) {}
             }
 
-            await this.app.syncService.removeManifestMember(
+            const removed = await this.app.syncService.removeManifestMember(
                 ledger.sharedManifestId,
                 memberId
             )
+            if (!removed) {
+                throw new Error('移除成員失敗，可能是並行衝突或網路錯誤')
+            }
             if (removedEmail) {
                 // 撤銷該成員在 Google Drive Manifest、舊檔案及本地 devLog 上的權限
                 try {
@@ -640,11 +671,43 @@ export class LedgerManager {
      */
     async isLedgerOwner(ledgerId) {
         try {
-            const users = await this.getSharedUsers(ledgerId)
             const myEmail = this.app.syncService.userInfo?.email
             if (!myEmail) return false
+
+            const ledger = await this.dataService.getLedger(ledgerId)
+            const targetFileId =
+                ledger?.sharedManifestId || ledger?.sharedFileId
+            if (targetFileId) {
+                // 優先使用 Google Drive 伺服器端授權 (writer 無法竄改 role === 'owner')
+                try {
+                    const drivePerms =
+                        await this.app.syncService.getFilePermissions(
+                            targetFileId
+                        )
+                    if (Array.isArray(drivePerms) && drivePerms.length > 0) {
+                        const driveOwner = drivePerms.find(
+                            p => p.role === 'owner'
+                        )
+                        if (driveOwner?.emailAddress) {
+                            return (
+                                driveOwner.emailAddress.toLowerCase() ===
+                                myEmail.toLowerCase()
+                            )
+                        }
+                    }
+                } catch (e) {
+                    console.warn(
+                        '[LedgerManager] 取得雲端權限失敗，降級檢查 getSharedUsers:',
+                        e
+                    )
+                }
+            }
+
+            const users = await this.getSharedUsers(ledgerId)
             const owner = users.find(u => u.role === 'owner')
-            return owner?.emailAddress === myEmail
+            return (
+                owner?.emailAddress?.toLowerCase() === myEmail.toLowerCase()
+            )
         } catch {
             return false
         }
