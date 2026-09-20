@@ -336,6 +336,23 @@ describe('LedgerManager', () => {
                 deviceId: 'device-001',
             }
             mockApp.syncService = mockSyncService
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+        })
+
+        it('已共用帳本非擁有者再次分享時拋出錯誤', async () => {
+            const mockLedger = {
+                id: 1,
+                name: '共用帳本',
+                uuid: 'ledger-uuid',
+                isShared: true,
+                sharedFileId: 'existing-file',
+            }
+            mockDataService.getLedger.mockResolvedValue(mockLedger)
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(false)
+
+            await expect(
+                ledgerManager.shareLedger(1, 'new@test.com')
+            ).rejects.toThrow('只有帳本擁有者可以分享或邀請成員')
         })
 
         it('未登入時拋出錯誤', async () => {
@@ -748,6 +765,40 @@ describe('LedgerManager', () => {
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('mf_123', 'perm_mf_other')
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('f_123', 'perm_f_other')
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('devlog_123', 'perm_dl_other')
+        })
+
+        it('移除成員時清理本地 sync_shared_granted 快取', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                uuid: 'ledger-uuid',
+                sharedManifestId: 'mf_123',
+            })
+            mockDataService.getSetting = vi.fn(async key => {
+                if (key === 'sync_shared_devlog_ledger-uuid') return { value: 'devlog_123' }
+                if (key === 'sync_shared_granted_ledger-uuid_devlog_123') {
+                    return { value: ['me@test.com', 'other@test.com'] }
+                }
+                return null
+            })
+            mockDataService.saveSetting = vi.fn().mockResolvedValue()
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    members: [
+                        { deviceId: 'dev_me', ownerEmail: 'me@test.com' },
+                        { deviceId: 'dev_other', ownerEmail: 'other@test.com' },
+                    ],
+                },
+            })
+            mockSyncService.removeManifestMember = vi.fn().mockResolvedValue(true)
+            mockSyncService.getFilePermissions = vi.fn().mockResolvedValue([])
+            mockSyncService.removeFilePermission = vi.fn().mockResolvedValue()
+
+            await ledgerManager.removeSharedUser(1, 'dev_other')
+
+            expect(mockDataService.saveSetting).toHaveBeenCalledWith({
+                key: 'sync_shared_granted_ledger-uuid_devlog_123',
+                value: ['me@test.com'],
+            })
         })
     })
 

@@ -886,18 +886,13 @@ export class SyncService {
                     data?.uuid || data?.name || recordId
                 )
 
-                // 預檢測：如果是 add 且 UUID 已存在，自動轉向 update，避免 Unique Constraint 失敗導致同步中斷
+                // 預檢測：如果是 add 且 UUID 已存在，視為冪等成功略過，避免舊建立快照覆蓋本機較新資料
                 if (operation === 'add' && data?.uuid) {
                     const existing = await this.dataService.getByUUID(
                         storeName,
                         data.uuid
                     )
                     if (existing) {
-                        await this._applyUpdateWithId(
-                            storeName,
-                            existing.id,
-                            data
-                        )
                         appliedKeys.add(this._changeKey(change))
                         continue
                     }
@@ -1437,7 +1432,7 @@ export class SyncService {
             change.data?.uuid ??
             (change.recordId !== undefined && change.recordId !== null
                 ? change.recordId
-                : '')
+                : (change.data?.id ?? (change.data?.key ?? (change.id ?? ''))))
         return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}${recordIdentifier ? `|${recordIdentifier}` : ''}`
     }
 
@@ -2749,14 +2744,13 @@ export class SyncService {
             return
         }
 
-        // 如果 UUID 已存在則當新增處理，避免重複
+        // 如果 UUID 已存在則視為冪等略過，避免重複且防止舊建立快照覆蓋本機較新資料
         if (data.uuid) {
             const existing = await this.dataService.getByUUID(
                 storeName,
                 data.uuid
             )
             if (existing) {
-                await this._applyUpdateWithId(storeName, existing.id, data)
                 return
             }
         }

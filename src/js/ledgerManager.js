@@ -202,6 +202,10 @@ export class LedgerManager {
         let fileId = ledger.sharedFileId
 
         if (ledger.isShared && (fileId || ledger.sharedManifestId)) {
+            const isOwner = await this.isLedgerOwner(ledgerId)
+            if (!isOwner) {
+                throw new Error('只有帳本擁有者可以分享或邀請成員')
+            }
             // 已共用帳本：對舊檔、manifest 與自己的日誌檔補授權
             if (fileId) {
                 await this.app.syncService.grantFilePermission(fileId, email)
@@ -223,6 +227,24 @@ export class LedgerManager {
                     email,
                     'reader'
                 )
+                try {
+                    const grantedKey = `sync_shared_granted_${ledger.uuid}_${devLogId}`
+                    const grantedSetting =
+                        await this.dataService.getSetting(grantedKey)
+                    const grantedList = Array.isArray(grantedSetting?.value)
+                        ? grantedSetting.value
+                        : []
+                    if (
+                        !grantedList.some(
+                            e => e?.toLowerCase() === email.toLowerCase()
+                        )
+                    ) {
+                        await this.dataService.saveSetting({
+                            key: grantedKey,
+                            value: [...grantedList, email],
+                        })
+                    }
+                } catch (_) {}
             }
             return ledger.sharedManifestId || fileId
         }
@@ -477,6 +499,21 @@ export class LedgerManager {
                 }
             } catch (_) {}
 
+            if (!removedEmail) {
+                try {
+                    const manifestPerms =
+                        await this.app.syncService.getFilePermissions(
+                            ledger.sharedManifestId
+                        )
+                    const p = manifestPerms.find(
+                        x => x.id === memberId || x.emailAddress === memberId
+                    )
+                    if (p?.emailAddress) {
+                        removedEmail = p.emailAddress
+                    }
+                } catch (_) {}
+            }
+
             await this.app.syncService.removeManifestMember(
                 ledger.sharedManifestId,
                 memberId
@@ -543,6 +580,41 @@ export class LedgerManager {
                     }
                 } catch (e) {
                     console.warn('[LedgerManager] 撤銷日誌檔權限失敗:', e)
+                }
+
+                // 清理本機已授權快取，確保日後重新邀請/加入時能正確重新授予 DevLog 讀取權限
+                try {
+                    const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                    const devLogId = (
+                        await this.dataService.getSetting(devLogKey)
+                    )?.value
+                    const keysToClean = [
+                        `sync_shared_granted_${ledger.uuid}`,
+                    ]
+                    if (devLogId) {
+                        keysToClean.push(
+                            `sync_shared_granted_${ledger.uuid}_${devLogId}`
+                        )
+                    }
+                    for (const k of keysToClean) {
+                        const setting = await this.dataService.getSetting(k)
+                        if (setting?.value && Array.isArray(setting.value)) {
+                            const updated = setting.value.filter(
+                                e =>
+                                    e?.toLowerCase() !==
+                                    removedEmail.toLowerCase()
+                            )
+                            await this.dataService.saveSetting({
+                                key: k,
+                                value: updated,
+                            })
+                        }
+                    }
+                } catch (cleanErr) {
+                    console.warn(
+                        '[LedgerManager] 清理已授權快取失敗:',
+                        cleanErr
+                    )
                 }
             } else {
                 // 如果在 manifest 沒找到對應 deviceId，嘗試當作 Drive permissionId 撤銷

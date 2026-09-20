@@ -1000,7 +1000,7 @@ describe('SyncService', () => {
             expect(order).toEqual(['ledgers', 'accounts', 'records'])
         })
 
-        it('add 且 UUID 已存在時轉為 _applyUpdateWithId', async () => {
+        it('add 且 UUID 已存在時應視為冪等略過（不調用 _applyUpdateWithId 覆蓋較新本機資料）', async () => {
             ds = createMockDataService({
                 getByUUID: vi.fn(async (storeName, uuid) =>
                     uuid === 'existing-uuid' ? { id: 5, uuid: 'existing-uuid' } : null
@@ -1022,12 +1022,24 @@ describe('SyncService', () => {
                 },
             ])
 
-            expect(updateWithIdSpy).toHaveBeenCalledWith(
-                'records',
-                5,
-                expect.objectContaining({ uuid: 'existing-uuid' })
-            )
+            expect(updateWithIdSpy).not.toHaveBeenCalled()
             expect(addSpy).not.toHaveBeenCalled()
+        })
+
+        it('_applyAdd 在 UUID 已存在時直接略過不覆蓋', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) =>
+                    uuid === 'existing-uuid' ? { id: 5, uuid: 'existing-uuid', amount: 200 } : null
+                ),
+            })
+            ss = createSyncService(ds)
+            const updateWithIdSpy = vi
+                .spyOn(ss, '_applyUpdateWithId')
+                .mockResolvedValue()
+
+            await ss._applyAdd('records', { id: 999, uuid: 'existing-uuid', amount: 100 })
+
+            expect(updateWithIdSpy).not.toHaveBeenCalled()
         })
 
         it('支援 groupMeta 的拓撲排序與 _applyAdd / _applyUpdate / _applyDelete 分支呼叫', async () => {
@@ -2722,6 +2734,37 @@ describe('PR #69 External Review Verified Fixes', () => {
 
             const parsedTs = parseInt(k.split('|')[1], 10)
             expect(parsedTs).toBe(ts)
+        })
+
+        it('缺少 uuid 與 recordId 時，依序 fallback 到 data.id, data.key, change.id', () => {
+            const ts = 1700000000000
+            const kWithDataId = ss._changeKey({
+                deviceId: 'dev_c',
+                timestamp: ts,
+                operation: 'add',
+                storeName: 'records',
+                data: { id: 101 },
+            })
+            expect(kWithDataId).toBe(`dev_c|${ts}|add|records|101`)
+
+            const kWithDataKey = ss._changeKey({
+                deviceId: 'dev_c',
+                timestamp: ts,
+                operation: 'update',
+                storeName: 'settings',
+                data: { key: 'category_order_1' },
+            })
+            expect(kWithDataKey).toBe(`dev_c|${ts}|update|settings|category_order_1`)
+
+            const kWithChangeId = ss._changeKey({
+                id: 888,
+                deviceId: 'dev_c',
+                timestamp: ts,
+                operation: 'update',
+                storeName: 'settings',
+                data: {},
+            })
+            expect(kWithChangeId).toBe(`dev_c|${ts}|update|settings|888`)
         })
     })
 })
