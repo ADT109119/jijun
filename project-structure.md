@@ -179,14 +179,14 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 
 - **多帳本與共用架構 (Per-Device Sync)**:
     - 每個裝置維護自己獨立的 `sync_shared_devlog_<uuid>` 雲端變更日誌檔，避免共用單一檔案引發並行寫入覆蓋；裝置日誌寫入時同樣支援 ETag / If-Match 樂觀鎖與 412 衝突重試
-    - **最小權限與權限撤銷對齊**：DevLog 僅授予其他成員 `reader` 唯讀權限（只有裝置本機具備寫入權限）；同步時各裝置主動比對 manifest 活躍成員清單，自動撤銷已移除成員對本機 DevLog 的讀取權限；`_grantDevLogPermissions` 僅在 Drive 撤銷成功時才從 `granted` 快取移除，失敗時保留以供重試，達成安全閉環
+    - **全量日誌保全（不進行 90 天裁切）**：雲端日誌（包含共用 DevLog 與個人同步 `pushChanges`）全量保留變更歷史，徹底杜絕歷史記錄過期被裁切而導致新成員加入時歷史缺失、或已刪除紀錄復活的問題；本地 `appliedKeys` 持續去重，確保操作冪等性
+    - **去中心化最終撤銷 (Eventual Revocation) 與防禦性中止**：DevLog 僅授予其他成員 `reader` 唯讀權限（只有裝置本機具備寫入權限）；同步時各裝置主動比對 manifest 活躍成員清單，自動撤銷已移除成員對本機 DevLog 的讀取權限；`_grantDevLogPermissions` 採用 `_downloadFileStrict` 嚴格下載，若遭遇暫時性網路錯誤或 5xx 即防禦性中止，絕不誤將成員清單視為空而發生群體誤撤銷；僅在 Drive 撤銷成功時才從 `granted` 快取移除，失敗時保留以供重試，達成安全閉環
     - **清理閘門與本地日誌保全**：`performSync` 嚴格把關共用帳本推送結果，若任一帳本推送失敗 (`pushSharedLedgerChanges() === null`)，跳過 `clearSyncLog`，徹底杜絕未成功推送的共用變更遭個人同步水位誤刪
-    - **加入流程原子性 appliedKeys 種入**：`joinViaManifest` 僅將 `applyRemoteChanges` 實際套用成功的變更鍵記錄進 `sync_shared_applied_keys`，避免失敗項目被誤記為已套用而形成永久資料缺口
-    - **Drive 伺服器端授權真實信任錨點與黑名單防禦**：`isLedgerOwner` 與 `getSharedUsers` 優先採信 Google Drive Server 端 Permissions (`p.role === 'owner'`)，防範協作者竄改 Manifest JSON 冒充擁有者；Manifest 維護 `removedMembers` 黑名單，阻止已被移除的成員/裝置重新自我註冊，並在擁有者重新邀請時提供 `unblockManifestMember` 解除封鎖；`removeSharedUser` 嚴格檢查移除結果，失敗立即報錯
-    - **個人同步優化與保留期對齊**：個人同步 `pullChanges` 引入 `sync_personal_checked_map` 結合 `modifiedTime` 跳過未變更日誌，`appliedKeys` 對齊 100 天保留期；`pushChanges` 引入 90 天過期清理機制且永久保留 `ledgers` 帳本定義
+    - **加入流程原子性 appliedKeys 種入與不完整歷史標記**：`joinViaManifest` 僅將 `applyRemoteChanges` 實際套用成功的變更鍵記錄進 `sync_shared_applied_keys`，避免失敗項目被誤記為已套用而形成永久資料缺口；若有成員日誌暫時不可存取 (403/404)，標記 `sync_shared_incomplete_${ledgerUuid}` 供後續同步自動補齊完整歷史
+    - **Drive 伺服器端授權真實信任錨點與裝置黑名單聯動**：`isLedgerOwner` 與 `getSharedUsers` 優先採信 Google Drive Server 端 Permissions (`p.role === 'owner'`)，防範協作者竄改 Manifest JSON 冒充擁有者；Manifest 維護 `removedMembers` 黑名單（記錄 `{ deviceId, email }` 物件），阻止已被移除的成員與裝置重新自我註冊；在擁有者重新邀請時提供 `unblockManifestMember` 同時解除 email 與其關聯之 deviceId 封鎖，確保原裝置能順利重新加入；`removeSharedUser` 嚴格檢查移除結果，失敗立即報錯
+    - **個人同步優化與 modifiedTime 水位過濾**：個人同步 `pullChanges` 引入 `sync_personal_checked_map` 結合 `modifiedTime` 跳過未變更日誌，`appliedKeys` 搭配 `pushChanges` 嚴格下載保護，避免暫時性錯誤覆蓋雲端日誌
     - **歷史遷移保全與樂觀鎖**：舊檔變更遷移時保留原始 `deviceId`，消除鍵值不一致造成的重播問題；`legacySharedFileId` 指標寫回時補齊 ETag 樂觀鎖防並行覆蓋
-    - **歷史裁切防護與帳本永久保全**：雲端日誌 90 天裁切過濾僅套用於雲端既有歷史且永久排除 `storeName === 'ledgers'`（帳本定義永久保留）；Manifest 初次建立時附帶寫入 `ledgerMeta` 快照；`joinViaManifest` 若日誌中缺漏帳本定義則自動由快照還原，解決共用逾 90 天後新成員無法加入的極限問題
-    - **嚴格原子性 Checkpoint 與保留期對齊**：`checkedMap` 時間戳僅在該成員日誌的所有變更均於本機成功套用後才推進，部分失敗則保留舊時間戳供下輪重試；`appliedKeys` 水位對齊至 100 天（嚴格大於日誌 90 天），防範舊 update 因 key 過期被重播而覆蓋本地較新資料
+    - **Fail-Closed CAS on ETag**：`_downloadFileStrict` 於請求附帶中繼資訊時嚴格校驗 ETag，若伺服器回應未帶 ETag 即拋出例外拒絕更新，杜絕樂觀鎖失效退化為無條件覆寫的風險
     - **add 變更冪等性防護**：`applyRemoteChanges` 與 `_applyAdd` 當收到 `operation === 'add'` 且該 UUID 已存在於本機時直接視為冪等略過，徹底防範歷史建立快照將本機較新的修改回滾覆蓋
     - **授權快取閉環管理**：`ledgerManager.removeSharedUser` 移除成員時同步清理 `sync_shared_granted_...`，`shareLedger` 邀請時同步記錄，徹底解決被移除成員日後重新受邀時因快取殘留而無法讀取 DevLog 的問題
     - **業務邏輯層權限防禦**：`ledgerManager.removeSharedUser` 與已共用狀態下的 `ledgerManager.shareLedger` 均增加 `isLedgerOwner` 擁有者校驗，與 `unshareLedger` 保持一致的防禦深度

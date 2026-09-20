@@ -1177,7 +1177,7 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes).toHaveLength(2)
     })
 
-    it('裁剪 90 天前的變更', async () => {
+    it('全量保留歷史變更（不進行 90 天裁切）', async () => {
         const old = Date.now() - 91 * 24 * 60 * 60 * 1000
         globalThis.fetch = vi.fn(async (_url, opts) => {
             if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
@@ -1193,8 +1193,8 @@ describe('SyncService _appendToDeviceLog', () => {
         ])
         const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
         const sent = JSON.parse(patchCall[1].body)
-        expect(sent.changes).toHaveLength(1) // 舊變更被裁剪，僅剩新附加的
-        expect(sent.changes.every(c => c.timestamp >= Date.now() - 90 * 24 * 60 * 60 * 1000)).toBe(true)
+        expect(sent.changes).toHaveLength(2) // 舊變更完整保留，不進行 90 天裁切
+        expect(sent.changes.some(c => c.timestamp === old)).toBe(true)
     })
 
     it('超過 90 天的未同步本地變更仍全數寫入雲端不被裁切', async () => {
@@ -1218,7 +1218,7 @@ describe('SyncService _appendToDeviceLog', () => {
         expect(sent.changes[0].timestamp).toBe(veryOld)
     })
 
-    it('雲端既有變更即使超過 90 天，只要為 ledgers 變更即永久保留不被裁切', async () => {
+    it('雲端既有變更即使超過 90 天，所有 store（包含 ledgers 與 records）皆永久保留不被裁切', async () => {
         const veryOld = Date.now() - 150 * 24 * 60 * 60 * 1000
         globalThis.fetch = vi.fn(async (_url, opts) => {
             if (opts?.method === 'PATCH') return { ok: true, json: async () => ({}) }
@@ -1237,9 +1237,10 @@ describe('SyncService _appendToDeviceLog', () => {
         ])
         const patchCall = globalThis.fetch.mock.calls.find(c => c[1]?.method === 'PATCH')
         const sent = JSON.parse(patchCall[1].body)
-        // 舊 records 被裁剪，但舊 ledgers 與新 records 一同保留
-        expect(sent.changes).toHaveLength(2)
+        // 舊 ledgers、舊 records 與新 records 皆完整保留
+        expect(sent.changes).toHaveLength(3)
         expect(sent.changes.find(c => c.storeName === 'ledgers')).toBeDefined()
+        expect(sent.changes.find(c => c.data?.uuid === 'r1')).toBeDefined()
         expect(sent.changes.find(c => c.data?.uuid === 'r2')).toBeDefined()
     })
 
@@ -1311,7 +1312,7 @@ describe('SyncService manifest 管理', () => {
         ])
     })
 
-    it('_removeManifestMember 移除指定 deviceId', async () => {
+    it('_removeManifestMember 移除指定 deviceId 並將其與 email 記錄於 removedMembers', async () => {
         let stored = {
             members: [
                 { deviceId: 'dev_a', ownerEmail: 'a@t.com', fileId: 'l1' },
@@ -1328,6 +1329,39 @@ describe('SyncService manifest 管理', () => {
         const ok = await ss._removeManifestMember('mf_1', 'dev_a')
         expect(ok).toBe(true)
         expect(stored.members.map(m => m.deviceId)).toEqual(['dev_b'])
+        expect(stored.removedMembers).toEqual([
+            { deviceId: 'dev_a', email: 'a@t.com' },
+        ])
+    })
+
+    it('_unblockManifestMember 同時解除 email 與其關聯之 deviceId，並允許原裝置重新註冊', async () => {
+        let stored = {
+            members: [
+                { deviceId: 'dev_b', ownerEmail: 'b@t.com', fileId: 'l2' },
+            ],
+            removedMembers: [
+                { deviceId: 'dev_a', email: 'a@t.com' },
+            ],
+        }
+        globalThis.fetch = vi.fn(async (_url, opts) => {
+            if (opts?.method === 'PATCH') {
+                stored = JSON.parse(opts.body)
+                return { ok: true, json: async () => ({}) }
+            }
+            return { ok: true, json: async () => stored }
+        })
+
+        // 1. 解除封鎖 a@t.com
+        const okUnblock = await ss._unblockManifestMember('mf_1', 'a@t.com')
+        expect(okUnblock).toBe(true)
+        expect(stored.removedMembers).toEqual([])
+
+        // 2. 原裝置 dev_a 重新註冊
+        ss.deviceId = 'dev_a'
+        ss.userInfo = { email: 'a@t.com' }
+        const okRegister = await ss._registerSelfInManifest('mf_1', 'l1_new')
+        expect(okRegister).toBe(true)
+        expect(stored.members.some(m => m.deviceId === 'dev_a')).toBe(true)
     })
 
     it('_registerSelfInManifest 下載失敗時重試且不覆寫成員清單', async () => {
@@ -2783,7 +2817,7 @@ describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () =
     })
 
     it('對新成員授予 reader 唯讀權限', async () => {
-        ss._downloadFile = vi.fn(async () => ({
+        ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
             data: {
                 members: [
                     { ownerEmail: 'me@test.com', fileId: 'my_log' },
@@ -2813,7 +2847,7 @@ describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () =
         })
 
         // 雲端 manifest 中 member2 已被移除，僅剩 keep@test.com
-        ss._downloadFile = vi.fn(async () => ({
+        ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
             data: {
                 members: [
                     { ownerEmail: 'me@test.com', fileId: 'my_log' },
@@ -2839,6 +2873,27 @@ describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () =
         ).value
         expect(saved).not.toContain('member2@test.com')
         expect(saved).toContain('keep@test.com')
+    })
+
+    it('manifest 下載失敗時防禦性中止，不撤銷任何既有成員權限', async () => {
+        await ds.saveSetting({
+            key: 'sync_shared_granted_u3_my_devlog',
+            value: ['keep@test.com'],
+        })
+        ss._downloadFileStrict = vi.fn(async () => {
+            throw new Error('Network error 500')
+        })
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        await ss._grantDevLogPermissions('u3', 'mf_3', 'my_devlog')
+
+        expect(ss.removeFilePermission).not.toHaveBeenCalled()
+        expect(ss.grantFilePermission).not.toHaveBeenCalled()
+        const saved = (
+            await ds.getSetting('sync_shared_granted_u3_my_devlog')
+        ).value
+        expect(saved).toEqual(['keep@test.com'])
+        warnSpy.mockRestore()
     })
 })
 
@@ -3040,7 +3095,7 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
         )
     })
 
-    it('pushChanges 依 90 天清理過期日誌，但永久保留 ledgers 帳本定義', async () => {
+    it('pushChanges 全量保留歷史日誌（不進行 90 天裁切），避免已刪除紀錄復活或歷史紀錄遺失', async () => {
         const now = Date.now()
         const oneHundredDaysAgo = now - 100 * 24 * 60 * 60 * 1000
         const oldChanges = [
@@ -3060,8 +3115,8 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
             },
         ]
         ss._findFile = vi.fn(async () => 'existing_log_file_id')
-        ss._downloadFile = vi.fn(async () => ({
-            data: { changes: oldChanges },
+        ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
+            changes: oldChanges,
         }))
         let updatedContent = null
         ss._updateFile = vi.fn(async (_id, content) => {
@@ -3085,15 +3140,16 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
         const stores = updatedContent.changes.map(c => c.storeName)
         expect(stores).toContain('ledgers')
         expect(stores).toContain('records')
-        // 舊 records (100 天前) 應被裁掉，而舊 ledgers 應被保留
+        // 舊 records (100 天前) 與舊 ledgers 均完整保留
         const oldRecord = updatedContent.changes.find(
             c => c.recordId === 99 && c.storeName === 'records'
         )
         const oldLedger = updatedContent.changes.find(
             c => c.recordId === 1 && c.storeName === 'ledgers'
         )
-        expect(oldRecord).toBeUndefined()
+        expect(oldRecord).toBeDefined()
         expect(oldLedger).toBeDefined()
+        expect(updatedContent.changes).toHaveLength(3)
     })
 
     it('pullChanges 藉由 sync_personal_checked_map 與 modifiedTime 跳過未變動的檔案', async () => {
@@ -3115,6 +3171,70 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
         await ss.pullChanges()
 
         expect(ss._downloadFile).not.toHaveBeenCalled()
+    })
+
+    it('_downloadFileStrict 在伺服器提供 Headers 但缺少 ETag 時拋出例外 (Fail-Closed)', async () => {
+        globalThis.fetch = vi.fn(async () => ({
+            ok: true,
+            headers: new Headers({ 'content-type': 'application/json' }),
+            json: async () => ({ test: true }),
+        }))
+        await expect(
+            ss._downloadFileStrict('file_test', { withMeta: true })
+        ).rejects.toThrow('ETag header missing from server response')
+    })
+
+    it('joinViaManifest 在成員日誌遭遇 403/404 時標記 incomplete 狀態，待後續同步補齊', async () => {
+        const manifest = {
+            ledgerUuid: 'u-partial',
+            members: [
+                { deviceId: 'dev_me', ownerEmail: 'me@test.com', fileId: null },
+                { deviceId: 'dev_missing', ownerEmail: 'm@test.com', fileId: 'log_404' },
+                { deviceId: 'dev_ok', ownerEmail: 'ok@test.com', fileId: 'log_ok' },
+            ],
+        }
+        globalThis.fetch = vi.fn(async url => {
+            if (url.includes('files/mf_partial') && url.includes('alt=media')) {
+                return { ok: true, json: async () => manifest }
+            }
+            if (url.includes('files/log_404') && url.includes('alt=media')) {
+                return { ok: false, status: 404 }
+            }
+            if (url.includes('files/log_ok') && url.includes('alt=media')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        changes: [
+                            {
+                                deviceId: 'dev_ok',
+                                timestamp: 100,
+                                operation: 'add',
+                                storeName: 'ledgers',
+                                data: { uuid: 'u-partial', name: 'Shared Partial' },
+                            },
+                        ],
+                    }),
+                }
+            }
+            if (url.includes('/files?q=')) {
+                return { ok: true, json: async () => ({ files: [] }) }
+            }
+            if (url.includes('uploadType=multipart')) {
+                return { ok: true, json: async () => ({ id: 'my_new_log' }) }
+            }
+            return { ok: true, json: async () => ({}) }
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+
+        const uuid = await ss.joinViaManifest('mf_partial')
+        expect(uuid).toBe('u-partial')
+
+        const incompleteFlag = (
+            await ds.getSetting('sync_shared_incomplete_u-partial')
+        )?.value
+        expect(incompleteFlag).toBe(true)
     })
 })
 

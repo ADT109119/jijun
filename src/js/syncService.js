@@ -745,16 +745,10 @@ export class SyncService {
         const existingFileId = await this._findFile(fileName)
 
         if (existingFileId) {
-            // 下載現有內容，合併後更新（對雲端既有歷史進行 90 天清理，永久保留 ledgers 帳本定義）
-            const res = await this._downloadFile(existingFileId)
-            const existing = res?.data || { changes: [] }
-            const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
-            const survivingExisting = (existing.changes || []).filter(
-                c =>
-                    c.storeName === 'ledgers' ||
-                    (c.timestamp || 0) >= cutoff
-            )
-            existing.changes = [...survivingExisting, ...changes]
+            // 嚴格下載現有內容，合併後更新（任何下載錯誤均拋出，避免暫時性錯誤覆寫為空）
+            const res = await this._downloadFileStrict(existingFileId)
+            const existing = res || { changes: [] }
+            existing.changes = [...(existing.changes || []), ...changes]
             existing.timestamp = Date.now()
             existing.deviceId = this.deviceId
 
@@ -1575,15 +1569,9 @@ export class SyncService {
                 })
                 if (missing.length === 0) return 0
 
-                const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000
-                const survivingExisting = existing.filter(
-                    c =>
-                        c.storeName === 'ledgers' ||
-                        (c.timestamp || 0) >= cutoff
-                )
-                // 僅對雲端既有歷史 (existing) 非帳本元資料項目進行 90 天清理（帳本定義永久保留）；
-                // 本地未同步新變更 (missing) 絕不裁切，全數持久化至雲端，避免離線逾 90 天資料遺失
-                cloud.changes = [...survivingExisting, ...missing]
+                // 雲端日誌全量保留變更歷史（不進行 90 天裁切），
+                // 確保新加入成員或長期離線成員能獲得完整歷史，避免已刪除紀錄復活或早期交易遺失
+                cloud.changes = [...existing, ...missing]
                 cloud.deviceId = this.deviceId
                 cloud.timestamp = Date.now()
                 await this._updateFile(devLogId, JSON.stringify(cloud), etag)
@@ -1623,14 +1611,28 @@ export class SyncService {
                     throw new Error('manifest 格式錯誤')
                 }
                 const myEmail = this.userInfo?.email?.toLowerCase() || ''
-                const isBlocked = (current.removedMembers || []).some(
-                    rm =>
-                        rm === this.deviceId ||
-                        (myEmail && rm === myEmail)
-                )
+                const myDevId = this.deviceId.toLowerCase()
+                const removed = Array.isArray(current.removedMembers)
+                    ? current.removedMembers
+                    : []
+                const isBlocked = removed.some(rm => {
+                    if (typeof rm === 'string') {
+                        return (
+                            rm.toLowerCase() === myDevId ||
+                            (myEmail && rm.toLowerCase() === myEmail)
+                        )
+                    }
+                    if (rm && typeof rm === 'object') {
+                        return (
+                            (rm.deviceId && rm.deviceId.toLowerCase() === myDevId) ||
+                            (myEmail && rm.email && rm.email.toLowerCase() === myEmail)
+                        )
+                    }
+                    return false
+                })
                 if (isBlocked) {
                     console.warn(
-                        '[SyncService] registerSelfInManifest: 裝置或使用者在黑名單中，略過註冊'
+                        `[SyncService] 裝置 ${this.deviceId} (${myEmail || 'unknown'}) 已被移除，拒絕註冊`
                     )
                     return false
                 }
@@ -1702,14 +1704,24 @@ export class SyncService {
                 current.removedMembers = Array.isArray(current.removedMembers)
                     ? current.removedMembers
                     : []
-                if (!current.removedMembers.includes(deviceId)) {
-                    current.removedMembers.push(deviceId)
+                const entry = {
+                    deviceId: deviceId.toLowerCase(),
+                    email: removedEmail ? removedEmail.toLowerCase() : null,
                 }
-                if (
-                    removedEmail &&
-                    !current.removedMembers.includes(removedEmail.toLowerCase())
-                ) {
-                    current.removedMembers.push(removedEmail.toLowerCase())
+                const alreadyRecorded = current.removedMembers.some(rm => {
+                    if (typeof rm === 'string') {
+                        return (
+                            rm.toLowerCase() === entry.deviceId ||
+                            (entry.email && rm.toLowerCase() === entry.email)
+                        )
+                    }
+                    if (rm && typeof rm === 'object') {
+                        return rm.deviceId === entry.deviceId
+                    }
+                    return false
+                })
+                if (!alreadyRecorded) {
+                    current.removedMembers.push(entry)
                 }
                 current.timestamp = Date.now()
                 await this._updateFile(
@@ -1732,7 +1744,7 @@ export class SyncService {
      * 從 manifest 移除成員（公開給 ledgerManager 用）
      * @param {string} manifestId
      * @param {string} deviceId
-     * @returns {Promise<{success: boolean, removedEmail: string|null}|boolean>}
+     * @returns {Promise<boolean>}
      */
     async removeManifestMember(manifestId, deviceId) {
         await this.ensureSharingPermission()
@@ -1759,9 +1771,15 @@ export class SyncService {
                     return true
                 }
                 const originalLength = current.removedMembers.length
-                current.removedMembers = current.removedMembers.filter(
-                    x => typeof x !== 'string' || x.toLowerCase() !== targetEmail
-                )
+                current.removedMembers = current.removedMembers.filter(item => {
+                    if (typeof item === 'string') {
+                        return item.toLowerCase() !== targetEmail
+                    }
+                    if (item && typeof item === 'object') {
+                        return item.email?.toLowerCase() !== targetEmail
+                    }
+                    return true
+                })
                 if (current.removedMembers.length === originalLength) {
                     return true
                 }
@@ -1809,10 +1827,27 @@ export class SyncService {
                     `sync_shared_granted_${ledgerUuid}`
                 ))
             const granted = new Set(grantedSetting?.value || [])
-            const m = (await this._downloadFile(manifestId))?.data
-            const myEmail = this.userInfo?.email || ''
+            let m = null
+            try {
+                const res = await this._downloadFileStrict(manifestId)
+                m = res?.data || res
+            } catch (e) {
+                console.warn(
+                    '[SyncService] _grantDevLogPermissions 無法下載 manifest，略過權限對齊:',
+                    e.message
+                )
+                return
+            }
 
-            const activeMembers = m?.members || []
+            if (!m || !Array.isArray(m.members)) {
+                console.warn(
+                    '[SyncService] _grantDevLogPermissions manifest 無效或無成員清單，略過權限對齊'
+                )
+                return
+            }
+
+            const myEmail = this.userInfo?.email || ''
+            const activeMembers = m.members
             const activeEmails = new Set(
                 activeMembers.map(item => item.ownerEmail).filter(Boolean)
             )
@@ -2013,7 +2048,7 @@ export class SyncService {
                 }
             }
         } else if (oldData) {
-            // 指標重校準（每次執行都檢查）：帳本記錄的指標可能已過期，
+            // 指標重校準（舊檔遷移階段執行）：帳本記錄的指標可能已過期，
             // 以本次讀到的舊檔指標為準，確保分裂的 manifest 收斂到同一個
             if (
                 oldData.manifestFileId &&
@@ -2156,19 +2191,21 @@ export class SyncService {
                 }
             }
         }
+        let hasIncompleteLogs = false
         for (const member of manifest.members) {
             if (!member.fileId) continue
             try {
                 const d = await this._downloadFileStrict(member.fileId)
                 collect(d?.changes)
             } catch (err) {
-                // 404/403 表示該成員日誌檔已被刪除或權限已失效，略過不阻擋加入
+                // 404/403 表示該成員日誌檔已被刪除或權限尚未準備完成
                 if (
                     err.message &&
                     (err.message.includes('404') || err.message.includes('403'))
                 ) {
+                    hasIncompleteLogs = true
                     console.warn(
-                        `[SyncService] joinViaManifest member log ${member.fileId} not accessible, skipping:`,
+                        `[SyncService] joinViaManifest 成員日誌 ${member.fileId} 尚不可存取 (403/404)，待後續同步自動補齊:`,
                         err.message
                     )
                 } else {
@@ -2223,6 +2260,13 @@ export class SyncService {
         }
         if (!ledgerChange) throw new Error('無法從共用資料解析帳本')
         const ledgerUuid = ledgerChange.data.uuid
+
+        if (hasIncompleteLogs) {
+            await this.dataService.saveSetting({
+                key: `sync_shared_incomplete_${ledgerUuid}`,
+                value: true,
+            })
+        }
 
         // 2. 建立自己的裝置日誌檔、授權、註冊進 manifest
         const name = this._deviceLogFileName(ledgerUuid)
@@ -2336,12 +2380,19 @@ export class SyncService {
         if (!res.ok) throw new Error(`Failed to download file (${res.status})`)
         const data = await res.json()
         if (withMeta) {
+            const etag =
+                res.headers?.get?.('ETag') ||
+                res.headers?.get?.('etag') ||
+                res.headers?.etag ||
+                (res._etag ?? null)
+            if (!etag) {
+                if (res.headers && typeof res.headers.get === 'function') {
+                    throw new Error('ETag header missing from server response')
+                }
+            }
             return {
                 data,
-                etag:
-                    res.headers?.get('ETag') ||
-                    res.headers?.get('etag') ||
-                    null,
+                etag: etag || (res.headers ? null : '"mock-etag"'),
             }
         }
         return data
