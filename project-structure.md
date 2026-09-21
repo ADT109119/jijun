@@ -179,18 +179,18 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 
 - **多帳本與共用架構 (Per-Device Sync)**:
     - 每個裝置維護自己獨立的 `sync_shared_devlog_<uuid>` 雲端變更日誌檔，避免共用單一檔案引發並行寫入覆蓋；裝置日誌寫入時同樣支援 ETag / If-Match 樂觀鎖與 412 衝突重試
-    - **全量日誌保全（不進行 90 天裁切）**：雲端日誌（包含共用 DevLog 與個人同步 `pushChanges`）全量保留變更歷史，徹底杜絕歷史記錄過期被裁切而導致新成員加入時歷史缺失、或已刪除紀錄復活的問題；本地 `appliedKeys` 持續去重，確保操作冪等性
-    - **去中心化最終撤銷 (Eventual Revocation) 與防禦性中止**：DevLog 僅授予其他成員 `reader` 唯讀權限（只有裝置本機具備寫入權限）；同步時各裝置主動比對 manifest 活躍成員清單，自動撤銷已移除成員對本機 DevLog 的讀取權限；`_grantDevLogPermissions` 採用 `_downloadFileStrict` 嚴格下載，若遭遇暫時性網路錯誤或 5xx 即防禦性中止，絕不誤將成員清單視為空而發生群體誤撤銷；僅在 Drive 撤銷成功時才從 `granted` 快取移除，失敗時保留以供重試，達成安全閉環
-    - **清理閘門與本地日誌保全**：`performSync` 嚴格把關共用帳本推送結果，若任一帳本推送失敗 (`pushSharedLedgerChanges() === null`)，跳過 `clearSyncLog`，徹底杜絕未成功推送的共用變更遭個人同步水位誤刪
-    - **加入流程原子性 appliedKeys 種入與不完整歷史標記**：`joinViaManifest` 僅將 `applyRemoteChanges` 實際套用成功的變更鍵記錄進 `sync_shared_applied_keys`，避免失敗項目被誤記為已套用而形成永久資料缺口；若有成員日誌暫時不可存取 (403/404)，標記 `sync_shared_incomplete_${ledgerUuid}` 供後續同步自動補齊完整歷史
-    - **Drive 伺服器端授權真實信任錨點與裝置黑名單聯動**：`isLedgerOwner` 與 `getSharedUsers` 優先採信 Google Drive Server 端 Permissions (`p.role === 'owner'`)，防範協作者竄改 Manifest JSON 冒充擁有者；Manifest 維護 `removedMembers` 黑名單（記錄 `{ deviceId, email }` 物件），阻止已被移除的成員與裝置重新自我註冊；在擁有者重新邀請時提供 `unblockManifestMember` 同時解除 email 與其關聯之 deviceId 封鎖，確保原裝置能順利重新加入；`removeSharedUser` 嚴格檢查移除結果，失敗立即報錯
-    - **個人同步優化與 modifiedTime 水位過濾**：個人同步 `pullChanges` 引入 `sync_personal_checked_map` 結合 `modifiedTime` 跳過未變更日誌，`appliedKeys` 搭配 `pushChanges` 嚴格下載保護，避免暫時性錯誤覆蓋雲端日誌
-    - **歷史遷移保全與樂觀鎖**：舊檔變更遷移時保留原始 `deviceId`，消除鍵值不一致造成的重播問題；`legacySharedFileId` 指標寫回時補齊 ETag 樂觀鎖防並行覆蓋
-    - **Fail-Closed CAS on ETag**：`_downloadFileStrict` 於請求附帶中繼資訊時嚴格校驗 ETag，若伺服器回應未帶 ETag 即拋出例外拒絕更新，杜絕樂觀鎖失效退化為無條件覆寫的風險
-    - **add 變更冪等性防護**：`applyRemoteChanges` 與 `_applyAdd` 當收到 `operation === 'add'` 且該 UUID 已存在於本機時直接視為冪等略過，徹底防範歷史建立快照將本機較新的修改回滾覆蓋
-    - **授權快取閉環管理**：`ledgerManager.removeSharedUser` 移除成員時同步清理 `sync_shared_granted_...`，`shareLedger` 邀請時同步記錄，徹底解決被移除成員日後重新受邀時因快取殘留而無法讀取 DevLog 的問題
-    - **業務邏輯層權限防禦**：`ledgerManager.removeSharedUser` 與已共用狀態下的 `ledgerManager.shareLedger` 均增加 `isLedgerOwner` 擁有者校驗，與 `unshareLedger` 保持一致的防禦深度
-    - **_changeKey 深度識別碼回退鏈**：擴充識別碼依序支援 `uuid` -> `recordId` -> `data.id` -> `data.key` -> `change.id`，全面杜絕極端同毫秒無 UUID 變更時的鍵值碰撞
+    - **全量日誌保全與去重鍵無裁切 (C2 防護)**：雲端日誌全量保留變更歷史；本地 `appliedKeys` 同步完全保留不依時間 (30/100天) 進行窗口裁切，徹底杜絕舊 add 變更因鍵過期而被再次套用覆蓋新資料（防止幽靈紀錄復活）
+    - **ID 精準刪除取代時間戳清理，杜絕跨帳本競爭掉單 (C1 防護)**：各同步通道 (`pushChanges` 與 `pushSharedLedgerChanges`) 在成功附加至雲端後，使用 `deleteSyncLogsByIds` 依變更 ID 精準清除本機 sync_log；`performSync` 徹底廢除跨帳本 `Math.min(personalMaxTs, sharedMaxTs)` 時間戳清理，根除多帳本並行記帳時未推送變更遭永久誤刪的風險
+    - **預設帳本防劫持隔離 (C3 防護)**：`_applyAdd('ledgers', ...)` 嚴格阻絕共用帳本的預設帳本 (id: 1) 覆寫受邀者的本機個人預設帳本 #1，避免個人記帳資料遭共用帳本取代
+    - **舊共用檔遷移擁有者嚴格防偽與批次授權 (C4 / H1 防護)**：`_ensureSharedInfra` 嚴格限制僅有 Google Drive 舊共用檔擁有者具備建立 Manifest 的權限（非擁有者拋錯等待遷移，防協作者搶先建立而在自己 Drive 成為偽擁有者）；擁有者建立 Manifest 時自動查詢所有舊檔協作者並批次授予 `writer` 權限
+    - **伺服器端授權 Fail-Closed 信任錨點 (M1 防護)**：`isLedgerOwner` 當 Google Drive 權限查詢失敗或無法取得時，嚴格採用 Fail-Closed 回傳 `false`，絕不降級採信可被竄改的 Manifest JSON
+    - **跨帳本資料注入過濾 (M2 防護)**：`pullSharedLedgerChanges` 與 `_applyAdd` 依 `targetUuid` / `ledgerUuid` 嚴格過濾屬於當前共用帳本的變更，防範惡意成員或混淆注入其他帳本資料
+    - **DevLog 讀取授權對齊 Drive 真實權限 (M3 防護)**：`_grantDevLogPermissions` 在授予其他成員對本機 DevLog 的 `reader` 唯讀權限前，主動向 Google Drive 驗證成員 email 是否確為 Manifest 檔案合法成員，防止偽造 member 取得日誌存取權
+    - **黑名單設備與 Email 雙重封鎖 (M4 防護)**：`removeSharedUser` 移除成員時同時將 email 記錄進黑名單，阻止尚未加入過的該成員其他裝置重新註冊
+    - **檔案搜尋 Fail-Closed (M5 防護)**：`_findFileInDrive` 遇到非 OK 之 HTTP 回應一律拋出例外中止，防止因暫時性錯誤誤判為檔案不存在而重複建立孤立檔案
+    - **雲端 Manifest 404 自動優雅降級 (M6 防護)**：`_ensureSharedInfra` 偵測到雲端 Manifest 404 時，自動將本機帳本更新降級為個人帳本 (`isShared: false`)，避免重試阻塞
+    - **依賴關係拓撲排序修正 (M7 防護)**：`applyRemoteChanges` 之 `topoOrder` 修正為 `debts` / `amortizations` 優先於 `records`，未知 store 排於末端，確保還款與分期關聯之紀錄能正確解析外鍵
+    - **CORS 非阻塞 ETag 降級容錯 (L1 / L2 防護)**：`_downloadFileStrict` 在 CORS 環境未暴露 ETag 標頭時以 `etag: null` 優雅降級回傳，避免阻斷網頁版同步運作
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
@@ -216,9 +216,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與 100 天保留期、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、performSync 快取與清理閘門、add 變更冪等防覆蓋、_changeKey 多階回退、removedMembers 黑名單與解封)
-- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與無裁切全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持、M1-M7 與 L1-L2 防禦回歸測試)
+- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1637 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1646 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

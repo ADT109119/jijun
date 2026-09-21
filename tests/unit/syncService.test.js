@@ -68,6 +68,8 @@ function createMockDataService(overrides = {}) {
         updateLedger: vi.fn(async () => true),
         exportDataForSync: vi.fn(async () => ({ records: [] })),
         importDataFromSync: vi.fn(async () => true),
+        deleteSyncLogsByIds: vi.fn(async () => true),
+        clearSyncLog: vi.fn(async () => true),
         ...overrides,
     }
 }
@@ -1584,11 +1586,13 @@ describe('SyncService _ensureSharedInfra', () => {
         expect(creates).toHaveLength(1)
     })
 
-    it('首次建立 manifest：從舊共用檔權限查詢真正擁有者寫入頂層 ownerEmail', async () => {
+    it('首次建立 manifest：擁有者從舊共用檔權限寫入頂層 ownerEmail 並授予協作成員權限 (C4/H1)', async () => {
+        ss.userInfo = { email: 'creator@t.com' }
         ss.getFilePermissions = vi.fn(async () => [
-            { role: 'writer', emailAddress: 'me@test.com' },
+            { role: 'writer', emailAddress: 'member1@test.com' },
             { role: 'owner', emailAddress: 'creator@t.com' },
         ])
+        ss.grantFilePermission = vi.fn(async () => ({}))
         const contents = []
         ss._createSharedFile = vi.fn(async (_name, content) => {
             contents.push(JSON.parse(content))
@@ -1608,6 +1612,7 @@ describe('SyncService _ensureSharedInfra', () => {
 
         const ledger = {
             id: 9,
+            name: '共用專案',
             uuid: 'uuuuuuuu-9',
             isShared: true,
             sharedFileId: 'old_file',
@@ -1616,13 +1621,36 @@ describe('SyncService _ensureSharedInfra', () => {
 
         expect(infra.manifestId).toBe('new_0')
         expect(ss.getFilePermissions).toHaveBeenCalledWith('old_file')
-        // 頂層 ownerEmail 為舊檔 Drive 權限的真正擁有者，而非自己
         expect(contents[0].ownerEmail).toBe('creator@t.com')
-        // 成員清單仍記錄自己的裝置與 email
         expect(contents[0].members[0]).toMatchObject({
             deviceId: 'dev_me',
-            ownerEmail: 'me@test.com',
+            ownerEmail: 'creator@t.com',
         })
+        // C4: 擁有者建立 manifest 後，自動對舊檔協作成員批次授予 writer 權限
+        expect(ss.grantFilePermission).toHaveBeenCalledWith(
+            'new_0',
+            'member1@test.com',
+            'writer'
+        )
+    })
+
+    it('H1 防護：非舊共用檔擁有者禁止搶先建立 manifest，拋出等待遷移錯誤', async () => {
+        ss.userInfo = { email: 'me@test.com' }
+        ss.getFilePermissions = vi.fn(async () => [
+            { role: 'writer', emailAddress: 'me@test.com' },
+            { role: 'owner', emailAddress: 'creator@t.com' },
+        ])
+        globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ files: [] }) }))
+        const ledger = {
+            id: 9,
+            name: '共用專案',
+            uuid: 'uuuuuuuu-9',
+            isShared: true,
+            sharedFileId: 'old_file',
+        }
+        await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow(
+            '尚未由擁有者完成新版遷移，請等待擁有者升級'
+        )
     })
 
     it('建立日誌檔後將自己註冊進 manifest', async () => {
@@ -1760,6 +1788,7 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
             ]),
             getChangesSince: vi.fn(async () => [
                 {
+                    id: 101,
                     deviceId: 'other',
                     timestamp: 500,
                     operation: 'add',
@@ -1777,7 +1806,7 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         ds.clearSyncLog = vi.fn(async () => true)
     })
 
-    it('推送後回傳最大時間戳，且 deviceId 一律改成自己', async () => {
+    it('推送後回傳最大時間戳，且 deviceId 一律改成自己並以 ID 精準清除本地日誌 (C1)', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss._ensureSharedInfra = vi.fn(async ledger => ({
             ledger,
@@ -1791,6 +1820,7 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         expect(ss._appendToDeviceLog.mock.calls[0][1][0].deviceId).toBe(
             ss.deviceId
         )
+        expect(ds.deleteSyncLogsByIds).toHaveBeenCalledWith([101])
     })
 
     it('未授權時回傳 null', async () => {
@@ -1827,7 +1857,7 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         expect(result).toBeNull()
     })
 
-    it('performSync 兩條推送成功後清理本地日誌（取最小 cutoff）', async () => {
+    it('performSync 協調個人與共用推送，不執行跨帳本 timestamp cutoff 清理避免掉單 (C1)', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss.pushChanges = vi.fn(async () => 700)
         ss.pushSharedLedgerChanges = vi.fn(async () => 500)
@@ -1835,10 +1865,12 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         ss.pullSharedLedgerChanges = vi.fn(async () => {})
 
         await ss.performSync(true)
-        expect(ds.clearSyncLog).toHaveBeenCalledWith(500)
+        expect(ss.pushChanges).toHaveBeenCalled()
+        expect(ss.pushSharedLedgerChanges).toHaveBeenCalled()
+        expect(ds.clearSyncLog).not.toHaveBeenCalled()
     })
 
-    it('自動同步開啟且兩條推送成功時以最小 cutoff 清理', async () => {
+    it('自動同步開啟時同時執行個人與共用推送', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss.pushChanges = vi.fn(async () => 900)
         ss.pushSharedLedgerChanges = vi.fn(async () => 400)
@@ -1848,10 +1880,11 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
 
         await ss.performSync(false)
         expect(ss.pushChanges).toHaveBeenCalledTimes(1)
-        expect(ds.clearSyncLog).toHaveBeenCalledWith(400)
+        expect(ss.pushSharedLedgerChanges).toHaveBeenCalledTimes(1)
+        expect(ds.clearSyncLog).not.toHaveBeenCalled()
     })
 
-    it('個人同步關閉時不清理本地日誌以保留未上傳變更', async () => {
+    it('個人同步關閉時僅執行共用推送且不清理個人日誌', async () => {
         ss.ensureValidToken = vi.fn(async () => {})
         ss.pushChanges = vi.fn()
         ss.pullChanges = vi.fn()
@@ -1862,7 +1895,7 @@ describe('SyncService pushSharedLedgerChanges (per-device)', () => {
         await ss.performSync(false)
         expect(ss.pushChanges).not.toHaveBeenCalled()
         expect(ss.pullChanges).not.toHaveBeenCalled()
-        // 共用專用同步未推送個人變更，清理會誤刪尚未上傳的個人變更
+        expect(ss.pushSharedLedgerChanges).toHaveBeenCalled()
         expect(ds.clearSyncLog).not.toHaveBeenCalled()
     })
 
@@ -2076,9 +2109,10 @@ describe('SyncService pullSharedLedgerChanges', () => {
 
         await ss.pullSharedLedgerChanges()
 
-        expect(ss.applyRemoteChanges).toHaveBeenCalledWith([
-            expect.objectContaining({ data: { uuid: 'rec-pull' } }),
-        ])
+        expect(ss.applyRemoteChanges).toHaveBeenCalledWith(
+            [expect.objectContaining({ data: { uuid: 'rec-pull' } })],
+            { isShared: true }
+        )
     })
 })
 
@@ -2681,6 +2715,9 @@ describe('PR #69 External Review Verified Fixes', () => {
                 sharedManifestId: 'mf-exists',
             }
 
+            ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
+                data: { members: [] },
+            }))
             ss._registerSelfInManifest = vi.fn(async () => false)
             ss._grantDevLogPermissions = vi.fn(async () => {})
             ss._findFileInDrive = vi.fn(async () => 'my-dev-log')
@@ -2817,6 +2854,10 @@ describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () =
     })
 
     it('對新成員授予 reader 唯讀權限', async () => {
+        ss.getFilePermissions = vi.fn(async () => [
+            { emailAddress: 'me@test.com', role: 'owner' },
+            { emailAddress: 'member1@test.com', role: 'writer' },
+        ])
         ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
             data: {
                 members: [
@@ -2837,6 +2878,28 @@ describe('SyncService _grantDevLogPermissions 權限管理與撤銷對齊', () =
             await ds.getSetting('sync_shared_granted_u1_my_devlog')
         ).value
         expect(saved).toContain('member1@test.com')
+    })
+
+    it('M3 防護：若 manifest 中成員未出現在 Google Drive 權限名單中，拒絕授予 DevLog 權限', async () => {
+        ss.getFilePermissions = vi.fn(async () => [
+            { emailAddress: 'me@test.com', role: 'owner' },
+        ])
+        ss._downloadFileStrict = ss._downloadFile = vi.fn(async () => ({
+            data: {
+                members: [
+                    { ownerEmail: 'me@test.com', fileId: 'my_log' },
+                    { ownerEmail: 'attacker@test.com', fileId: 'log_att' },
+                ],
+            },
+        }))
+
+        await ss._grantDevLogPermissions('u1', 'mf_1', 'my_devlog')
+
+        expect(ss.grantFilePermission).not.toHaveBeenCalledWith(
+            'my_devlog',
+            'attacker@test.com',
+            'reader'
+        )
     })
 
     it('當既有成員從 manifest 移除時，自動撤銷其對 DevLog 的權限', async () => {
@@ -2942,7 +3005,7 @@ describe('SyncService performSync 單次同步基礎設施快取', () => {
     })
 })
 
-describe('SyncService appliedKeys 100 天保留期', () => {
+describe('SyncService appliedKeys 完全保留不依時間裁剪 (C2 防護)', () => {
     let ss, ds
 
     beforeEach(() => {
@@ -2954,7 +3017,7 @@ describe('SyncService appliedKeys 100 天保留期', () => {
         ds.getLedgers = vi.fn(async () => [])
     })
 
-    it('appliedKeys 保留 100 天（保留 60 天前的鍵，清理 110 天前的鍵）', async () => {
+    it('appliedKeys 完全保留（即使 110 天前的鍵也不被裁剪，防止幽靈復活）', async () => {
         const now = Date.now()
         const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000
         const oneHundredTenDaysAgo = now - 110 * 24 * 60 * 60 * 1000
@@ -2971,7 +3034,7 @@ describe('SyncService appliedKeys 100 天保留期', () => {
 
         const saved = (await ds.getSetting('sync_shared_applied_keys'))?.value
         expect(saved).toContain(`dev_a|${sixtyDaysAgo}|update|records|r1`)
-        expect(saved).not.toContain(
+        expect(saved).toContain(
             `dev_b|${oneHundredTenDaysAgo}|add|records|r2`
         )
     })
@@ -3173,15 +3236,17 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
         expect(ss._downloadFile).not.toHaveBeenCalled()
     })
 
-    it('_downloadFileStrict 在伺服器提供 Headers 但缺少 ETag 時拋出例外 (Fail-Closed)', async () => {
+    it('_downloadFileStrict 在伺服器提供 Headers 但缺少 ETag 時以 null 回傳，避免 CORS 阻斷 (L2)', async () => {
         globalThis.fetch = vi.fn(async () => ({
             ok: true,
             headers: new Headers({ 'content-type': 'application/json' }),
             json: async () => ({ test: true }),
         }))
-        await expect(
-            ss._downloadFileStrict('file_test', { withMeta: true })
-        ).rejects.toThrow('ETag header missing from server response')
+        const result = await ss._downloadFileStrict('file_test', { withMeta: true })
+        expect(result).toEqual({
+            data: { test: true },
+            etag: null,
+        })
     })
 
     it('joinViaManifest 在成員日誌遭遇 403/404 時標記 incomplete 狀態，待後續同步補齊', async () => {
@@ -3235,6 +3300,140 @@ describe('SyncService Architectural Hardening & Bug Fixes', () => {
             await ds.getSetting('sync_shared_incomplete_u-partial')
         )?.value
         expect(incompleteFlag).toBe(true)
+    })
+})
+
+describe('PR #69 External Code Review Hardening & Regression Tests', () => {
+    let ss, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        ss = createSyncService(ds)
+        ss.accessToken = 'tok'
+        ss.deviceId = 'dev_me'
+    })
+
+    it('C3 防護：共用帳本的預設帳本 (id: 1) 不會劫持本地個人預設帳本 (id: 1)', async () => {
+        ds.getLedger = vi.fn(async id => {
+            if (id === 1) return { id: 1, uuid: 'local-u1', name: '預設帳本', isShared: false }
+            return null
+        })
+        ds.getByUUID = vi.fn(async () => null)
+        ds.addLedger = vi.fn(async () => 2)
+        ss._applyUpdateWithId = vi.fn()
+
+        await ss._applyAdd(
+            'ledgers',
+            { id: 1, uuid: 'shared-u-default', name: '預設帳本', isShared: true },
+            { isShared: true }
+        )
+
+        expect(ss._applyUpdateWithId).not.toHaveBeenCalledWith(
+            'ledgers',
+            1,
+            expect.anything()
+        )
+        expect(ds.addLedger).toHaveBeenCalledWith(
+            expect.objectContaining({ uuid: 'shared-u-default', isShared: true }),
+            true
+        )
+    })
+
+    it('M2 防護：pullSharedLedgerChanges 過濾掉非本共用帳本之 targetUuid/ledgerUuid 變更', async () => {
+        ds.getLedgers = vi.fn(async () => [
+            {
+                id: 10,
+                uuid: 'shared-ledger-A',
+                name: '帳本A',
+                isShared: true,
+                sharedManifestId: 'mf_A',
+            },
+        ])
+        ss.ensureValidToken = vi.fn(async () => {})
+        ss.isSharingAuthorized = vi.fn(async () => true)
+        ss._ensureSharedInfra = vi.fn(async ledger => ({
+            ledger,
+            manifestId: 'mf_A',
+            devLogId: 'dl_A',
+        }))
+        ss._downloadFile = vi.fn(async fileId => {
+            if (fileId === 'mf_A') {
+                return {
+                    data: {
+                        ledgerUuid: 'shared-ledger-A',
+                        members: [{ deviceId: 'dev_other', fileId: 'log_other' }],
+                    },
+                }
+            }
+            if (fileId === 'log_other') {
+                return {
+                    data: {
+                        changes: [
+                            {
+                                deviceId: 'dev_other',
+                                timestamp: 100,
+                                operation: 'add',
+                                storeName: 'records',
+                                data: {
+                                    uuid: 'rec-A',
+                                    ledgerUuid: 'shared-ledger-A',
+                                    amount: 100,
+                                },
+                            },
+                            {
+                                deviceId: 'dev_other',
+                                timestamp: 101,
+                                operation: 'add',
+                                storeName: 'records',
+                                data: {
+                                    uuid: 'rec-B',
+                                    ledgerUuid: 'shared-ledger-B',
+                                    amount: 999,
+                                },
+                            },
+                        ],
+                    },
+                }
+            }
+            return null
+        })
+        ss._getFileModifiedTime = vi.fn(async () => Date.now())
+        ss.applyRemoteChanges = vi.fn(async () => {})
+
+        await ss.pullSharedLedgerChanges()
+
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        const appliedChanges = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(appliedChanges).toHaveLength(1)
+        expect(appliedChanges[0].data.uuid).toBe('rec-A')
+    })
+
+    it('M6 防護：_ensureSharedInfra 發現雲端 manifest 404 時自動降級為個人帳本', async () => {
+        const ledger = {
+            id: 8,
+            uuid: 'u-deleted-manifest',
+            name: '已刪除的共用帳本',
+            isShared: true,
+            sharedManifestId: 'mf_deleted_404',
+        }
+        ss._downloadFileStrict = vi.fn(async () => {
+            throw new Error('File not found: 404')
+        })
+        ds.updateLedger = vi.fn(async () => true)
+
+        await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow(
+            '已被擁有者取消共用 (404)'
+        )
+        expect(ds.updateLedger).toHaveBeenCalledWith(
+            8,
+            {
+                isShared: false,
+                sharedManifestId: null,
+                sharedFileId: null,
+            },
+            true
+        )
+        expect(ledger.isShared).toBe(false)
     })
 })
 

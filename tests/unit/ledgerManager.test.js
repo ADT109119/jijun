@@ -781,7 +781,11 @@ describe('LedgerManager', () => {
 
             await ledgerManager.removeSharedUser(1, 'dev_other')
 
-            expect(mockSyncService.removeManifestMember).toHaveBeenCalledWith('mf_123', 'dev_other')
+            expect(mockSyncService.removeManifestMember).toHaveBeenCalledWith(
+                'mf_123',
+                'dev_other',
+                'other@test.com'
+            )
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('mf_123', 'perm_mf_other')
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('f_123', 'perm_f_other')
             expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('devlog_123', 'perm_dl_other')
@@ -920,7 +924,9 @@ describe('LedgerManager', () => {
 
         beforeEach(() => {
             mockSyncService = {
-                getFilePermissions: vi.fn(),
+                getFilePermissions: vi.fn().mockResolvedValue([
+                    { emailAddress: 'me@test.com', role: 'owner' },
+                ]),
                 deleteFile: vi.fn().mockResolvedValue(),
                 userInfo: { email: 'me@test.com' },
             }

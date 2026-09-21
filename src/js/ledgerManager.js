@@ -544,7 +544,8 @@ export class LedgerManager {
 
             const removed = await this.app.syncService.removeManifestMember(
                 ledger.sharedManifestId,
-                memberId
+                memberId,
+                removedEmail
             )
             if (!removed) {
                 throw new Error('移除成員失敗，可能是並行衝突或網路錯誤')
@@ -675,8 +676,10 @@ export class LedgerManager {
             if (!myEmail) return false
 
             const ledger = await this.dataService.getLedger(ledgerId)
+            if (!ledger) return false
+
             const targetFileId =
-                ledger?.sharedManifestId || ledger?.sharedFileId
+                ledger.sharedManifestId || ledger.sharedFileId
             if (targetFileId) {
                 // 優先使用 Google Drive 伺服器端授權 (writer 無法竄改 role === 'owner')
                 try {
@@ -695,19 +698,17 @@ export class LedgerManager {
                             )
                         }
                     }
+                    return false
                 } catch (e) {
                     console.warn(
-                        '[LedgerManager] 取得雲端權限失敗，降級檢查 getSharedUsers:',
+                        '[LedgerManager] 取得雲端權限失敗，採用 Fail-Closed 拒絕判定:',
                         e
                     )
+                    return false
                 }
             }
 
-            const users = await this.getSharedUsers(ledgerId)
-            const owner = users.find(u => u.role === 'owner')
-            return (
-                owner?.emailAddress?.toLowerCase() === myEmail.toLowerCase()
-            )
+            return false
         } catch {
             return false
         }
