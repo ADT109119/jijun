@@ -871,14 +871,10 @@ export class SyncService {
             })
         }
 
-        // 持久化已套用鍵（保留最近 100 天，嚴格大於日誌的 90 天清理期）
-        const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
+        // 持久化已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 N1）
         await this.dataService.saveSetting({
             key: 'sync_personal_applied_keys',
-            value: [...appliedKeys].filter(k => {
-                const ts = parseInt(k.split('|')[1], 10)
-                return !isNaN(ts) && ts > hundredDaysAgo
-            }),
+            value: [...appliedKeys],
         })
 
         await this.dataService.saveSetting({
@@ -961,7 +957,7 @@ export class SyncService {
                         await this._applyAdd(storeName, data, options)
                         break
                     case 'update':
-                        await this._applyUpdate(storeName, recordId, data)
+                        await this._applyUpdate(storeName, recordId, data, options)
                         break
                     case 'delete':
                         await this._applyDelete(storeName, recordId, data)
@@ -2064,6 +2060,7 @@ export class SyncService {
                 let legacyPerms = []
                 let isLegacyOwner = true
                 if (ledger.sharedFileId) {
+                    isLegacyOwner = false
                     try {
                         legacyPerms =
                             (await this.getFilePermissions(
@@ -2078,9 +2075,13 @@ export class SyncService {
                                 owner.emailAddress.toLowerCase() ===
                                     myEmail.toLowerCase()
                         }
-                    } catch (_) {}
+                    } catch (e) {
+                        throw new Error(
+                            `無法驗證舊共用檔擁有者權限，暫緩建立 manifest: ${e.message}`
+                        )
+                    }
 
-                    // H1 防護：若自己不是舊共用檔擁有者，禁止在自己 Drive 搶先建立 manifest，避免架空擁有者
+                    // H1 / N4 防護：若自己不是舊共用檔擁有者，禁止在自己 Drive 搶先建立 manifest，避免架空擁有者
                     if (!isLegacyOwner) {
                         throw new Error(
                             `共用帳本 "${ledger.name}" 尚未由擁有者完成新版遷移，請等待擁有者升級`
@@ -2305,11 +2306,24 @@ export class SyncService {
         const manifest = (await this._downloadFile(manifestId))?.data
         if (!manifest?.members) throw new Error('無效的共用帳本清單檔')
 
+        const targetUuid = manifest.ledgerUuid
+
         // 1. 收集所有成員日誌的變更（key 去重）
         const seen = new Set()
         const allChanges = []
         const collect = changes => {
             for (const c of changes || []) {
+                // M2/N3: 驗證 ledgerUuid 防範跨帳本資料污染
+                const changeLedgerUuid =
+                    c.storeName === 'ledgers'
+                        ? c.data?.uuid
+                        : c.data?.ledgerUuid
+                if (targetUuid && changeLedgerUuid && changeLedgerUuid !== targetUuid) {
+                    console.warn(
+                        `[SyncService] joinViaManifest 略過非本帳本變更 (${changeLedgerUuid} !== ${targetUuid})`
+                    )
+                    continue
+                }
                 const key = this._changeKey(c)
                 if (!seen.has(key)) {
                     seen.add(key)
@@ -2370,7 +2384,10 @@ export class SyncService {
                 : allChanges.map(c => this._changeKey(c))
 
         let ledgerChange = allChanges.find(
-            c => c.storeName === 'ledgers' && c.data?.uuid
+            c =>
+                c.storeName === 'ledgers' &&
+                c.data?.uuid &&
+                (!targetUuid || c.data.uuid === targetUuid)
         )
         if (!ledgerChange && manifest.ledgerMeta && manifest.ledgerUuid) {
             const fallbackLedger = {
@@ -3184,8 +3201,9 @@ export class SyncService {
      * @param {string} storeName
      * @param {number|string} recordId
      * @param {object} data
+     * @param {object} [options={}]
      */
-    async _applyUpdate(storeName, recordId, data) {
+    async _applyUpdate(storeName, recordId, data, options = {}) {
         // Per-ledger custom_categories
         if (
             storeName === 'custom_categories' ||
@@ -3354,20 +3372,24 @@ export class SyncService {
                 await this._applyUpdateWithId(storeName, existing.id, data)
                 return
             } else {
-                // 針對預設帳本 (id: 1) 的特殊處理
+                // 針對預設帳本 (id: 1) 的特殊處理：不同裝置初始化時預設帳本會有不同的 UUID，
+                // 若個人同步時發現來源為個人預設帳本，且本地也有預設帳本，則應合併（更新）而非新增。
+                // 但若為共用帳本 (data.isShared 或 options.isShared)，嚴禁覆寫受邀者的本地預設帳本！(C3 / N2 防護)
                 if (
                     storeName === 'ledgers' &&
+                    !data.isShared &&
+                    !options?.isShared &&
                     (data.id === 1 || data.name === '預設帳本')
                 ) {
                     const localDefaultLedger =
                         await this.dataService.getLedger(1)
-                    if (localDefaultLedger) {
+                    if (localDefaultLedger && !localDefaultLedger.isShared) {
                         await this._applyUpdateWithId(storeName, 1, data)
                         return
                     }
                 }
                 // Not found by UUID, treat as Add (upsert)
-                await this._applyAdd(storeName, data)
+                await this._applyAdd(storeName, data, options)
                 return
             }
         }

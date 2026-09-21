@@ -2849,17 +2849,22 @@ class DataService {
     /**
      * 依據具體 ID 清除已成功推送的同步日誌
      * @param {Array<number>} ids - sync_log 主鍵 ID 陣列
+     * @returns {Promise<boolean>}
      */
     async deleteSyncLogsByIds(ids) {
-        if (this.useLocalStorage || !this.db || !Array.isArray(ids) || ids.length === 0) return
+        if (this.useLocalStorage || !this.db || !Array.isArray(ids) || ids.length === 0) return true
+        const validIds = ids.filter(id => typeof id === 'number' && Number.isInteger(id))
+        if (validIds.length === 0) return true
         try {
             const tx = this.db.transaction('sync_log', 'readwrite')
-            for (const id of ids) {
-                await tx.store.delete(id)
+            for (const id of validIds) {
+                tx.store.delete(id)
             }
             await tx.done
+            return true
         } catch (err) {
             console.error('[DataService] deleteSyncLogsByIds error:', err)
+            return false
         }
     }
 

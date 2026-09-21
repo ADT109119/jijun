@@ -40,6 +40,7 @@ vi.stubGlobal('import.meta.env', {
 })
 
 import { SyncService } from '../../src/js/syncService.js'
+import DataService from '../../src/js/dataService.js'
 
 // ── Helpers ──────────────────────────────────────────
 
@@ -601,7 +602,8 @@ describe('SyncService', () => {
 
             expect(applyAddSpy).toHaveBeenCalledWith(
                 'accounts',
-                expect.objectContaining({ uuid: 'acc-uuid-new-1' })
+                expect.objectContaining({ uuid: 'acc-uuid-new-1' }),
+                expect.anything()
             )
         })
 
@@ -1461,6 +1463,10 @@ describe('SyncService _ensureSharedInfra', () => {
         ss.ensureSharingPermission = vi.fn(async () => true)
         // 預設 mock：避免 _ensureSharedInfra 內的註冊行為打到 fetch 路徑
         ss._registerSelfInManifest = vi.fn(async () => true)
+        // 預設自己是舊共用檔擁有者（正常遷移路徑）
+        ss.getFilePermissions = vi.fn(async () => [
+            { role: 'owner', emailAddress: 'me@test.com' },
+        ])
     })
 
     afterEach(() => {
@@ -3434,6 +3440,176 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             true
         )
         expect(ledger.isShared).toBe(false)
+    })
+
+    it('N1 防護：pullChanges 個人同步 appliedKeys 全量保留，不被 100 天時間窗口裁剪', async () => {
+        const now = Date.now()
+        const sixtyDaysAgo = now - 60 * 24 * 60 * 60 * 1000
+        const oneHundredTenDaysAgo = now - 110 * 24 * 60 * 60 * 1000
+
+        await ds.saveSetting({
+            key: 'sync_personal_applied_keys',
+            value: [
+                `dev_a|${sixtyDaysAgo}|update|records|r1`,
+                `dev_b|${oneHundredTenDaysAgo}|add|records|r2`,
+            ],
+        })
+
+        globalThis.fetch = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ files: [] }),
+        }))
+
+        await ss.pullChanges()
+
+        const saved = (await ds.getSetting('sync_personal_applied_keys'))?.value
+        expect(saved).toContain(`dev_a|${sixtyDaysAgo}|update|records|r1`)
+        expect(saved).toContain(`dev_b|${oneHundredTenDaysAgo}|add|records|r2`)
+    })
+
+    it('N2 防護：_applyUpdate 遇到外來共用帳本的預設帳本 update 時，嚴禁覆寫本機個人預設帳本 #1', async () => {
+        ds.getLedger = vi.fn(async id => {
+            if (id === 1) return { id: 1, uuid: 'local-u1', name: '預設帳本', isShared: false }
+            return null
+        })
+        ds.getByUUID = vi.fn(async () => null)
+        ds.addLedger = vi.fn(async () => 2)
+        ss._applyUpdateWithId = vi.fn()
+
+        await ss._applyUpdate(
+            'ledgers',
+            1,
+            { id: 1, uuid: 'shared-u-default-update', name: '預設帳本', isShared: true },
+            { isShared: true }
+        )
+
+        expect(ss._applyUpdateWithId).not.toHaveBeenCalledWith(
+            'ledgers',
+            1,
+            expect.anything()
+        )
+        expect(ds.addLedger).toHaveBeenCalledWith(
+            expect.objectContaining({ uuid: 'shared-u-default-update', isShared: true }),
+            true
+        )
+    })
+
+    it('N3 防護：joinViaManifest 依據 manifest.ledgerUuid 過濾成員日誌與解析帳本，防止外來日誌污染', async () => {
+        const manifest = {
+            ledgerUuid: 'target-shared-uuid',
+            ledgerMeta: { name: '正確目標帳本' },
+            members: [{ deviceId: 'dev_peer', fileId: 'f_peer' }],
+        }
+        ss._downloadFile = vi.fn(async fileId => {
+            if (fileId === 'mf_n3') return { data: manifest }
+            return null
+        })
+        ss._downloadFileStrict = vi.fn(async fileId => {
+            if (fileId === 'f_peer') {
+                return {
+                    changes: [
+                        {
+                            deviceId: 'dev_peer',
+                            timestamp: 100,
+                            operation: 'add',
+                            storeName: 'records',
+                            data: { uuid: 'rec-target', ledgerUuid: 'target-shared-uuid' },
+                        },
+                        {
+                            deviceId: 'dev_peer',
+                            timestamp: 101,
+                            operation: 'add',
+                            storeName: 'records',
+                            data: { uuid: 'rec-foreign', ledgerUuid: 'foreign-uuid' },
+                        },
+                        {
+                            deviceId: 'dev_peer',
+                            timestamp: 102,
+                            operation: 'add',
+                            storeName: 'ledgers',
+                            data: { uuid: 'foreign-ledger-uuid', name: '假帳本' },
+                        },
+                        {
+                            deviceId: 'dev_peer',
+                            timestamp: 103,
+                            operation: 'add',
+                            storeName: 'ledgers',
+                            data: { uuid: 'target-shared-uuid', name: '正確目標帳本' },
+                        },
+                    ],
+                }
+            }
+            return null
+        })
+        ss.applyRemoteChanges = vi.fn(async () => {})
+        ss._grantDevLogPermissions = vi.fn(async () => {})
+        ss._registerSelfInManifest = vi.fn(async () => true)
+        ss._findFileInDrive = vi.fn(async () => 'my_devlog_id')
+        ss._createSharedFile = vi.fn(async () => ({ id: 'my_devlog_id' }))
+
+        const resultUuid = await ss.joinViaManifest('mf_n3')
+
+        expect(resultUuid).toBe('target-shared-uuid')
+        expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+        const passedChanges = ss.applyRemoteChanges.mock.calls[0][0]
+        expect(passedChanges.some(c => c.data?.uuid === 'rec-foreign')).toBe(false)
+        expect(passedChanges.some(c => c.data?.uuid === 'foreign-ledger-uuid')).toBe(false)
+        expect(passedChanges.some(c => c.data?.uuid === 'rec-target')).toBe(true)
+        expect(passedChanges.some(c => c.data?.uuid === 'target-shared-uuid')).toBe(true)
+    })
+
+    it('N4 防護：_ensureSharedInfra 在查詢舊共用檔權限失敗時拋錯中止 (Fail-Closed)，禁止搶建 manifest', async () => {
+        const ledger = {
+            id: 11,
+            uuid: 'u-legacy-fail',
+            name: '舊共用帳本',
+            isShared: true,
+            sharedFileId: 'f_legacy_error',
+        }
+        ss.getFilePermissions = vi.fn(async () => {
+            throw new Error('Drive API 500 Network Error')
+        })
+        ss._findFileInDrive = vi.fn(async () => null)
+        ss._createSharedFile = vi.fn()
+
+        await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow(
+            '無法驗證舊共用檔擁有者權限，暫緩建立 manifest: Drive API 500 Network Error'
+        )
+        expect(ss._createSharedFile).not.toHaveBeenCalled()
+    })
+
+    it('N5 防護：deleteSyncLogsByIds 嚴格過濾非法鍵並回傳執行狀態', async () => {
+        const realDs = new DataService()
+        const deletedIds = []
+        realDs.db = {
+            transaction: () => ({
+                store: {
+                    delete: vi.fn(async id => deletedIds.push(id)),
+                },
+                done: Promise.resolve(),
+            }),
+        }
+
+        const resEmpty = await realDs.deleteSyncLogsByIds([])
+        expect(resEmpty).toBe(true)
+
+        const resInvalid = await realDs.deleteSyncLogsByIds(['not-a-number', null, undefined, NaN])
+        expect(resInvalid).toBe(true)
+        expect(deletedIds).toHaveLength(0)
+
+        const resValid = await realDs.deleteSyncLogsByIds([1, 2, 3])
+        expect(resValid).toBe(true)
+        expect(deletedIds).toEqual([1, 2, 3])
+
+        // Mock error on transaction
+        realDs.db = {
+            transaction: () => {
+                throw new Error('IDB transaction error')
+            },
+        }
+        const resError = await realDs.deleteSyncLogsByIds([1, 2, 3])
+        expect(resError).toBe(false)
     })
 })
 
