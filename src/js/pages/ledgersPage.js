@@ -463,9 +463,11 @@ export class LedgersPage {
             return
         }
 
+        const shareCode = ledger.sharedManifestId || ledger.sharedFileId
+
         // 先判斷是否為擁有者（已共用帳本才需要）
         let isOwner = true
-        if (ledger.sharedFileId) {
+        if (shareCode) {
             try {
                 isOwner = await this.app.ledgerManager.isLedgerOwner(ledger.id)
             } catch {
@@ -516,12 +518,12 @@ export class LedgersPage {
                 }
                 
                 ${
-                    ledger.sharedFileId
+                    shareCode
                         ? `
                 <div class="mt-6 p-4 bg-wabi-bg rounded-lg border border-wabi-border">
                     <p class="text-xs text-wabi-text-secondary mb-1">現有共用代碼（已啟用）：</p>
                     <div class="flex items-center gap-2 mb-3">
-                        <input type="text" readonly value="${ledger.sharedFileId}" class="flex-1 bg-wabi-surface border border-wabi-border rounded px-2 py-1 text-xs text-wabi-text-primary outline-none" />
+                        <input type="text" readonly value="${shareCode}" class="flex-1 bg-wabi-surface border border-wabi-border rounded px-2 py-1 text-xs text-wabi-text-primary outline-none" />
                         <button class="copy-code-btn px-3 py-1 bg-wabi-bg hover:bg-wabi-border rounded text-xs transition-colors shrink-0">複製</button>
                     </div>
                     
@@ -563,13 +565,13 @@ export class LedgersPage {
             if (e.target === modal) modal.remove()
         })
 
-        if (ledger.sharedFileId) {
+        if (shareCode) {
             // == 複製代碼 ==
             modal
                 .querySelector('.copy-code-btn')
                 ?.addEventListener('click', () => {
                     navigator.clipboard
-                        .writeText(ledger.sharedFileId)
+                        .writeText(shareCode)
                         .then(() => {
                             showToast('已複製共用代碼', 'success')
                         })
@@ -584,7 +586,7 @@ export class LedgersPage {
             loadQRCodeLib()
                 .then(() => {
                     new window.QRCode(qrContainer, {
-                        text: ledger.sharedFileId,
+                        text: shareCode,
                         width: 120,
                         height: 120,
                         colorDark: '#2D3748',
