@@ -783,15 +783,25 @@ export class SyncService {
     async pullChanges() {
         await this.ensureValidToken()
 
-        const resList = await fetch(
-            `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
-        )
+        let files = []
+        let pageToken = null
+        do {
+            const pageParam = pageToken
+                ? `&pageToken=${encodeURIComponent(pageToken)}`
+                : ''
+            const resList = await fetch(
+                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)${pageParam}`,
+                { headers: { Authorization: `Bearer ${this.accessToken}` } }
+            )
 
-        if (!resList.ok)
-            throw new Error(`Failed to list sync logs (${resList.status})`)
-        const data = await resList.json()
-        const files = data.files || []
+            if (!resList.ok)
+                throw new Error(`Failed to list sync logs (${resList.status})`)
+            const data = await resList.json()
+            if (Array.isArray(data.files)) {
+                files.push(...data.files)
+            }
+            pageToken = data.nextPageToken || null
+        } while (pageToken)
 
         const checkedSetting = await this.dataService.getSetting(
             'sync_personal_checked_map'
@@ -1159,12 +1169,12 @@ export class SyncService {
                     const memberKeys = []
                     for (const change of data?.changes || []) {
                         if (change.deviceId === this.deviceId) continue
-                        // M2: 驗證 ledgerUuid 防範跨帳本資料污染
+                        // M2/P2: 嚴格驗證 ledgerUuid 防範跨帳本資料污染
                         const changeLedgerUuid =
                             change.storeName === 'ledgers'
                                 ? change.data?.uuid
                                 : change.data?.ledgerUuid
-                        if (changeLedgerUuid && changeLedgerUuid !== targetUuid) {
+                        if (targetUuid && changeLedgerUuid !== targetUuid) {
                             console.warn(
                                 `[SyncService] 略過非本帳本變更 (${changeLedgerUuid} !== ${targetUuid})`
                             )
@@ -1611,6 +1621,32 @@ export class SyncService {
     }
 
     /**
+     * 檢查當前裝置或使用者是否被列入共用清單的 removedMembers 黑名單
+     * @param {object} manifest
+     * @returns {boolean}
+     */
+    _isBlockedInManifest(manifest) {
+        if (!manifest || !Array.isArray(manifest.removedMembers)) return false
+        const myEmail = this.userInfo?.email?.toLowerCase() || ''
+        const myDevId = this.deviceId?.toLowerCase() || ''
+        return manifest.removedMembers.some(rm => {
+            if (typeof rm === 'string') {
+                const s = rm.toLowerCase()
+                return (myDevId && s === myDevId) || (myEmail && s === myEmail)
+            }
+            if (rm && typeof rm === 'object') {
+                return (
+                    (myDevId &&
+                        rm.deviceId &&
+                        rm.deviceId.toLowerCase() === myDevId) ||
+                    (myEmail && rm.email && rm.email.toLowerCase() === myEmail)
+                )
+            }
+            return false
+        })
+    }
+
+    /**
      * 把自己（deviceId + 日誌檔 ID）註冊進 manifest；競爭時重新下載合併重試
      * @param {string} manifestId
      * @param {string} devLogId
@@ -1629,26 +1665,7 @@ export class SyncService {
                     throw new Error('manifest 格式錯誤')
                 }
                 const myEmail = this.userInfo?.email?.toLowerCase() || ''
-                const myDevId = this.deviceId.toLowerCase()
-                const removed = Array.isArray(current.removedMembers)
-                    ? current.removedMembers
-                    : []
-                const isBlocked = removed.some(rm => {
-                    if (typeof rm === 'string') {
-                        return (
-                            rm.toLowerCase() === myDevId ||
-                            (myEmail && rm.toLowerCase() === myEmail)
-                        )
-                    }
-                    if (rm && typeof rm === 'object') {
-                        return (
-                            (rm.deviceId && rm.deviceId.toLowerCase() === myDevId) ||
-                            (myEmail && rm.email && rm.email.toLowerCase() === myEmail)
-                        )
-                    }
-                    return false
-                })
-                if (isBlocked) {
+                if (this._isBlockedInManifest(current)) {
                     console.warn(
                         `[SyncService] 裝置 ${this.deviceId} (${myEmail || 'unknown'}) 已被移除，拒絕註冊`
                     )
@@ -1906,25 +1923,31 @@ export class SyncService {
                 return validDriveEmails.has(member.ownerEmail.toLowerCase())
             })
             const activeEmails = new Set(
-                activeMembers.map(item => item.ownerEmail).filter(Boolean)
+                activeMembers
+                    .map(item => item.ownerEmail?.toLowerCase())
+                    .filter(Boolean)
             )
 
             let changed = false
 
             // 1. 去中心化撤銷對齊：若已授權成員從 manifest 移除，主動撤銷其對自己日誌檔的讀取權限
-            const toRevoke = [...granted].filter(email => !activeEmails.has(email))
+            const toRevoke = [...granted].filter(
+                email => !activeEmails.has(email.toLowerCase())
+            )
             if (toRevoke.length > 0) {
                 try {
                     const permissions = await this.getFilePermissions(devLogId)
                     for (const email of toRevoke) {
                         const p = (permissions || []).find(
                             item =>
-                                item.emailAddress?.toLowerCase() === email.toLowerCase()
+                                item.emailAddress?.toLowerCase() ===
+                                email.toLowerCase()
                         )
                         if (p?.id) {
                             try {
                                 await this.removeFilePermission(devLogId, p.id)
                                 granted.delete(email)
+                                granted.delete(email.toLowerCase())
                                 changed = true
                             } catch (revErr) {
                                 console.warn(
@@ -1935,6 +1958,7 @@ export class SyncService {
                         } else {
                             // 權限在 Google Drive 上已不存在，安全從快取移除
                             granted.delete(email)
+                            granted.delete(email.toLowerCase())
                             changed = true
                         }
                     }
@@ -1947,11 +1971,12 @@ export class SyncService {
             }
 
             // 2. 差額補授權：每台裝置日誌僅需給其他成員 'reader' 唯讀權限
+            const myEmailLower = myEmail.toLowerCase()
             const pending = activeMembers.filter(
                 member =>
                     member.ownerEmail &&
-                    member.ownerEmail !== myEmail &&
-                    !granted.has(member.ownerEmail)
+                    member.ownerEmail.toLowerCase() !== myEmailLower &&
+                    !granted.has(member.ownerEmail.toLowerCase())
             )
             for (const member of pending) {
                 try {
@@ -1960,7 +1985,7 @@ export class SyncService {
                         member.ownerEmail,
                         'reader'
                     )
-                    granted.add(member.ownerEmail)
+                    granted.add(member.ownerEmail.toLowerCase())
                     changed = true
                 } catch (_) {
                     // 已授權過或暫時性錯誤，靜默忽略（下次同步會再試）
@@ -2021,10 +2046,43 @@ export class SyncService {
             }
         }
 
-        // M6 防護：若已知 manifestId，預檢驗證雲端檔案是否存在；若明確為 404（擁有者已取消共用），自動降級本地帳本為個人帳本
+        // M6 / P1 防護：若已知 manifestId，預檢驗證雲端檔案是否存在；若明確為 404（擁有者已取消共用）或被列入黑名單，自動降級本地帳本為個人帳本
         if (manifestId) {
             try {
-                await this._downloadFileStrict(manifestId)
+                const mfRes = await this._downloadFileStrict(manifestId)
+                const mfData = mfRes?.data || mfRes
+                if (mfData && this._isBlockedInManifest(mfData)) {
+                    console.warn(
+                        `[SyncService] 裝置已從共用帳本 "${ledger.name}" 移除，自動降級為個人帳本`
+                    )
+                    await this.dataService.updateLedger(
+                        ledger.id,
+                        {
+                            isShared: false,
+                            sharedManifestId: null,
+                            sharedFileId: null,
+                        },
+                        true
+                    )
+                    ledger.isShared = false
+                    ledger.sharedManifestId = null
+                    ledger.sharedFileId = null
+
+                    const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                    const devLogId = (
+                        await this.dataService.getSetting(devLogKey)
+                    )?.value
+                    if (devLogId) {
+                        try {
+                            await this.deleteFile(devLogId)
+                        } catch (_) {}
+                        await this.dataService.saveSetting({
+                            key: devLogKey,
+                            value: null,
+                        })
+                    }
+                    throw new Error(`您已被移出共用帳本 "${ledger.name}"`)
+                }
             } catch (mfErr) {
                 if (mfErr.message && mfErr.message.includes('404')) {
                     console.warn(
@@ -2042,6 +2100,20 @@ export class SyncService {
                     ledger.isShared = false
                     ledger.sharedManifestId = null
                     ledger.sharedFileId = null
+
+                    const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                    const devLogId = (
+                        await this.dataService.getSetting(devLogKey)
+                    )?.value
+                    if (devLogId) {
+                        try {
+                            await this.deleteFile(devLogId)
+                        } catch (_) {}
+                        await this.dataService.saveSetting({
+                            key: devLogKey,
+                            value: null,
+                        })
+                    }
                     throw new Error(
                         `共用帳本 "${ledger.name}" 已被擁有者取消共用 (404)`
                     )
@@ -2308,17 +2380,21 @@ export class SyncService {
 
         const targetUuid = manifest.ledgerUuid
 
+        if (this._isBlockedInManifest(manifest)) {
+            throw new Error('此裝置或使用者已被從共用帳本中移除，無法加入')
+        }
+
         // 1. 收集所有成員日誌的變更（key 去重）
         const seen = new Set()
         const allChanges = []
         const collect = changes => {
             for (const c of changes || []) {
-                // M2/N3: 驗證 ledgerUuid 防範跨帳本資料污染
+                // M2/N3/P2: 嚴格驗證 ledgerUuid 防範跨帳本資料污染
                 const changeLedgerUuid =
                     c.storeName === 'ledgers'
                         ? c.data?.uuid
                         : c.data?.ledgerUuid
-                if (targetUuid && changeLedgerUuid && changeLedgerUuid !== targetUuid) {
+                if (targetUuid && changeLedgerUuid !== targetUuid) {
                     console.warn(
                         `[SyncService] joinViaManifest 略過非本帳本變更 (${changeLedgerUuid} !== ${targetUuid})`
                     )
@@ -2378,10 +2454,14 @@ export class SyncService {
         const appliedNow = await this.applyRemoteChanges(allChanges, {
             isShared: true,
         })
-        const successfulKeys =
-            appliedNow instanceof Set || Array.isArray(appliedNow)
+        const successfulKeySet =
+            appliedNow instanceof Set
                 ? appliedNow
-                : allChanges.map(c => this._changeKey(c))
+                : new Set(
+                      Array.isArray(appliedNow)
+                          ? appliedNow
+                          : allChanges.map(c => this._changeKey(c))
+                  )
 
         let ledgerChange = allChanges.find(
             c =>
@@ -2389,22 +2469,38 @@ export class SyncService {
                 c.data?.uuid &&
                 (!targetUuid || c.data.uuid === targetUuid)
         )
-        if (!ledgerChange && manifest.ledgerMeta && manifest.ledgerUuid) {
-            const fallbackLedger = {
-                uuid: manifest.ledgerUuid,
-                name: manifest.ledgerMeta.name || '共用帳本',
-                color: manifest.ledgerMeta.color || '#3b82f6',
-                icon: manifest.ledgerMeta.icon || 'fa-book',
-                type: 'shared',
-                isShared: true,
-                sharedManifestId: manifestId,
-                currency: manifest.ledgerMeta.currency || 'TWD',
+        const isLedgerChangeApplied =
+            ledgerChange && successfulKeySet.has(this._changeKey(ledgerChange))
+
+        const allLedgers = await this.dataService.getLedgers()
+        let localLedger = targetUuid
+            ? allLedgers.find(l => l.uuid === targetUuid)
+            : null
+
+        if (!localLedger && !isLedgerChangeApplied) {
+            if (manifest.ledgerMeta && manifest.ledgerUuid) {
+                const fallbackLedger = {
+                    uuid: manifest.ledgerUuid,
+                    name: manifest.ledgerMeta.name || '共用帳本',
+                    color: manifest.ledgerMeta.color || '#3b82f6',
+                    icon: manifest.ledgerMeta.icon || 'fa-book',
+                    type: 'shared',
+                    isShared: true,
+                    sharedManifestId: manifestId,
+                    currency: manifest.ledgerMeta.currency || 'TWD',
+                }
+                await this.dataService.addLedger(fallbackLedger)
+                localLedger = fallbackLedger
+                ledgerChange = { data: fallbackLedger }
+            } else {
+                throw new Error(
+                    '帳本建立失敗或未包含有效帳本定義，加入流程已中止'
+                )
             }
-            await this.dataService.addLedger(fallbackLedger)
-            ledgerChange = { data: fallbackLedger }
         }
-        if (!ledgerChange) throw new Error('無法從共用資料解析帳本')
-        const ledgerUuid = ledgerChange.data.uuid
+        if (!localLedger && !ledgerChange) throw new Error('無法從共用資料解析帳本')
+        const ledgerUuid =
+            targetUuid || localLedger?.uuid || ledgerChange.data.uuid
 
         if (hasIncompleteLogs) {
             await this.dataService.saveSetting({
@@ -2447,7 +2543,7 @@ export class SyncService {
         )
         const merged = new Set([
             ...(appliedSetting?.value || []),
-            ...successfulKeys,
+            ...successfulKeySet,
         ])
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
@@ -2803,17 +2899,21 @@ export class SyncService {
     /**
      * 將遠端 record 的 ledgerUuid 解析為本地 ledgerId。
      * @param {object} data
+     * @param {object} data
+     * @param {object} [options={}]
      * @returns {object} 已修正 ledgerId 的 data
      */
-    async _resolveLedgerId(data) {
+    async _resolveLedgerId(data, options = {}) {
         if (!data.ledgerUuid) return data
         try {
             const ledgers = await this.dataService.getLedgers()
             let matched = ledgers.find(l => l.uuid === data.ledgerUuid)
 
             // If no exact UUID match, but the data indicates it belongs to the default ledger
+            // （僅在非共用帳本同步時允許回退至本地預設帳本 #1）
             if (
                 !matched &&
+                !options?.isShared &&
                 (data.ledgerId === 1 || data.ledgerName === '預設帳本')
             ) {
                 matched = ledgers.find(l => l.id === 1)
@@ -2822,6 +2922,10 @@ export class SyncService {
             console.log(
                 `[SyncService] _resolveLedgerId: uuid=${data.ledgerUuid}, matched=${matched?.id} (${matched?.name}), activeLedgerId=${this.dataService.activeLedgerId}`
             )
+            // 共用帳本若未匹配到任何帳本，不回退至本地使用中的個人 activeLedgerId
+            if (!matched && options?.isShared) {
+                return data
+            }
             return {
                 ...data,
                 ledgerId: matched
@@ -3119,7 +3223,10 @@ export class SyncService {
         switch (storeName) {
             case 'groupMeta':
             case 'group_meta': {
-                const resolvedGroupMeta = await this._resolveLedgerId(data)
+                const resolvedGroupMeta = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.saveGroupMeta(resolvedGroupMeta, true)
                 break
             }
@@ -3129,7 +3236,7 @@ export class SyncService {
             }
             case 'records': {
                 // 同步時解析全部外鍵 UUID
-                let resolvedRecord = await this._resolveLedgerId(data)
+                let resolvedRecord = await this._resolveLedgerId(data, options)
                 resolvedRecord =
                     await this._resolveRecordAccountId(resolvedRecord)
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
@@ -3137,18 +3244,24 @@ export class SyncService {
                 break
             }
             case 'accounts': {
-                const resolvedAccount = await this._resolveLedgerId(data)
+                const resolvedAccount = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.addAccount(resolvedAccount, true)
                 break
             }
             case 'contacts': {
-                const resolvedContact = await this._resolveLedgerId(data)
+                const resolvedContact = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.addContact(resolvedContact, true)
                 break
             }
             case 'debts': {
                 // 同步時解析 contactUuid → contactId， recordUuid → recordId
-                let resolvedDebt = await this._resolveLedgerId(data)
+                let resolvedDebt = await this._resolveLedgerId(data, options)
                 resolvedDebt = await this._resolveDebtContactId(resolvedDebt)
                 resolvedDebt = await this._resolveDebtRecordId(resolvedDebt)
                 resolvedDebt = await this._resolveDebtPayments(resolvedDebt)
@@ -3184,7 +3297,10 @@ export class SyncService {
                 break
             }
             case 'recurring_transactions': {
-                let resolvedRecurring = await this._resolveLedgerId(data)
+                let resolvedRecurring = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 resolvedRecurring =
                     await this._resolveRecurringAccountId(resolvedRecurring)
                 await this.dataService.addRecurringTransaction(
@@ -3401,11 +3517,14 @@ export class SyncService {
         )
     }
 
-    async _applyUpdateWithId(storeName, id, data) {
+    async _applyUpdateWithId(storeName, id, data, options = {}) {
         switch (storeName) {
             case 'groupMeta':
             case 'group_meta': {
-                const resolvedGroupMeta = await this._resolveLedgerId(data)
+                const resolvedGroupMeta = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.saveGroupMeta(
                     { ...resolvedGroupMeta, id },
                     true
@@ -3433,7 +3552,7 @@ export class SyncService {
             }
             case 'records': {
                 // 同步時解析全部外鍵 UUID
-                let resolvedRecord = await this._resolveLedgerId(data)
+                let resolvedRecord = await this._resolveLedgerId(data, options)
                 resolvedRecord =
                     await this._resolveRecordAccountId(resolvedRecord)
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
@@ -3441,18 +3560,24 @@ export class SyncService {
                 break
             }
             case 'accounts': {
-                const resolvedAccount = await this._resolveLedgerId(data)
+                const resolvedAccount = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.updateAccount(id, resolvedAccount, true)
                 break
             }
             case 'contacts': {
-                const resolvedContact = await this._resolveLedgerId(data)
+                const resolvedContact = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 await this.dataService.updateContact(id, resolvedContact, true)
                 break
             }
             case 'debts': {
                 // 同步時解析 contactUuid → contactId， recordUuid → recordId
-                let resolvedDebt = await this._resolveLedgerId(data)
+                let resolvedDebt = await this._resolveLedgerId(data, options)
                 resolvedDebt = await this._resolveDebtContactId(resolvedDebt)
                 resolvedDebt = await this._resolveDebtRecordId(resolvedDebt)
                 resolvedDebt = await this._resolveDebtPayments(resolvedDebt)
@@ -3500,7 +3625,10 @@ export class SyncService {
                         break
                     }
                 }
-                let resolvedRecurring = await this._resolveLedgerId(data)
+                let resolvedRecurring = await this._resolveLedgerId(
+                    data,
+                    options
+                )
                 resolvedRecurring =
                     await this._resolveRecurringAccountId(resolvedRecurring)
                 await this.dataService.updateRecurringTransaction(

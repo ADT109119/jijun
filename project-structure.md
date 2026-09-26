@@ -191,6 +191,11 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
     - **雲端 Manifest 404 自動優雅降級 (M6 防護)**：`_ensureSharedInfra` 偵測到雲端 Manifest 404 時，自動將本機帳本更新降級為個人帳本 (`isShared: false`)，避免重試阻塞
     - **依賴關係拓撲排序修正 (M7 防護)**：`applyRemoteChanges` 之 `topoOrder` 修正為 `debts` / `amortizations` 優先於 `records`，未知 store 排於末端，確保還款與分期關聯之紀錄能正確解析外鍵
     - **CORS 非阻塞 ETag 降級容錯 (L1 / L2 防護)**：`_downloadFileStrict` 在 CORS 環境未暴露 ETag 標頭時以 `etag: null` 優雅降級回傳，避免阻斷網頁版同步運作
+    - **黑名單即時 Fail-Closed 阻擋與 DevLog 孤兒檔案清理 (P1 防護)**：`joinViaManifest` 下載 Manifest 後立即以 `_isBlockedInManifest` 阻擋已被移除的成員，絕不提前下載或套用成員歷史日誌；`_ensureSharedInfra` 遇黑名單或雲端 Manifest 404 時自動降級為個人帳本並主動刪除本機雲端 DevLog，杜絕孤兒日誌殘留
+    - **去中心化成員日誌權限最終一致性對齊機制 (Peer Revocation Protocol)**：受限於 Google Drive 個人雲端檔案的擁有權隔離（僅檔案 owner 可刪除檔案或修改權限），非 owner 無法跨帳號撤銷他人檔案權限；因此對等成員 DevLog 權限撤銷採用依賴 Manifest 的最終一致性對齊機制，在各成員下一次同步時由其自身的 `_grantDevLogPermissions` 執行精準撤銷
+    - **共用帳本嚴格 UUID 驗證與防止污染 activeLedgerId (P2 防護)**：`joinViaManifest` 與 `pullSharedLedgerChanges` 嚴格限制所有收到的變更必須具備與目標共用帳本一致之 `targetUuid`，缺少或不合者直接跳過；`_resolveLedgerId` 在共用同步下若未匹配到帳本絕不 fallback 至本地使用中的個人 `activeLedgerId`；`joinViaManifest` 必須確認帳本已成功套用或存在於本地資料庫，否則中止流程
+    - **Google Drive 個人日誌分頁支援 (P2 分頁防護)**：`pullChanges` 加入 `do ... while (pageToken)` 遍歷 `nextPageToken`，完整支援跨多頁裝置日誌同步
+    - **Email 大小寫正規化處理**：`_grantDevLogPermissions` 全面以小寫比對及快取成員 Email，避免大小寫不一致造成授權或撤銷判定失準
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
@@ -216,9 +221,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1651 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1657 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

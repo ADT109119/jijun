@@ -1992,7 +1992,7 @@ describe('SyncService pullSharedLedgerChanges', () => {
                 timestamp: now - 1000,
                 operation: 'add',
                 storeName: 'records',
-                data: { uuid: 'r1' },
+                data: { uuid: 'r1', ledgerUuid: 'u-1' },
             },
         ]
         ss._ensureSharedInfra = vi.fn(async ledger => ({
@@ -2104,7 +2104,10 @@ describe('SyncService pullSharedLedgerChanges', () => {
                                 timestamp: Date.now() - 100,
                                 operation: 'add',
                                 storeName: 'records',
-                                data: { uuid: 'rec-pull' },
+                                data: {
+                                    uuid: 'rec-pull',
+                                    ledgerUuid: 'u-manifest-only',
+                                },
                             },
                         ],
                     }),
@@ -2116,7 +2119,11 @@ describe('SyncService pullSharedLedgerChanges', () => {
         await ss.pullSharedLedgerChanges()
 
         expect(ss.applyRemoteChanges).toHaveBeenCalledWith(
-            [expect.objectContaining({ data: { uuid: 'rec-pull' } })],
+            [
+                expect.objectContaining({
+                    data: expect.objectContaining({ uuid: 'rec-pull' }),
+                }),
+            ],
             { isShared: true }
         )
     })
@@ -2542,8 +2549,20 @@ describe('PR #69 External Review Verified Fixes', () => {
             const now = Date.now()
             const memberLog = {
                 changes: [
-                    { deviceId: 'dev_b', timestamp: now - 1000, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
-                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec2' } },
+                    {
+                        deviceId: 'dev_b',
+                        timestamp: now - 1000,
+                        operation: 'add',
+                        storeName: 'records',
+                        data: { uuid: 'rec1', ledgerUuid: 'led-1' },
+                    },
+                    {
+                        deviceId: 'dev_b',
+                        timestamp: now,
+                        operation: 'add',
+                        storeName: 'records',
+                        data: { uuid: 'rec2', ledgerUuid: 'led-1' },
+                    },
                 ],
             }
 
@@ -2592,7 +2611,13 @@ describe('PR #69 External Review Verified Fixes', () => {
             const now = Date.now()
             const memberLog = {
                 changes: [
-                    { deviceId: 'dev_b', timestamp: now, operation: 'add', storeName: 'records', data: { uuid: 'rec1' } },
+                    {
+                        deviceId: 'dev_b',
+                        timestamp: now,
+                        operation: 'add',
+                        storeName: 'records',
+                        data: { uuid: 'rec1', ledgerUuid: 'led-1' },
+                    },
                 ],
             }
             ss._ensureSharedInfra = vi.fn(async ledger => ({
@@ -3610,6 +3635,300 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
         }
         const resError = await realDs.deleteSyncLogsByIds([1, 2, 3])
         expect(resError).toBe(false)
+    })
+
+    describe('PR #69 Round 2 Incremental Review Hardening & Regression Tests', () => {
+        it('P1-1 防護：joinViaManifest 在被移除成員嘗試加入時，於下載任何成員 DevLog 前立即拒絕 (Fail-Closed)', async () => {
+            ss.ensureValidToken = vi.fn(async () => {})
+            ss.userInfo = { email: 'KickedUser@Example.com' }
+            ss.deviceId = 'dev_kicked_device'
+
+            ss._downloadFile = vi.fn(async fileId => {
+                if (fileId === 'mf_kicked') {
+                    return {
+                        data: {
+                            ledgerUuid: 'shared-ledger-kicked',
+                            members: [
+                                { deviceId: 'dev_owner', fileId: 'owner_log' },
+                                { deviceId: 'dev_c', fileId: 'c_log' },
+                            ],
+                            removedMembers: ['kickeduser@example.com'],
+                        },
+                    }
+                }
+                return null
+            })
+            ss._downloadFileStrict = vi.fn(async () => ({ changes: [] }))
+
+            await expect(ss.joinViaManifest('mf_kicked')).rejects.toThrow(
+                '此裝置或使用者已被從共用帳本中移除，無法加入'
+            )
+            // 核心驗證：完全未下載任何成員日誌
+            expect(ss._downloadFileStrict).not.toHaveBeenCalled()
+        })
+
+        it('P1-2 防護：_ensureSharedInfra 在本機已被移出共用帳本時自動降級為個人帳本並清理本機 DevLog', async () => {
+            const ledger = {
+                id: 5,
+                uuid: 'ledger-kicked-uuid',
+                name: '被踢出的帳本',
+                isShared: true,
+                sharedManifestId: 'mf_kicked_infra',
+            }
+            ss.deviceId = 'dev_kicked_5'
+            ss.userInfo = { email: 'me@example.com' }
+
+            ss._downloadFileStrict = vi.fn(async fileId => {
+                if (fileId === 'mf_kicked_infra') {
+                    return {
+                        data: {
+                            ledgerUuid: 'ledger-kicked-uuid',
+                            members: [{ deviceId: 'dev_owner', fileId: 'log_owner' }],
+                            removedMembers: ['dev_kicked_5'],
+                        },
+                    }
+                }
+                return { changes: [] }
+            })
+
+            ds.updateLedger = vi.fn(async () => {})
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_shared_devlog_ledger-kicked-uuid') {
+                    return { value: 'my_kicked_devlog_file' }
+                }
+                return null
+            })
+            ds.saveSetting = vi.fn(async () => {})
+            ss.deleteFile = vi.fn(async () => {})
+
+            await expect(ss._ensureSharedInfra(ledger)).rejects.toThrow(
+                '您已被移出共用帳本 "被踢出的帳本"'
+            )
+
+            expect(ds.updateLedger).toHaveBeenCalledWith(
+                5,
+                expect.objectContaining({ isShared: false, sharedManifestId: null }),
+                true
+            )
+            expect(ss.deleteFile).toHaveBeenCalledWith('my_kicked_devlog_file')
+            expect(ds.saveSetting).toHaveBeenCalledWith({
+                key: 'sync_shared_devlog_ledger-kicked-uuid',
+                value: null,
+            })
+        })
+
+        it('P2-1 防護：joinViaManifest 嚴格過濾缺少或不相符之 ledgerUuid，防止外來/惡意變更注入', async () => {
+            ss.ensureValidToken = vi.fn(async () => {})
+            ss.userInfo = { email: 'new_member@example.com' }
+            ss.deviceId = 'dev_new_member'
+
+            const targetUuid = 'target-shared-uuid'
+            const manifest = {
+                ledgerUuid: targetUuid,
+                members: [{ deviceId: 'dev_peer', fileId: 'peer_log' }],
+            }
+
+            ss._downloadFile = vi.fn(async id => {
+                if (id === 'mf_strict_filter') return { data: manifest }
+                return null
+            })
+
+            const peerChanges = [
+                {
+                    deviceId: 'dev_peer',
+                    timestamp: 1000,
+                    operation: 'add',
+                    storeName: 'records',
+                    data: { uuid: 'rec-valid', ledgerUuid: targetUuid },
+                },
+                {
+                    deviceId: 'dev_peer',
+                    timestamp: 1001,
+                    operation: 'add',
+                    storeName: 'records',
+                    data: { uuid: 'rec-wrong-uuid', ledgerUuid: 'foreign-uuid' },
+                },
+                {
+                    deviceId: 'dev_peer',
+                    timestamp: 1002,
+                    operation: 'add',
+                    storeName: 'records',
+                    data: { uuid: 'rec-no-uuid' }, // 缺少 ledgerUuid
+                },
+                {
+                    deviceId: 'dev_peer',
+                    timestamp: 1003,
+                    operation: 'add',
+                    storeName: 'ledgers',
+                    data: { uuid: targetUuid, name: '有效共用帳本' },
+                },
+            ]
+
+            ss._downloadFileStrict = vi.fn(async id => {
+                if (id === 'peer_log') return { changes: peerChanges }
+                return { changes: [] }
+            })
+
+            ss._changeKey = vi.fn(c => `${c.deviceId}|${c.timestamp}|${c.operation}|${c.storeName}|${c.data?.uuid}`)
+            ss.applyRemoteChanges = vi.fn(async changes => {
+                return new Set(changes.map(c => ss._changeKey(c)))
+            })
+            ds.getLedgers = vi.fn(async () => [{ uuid: targetUuid, name: '有效共用帳本' }])
+            ss._findFileInDrive = vi.fn(async () => 'my_dev_log')
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._registerSelfInManifest = vi.fn(async () => true)
+
+            const joinedUuid = await ss.joinViaManifest('mf_strict_filter')
+            expect(joinedUuid).toBe(targetUuid)
+
+            // 驗證套用的變更僅包含符合 targetUuid 的項目（rec-wrong-uuid 與 rec-no-uuid 皆被跳過）
+            expect(ss.applyRemoteChanges).toHaveBeenCalledTimes(1)
+            const appliedChanges = ss.applyRemoteChanges.mock.calls[0][0]
+            const appliedUuids = appliedChanges.map(c => c.data.uuid)
+            expect(appliedUuids).toContain('rec-valid')
+            expect(appliedUuids).toContain(targetUuid)
+            expect(appliedUuids).not.toContain('rec-wrong-uuid')
+            expect(appliedUuids).not.toContain('rec-no-uuid')
+        })
+
+        it('P2-2 防護：pullChanges 完整遍歷 Google Drive 分頁 (nextPageToken)', async () => {
+            ss.ensureValidToken = vi.fn(async () => {})
+            ss.deviceId = 'dev_local'
+
+            const fetchedUrls = []
+            globalThis.fetch = vi.fn(async url => {
+                fetchedUrls.push(url)
+                if (url.includes('spaces=appDataFolder') && !url.includes('pageToken=')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            files: [
+                                { id: 'file_page1', name: 'sync_log_dev_p1.json', modifiedTime: '2026-09-20T10:00:00Z' },
+                            ],
+                            nextPageToken: 'token_page_2',
+                        }),
+                    }
+                }
+                if (url.includes('pageToken=token_page_2')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            files: [
+                                { id: 'file_page2', name: 'sync_log_dev_p2.json', modifiedTime: '2026-09-20T11:00:00Z' },
+                            ],
+                            nextPageToken: null,
+                        }),
+                    }
+                }
+                if (url.includes('alt=media')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            changes: [{ deviceId: 'dev_p1', timestamp: 100, operation: 'add', storeName: 'records', data: { uuid: 'r-p1' } }],
+                        }),
+                    }
+                }
+                return { ok: true, json: async () => ({}) }
+            })
+
+            ds.getSetting = vi.fn(async () => null)
+            ss.applyRemoteChanges = vi.fn(async () => new Set())
+            ds.saveSetting = vi.fn(async () => {})
+
+            await ss.pullChanges()
+
+            // 驗證 fetch 呼叫了兩次列表 API，包含第一頁與帶 pageToken 的第二頁
+            expect(fetchedUrls.some(u => u.includes('pageToken=token_page_2'))).toBe(true)
+        })
+
+        it('P2-3 防護：joinViaManifest 在帳本變更套用失敗且無備用 meta 時，立即中止加入 (Fail-Closed)', async () => {
+            ss.ensureValidToken = vi.fn(async () => {})
+            const targetUuid = 'ledger-apply-fail-uuid'
+            const manifest = {
+                ledgerUuid: targetUuid,
+                members: [{ deviceId: 'dev_peer', fileId: 'peer_log' }],
+                // 不提供 ledgerMeta，迫使其依賴 ledgerChange
+            }
+
+            ss._downloadFile = vi.fn(async () => ({ data: manifest }))
+            ss._downloadFileStrict = vi.fn(async () => ({
+                changes: [
+                    {
+                        deviceId: 'dev_peer',
+                        timestamp: 1000,
+                        operation: 'add',
+                        storeName: 'ledgers',
+                        data: { uuid: targetUuid, name: '即將套用失敗的帳本' },
+                    },
+                ],
+            }))
+
+            // 模擬 applyRemoteChanges 失敗（回傳空集合，不含 ledgerChange 的 key）
+            ss.applyRemoteChanges = vi.fn(async () => new Set())
+            // 本地資料庫查無此帳本
+            ds.getLedgers = vi.fn(async () => [])
+            ss._registerSelfInManifest = vi.fn(async () => true)
+
+            await expect(ss.joinViaManifest('mf_test_fail')).rejects.toThrow(
+                '帳本建立失敗或未包含有效帳本定義，加入流程已中止'
+            )
+            // 驗證未繼續執行註冊進 manifest
+            expect(ss._registerSelfInManifest).not.toHaveBeenCalled()
+        })
+
+        it('🟡 正規化：_grantDevLogPermissions 支援大小寫混合之 Email 正規化核對與快取', async () => {
+            const manifestId = 'mf_case_norm'
+            const devLogId = 'my_devlog_case'
+            const ledgerUuid = 'uuid_case_norm'
+
+            ds.getSetting = vi.fn(async () => ({
+                value: ['EXISTING_USER@EXAMPLE.COM'],
+            }))
+            ds.saveSetting = vi.fn(async () => {})
+
+            ss._downloadFileStrict = vi.fn(async () => ({
+                data: {
+                    members: [
+                        { deviceId: 'dev_1', ownerEmail: 'UserOne@Example.COM' },
+                        { deviceId: 'dev_2', ownerEmail: 'existing_user@example.com' },
+                    ],
+                },
+            }))
+
+            ss.userInfo = { email: 'Me@Example.COM' }
+
+            // Google Drive 伺服器端名單（大小寫可能不拘）
+            ss.getFilePermissions = vi.fn(async () => [
+                { emailAddress: 'userone@example.com', id: 'p1' },
+                { emailAddress: 'EXISTING_USER@EXAMPLE.COM', id: 'p2' },
+                { emailAddress: 'me@example.com', id: 'p_me' },
+            ])
+
+            ss.grantFilePermission = vi.fn(async () => {})
+            ss.removeFilePermission = vi.fn(async () => {})
+
+            await ss._grantDevLogPermissions(ledgerUuid, manifestId, devLogId)
+
+            // UserOne@Example.COM 應被成功授權（且不重複授權 existing_user）
+            expect(ss.grantFilePermission).toHaveBeenCalledWith(
+                devLogId,
+                'UserOne@Example.COM',
+                'reader'
+            )
+            // 不會誤撤銷 existing_user
+            expect(ss.removeFilePermission).not.toHaveBeenCalled()
+
+            // 快取儲存時皆小寫正規化
+            expect(ds.saveSetting).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    key: `sync_shared_granted_${ledgerUuid}_${devLogId}`,
+                    value: expect.arrayContaining([
+                        'userone@example.com',
+                        'existing_user@example.com',
+                    ]),
+                })
+            )
+        })
     })
 })
 
