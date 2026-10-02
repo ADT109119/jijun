@@ -179,10 +179,11 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 
 - **多帳本與共用架構 (Per-Device Sync)**:
     - 每個裝置維護自己獨立的 `sync_shared_devlog_<uuid>` 雲端變更日誌檔，避免共用單一檔案引發並行寫入覆蓋；裝置日誌寫入時同樣支援 ETag / If-Match 樂觀鎖與 412 衝突重試
-    - **全量日誌保全與去重鍵無裁切 (C2 / N1 防護)**：雲端日誌全量保留變更歷史；共用 (`sync_shared_applied_keys`) 與個人 (`sync_personal_applied_keys`) 同步之本地去重鍵完全保留，不依時間 (100天) 進行窗口裁切，徹底杜絕日誌重播導致舊資料或已刪除紀錄幽靈復活
+    - **全量日誌保全與去重鍵無裁切 (C2 / N1 / R1 防護)**：雲端日誌全量保留變更歷史；共用 (`sync_shared_applied_keys`) 與個人 (`sync_personal_applied_keys`) 同步之本地去重鍵完全保留，包括 `markAllRemoteChangesAsPulled` 還原流程亦移除 100 天裁切，徹底杜絕日誌重播導致舊資料或已刪除紀錄幽靈復活
     - **ID 精準刪除取代時間戳清理，杜絕跨帳本競爭掉單 (C1 / N5 防護)**：各同步通道 (`pushChanges` 與 `pushSharedLedgerChanges`) 在成功附加至雲端後，使用 `deleteSyncLogsByIds` 依變更 ID 精準清除本機 sync_log，嚴格過濾非法鍵並回傳狀態；`performSync` 徹底廢除跨帳本 `Math.min(personalMaxTs, sharedMaxTs)` 時間戳清理，根除多帳本並行記帳時未推送變更遭永久誤刪的風險
-    - **預設帳本防劫持雙防線 (C3 / N2 防護)**：`_applyAdd` 與 `_applyUpdate` 的 id:1 預設帳本分支皆嚴格阻絕共用帳本變更 (`!data.isShared && !options?.isShared && !localDefaultLedger.isShared`) 覆寫受邀者的本機個人預設帳本 #1，避免個人記帳資料遭共用帳本取代
-    - **舊共用檔遷移擁有者 Fail-Closed 防偽與批次授權 (C4 / H1 / N4 防護)**：`_ensureSharedInfra` 嚴格限制僅有 Google Drive 舊共用檔擁有者具備建立 Manifest 的權限（查詢權限失敗或非擁有者一律 Fail-Closed 拋錯中止，防協作者搶先建立而在自己 Drive 成為偽擁有者）；擁有者建立 Manifest 時自動查詢所有舊檔協作者並批次授予 `writer` 權限
+    - **預設帳本防劫持雙防線與相容路徑防護 (C3 / N2 / R2 防護)**：`_applyAdd` 與 `_applyUpdate` 的 id:1 預設帳本分支皆嚴格阻絕共用帳本變更 (`!data.isShared && !options?.isShared && !localDefaultLedger.isShared`) 覆寫受邀者的本機個人預設帳本 #1；`ledgerManager.joinSharedLedger` 舊版單檔加入路徑亦補齊傳遞 `{ isShared: true }`，避免個人記帳資料遭共用帳本取代
+    - **舊共用檔遷移擁有者 Fail-Closed 防偽與批次授權重試補償 (C4 / H1 / N4 / R4 防護)**：`_ensureSharedInfra` 嚴格限制僅有 Google Drive 舊共用檔擁有者具備建立 Manifest 的權限（查詢權限失敗或非擁有者一律 Fail-Closed 拋錯中止）；擁有者建立 Manifest 時自動記錄舊檔協作者名單至 `sync_manifest_pending_${manifestId}`，並於後續同步自動冪等重試補償，成功後自動清空，杜絕協作者因暫時性網路抖動遭永久 403 鎖死
+    - **共用帳本元數據同步防分岔 (R3 防護)**：`pushChanges` 在個人同步推送後精準刪除時保留共用帳本之 `ledgers` 變更日誌，由 `pushSharedLedgerChanges` 接續推送到該共用帳本的雲端 DevLog 後再行清除，徹底消除依 `isPersonalEnabled` 開關分岔導致跨帳號協作者收不到改名/改色或同帳號跨裝置遺漏的問題
     - **伺服器端授權 Fail-Closed 信任錨點 (M1 防護)**：`isLedgerOwner` 當 Google Drive 權限查詢失敗或無法取得時，嚴格採用 Fail-Closed 回傳 `false`，絕不降級採信可被竄改的 Manifest JSON
     - **跨帳本資料注入過濾 (M2 / N3 防護)**：`pullSharedLedgerChanges`、`joinViaManifest` 與 `_applyAdd` 依 `targetUuid` / `ledgerUuid` 嚴格過濾屬於當前共用帳本的變更，防範惡意成員或混淆注入其他帳本資料或偽造帳本定義
     - **DevLog 讀取授權對齊 Drive 真實權限 (M3 防護)**：`_grantDevLogPermissions` 在授予其他成員對本機 DevLog 的 `reader` 唯讀權限前，主動向 Google Drive 驗證成員 email 是否確為 Manifest 檔案合法成員，防止偽造 member 取得日誌存取權
@@ -200,7 +201,6 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
     - **Google Drive 完整分頁遍歷**：`listBackups` 與 `markAllRemoteChangesAsPulled` 導入 `nextPageToken` 迴圈支援跨多頁檔案清單查詢
     - **ETag 遙測警示與 JSDoc 校正**：`_downloadFileStrict` 缺少 ETag 標頭時輸出警示日誌避免靜默降級；`_appendToDeviceLog` JSDoc 校正為全量保留變更歷史
     - **推送階段 API 呼叫節流**：`pushSharedLedgerChanges` 本地無待推送變更時略過重複之 `_ensureSharedInfra` 呼叫，減省 Drive API 配額
-    - **Windows OneDrive Node v24 相容性**：`vite.config.js` 補充 `copyFile` 異常回退機制，確保建置管線於 OneDrive 虛擬化檔案系統正常打包
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
@@ -226,9 +226,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試)
-- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試)
+- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1664 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1668 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

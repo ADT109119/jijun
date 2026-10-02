@@ -387,8 +387,10 @@ export class LedgerManager {
             throw new Error('無效的共用帳本檔案或無讀取權限')
         }
 
-        // Apply shared data changes
-        await this.app.syncService.applyRemoteChanges(fileData.changes)
+        // Apply shared data changes (R2: 標記為共用帳本變更，避免劫持覆寫本機預設帳本)
+        await this.app.syncService.applyRemoteChanges(fileData.changes, {
+            isShared: true,
+        })
 
         // Find the ledger added from changes
         const ledgerChanges = fileData.changes.filter(
@@ -744,6 +746,10 @@ export class LedgerManager {
             }
             if (ledger.sharedManifestId) {
                 await this.app.syncService.deleteFile(ledger.sharedManifestId)
+                await this.dataService.saveSetting({
+                    key: `sync_manifest_pending_${ledger.sharedManifestId}`,
+                    value: null,
+                })
             }
             await this.dataService.saveSetting({
                 key: `shared_migrated_${ledger.uuid}`,

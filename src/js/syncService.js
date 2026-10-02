@@ -772,8 +772,20 @@ export class SyncService {
         }
 
         // 成功推送至個人雲端日誌後，以 ID 精準清除本地 sync_log
+        // R3 修復：保留共用帳本的 ledgers 變更，交由 pushSharedLedgerChanges 推送至該共用帳本之 DevLog 後再行清除
+        const ledgers = await this.dataService.getLedgers()
+        const sharedUuids = new Set(
+            ledgers.filter(l => l.isShared).map(l => l.uuid)
+        )
         const pushedIds = changes
-            .filter(c => typeof c.id === 'number')
+            .filter(
+                c =>
+                    typeof c.id === 'number' &&
+                    !(
+                        c.storeName === 'ledgers' &&
+                        (c.data?.isShared || sharedUuids.has(c.data?.uuid))
+                    )
+            )
             .map(c => c.id)
         if (pushedIds.length > 0) {
             await this.dataService.deleteSyncLogsByIds(pushedIds)
@@ -1043,13 +1055,10 @@ export class SyncService {
                 } catch (_) {}
             }
 
-            const hundredDaysAgo = Date.now() - 100 * 24 * 60 * 60 * 1000
+            // 持久化已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 R1）
             await this.dataService.saveSetting({
                 key: 'sync_personal_applied_keys',
-                value: [...appliedKeys].filter(k => {
-                    const ts = parseInt(k.split('|')[1], 10)
-                    return !isNaN(ts) && ts > hundredDaysAgo
-                }),
+                value: [...appliedKeys],
             })
             console.log('[SyncService] Marked all remote changes as pulled.')
         } catch (err) {
@@ -1102,18 +1111,9 @@ export class SyncService {
                         `[SyncService] pushShared: "${infra.ledger.name}" 推送 ${appended} 筆變更`
                     )
                 }
-                // 成功附加至共用日誌後，以 ID 精準清除本地已推送的 sync_log（排除仍需由個人同步推送的 ledgers）
-                const autoSyncSetting = await this.dataService.getSetting(
-                    'sync_auto_enabled'
-                )
-                const isPersonalEnabled = !!autoSyncSetting?.value
+                // 成功附加至共用日誌後，以 ID 精準清除本地已推送的 sync_log（包含已推送至共用 DevLog 的 ledgers 變更 R3）
                 const pushedIds = allLocal
-                    .filter(
-                        log =>
-                            (isPersonalEnabled
-                                ? log.storeName !== 'ledgers'
-                                : true) && typeof log.id === 'number'
-                    )
+                    .filter(log => typeof log.id === 'number')
                     .map(log => log.id)
                 if (pushedIds.length > 0) {
                     await this.dataService.deleteSyncLogsByIds(pushedIds)
@@ -2209,23 +2209,16 @@ export class SyncService {
                 )
                 manifestId = created.id
 
-                // C4 修復：擁有者建立 manifest 後，批量對舊檔既有協作者授予 writer 權限，避免成員升級時遭遇 403 鎖死
+                // C4/R4 修復：擁有者建立 manifest 後，記錄舊檔既有協作者名單至 pending 設定，支援失敗重試補償
                 if (ledger.sharedFileId && legacyPerms.length > 0) {
-                    for (const p of legacyPerms) {
-                        if (p.role !== 'owner' && p.emailAddress) {
-                            try {
-                                await this.grantFilePermission(
-                                    manifestId,
-                                    p.emailAddress,
-                                    'writer'
-                                )
-                            } catch (gErr) {
-                                console.warn(
-                                    `[SyncService] 遷移授權成員 ${p.emailAddress} 失敗:`,
-                                    gErr
-                                )
-                            }
-                        }
+                    const pendingEmails = legacyPerms
+                        .filter(p => p.role !== 'owner' && p.emailAddress)
+                        .map(p => p.emailAddress)
+                    if (pendingEmails.length > 0) {
+                        await this.dataService.saveSetting({
+                            key: `sync_manifest_pending_${manifestId}`,
+                            value: pendingEmails,
+                        })
                     }
                 }
             }
@@ -2248,6 +2241,10 @@ export class SyncService {
                         try {
                             await this.deleteFile(manifestId)
                         } catch (_) {}
+                        await this.dataService.saveSetting({
+                            key: `sync_manifest_pending_${manifestId}`,
+                            value: null,
+                        })
                         manifestId = latest.manifestFileId
                     }
                 } catch (confErr) {
@@ -2266,6 +2263,10 @@ export class SyncService {
                                 try {
                                     await this.deleteFile(manifestId)
                                 } catch (_) {}
+                                await this.dataService.saveSetting({
+                                    key: `sync_manifest_pending_${manifestId}`,
+                                    value: null,
+                                })
                                 manifestId = fresh.manifestFileId
                             }
                         } catch (_) {}
@@ -2310,6 +2311,35 @@ export class SyncService {
                     )
                 }
             } catch (_) {}
+        }
+
+        // R4 補償：遷移授權重試機制。若建立 manifest 時授予舊檔成員權限失敗，於後續同步重試補償
+        if (manifestId) {
+            const pendingKey = `sync_manifest_pending_${manifestId}`
+            const pendingSetting = await this.dataService.getSetting(pendingKey)
+            const pendingEmails = pendingSetting?.value
+            if (Array.isArray(pendingEmails) && pendingEmails.length > 0) {
+                const remainingEmails = []
+                for (const email of pendingEmails) {
+                    try {
+                        await this.grantFilePermission(
+                            manifestId,
+                            email,
+                            'writer'
+                        )
+                    } catch (gErr) {
+                        console.warn(
+                            `[SyncService] 遷移授權成員 ${email} 失敗，保留至下次同步重試:`,
+                            gErr
+                        )
+                        remainingEmails.push(email)
+                    }
+                }
+                await this.dataService.saveSetting({
+                    key: pendingKey,
+                    value: remainingEmails.length > 0 ? remainingEmails : null,
+                })
+            }
         }
 
         // 3) 確保自己的裝置日誌檔

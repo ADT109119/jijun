@@ -626,7 +626,8 @@ describe('LedgerManager', () => {
             const result = await ledgerManager.joinSharedLedger('file456')
 
             expect(mockSyncService.applyRemoteChanges).toHaveBeenCalledWith(
-                mockChanges
+                mockChanges,
+                { isShared: true }
             )
             expect(mockDataService.updateLedger).toHaveBeenCalledWith(5, {
                 isShared: true,
@@ -636,6 +637,29 @@ describe('LedgerManager', () => {
             })
             expect(mockDataService.getLedgers).toHaveBeenCalled()
             expect(result).toBe(5)
+        })
+
+        it('R2 防護：舊架構 joinSharedLedger 呼叫 applyRemoteChanges 時傳遞 isShared: true 避免劫持預設帳本', async () => {
+            const mockChanges = [
+                {
+                    storeName: 'ledgers',
+                    operation: 'update',
+                    data: { id: 1, uuid: 'shared-uuid-hijack', name: '偽預設帳本', isShared: true },
+                },
+            ]
+            mockSyncService._downloadFile.mockResolvedValue({
+                data: { changes: mockChanges },
+            })
+            mockDataService.getLedgers.mockResolvedValue([
+                { id: 2, uuid: 'shared-uuid-hijack', name: '偽預設帳本' },
+            ])
+
+            await ledgerManager.joinSharedLedger('file_legacy_join')
+
+            expect(mockSyncService.applyRemoteChanges).toHaveBeenCalledWith(
+                mockChanges,
+                { isShared: true }
+            )
         })
     })
 
