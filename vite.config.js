@@ -1,8 +1,28 @@
 import { defineConfig } from 'vite'
 import legacy from '@vitejs/plugin-legacy'
-import { readFileSync, writeFileSync, readdirSync } from 'fs'
+import fs, { readFileSync, writeFileSync, readdirSync } from 'fs'
 import { resolve } from 'path'
 import { createHash } from 'crypto'
+
+// 修復 Windows OneDrive 環境下 Node v24 copyFile 拋出 UNKNOWN (-4094) 之相容性問題
+const origCopyFileSync = fs.copyFileSync
+fs.copyFileSync = (src, dest, flags) => {
+    try {
+        origCopyFileSync(src, dest, flags)
+    } catch {
+        fs.writeFileSync(dest, fs.readFileSync(src))
+    }
+}
+if (fs.promises?.copyFile) {
+    const origCopyFile = fs.promises.copyFile
+    fs.promises.copyFile = async (src, dest, flags) => {
+        try {
+            await origCopyFile(src, dest, flags)
+        } catch {
+            await fs.promises.writeFile(dest, await fs.promises.readFile(src))
+        }
+    }
+}
 
 // ==================== 版本號與廣告設定統一來源 ====================
 // 皆從 package.json 讀取，build 時注入到 JS

@@ -626,16 +626,29 @@ export class SyncService {
     async listBackups() {
         await this.ensureValidToken()
 
-        const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'backup_'&fields=files(id,name,size,createdTime,modifiedTime)&orderBy=createdTime desc`,
-            {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-            }
-        )
+        const allFiles = []
+        let pageToken = null
+        do {
+            const pageParam = pageToken
+                ? `&pageToken=${encodeURIComponent(pageToken)}`
+                : ''
+            const res = await fetch(
+                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'backup_'&fields=nextPageToken,files(id,name,size,createdTime,modifiedTime)&orderBy=createdTime desc&pageSize=100${pageParam}`,
+                {
+                    headers: { Authorization: `Bearer ${this.accessToken}` },
+                }
+            )
 
-        if (!res.ok) throw new Error(`Failed to list backups (${res.status})`)
-        const data = await res.json()
-        return data.files || []
+            if (!res.ok)
+                throw new Error(`Failed to list backups (${res.status})`)
+            const data = await res.json()
+            if (Array.isArray(data.files)) {
+                allFiles.push(...data.files)
+            }
+            pageToken = data.nextPageToken || null
+        } while (pageToken)
+
+        return allFiles
     }
 
     /**
@@ -996,13 +1009,24 @@ export class SyncService {
     async markAllRemoteChangesAsPulled() {
         await this.ensureValidToken()
         try {
-            const resList = await fetch(
-                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=files(id,name,modifiedTime)`,
-                { headers: { Authorization: `Bearer ${this.accessToken}` } }
-            )
-            if (!resList.ok) throw new Error('Failed to list sync logs')
-            const data = await resList.json()
-            const files = data.files || []
+            const allFiles = []
+            let pageToken = null
+            do {
+                const pageParam = pageToken
+                    ? `&pageToken=${encodeURIComponent(pageToken)}`
+                    : ''
+                const resList = await fetch(
+                    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100${pageParam}`,
+                    { headers: { Authorization: `Bearer ${this.accessToken}` } }
+                )
+                if (!resList.ok) throw new Error('Failed to list sync logs')
+                const data = await resList.json()
+                if (Array.isArray(data.files)) {
+                    allFiles.push(...data.files)
+                }
+                pageToken = data.nextPageToken || null
+            } while (pageToken)
+            const files = allFiles
 
             const appliedSetting = await this.dataService.getSetting(
                 'sync_personal_applied_keys'
@@ -1057,11 +1081,13 @@ export class SyncService {
 
         for (const ledger of sharedLedgers) {
             try {
-                const infra = await this._ensureSharedInfra(ledger)
+                // 先比對本地是否有該共用帳本待推送變更，無變更時略過以節省 Drive API 配額（pull 會統一校準基礎設施）
                 const allLocal = await this.dataService.getChangesSince(0, {
-                    sharedLedgerUuid: infra.ledger.uuid,
+                    sharedLedgerUuid: ledger.uuid,
                 })
                 if (allLocal.length === 0) continue
+
+                const infra = await this._ensureSharedInfra(ledger)
 
                 const mine = allLocal.map(log => ({
                     ...log,
@@ -1568,12 +1594,12 @@ export class SyncService {
     /**
      * 將變更附加到「自己的」裝置日誌檔。
      * 依 _changeKey 去重（雲端既有內容與傳入批次內部皆會去重）；
-     * 超過 90 天的變更會被裁剪（完整歷史由每日備份保留）。
+     * 雲端日誌全量保留變更歷史（不裁切），確保新舊成員皆能完整同步。
      * 支援 ETag CAS 樂觀鎖與 412 衝突重試。
      * @param {string} devLogId
      * @param {Array<object>} incomingChanges
      * @param {number} [maxRetries=3]
-     * @returns {Promise<number>} 實際寫入的新增筆數（不含被裁剪者）
+     * @returns {Promise<number>} 實際寫入的新增筆數
      */
     async _appendToDeviceLog(devLogId, incomingChanges, maxRetries = 3) {
         if (!devLogId || !incomingChanges.length) return 0
@@ -2328,12 +2354,22 @@ export class SyncService {
             )
         }
 
-        // 4) 遷移：舊檔歷史併入自己的日誌 + 種入 appliedKeys（保留原始 deviceId 消除重播差異）
+        // 4) 遷移：舊檔歷史正規化並併入自己的日誌 + 種入 appliedKeys（補齊 ledgerUuid 以防新成員遺漏歷史紀錄）
         if (legacyChanges.length > 0) {
-            const mine = legacyChanges.map(c => ({
-                ...c,
-                deviceId: c.deviceId || this.deviceId,
-            }))
+            const mine = legacyChanges.map(c => {
+                const normalizedData = c.data ? { ...c.data } : c.data
+                if (normalizedData && !normalizedData.ledgerUuid) {
+                    normalizedData.ledgerUuid =
+                        c.storeName === 'ledgers'
+                            ? (normalizedData.uuid || ledger.uuid)
+                            : ledger.uuid
+                }
+                return {
+                    ...c,
+                    deviceId: c.deviceId || this.deviceId,
+                    data: normalizedData,
+                }
+            })
             await this._appendToDeviceLog(devLogId, mine)
             const appliedSetting = await this.dataService.getSetting(
                 'sync_shared_applied_keys'
@@ -2375,7 +2411,28 @@ export class SyncService {
      */
     async joinViaManifest(manifestId) {
         await this.ensureValidToken()
-        const manifest = (await this._downloadFile(manifestId))?.data
+        let manifest = null
+        try {
+            const res = await this._downloadFile(manifestId)
+            if (res?.status === 404) {
+                throw new Error('共用帳本清單檔不存在或已被刪除 (404)')
+            }
+            if (res?.status === 403) {
+                throw new Error('無權限存取此共用帳本，請確認擁有者已授權 (403)')
+            }
+            if (res?.status && res.status >= 400) {
+                throw new Error(`下載共用帳本清單檔失敗 (${res.status})`)
+            }
+            manifest = res?.data
+        } catch (err) {
+            if (err.message && err.message.includes('404')) {
+                throw new Error('共用帳本清單檔不存在或已被刪除 (404)')
+            }
+            if (err.message && err.message.includes('403')) {
+                throw new Error('無權限存取此共用帳本，請確認擁有者已授權 (403)')
+            }
+            throw err
+        }
         if (!manifest?.members) throw new Error('無效的共用帳本清單檔')
 
         const targetUuid = manifest.ledgerUuid
@@ -2435,7 +2492,23 @@ export class SyncService {
                 const d = await this._downloadFileStrict(
                     manifest.legacySharedFileId
                 )
-                collect(d?.changes)
+                // P1-2: 舊版單一共享檔之歷史紀錄可能未含 ledgerUuid，讀取時正規化補齊
+                const normalizedLegacy = (d?.changes || []).map(c => {
+                    if (c?.data && !c.data.ledgerUuid) {
+                        return {
+                            ...c,
+                            data: {
+                                ...c.data,
+                                ledgerUuid:
+                                    c.storeName === 'ledgers'
+                                        ? (c.data.uuid || targetUuid)
+                                        : targetUuid,
+                            },
+                        }
+                    }
+                    return c
+                })
+                collect(normalizedLegacy)
             } catch (err) {
                 if (
                     err.message &&
@@ -2600,9 +2673,9 @@ export class SyncService {
                 headers: { Authorization: `Bearer ${this.accessToken}` },
             }
         )
-        if (!res.ok) return null
+        if (!res.ok) return { data: null, status: res.status }
         const data = await res.json()
-        return { data }
+        return { data, status: res.status }
     }
 
     /**
@@ -2626,6 +2699,11 @@ export class SyncService {
                 res.headers?.get?.('etag') ||
                 res.headers?.etag ||
                 (res._etag ?? null)
+            if (!etag) {
+                console.warn(
+                    `[SyncService] 未能從回應標頭中取得 ETag (CORS 未暴露或 API 未提供)，降級為無樂觀鎖寫入: ${fileId}`
+                )
+            }
             return {
                 data,
                 etag: etag || null,

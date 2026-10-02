@@ -3930,5 +3930,265 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             )
         })
     })
+
+    describe('PR #69 審查修復驗證 (P1-P2 & Pagination & Telemetry)', () => {
+        let ss, ds
+
+        beforeEach(() => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'tok_review_r3'
+            ss.deviceId = 'dev_tester_r3'
+        })
+
+        it('🔴 P1-2: _ensureSharedInfra 遷移舊檔時，為缺少 ledgerUuid 之紀錄補齊 ledger.uuid', async () => {
+            const targetUuid = 'ledger-legacy-uuid'
+            const ledger = {
+                id: 10,
+                uuid: targetUuid,
+                name: '舊共用帳本',
+                isShared: true,
+                sharedFileId: 'legacy_file_id',
+            }
+
+            // 模擬舊共用檔案內容，其中包含未帶 ledgerUuid 的 records 紀錄
+            const legacyContent = {
+                manifestFileId: 'mf_legacy',
+                changes: [
+                    {
+                        storeName: 'records',
+                        operation: 'add',
+                        timestamp: 1000,
+                        data: { id: 1, amount: 50, ledgerId: 10 }, // 缺少 ledgerUuid
+                    },
+                    {
+                        storeName: 'ledgers',
+                        operation: 'add',
+                        timestamp: 900,
+                        data: { uuid: targetUuid, name: '舊共用帳本' },
+                    },
+                ],
+            }
+
+            ss.getFilePermissions = vi.fn(async () => [
+                { emailAddress: 'tester@example.com', role: 'owner' },
+            ])
+            ss.userInfo = { email: 'tester@example.com' }
+            ss._downloadFileStrict = vi.fn(async (fileId, options) => {
+                if (fileId === 'legacy_file_id') return legacyContent
+                if (fileId === 'mf_legacy') {
+                    const mf = {
+                        ledgerUuid: targetUuid,
+                        members: [{ deviceId: ss.deviceId, fileId: 'my_devlog' }],
+                    }
+                    return options?.withMeta ? { data: mf, etag: 'e1' } : mf
+                }
+                return { changes: [] }
+            })
+            ss._updateFile = vi.fn(async () => {})
+            let appendedChanges = []
+            ss._appendToDeviceLog = vi.fn(async (devLogId, changes) => {
+                appendedChanges = changes
+                return changes.length
+            })
+            ss._registerSelfInManifest = vi.fn(async () => true)
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss.ensureSharingPermission = vi.fn(async () => {})
+            ss._findFileInDrive = vi.fn(async () => 'my_devlog')
+
+            await ss._ensureSharedInfra(ledger)
+
+            // 驗證寫入 DevLog 的歷史紀錄已補齊 ledgerUuid
+            expect(appendedChanges.length).toBe(2)
+            const recordChange = appendedChanges.find(c => c.storeName === 'records')
+            expect(recordChange.data.ledgerUuid).toBe(targetUuid)
+        })
+
+        it('🔴 P1-2: joinViaManifest 對舊共享檔 (legacySharedFileId) 缺少 ledgerUuid 之變更正規化補齊，不被嚴格驗證誤剔除', async () => {
+            const targetUuid = 'ledger-uuid-legacy-join'
+            const manifestId = 'mf_legacy_join'
+
+            const manifest = {
+                ledgerUuid: targetUuid,
+                members: [],
+                legacySharedFileId: 'legacy_file_88',
+            }
+
+            // 舊版共享檔包含未帶 ledgerUuid 的舊變更
+            const legacyShared = {
+                changes: [
+                    {
+                        deviceId: 'dev_owner',
+                        storeName: 'records',
+                        operation: 'add',
+                        timestamp: 2000,
+                        data: { id: 88, amount: 200, categoryId: 'food' }, // 缺少 ledgerUuid
+                    },
+                    {
+                        deviceId: 'dev_owner',
+                        storeName: 'ledgers',
+                        operation: 'add',
+                        timestamp: 1000,
+                        data: { uuid: targetUuid, name: '共同開銷' },
+                    },
+                ],
+            }
+
+            ss.ensureValidToken = vi.fn(async () => {})
+            ss._downloadFile = vi.fn(async fileId => {
+                if (fileId === manifestId) return { data: manifest }
+                return null
+            })
+            ss._downloadFileStrict = vi.fn(async fileId => {
+                if (fileId === 'legacy_file_88') return legacyShared
+                return { changes: [] }
+            })
+
+            let applied = []
+            ss.applyRemoteChanges = vi.fn(async changes => {
+                applied = changes
+                return new Set(changes.map(c => ss._changeKey(c)))
+            })
+            ds.getLedgers = vi.fn(async () => [{ uuid: targetUuid, id: 5 }])
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._registerSelfInManifest = vi.fn(async () => true)
+            ss._createSharedFile = vi.fn(async () => ({ id: 'new_devlog' }))
+            ss._findFileInDrive = vi.fn(async () => null)
+
+            const joinedUuid = await ss.joinViaManifest(manifestId)
+            expect(joinedUuid).toBe(targetUuid)
+
+            // 驗證缺少 ledgerUuid 的舊 record 變更成功被補齊並傳入 applyRemoteChanges
+            expect(applied.length).toBe(2)
+            const recordChange = applied.find(c => c.storeName === 'records')
+            expect(recordChange).toBeDefined()
+            expect(recordChange.data.ledgerUuid).toBe(targetUuid)
+        })
+
+        it('🟡 P2: joinViaManifest 下載 Manifest 遇 404 / 403 拋出明確語意例外', async () => {
+            ss.ensureValidToken = vi.fn(async () => {})
+
+            // 404 測試
+            ss._downloadFile = vi.fn(async () => ({
+                data: null,
+                status: 404,
+            }))
+            await expect(ss.joinViaManifest('mf_404')).rejects.toThrow(
+                '共用帳本清單檔不存在或已被刪除 (404)'
+            )
+
+            // 403 測試
+            ss._downloadFile = vi.fn(async () => ({
+                data: null,
+                status: 403,
+            }))
+            await expect(ss.joinViaManifest('mf_403')).rejects.toThrow(
+                '無權限存取此共用帳本，請確認擁有者已授權 (403)'
+            )
+        })
+
+        it('🟡 分頁修復：listBackups 支援多頁 pageToken 遍歷', async () => {
+            let callCount = 0
+            global.fetch = vi.fn(async url => {
+                callCount++
+                if (url.includes('pageToken=page2')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            files: [{ id: 'b3', name: 'backup_3' }],
+                            nextPageToken: null,
+                        }),
+                    }
+                }
+                return {
+                    ok: true,
+                    json: async () => ({
+                        files: [
+                            { id: 'b1', name: 'backup_1' },
+                            { id: 'b2', name: 'backup_2' },
+                        ],
+                        nextPageToken: 'page2',
+                    }),
+                }
+            })
+
+            const backups = await ss.listBackups()
+            expect(callCount).toBe(2)
+            expect(backups.map(b => b.id)).toEqual(['b1', 'b2', 'b3'])
+        })
+
+        it('🟡 分頁修復：markAllRemoteChangesAsPulled 支援多頁 pageToken 遍歷', async () => {
+            let listCount = 0
+            global.fetch = vi.fn(async url => {
+                if (url.includes("name contains 'sync_log_'")) {
+                    listCount++
+                    if (url.includes('pageToken=token2')) {
+                        return {
+                            ok: true,
+                            json: async () => ({
+                                files: [{ id: 'f2', name: 'sync_log_dev2.json' }],
+                                nextPageToken: null,
+                            }),
+                        }
+                    }
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            files: [{ id: 'f1', name: 'sync_log_dev1.json' }],
+                            nextPageToken: 'token2',
+                        }),
+                    }
+                }
+                return { ok: true, json: async () => ({}) }
+            })
+
+            ss._downloadFile = vi.fn(async () => ({
+                data: {
+                    changes: [
+                        { storeName: 'records', operation: 'add', timestamp: 1000, data: { id: 1 } },
+                    ],
+                },
+            }))
+
+            await ss.markAllRemoteChangesAsPulled()
+            expect(listCount).toBe(2)
+            expect(ss._downloadFile).toHaveBeenCalledWith('f1')
+            expect(ss._downloadFile).toHaveBeenCalledWith('f2')
+        })
+
+        it('🟡 遙測警示：_downloadFileStrict withMeta 缺少 ETag 時輸出 console.warn', async () => {
+            const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            global.fetch = vi.fn(async () => ({
+                ok: true,
+                headers: { get: () => null },
+                json: async () => ({ key: 'value' }),
+            }))
+
+            const res = await ss._downloadFileStrict('file_no_etag', { withMeta: true })
+            expect(res.etag).toBeNull()
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('未能從回應標頭中取得 ETag')
+            )
+            warnSpy.mockRestore()
+        })
+
+        it('🟡 API 節流：pushSharedLedgerChanges 本地無變更時不呼叫 _ensureSharedInfra', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'uuid-no-change',
+                name: '無新變更帳本',
+                isShared: true,
+                sharedManifestId: 'mf_no_change',
+            }
+            ds.getLedgers = vi.fn(async () => [ledger])
+            ds.getChangesSince = vi.fn(async () => []) // 0 筆本地待推送變更
+            ss.isSharingAuthorized = vi.fn(async () => true)
+            ss._ensureSharedInfra = vi.fn()
+
+            await ss.pushSharedLedgerChanges()
+
+            expect(ss._ensureSharedInfra).not.toHaveBeenCalled()
+        })
+    })
 })
 
