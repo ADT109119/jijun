@@ -462,6 +462,9 @@ npx cap open android
 > [!NOTE]
 > 採用新的「單一來源版本注入」機制後，不再需要手動修改 `serviceWorker.js` 中的版本號。
 
+> [!TIP]
+> **Windows 環境開發提醒**：若於 Windows OneDrive 虛擬化檔案夾下使用 Node.js v24+ 執行建置，可能因檔案系統虛擬屬性觸發 `-4094 (UNKNOWN)` 異常；建議將專案移至原生目錄（非 OneDrive 路徑）建置，或切換至 LTS 版本。
+
 ### 解決的問題
 
 - ✅ **PWA 快取問題**：徹底解決已安裝 PWA 無法更新的問題

@@ -5090,12 +5090,22 @@ class DataService {
 
             const tx = this.db.transaction('ledgers', 'readwrite')
             let uuid = null
-            if (!skipLog) {
-                const ledger = await tx.store.get(id)
-                uuid = ledger?.uuid
+            let sharedManifestId = null
+            const ledger = await tx.store.get(id)
+            if (ledger) {
+                uuid = ledger.uuid
+                sharedManifestId = ledger.sharedManifestId
             }
             await tx.store.delete(id)
             await tx.done
+
+            // N3 防護：若刪除之帳本為共用帳本，清理 pending 授權佇列
+            if (sharedManifestId) {
+                await this.saveSetting({
+                    key: `sync_manifest_pending_${sharedManifestId}`,
+                    value: null,
+                })
+            }
 
             if (!skipLog)
                 await this.logChange('delete', 'ledgers', id, { uuid })

@@ -757,22 +757,52 @@ export class SyncService {
         // 先找到已存在的 sync log file
         const existingFileId = await this._findFile(fileName)
 
+        const formattedChanges = changes.map(c => ({
+            ...c,
+            deviceId: c.deviceId || this.deviceId,
+        }))
+
         if (existingFileId) {
             // 嚴格下載現有內容，合併後更新（任何下載錯誤均拋出，避免暫時性錯誤覆寫為空）
             const res = await this._downloadFileStrict(existingFileId)
             const existing = res || { changes: [] }
-            existing.changes = [...(existing.changes || []), ...changes]
-            existing.timestamp = Date.now()
-            existing.deviceId = this.deviceId
+            const existingChanges = Array.isArray(existing.changes)
+                ? existing.changes
+                : []
+            const cloudKeys = new Set(
+                existingChanges.map(c => this._changeKey(c))
+            )
+            const seenIncoming = new Set()
+            const missing = formattedChanges.filter(c => {
+                const key = this._changeKey(c)
+                if (cloudKeys.has(key) || seenIncoming.has(key)) return false
+                seenIncoming.add(key)
+                return true
+            })
 
-            await this._updateFile(existingFileId, JSON.stringify(existing))
+            // N1 防護：雲端日誌按 _changeKey 去重，防止重試或滯留日誌重複附加造成雲端日誌膨脹
+            if (missing.length > 0) {
+                existing.changes = [...existingChanges, ...missing]
+                existing.timestamp = Date.now()
+                existing.deviceId = this.deviceId
+                await this._updateFile(existingFileId, JSON.stringify(existing))
+            }
         } else {
-            // 建立新檔案
+            // 建立新檔案前亦去除批次內重複鍵
+            const seenIncoming = new Set()
+            const uniqueChanges = formattedChanges.filter(c => {
+                const key = this._changeKey(c)
+                if (seenIncoming.has(key)) return false
+                seenIncoming.add(key)
+                return true
+            })
+            syncData.changes = uniqueChanges
             await this._createFile(fileName, JSON.stringify(syncData))
         }
 
         // 成功推送至個人雲端日誌後，以 ID 精準清除本地 sync_log
-        // R3 修復：保留共用帳本的 ledgers 變更，交由 pushSharedLedgerChanges 推送至該共用帳本之 DevLog 後再行清除
+        // R3 / N2 修復：僅以 sharedUuids.has(uuid)（帳本當前現況）作為保留依據，
+        // 排除快照 c.data.isShared，避免「改名→取消共用」離線場景下形成永不清除的孤島日誌
         const ledgers = await this.dataService.getLedgers()
         const sharedUuids = new Set(
             ledgers.filter(l => l.isShared).map(l => l.uuid)
@@ -783,7 +813,7 @@ export class SyncService {
                     typeof c.id === 'number' &&
                     !(
                         c.storeName === 'ledgers' &&
-                        (c.data?.isShared || sharedUuids.has(c.data?.uuid))
+                        sharedUuids.has(c.data?.uuid)
                     )
             )
             .map(c => c.id)
@@ -906,11 +936,13 @@ export class SyncService {
             })
         }
 
-        // 持久化已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 N1）
-        await this.dataService.saveSetting({
-            key: 'sync_personal_applied_keys',
-            value: [...appliedKeys],
-        })
+        // 持久化已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 N1；N4 防護：有新套用鍵時才寫入 IDB）
+        if (successfulKeySet.size > 0) {
+            await this.dataService.saveSetting({
+                key: 'sync_personal_applied_keys',
+                value: [...appliedKeys],
+            })
+        }
 
         await this.dataService.saveSetting({
             key: 'sync_last_sync',
@@ -1267,11 +1299,13 @@ export class SyncService {
             }
         }
 
-        // C2 修復：持久化已套用鍵集合（全量保留，杜絕過期後因成員日誌更新重新下載而重播已套用之變更）
-        await this.dataService.saveSetting({
-            key: 'sync_shared_applied_keys',
-            value: [...appliedKeys],
-        })
+        // C2 修復：持久化已套用鍵集合（全量保留，杜絕過期後因成員日誌更新重新下載而重播已套用之變更；N4 防護：有新套用鍵時才寫入 IDB）
+        if (successfulKeySet.size > 0) {
+            await this.dataService.saveSetting({
+                key: 'sync_shared_applied_keys',
+                value: [...appliedKeys],
+            })
+        }
     }
 
     /**
@@ -2313,14 +2347,18 @@ export class SyncService {
             } catch (_) {}
         }
 
-        // R4 補償：遷移授權重試機制。若建立 manifest 時授予舊檔成員權限失敗，於後續同步重試補償
+        // R4/N3 補償：遷移授權重試機制。若建立 manifest 時授予舊檔成員權限失敗，於後續同步重試補償
+        // N3 防護：對 400/404 永久失效 email 或達重試上限 (3次) 自動放棄，避免每輪同步燒配額
         if (manifestId) {
             const pendingKey = `sync_manifest_pending_${manifestId}`
             const pendingSetting = await this.dataService.getSetting(pendingKey)
-            const pendingEmails = pendingSetting?.value
-            if (Array.isArray(pendingEmails) && pendingEmails.length > 0) {
-                const remainingEmails = []
-                for (const email of pendingEmails) {
+            const pendingItems = pendingSetting?.value
+            if (Array.isArray(pendingItems) && pendingItems.length > 0) {
+                const remaining = []
+                for (const item of pendingItems) {
+                    const email = typeof item === 'string' ? item : item.email
+                    const retries =
+                        (typeof item === 'object' && item?.retries) || 0
                     try {
                         await this.grantFilePermission(
                             manifestId,
@@ -2328,16 +2366,28 @@ export class SyncService {
                             'writer'
                         )
                     } catch (gErr) {
-                        console.warn(
-                            `[SyncService] 遷移授權成員 ${email} 失敗，保留至下次同步重試:`,
-                            gErr
-                        )
-                        remainingEmails.push(email)
+                        const isPermanent =
+                            gErr.status === 400 ||
+                            gErr.status === 404 ||
+                            gErr.message?.includes('(400)') ||
+                            gErr.message?.includes('(404)')
+                        if (isPermanent || retries >= 2) {
+                            console.warn(
+                                `[SyncService] 遷移授權成員 ${email} 永久失敗或達重試上限 (${retries + 1})，放棄重試:`,
+                                gErr
+                            )
+                        } else {
+                            console.warn(
+                                `[SyncService] 遷移授權成員 ${email} 失敗，保留至下次同步重試:`,
+                                gErr
+                            )
+                            remaining.push({ email, retries: retries + 1 })
+                        }
                     }
                 }
                 await this.dataService.saveSetting({
                     key: pendingKey,
-                    value: remainingEmails.length > 0 ? remainingEmails : null,
+                    value: remaining.length > 0 ? remaining : null,
                 })
             }
         }

@@ -4330,9 +4330,9 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             // 首次同步執行 _ensureSharedInfra
             const infra = await ss._ensureSharedInfra(ledger)
             expect(infra.manifestId).toBe('mf_retry_new')
-            // 授權失敗後，collaborator@test.com 應留存在 pending 佇列中
+            // 授權失敗後，collaborator@test.com 應留存在 pending 佇列中（記錄重試次數 1）
             const pendingSetting = await ds.getSetting('sync_manifest_pending_mf_retry_new')
-            expect(pendingSetting?.value).toEqual(['collaborator@test.com'])
+            expect(pendingSetting?.value).toEqual([{ email: 'collaborator@test.com', retries: 1 }])
 
             // 第二次同步：模擬重試補償
             ledger.sharedManifestId = 'mf_retry_new'
@@ -4352,6 +4352,193 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             const callsBefore = ss.grantFilePermission.mock.calls.length
             await ss._ensureSharedInfra(ledger)
             expect(ss.grantFilePermission.mock.calls.length).toBe(callsBefore)
+        })
+
+        it('N1 防護：pushChanges 使用 _changeKey 對個人雲端日誌去重，防止滯留日誌重複附加造成日誌膨脹', async () => {
+            const now = Date.now()
+            const existingChange = {
+                deviceId: 'dev_test_r4',
+                storeName: 'records',
+                recordId: 10,
+                timestamp: now - 1000,
+                operation: 'add',
+                data: { id: 10, amount: 100 },
+            }
+            ss._findFile = vi.fn(async () => 'file_personal_log')
+            ss._downloadFileStrict = vi.fn(async () => ({
+                changes: [existingChange],
+            }))
+            ss._updateFile = vi.fn(async () => {})
+
+            // 本地拉出兩筆：一筆與雲端重複（如上次未授權滯留），一筆為全新變更
+            const duplicateChange = { ...existingChange, id: 501 }
+            const newChange = {
+                deviceId: 'dev_test_r4',
+                storeName: 'records',
+                recordId: 11,
+                timestamp: now,
+                operation: 'add',
+                id: 502,
+                data: { id: 11, amount: 200 },
+            }
+            ds.getChangesSince = vi.fn(async () => [duplicateChange, newChange])
+            ds.getLedgers = vi.fn(async () => [])
+            ds.deleteSyncLogsByIds = vi.fn(async () => true)
+
+            await ss.pushChanges()
+
+            expect(ss._updateFile).toHaveBeenCalledTimes(1)
+            const updated = JSON.parse(ss._updateFile.mock.calls[0][1])
+            // 雲端日誌應只有 2 筆（原 1 筆 + 新 1 筆），重複項目不被重複 append
+            expect(updated.changes.length).toBe(2)
+            expect(updated.changes[1].recordId).toBe(11)
+        })
+
+        it('N2 防護：pushChanges 精準刪除以 sharedUuids 現況判定，離線取消共用之帳本變更不形成孤島', async () => {
+            // 帳本現在已非共用（isShared: false）
+            ds.getLedgers = vi.fn(async () => [
+                { id: 2, uuid: 'unshared-uuid', name: '已取消共用帳本', isShared: false },
+            ])
+            // 但變更快照當時是共用帳本 (c.data.isShared: true)
+            const ledgerChange = {
+                id: 301,
+                storeName: 'ledgers',
+                operation: 'update',
+                recordId: 2,
+                timestamp: 1000,
+                data: { id: 2, uuid: 'unshared-uuid', name: '改名', isShared: true },
+            }
+            ds.getChangesSince = vi.fn(async () => [ledgerChange])
+            ss._findFile = vi.fn(async () => null)
+            ss._createFile = vi.fn(async () => ({ id: 'f_p' }))
+            ds.deleteSyncLogsByIds = vi.fn(async () => true)
+
+            await ss.pushChanges()
+
+            // 依帳本當前現況為個人帳本，應將 301 自 sync_log 刪除，不留作孤島
+            expect(ds.deleteSyncLogsByIds).toHaveBeenCalledWith([301])
+        })
+
+        it('N3 防護：遷移授權若遇 400/404 永久失效 email 立即自 pending 佇列移除不再重試', async () => {
+            const ledger = {
+                id: 4,
+                uuid: 'uuid-perm-fail',
+                name: '失效帳本',
+                isShared: true,
+                sharedFileId: 'old_file_perm',
+            }
+            ss.userInfo = { email: 'owner@test.com' }
+            ss.getFilePermissions = vi.fn(async () => [
+                { role: 'owner', emailAddress: 'owner@test.com' },
+                { role: 'writer', emailAddress: 'invalid_user@test.com' },
+            ])
+            ss._createSharedFile = vi.fn(async () => ({ id: 'mf_perm' }))
+            globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ files: [] }) }))
+            ss._downloadFileStrict = vi.fn(async () => ({ data: { changes: [], members: [] }, etag: 'e1' }))
+            ss._updateFile = vi.fn(async () => {})
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._registerSelfInManifest = vi.fn(async () => true)
+
+            // 拋出 400 永久無效 Google 帳號錯誤
+            ss.grantFilePermission = vi.fn(async () => {
+                const err = new Error('Failed to grant permission (400): User not found')
+                err.status = 400
+                throw err
+            })
+
+            await ss._ensureSharedInfra(ledger)
+            // 400 永久錯誤立即被丟棄，pending 佇列清空為 null
+            const pendingSetting = await ds.getSetting('sync_manifest_pending_mf_perm')
+            expect(pendingSetting?.value).toBeNull()
+        })
+
+        it('N3 防護：遷移授權在達重試上限 (3次) 後自動放棄，防止每輪同步浪費配額', async () => {
+            const ledger = {
+                id: 5,
+                uuid: 'uuid-max-retries',
+                name: '上限帳本',
+                isShared: true,
+                sharedManifestId: 'mf_max_retry',
+            }
+            // 佇列中已有重試過 2 次的項目
+            await ds.saveSetting({
+                key: 'sync_manifest_pending_mf_max_retry',
+                value: [{ email: 'unreachable@test.com', retries: 2 }],
+            })
+            ss.grantFilePermission = vi.fn(async () => {
+                throw new Error('500 Internal Server Error')
+            })
+            ss._downloadFileStrict = vi.fn(async () => ({ data: { changes: [], members: [] }, etag: 'e2' }))
+            ss._updateFile = vi.fn(async () => {})
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._registerSelfInManifest = vi.fn(async () => true)
+            globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ files: [] }) }))
+
+            await ss._ensureSharedInfra(ledger)
+
+            // 第 3 次失敗後，因 retries >= 2，自動放棄，佇列清空為 null
+            const pendingSetting = await ds.getSetting('sync_manifest_pending_mf_max_retry')
+            expect(pendingSetting?.value).toBeNull()
+        })
+
+        it('N3 防護：ledgerManager.deleteLedger 刪除共用帳本時清理 pending 佇列', async () => {
+            const ledger = {
+                id: 6,
+                uuid: 'shared-del-uuid',
+                name: '待刪帳本',
+                isShared: true,
+                sharedManifestId: 'mf_to_delete',
+            }
+            await ds.saveSetting({
+                key: 'sync_manifest_pending_mf_to_delete',
+                value: ['someone@test.com'],
+            })
+            ds.getLedger = vi.fn(async id => (id === 6 ? ledger : null))
+            ds.deleteLedger = vi.fn(async () => true)
+            ds.init = vi.fn(async () => {})
+
+            const { LedgerManager } = await import('../../src/js/ledgerManager.js')
+            const lm = new LedgerManager(ds, { syncService: ss })
+            lm.ledgers = [ledger]
+
+            await lm.deleteLedger(6)
+
+            const pending = await ds.getSetting('sync_manifest_pending_mf_to_delete')
+            expect(pending?.value).toBeNull()
+        })
+
+        it('N4 防護：pullChanges 與 pullSharedLedgerChanges 在無新套用變更時不重複序列化寫入 appliedKeys', async () => {
+            await ds.saveSetting({
+                key: 'sync_personal_applied_keys',
+                value: ['key1', 'key2'],
+            })
+            await ds.saveSetting({
+                key: 'sync_shared_applied_keys',
+                value: ['skey1'],
+            })
+
+            globalThis.fetch = vi.fn(async () => ({
+                ok: true,
+                status: 200,
+                json: async () => ({ files: [] }),
+            }))
+
+            ds.saveSetting.mockClear()
+
+            // pullChanges 無新變更
+            await ss.pullChanges()
+            expect(ds.saveSetting).not.toHaveBeenCalledWith(
+                expect.objectContaining({ key: 'sync_personal_applied_keys' })
+            )
+
+            ds.saveSetting.mockClear()
+
+            // pullSharedLedgerChanges 無新變更
+            ds.getLedgers = vi.fn(async () => [])
+            await ss.pullSharedLedgerChanges()
+            expect(ds.saveSetting).not.toHaveBeenCalledWith(
+                expect.objectContaining({ key: 'sync_shared_applied_keys' })
+            )
         })
     })
 })

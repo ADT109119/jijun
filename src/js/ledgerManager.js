@@ -181,6 +181,13 @@ export class LedgerManager {
      * @param {number} id
      */
     async deleteLedger(id) {
+        const ledger = await this.dataService.getLedger(id)
+        if (ledger?.sharedManifestId) {
+            await this.dataService.saveSetting({
+                key: `sync_manifest_pending_${ledger.sharedManifestId}`,
+                value: null,
+            })
+        }
         await this.dataService.deleteLedger(id)
         await this.init()
     }
