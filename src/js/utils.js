@@ -84,7 +84,7 @@ export function closeModalWithAnimation(modalElement, contentElement, onComplete
         }
     }
 
-    const timer = setTimeout(doCleanUp, 180)
+    const timer = setTimeout(doCleanUp, 220)
     modalElement.addEventListener('animationend', e => {
         if (e.target === modalElement || e.target === card) {
             clearTimeout(timer)

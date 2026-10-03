@@ -1,5 +1,7 @@
 # 輕鬆記帳 2.0 - 現代化 PWA
 
+[繁體中文](README.md) | [English](README_en.md)
+
 這是「輕鬆記帳」應用程式的現代化版本，採用最新的前端技術重新打造，旨在提供更美觀、更易用、更穩健的記帳體驗。
 
 ![](banner.png)
@@ -124,8 +126,11 @@
 ├── src/                    # 源碼目錄
 │   ├── js/                # JavaScript 模組
 │   │   ├── main.js        # 主應用程式 (樞紐與路由控制)
-│   │   ├── dataService.js # IndexedDB 資料存取層
-│   │   ├── ledgerManager.js # 帳本管理邏輯
+│   │   ├── themeManager.js # 主題與外觀管理 (深淺色即時切換)
+│   │   ├── aiService.js   # 離線 AI 語意記帳助手 (WASM/wllama)
+│   │   ├── dataService.js # IndexedDB 資料存取層 (Schema v15)
+│   │   ├── ledgerManager.js # 帳本管理商業邏輯
+│   │   ├── groupManager.js # 群組分帳管理
 │   │   ├── categories.js  # 分類常數與工具函數
 │   │   ├── categoryManager.js # 自定義分類 UI 邏輯
 │   │   ├── statistics.js  # 統計分析頁面 (含比較報表)
@@ -137,8 +142,10 @@
 │   │   ├── datePickerModal.js # 共用日期選擇器彈窗
 │   │   ├── pluginManager.js # 擴充功能系統
 │   │   ├── pluginStorage.js # 插件沙箱化儲存
-│   │   ├── syncService.js # Google Drive 雲端同步
+│   │   ├── syncService.js # Google Drive 雲端同步 (Per-Device 獨立日誌與 Manifest)
 │   │   ├── rewardService.js # 雙平台廣告服務
+│   │   ├── tourManager.js # 新手引導與功能導覽核心
+│   │   ├── tours/         # 模組導覽情境腳本
 │   │   ├── router.js      # 路由管理
 │   │   ├── utils.js       # 共用工具函數
 │   │   └── pages/         # 頁面組件目錄 (首頁、帳戶、帳本、分攤等)
@@ -146,7 +153,7 @@
 │   │   └── main.css       # 主樣式
 │   └── index.html         # 開發用 HTML
 ├── tests/                  # 測試代碼目錄
-│   └── unit/              # 單元測試 (20+ 個測試檔案，覆蓋核心業務邏輯)
+│   └── unit/              # 單元測試 (38 個測試檔案，1687 項測試全部通過)
 ├── public/                # 公共資源
 │   ├── manifest.json      # PWA 配置
 │   └── serviceWorker.js   # Service Worker
@@ -484,7 +491,11 @@ npx cap open android
 
 ## 📚 相關文件
 
+- **[English Documentation (英文說明文件)](README_en.md)** - Complete project documentation in English
+- **[Per-Device 同步架構技術文件 (English Spec)](docs/PER_DEVICE_SYNC_en.md)** - Technical specification for the multi-user shared ledger sync protocol
 - **[完整更新日誌](CHANGE_LOG.md)** - 查看所有版本的詳細更新記錄
+- **[主題開發指南](THEME_DEV_GUIDE.md)** - 深入了解外觀主題自訂與商店規格
+- **[擴充功能開發指南](PLUGIN_DEV_GUIDE.md)** - 插件系統 API 與沙箱架構說明
 
 ## 🤝 貢獻
 

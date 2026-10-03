@@ -1073,3 +1073,62 @@ describe('RecordsListManager - 群組標頭排版與折疊展開', () => {
     })
 })
 
+describe('RecordsListManager - 類別與帳戶篩選彈窗滑入動畫', () => {
+    let container, dataService, categoryManager, manager
+
+    beforeEach(async () => {
+        sessionStorage.clear()
+        container = createDOMContainer()
+        dataService = createMockDataService()
+        categoryManager = {
+            getCategories: vi.fn().mockReturnValue([]),
+            getCategoryById: vi.fn((type, id) => ({ id, name: `分類_${id}` })),
+        }
+        manager = new RecordsListManager(
+            dataService,
+            categoryManager,
+            container
+        )
+        dataService.getAccounts.mockResolvedValue([
+            { id: 1, name: '現金' },
+            { id: 2, name: '銀行卡' },
+        ])
+        dataService.getRecords.mockResolvedValue([
+            { id: 101, type: 'expense', category: 'food', amount: 100, date: '2026-06-15' },
+        ])
+        await manager.init()
+    })
+
+    afterEach(() => {
+        manager.destroy()
+    })
+
+    it('點擊類別篩選按鈕時，彈窗與內容應具備 animate-fade-in 與 animate-slide-up 動畫', () => {
+        container.querySelector('#records-category-filter-btn').click()
+        const modal = container.querySelector('#category-filter-modal')
+        expect(modal).not.toBeNull()
+        expect(modal.classList.contains('animate-fade-in')).toBe(true)
+
+        const card = modal.querySelector('.animate-slide-up')
+        expect(card).not.toBeNull()
+
+        // 點擊關閉按鈕，彈窗應被清除
+        modal.querySelector('#close-cat-modal').click()
+        expect(container.querySelector('#category-filter-modal')).toBeNull()
+    })
+
+    it('點擊帳戶篩選按鈕時，彈窗與內容應具備 animate-fade-in 與 animate-slide-up 動畫', () => {
+        manager.showAccountFilterModal()
+        const modal = container.querySelector('#account-filter-modal')
+        expect(modal).not.toBeNull()
+        expect(modal.classList.contains('animate-fade-in')).toBe(true)
+
+        const card = modal.querySelector('.animate-slide-up')
+        expect(card).not.toBeNull()
+
+        // 點擊關閉按鈕，彈窗應被清除
+        modal.querySelector('#close-acc-modal').click()
+        expect(container.querySelector('#account-filter-modal')).toBeNull()
+    })
+})
+

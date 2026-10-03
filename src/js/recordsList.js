@@ -1,4 +1,11 @@
-import { formatCurrency, formatDate, formatDateToString, getDateRange, escapeHTML } from './utils.js'
+import {
+    formatCurrency,
+    formatDate,
+    formatDateToString,
+    getDateRange,
+    escapeHTML,
+    closeModalWithAnimation,
+} from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
 let isAppFirstLoaded = true
@@ -992,8 +999,8 @@ export class RecordsListManager {
         const allCategoryIds = [...new Set(this.records.map(r => r.category))]
 
         const modalHtml = `
-            <div id="category-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end" role="dialog" aria-modal="true" aria-labelledby="cat-filter-title">
-                <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh]">
+            <div id="category-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cat-filter-title">
+                <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh] animate-slide-up">
                     <h3 id="cat-filter-title" class="text-lg font-bold text-wabi-primary text-center mb-4">篩選類別</h3>
                     <div class="overflow-y-auto space-y-2 mb-4">
                         ${allCategoryIds
@@ -1045,6 +1052,23 @@ export class RecordsListManager {
         `
         this.modalsContainer.innerHTML = modalHtml
 
+        const catModal = this.modalsContainer.querySelector('#category-filter-modal')
+        const closeCatModal = onClosed => {
+            if (!catModal) {
+                this.modalsContainer.innerHTML = ''
+                if (typeof onClosed === 'function') onClosed()
+                return
+            }
+            closeModalWithAnimation(
+                catModal,
+                catModal.querySelector('.animate-slide-up'),
+                () => {
+                    this.modalsContainer.innerHTML = ''
+                    if (typeof onClosed === 'function') onClosed()
+                }
+            )
+        }
+
         this.modalsContainer
             .querySelector('#apply-cat-filter')
             .addEventListener('click', () => {
@@ -1055,29 +1079,26 @@ export class RecordsListManager {
                 this.filters.categories = selected
                 this._saveSessionFilters()
                 this.applyFiltersAndRender()
-                this.modalsContainer.innerHTML = ''
+                closeCatModal()
             })
         this.modalsContainer
             .querySelector('#close-cat-modal')
-            .addEventListener(
-                'click',
-                () => (this.modalsContainer.innerHTML = '')
-            )
+            .addEventListener('click', () => closeCatModal())
 
         // Close modal when clicking the overlay background
-        this.modalsContainer
-            .querySelector('#category-filter-modal')
-            .addEventListener('click', e => {
+        if (catModal) {
+            catModal.addEventListener('click', e => {
                 if (e.target.id === 'category-filter-modal') {
-                    this.modalsContainer.innerHTML = ''
+                    closeCatModal()
                 }
             })
+        }
     }
 
     showAccountFilterModal() {
         const modalHtml = `
-            <div id="account-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end" role="dialog" aria-modal="true" aria-labelledby="acc-filter-title">
-                <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh]">
+            <div id="account-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="acc-filter-title">
+                <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh] animate-slide-up">
                     <h3 id="acc-filter-title" class="text-lg font-bold text-wabi-primary text-center mb-4">篩選帳戶</h3>
                     <div class="overflow-y-auto space-y-2 mb-4">
                         ${this.accounts
@@ -1105,6 +1126,23 @@ export class RecordsListManager {
         `
         this.modalsContainer.innerHTML = modalHtml
 
+        const accModal = this.modalsContainer.querySelector('#account-filter-modal')
+        const closeAccModal = onClosed => {
+            if (!accModal) {
+                this.modalsContainer.innerHTML = ''
+                if (typeof onClosed === 'function') onClosed()
+                return
+            }
+            closeModalWithAnimation(
+                accModal,
+                accModal.querySelector('.animate-slide-up'),
+                () => {
+                    this.modalsContainer.innerHTML = ''
+                    if (typeof onClosed === 'function') onClosed()
+                }
+            )
+        }
+
         this.modalsContainer
             .querySelector('#apply-acc-filter')
             .addEventListener('click', () => {
@@ -1115,23 +1153,20 @@ export class RecordsListManager {
                 this.filters.accounts = selected
                 this._saveSessionFilters()
                 this.applyFiltersAndRender()
-                this.modalsContainer.innerHTML = ''
+                closeAccModal()
             })
         this.modalsContainer
             .querySelector('#close-acc-modal')
-            .addEventListener(
-                'click',
-                () => (this.modalsContainer.innerHTML = '')
-            )
+            .addEventListener('click', () => closeAccModal())
 
         // Close modal when clicking the overlay background
-        this.modalsContainer
-            .querySelector('#account-filter-modal')
-            .addEventListener('click', e => {
+        if (accModal) {
+            accModal.addEventListener('click', e => {
                 if (e.target.id === 'account-filter-modal') {
-                    this.modalsContainer.innerHTML = ''
+                    closeAccModal()
                 }
             })
+        }
     }
 
     showDateRangeModal() {

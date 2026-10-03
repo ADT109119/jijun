@@ -108,6 +108,18 @@ tools/jijun-ai-training/  # 離線 AI 模型 (jijun-LM) 數據生成與訓練管
 ├── demo_gguf.py        # Gradio/CLI GGUF 推論測試 Demo
 └── jijun-LM-GGUF/      # 導出的 GGUF 量化模型權重
 
+docs/                    # 專案設計文件與技術規格目錄
+├── PER_DEVICE_SYNC_en.md# Per-Device 共用帳本同步架構英文技術規格文件
+└── superpowers/         # 歷史設計規格與實施計畫 (specs & plans)
+
+README.md                # 專案中文主要說明文件
+README_en.md             # 專案英文主要說明文件
+CHANGE_LOG.md            # 版本更新日誌 (語意化版本紀錄)
+AGENTS.md                # AI Agent 專案架構規範與關鍵設計決策
+THEME_DEV_GUIDE.md       # 外觀主題擴充與商店格式開發指南
+PLUGIN_DEV_GUIDE.md      # 外掛系統 API 與沙箱架構開發指南
+project-structure.md     # 專案結構與模組說明 (本文件)
+
 tailwind.config.js       # Tailwind CSS 主題與外掛設定檔 (PostCSS build 用)
 postcss.config.js        # PostCSS 插件設定檔 (tailwindcss + autoprefixer)
 vite.config.js           # Vite 打包配置 (含 Service Worker 版本與 precachemanifest 注入外掛)
@@ -246,6 +258,6 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試、Round 5 OCR 輪次 N1-N4 加固測試)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護、大小寫不敏感權限撤銷與 organizer 角色支援)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1685 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1687 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 
