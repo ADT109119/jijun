@@ -1,12 +1,12 @@
 {
-  "version": "2.1.7.8",
-  "buildHash": "798cae60",
+  "version": "2.1.7.9",
+  "buildHash": "23d79299",
   "assets": [
-    "/assets/main-B-6okSmv.js",
+    "/assets/main-C8wNa27e.js",
     "/assets/esm-D2J800zb.js",
-    "/assets/main-DeKf7cZx.css",
-    "/assets/polyfills-legacy-BPH2oTxc.js",
-    "/assets/main-legacy-DChCXtrC.js",
+    "/assets/main-CmP65Ie0.css",
+    "/assets/polyfills-legacy-BbDIZQb1.js",
+    "/assets/main-legacy-Bor-z1pk.js",
     "/assets/fa-brands-400-C99Yv4gD.woff2",
     "/assets/fa-regular-400-OOsPf1xj.woff2",
     "/assets/fa-solid-900-DAI24fNt.woff2",
