@@ -1214,6 +1214,7 @@ class DataService {
                 chargeMode: data.chargeMode ?? 'periodic',
                 createdAt: data.createdAt ?? Date.now(),
             }
+            if (skipLog) delete dataToSave.id
             const tx = this.db.transaction('amortizations', 'readwrite')
             const id = await tx.store.add(dataToSave)
             await tx.done
@@ -1319,6 +1320,7 @@ class DataService {
                 ledgerId: transaction.ledgerId ?? this.activeLedgerId,
                 ...(accountUuid ? { accountUuid } : {}),
             }
+            if (skipLog) delete dataToSave.id
 
             const tx = this.db.transaction(
                 'recurring_transactions',
@@ -2770,14 +2772,6 @@ class DataService {
                     )
                     if (amort?.uuid) syncData.amortizationUuid = amort.uuid
                 }
-                // 7. Statement UUID (for records)
-                if (syncData.statementId && !syncData.statementUuid) {
-                    const stmt = await this.db.get(
-                        'credit_statements',
-                        syncData.statementId
-                    )
-                    if (stmt?.uuid) syncData.statementUuid = stmt.uuid
-                }
             }
 
             const tx = this.db.transaction('sync_log', 'readwrite')
@@ -3292,19 +3286,18 @@ class DataService {
     }
 
     // --- Credit Card Statement Methods ---
+    // 信用卡帳單為各裝置本機由 records/accounts 自動運算產物，不寫入 sync_log，避免多裝置獨立生成衝突與雙重扣款
     async addCreditStatement(stmt, skipLog = false) {
         try {
             if (!stmt.uuid) stmt.uuid = this.generateUUID()
-            stmt.ledgerId = stmt.ledgerId ?? this.activeLedgerId
-            const tx = this.db.transaction('credit_statements', 'readwrite')
-            const id = await tx.store.add(stmt)
-            await tx.done
-            if (!skipLog) {
-                await this.logChange('add', 'credit_statements', id, {
-                    ...stmt,
-                    id,
-                })
+            const dataToSave = {
+                ...stmt,
+                ledgerId: stmt.ledgerId ?? this.activeLedgerId,
             }
+            if (skipLog) delete dataToSave.id
+            const tx = this.db.transaction('credit_statements', 'readwrite')
+            const id = await tx.store.add(dataToSave)
+            await tx.done
             return id
         } catch (error) {
             console.error('Failed to add credit statement:', error)
@@ -3361,9 +3354,6 @@ class DataService {
                 const updated = { ...stmt, ...finalUpdates }
                 await tx.store.put(updated)
                 await tx.done
-                if (!skipLog) {
-                    await this.logChange('update', 'credit_statements', id, updated)
-                }
                 return updated
             }
             throw new Error('Credit statement not found')
@@ -3376,14 +3366,8 @@ class DataService {
     async deleteCreditStatement(id, skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
-            const stmt = await tx.store.get(id)
             await tx.store.delete(id)
             await tx.done
-            if (!skipLog && stmt)
-                await this.logChange('delete', 'credit_statements', id, {
-                    uuid: stmt.uuid,
-                    ledgerId: stmt.ledgerId,
-                })
             return true
         } catch (error) {
             console.error(`Failed to delete credit statement ${id}:`, error)

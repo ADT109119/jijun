@@ -4605,6 +4605,7 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
 
             const appliedKeys = await ss.applyRemoteChanges(changes)
 
+            // amortizations 完整套用
             expect(ds.addAmortization).toHaveBeenCalledWith(
                 expect.objectContaining({ uuid: 'amort-uuid-1' }),
                 true
@@ -4616,18 +4617,46 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             )
             expect(ds.deleteAmortization).toHaveBeenCalledWith(101, true)
 
-            expect(ds.addCreditStatement).toHaveBeenCalledWith(
-                expect.objectContaining({ uuid: 'stmt-uuid-1' }),
-                true
-            )
-            expect(ds.updateCreditStatement).toHaveBeenCalledWith(
-                201,
-                expect.objectContaining({ uuid: 'stmt-uuid-2' }),
-                true
-            )
-            expect(ds.deleteCreditStatement).toHaveBeenCalledWith(201, true)
+            // credit_statements 明示跳過，防止生成重複帳單與雙重扣繳風險
+            expect(ds.addCreditStatement).not.toHaveBeenCalled()
+            expect(ds.updateCreditStatement).not.toHaveBeenCalled()
+            expect(ds.deleteCreditStatement).not.toHaveBeenCalled()
 
+            // 6 筆變更皆被正常確認，不阻擋 appliedKeys 推進
             expect(appliedKeys.size).toBe(6)
+        })
+
+        it('外鍵解析：_resolveRecordAmortizationId 正確將 amortizationUuid 轉換為本地 amortizationId', async () => {
+            ds.getByUUID = vi.fn(async (store, uuid) => {
+                if (store === 'amortizations' && uuid === 'amort-uuid-abc') {
+                    return { id: 77, uuid: 'amort-uuid-abc' }
+                }
+                return null
+            })
+
+            const record = {
+                amount: 1000,
+                amortizationUuid: 'amort-uuid-abc',
+            }
+
+            const resolved = await ss._resolveRecordAmortizationId(record)
+            expect(resolved.amortizationId).toBe(77)
+        })
+
+        it('N4 對稱性：_applyAdd 預設帳本合併分支完整透傳 options', async () => {
+            const localLedger = { id: 1, name: '預設帳本', isShared: false }
+            ds.getLedger = vi.fn(async id => (id === 1 ? localLedger : null))
+            ss._applyUpdateWithId = vi.fn().mockResolvedValue()
+
+            const remoteData = { id: 1, name: '預設帳本', isShared: false }
+            await ss._applyAdd('ledgers', remoteData, { customOpt: true })
+
+            expect(ss._applyUpdateWithId).toHaveBeenCalledWith(
+                'ledgers',
+                1,
+                remoteData,
+                { customOpt: true }
+            )
         })
 
         it('H-B 防護：_applyUpdate 委派至 _applyUpdateWithId 時保留 options，共用帳本變更不回退至 activeLedgerId', async () => {

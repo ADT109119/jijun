@@ -213,6 +213,11 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
         - **帳本刪除 settings 鍵級聯清理與雲端最佳努力清理**：`dataService.deleteLedger` 完整清理所有與帳本 uuid / manifest 相關之 settings 鍵 (`sync_shared_devlog_*`, `shared_migrated_*`, `sync_shared_member_checked_*`, `sync_shared_incomplete_*`, `sync_shared_granted_*`, `sync_manifest_pending_*`)；`ledgerManager.deleteLedger` 進行雲端檔案最佳努力刪除與雙重防禦防殘留
         - **sync_shared_granted 快取綁定 devLogId**：避免舊鍵殘留導致重建 DevLog 後被誤判為已授權
         - **Drive API 搜尋補齊 pageSize=100**：`pullChanges` 查詢裝置日誌補齊 `pageSize=100`，避免退回預設 10 筆
+    - **OCR 輪次審查與防護加固 (Round 5: N1 / N2 / N3 / N4)**：
+        - **N1 防護（遠端 ID 剝離防主鍵撞擊）**：`addAmortization`、`addCreditStatement` 與 `addRecurringTransaction` 於 `skipLog = true` 同步接收路徑時主動剝離外部傳入的 `id`，由本機 IndexedDB 自動遞增分配主鍵，徹底杜絕 ConstraintError 導致的 `appliedKeys` 停滯與日誌重複下載
+        - **N2 防護（信用卡帳單本機運算產物明示跳過）**：信用卡帳單屬各裝置依 `records` / `accounts` 本機自動計算產物，`dataService` 的帳單 CRUD 不寫入 `sync_log`，且 `syncService` 之 `applyRemoteChanges` 與 `_applyAdd` / `_applyUpdateWithId` / `_applyDeleteWithId` 明示跳過 `credit_statements` 同步，由各機獨立產生與銷帳，徹底消除雙裝置同窗生成導致的重複帳單與雙重自動扣繳風險
+        - **N3 防護（攤提自動補跑進度防回退）**：`processAmortizations` 背景自動推進期數時使用 `skipLog = true` 呼叫 `updateAmortization`，防止本機自動推進進度回寫 sync_log 造成對等裝置進度被舊快照回退而重複記帳
+        - **N4 對稱性與角色常數對齊**：`syncService.js` 正式宣告 `OWNER_ROLES = new Set(['owner', 'organizer'])`，且 `_applyAdd` 預設帳本分支補齊 options 委派透傳
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
@@ -237,10 +242,10 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
-- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試、OCR 全量審查加固測試)
+- `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id、刪除帳本級聯清理 6 組 settings 鍵、N1 主鍵剝離與 logChange 外鍵自動補齊)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試、Round 5 OCR 輪次 N1-N4 加固測試)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護、大小寫不敏感權限撤銷與 organizer 角色支援)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1680 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1685 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

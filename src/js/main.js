@@ -730,7 +730,11 @@ export class EasyAccountingApp {
                     if (completedPeriods >= item.periods) {
                         updates.status = 'completed'
                     }
-                    await this.dataService.updateAmortization(item.id, updates)
+                    await this.dataService.updateAmortization(
+                        item.id,
+                        updates,
+                        true
+                    )
                 }
             } catch (error) {
                 console.error(

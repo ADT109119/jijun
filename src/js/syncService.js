@@ -42,6 +42,8 @@ const isNative =
     typeof window !== 'undefined' &&
     window.Capacitor?.isNativePlatform?.() === true
 
+const OWNER_ROLES = new Set(['owner', 'organizer'])
+
 /**
  * Google SDK 按需載入（批次 3：取代 index.html 的兩個 eager <script>，
  * 讓首屏不載入登入/同步才需要的 Google 基建）。
@@ -959,7 +961,7 @@ export class SyncService {
         if (!changes || changes.length === 0) return new Set()
 
         // 定義建立依賴的拓撲順序：
-        // 類別 -> 帳本 -> 專案群組 -> 帳戶 -> 聯絡人 -> 欠款/借貸 -> 攤提計畫 -> 收支明細 -> 信用卡帳單 -> 定期收支
+        // 類別 -> 帳本 -> 專案群組 -> 帳戶 -> 聯絡人 -> 欠款/借貸 -> 攤提計畫 -> 收支明細 -> 定期收支
         const topoOrder = [
             'custom_categories',
             'category_order',
@@ -972,7 +974,6 @@ export class SyncService {
             'debts',
             'amortizations',
             'records',
-            'credit_statements',
             'recurring_transactions',
         ]
 
@@ -2193,7 +2194,7 @@ export class SyncService {
                                 ledger.sharedFileId
                             )) || []
                         const owner = legacyPerms.find(
-                            p => p.role === 'owner' || p.role === 'organizer'
+                            p => OWNER_ROLES.has(p.role)
                         )
                         if (owner?.emailAddress) {
                             ownerEmail = owner.emailAddress
@@ -3181,22 +3182,6 @@ export class SyncService {
         }
     }
 
-    async _resolveRecordStatementId(data) {
-        if (!data.statementUuid) return data
-        try {
-            const stmt = await this.dataService.getByUUID(
-                'credit_statements',
-                data.statementUuid
-            )
-            return {
-                ...data,
-                statementId: stmt ? stmt.id : data.statementId || null,
-            }
-        } catch (_) {
-            return data
-        }
-    }
-
     async _resolveAllForeignKeys(storeName, data) {
         if (!data) return data
         let resolved = await this._resolveLedgerId(data)
@@ -3205,17 +3190,13 @@ export class SyncService {
             resolved = await this._resolveRecordDebtId(resolved)
             resolved = await this._resolveRecordGroupId(resolved)
             resolved = await this._resolveRecordAmortizationId(resolved)
-            resolved = await this._resolveRecordStatementId(resolved)
         } else if (storeName === 'debts') {
             resolved = await this._resolveRecordAccountId(resolved)
             resolved = await this._resolveRecordDebtId(resolved)
         }
         if (storeName === 'recurring_transactions') {
             resolved = await this._resolveRecurringAccountId(resolved)
-        } else if (
-            storeName === 'amortizations' ||
-            storeName === 'credit_statements'
-        ) {
+        } else if (storeName === 'amortizations') {
             resolved = await this._resolveRecordAccountId(resolved)
         }
         return resolved
@@ -3408,7 +3389,7 @@ export class SyncService {
         ) {
             const localDefaultLedger = await this.dataService.getLedger(1)
             if (localDefaultLedger && !localDefaultLedger.isShared) {
-                await this._applyUpdateWithId(storeName, 1, data)
+                await this._applyUpdateWithId(storeName, 1, data, options)
                 return
             }
         }
@@ -3435,8 +3416,6 @@ export class SyncService {
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
                 resolvedRecord =
                     await this._resolveRecordAmortizationId(resolvedRecord)
-                resolvedRecord =
-                    await this._resolveRecordStatementId(resolvedRecord)
                 await this.dataService.addRecord(resolvedRecord, true)
                 break
             }
@@ -3519,9 +3498,7 @@ export class SyncService {
                 break
             }
             case 'credit_statements': {
-                let resolvedStmt = await this._resolveLedgerId(data, options)
-                resolvedStmt = await this._resolveRecordAccountId(resolvedStmt)
-                await this.dataService.addCreditStatement(resolvedStmt, true)
+                // 信用卡帳單為各裝置本機由 records/accounts 自動運算產物，明示跳過不同步，避免多裝置獨立生成衝突與重複扣款
                 break
             }
             default:
@@ -3784,8 +3761,6 @@ export class SyncService {
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
                 resolvedRecord =
                     await this._resolveRecordAmortizationId(resolvedRecord)
-                resolvedRecord =
-                    await this._resolveRecordStatementId(resolvedRecord)
                 await this.dataService.updateRecord(id, resolvedRecord, true)
                 break
             }
@@ -3883,13 +3858,7 @@ export class SyncService {
                 break
             }
             case 'credit_statements': {
-                let resolvedStmt = await this._resolveLedgerId(data, options)
-                resolvedStmt = await this._resolveRecordAccountId(resolvedStmt)
-                await this.dataService.updateCreditStatement(
-                    id,
-                    resolvedStmt,
-                    true
-                )
+                // 信用卡帳單為本機計算產物，明示跳過
                 break
             }
             default:
@@ -3956,7 +3925,7 @@ export class SyncService {
                 await this.dataService.deleteAmortization(id, true)
                 break
             case 'credit_statements':
-                await this.dataService.deleteCreditStatement(id, true)
+                // 信用卡帳單為本機計算產物，明示跳過
                 break
             default:
                 console.warn(
