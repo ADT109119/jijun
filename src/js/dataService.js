@@ -1214,6 +1214,7 @@ class DataService {
                 chargeMode: data.chargeMode ?? 'periodic',
                 createdAt: data.createdAt ?? Date.now(),
             }
+            if (skipLog) delete dataToSave.id
             const tx = this.db.transaction('amortizations', 'readwrite')
             const id = await tx.store.add(dataToSave)
             await tx.done
@@ -1319,6 +1320,7 @@ class DataService {
                 ledgerId: transaction.ledgerId ?? this.activeLedgerId,
                 ...(accountUuid ? { accountUuid } : {}),
             }
+            if (skipLog) delete dataToSave.id
 
             const tx = this.db.transaction(
                 'recurring_transactions',
@@ -2762,6 +2764,14 @@ class DataService {
                     )
                     if (record?.uuid) syncData.recordUuid = record.uuid
                 }
+                // 6. Amortization UUID (for records)
+                if (syncData.amortizationId && !syncData.amortizationUuid) {
+                    const amort = await this.db.get(
+                        'amortizations',
+                        syncData.amortizationId
+                    )
+                    if (amort?.uuid) syncData.amortizationUuid = amort.uuid
+                }
             }
 
             const tx = this.db.transaction('sync_log', 'readwrite')
@@ -2843,6 +2853,28 @@ class DataService {
             await tx.done
         } catch (err) {
             console.error('[DataService] clearSyncLog error:', err)
+        }
+    }
+
+    /**
+     * 依據具體 ID 清除已成功推送的同步日誌
+     * @param {Array<number>} ids - sync_log 主鍵 ID 陣列
+     * @returns {Promise<boolean>}
+     */
+    async deleteSyncLogsByIds(ids) {
+        if (this.useLocalStorage || !this.db || !Array.isArray(ids) || ids.length === 0) return true
+        const validIds = ids.filter(id => typeof id === 'number' && Number.isInteger(id))
+        if (validIds.length === 0) return true
+        try {
+            const tx = this.db.transaction('sync_log', 'readwrite')
+            for (const id of validIds) {
+                tx.store.delete(id)
+            }
+            await tx.done
+            return true
+        } catch (err) {
+            console.error('[DataService] deleteSyncLogsByIds error:', err)
+            return false
         }
     }
 
@@ -3254,17 +3286,18 @@ class DataService {
     }
 
     // --- Credit Card Statement Methods ---
-    async addCreditStatement(stmt) {
+    // 信用卡帳單為各裝置本機由 records/accounts 自動運算產物，不寫入 sync_log，避免多裝置獨立生成衝突與雙重扣款
+    async addCreditStatement(stmt, skipLog = false) {
         try {
             if (!stmt.uuid) stmt.uuid = this.generateUUID()
-            stmt.ledgerId = stmt.ledgerId ?? this.activeLedgerId
-            const tx = this.db.transaction('credit_statements', 'readwrite')
-            const id = await tx.store.add(stmt)
-            await tx.done
-            await this.logChange('add', 'credit_statements', id, {
+            const dataToSave = {
                 ...stmt,
-                id,
-            })
+                ledgerId: stmt.ledgerId ?? this.activeLedgerId,
+            }
+            if (skipLog) delete dataToSave.id
+            const tx = this.db.transaction('credit_statements', 'readwrite')
+            const id = await tx.store.add(dataToSave)
+            await tx.done
             return id
         } catch (error) {
             console.error('Failed to add credit statement:', error)
@@ -3308,15 +3341,19 @@ class DataService {
         }
     }
 
-    async updateCreditStatement(id, updates) {
+    async updateCreditStatement(id, updates, skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
             const stmt = await tx.store.get(id)
             if (stmt) {
-                const updated = { ...stmt, ...updates }
+                const finalUpdates = { ...updates }
+                if (skipLog) {
+                    delete finalUpdates.id
+                    if (stmt.uuid) finalUpdates.uuid = stmt.uuid
+                }
+                const updated = { ...stmt, ...finalUpdates }
                 await tx.store.put(updated)
                 await tx.done
-                await this.logChange('update', 'credit_statements', id, updated)
                 return updated
             }
             throw new Error('Credit statement not found')
@@ -3326,17 +3363,11 @@ class DataService {
         }
     }
 
-    async deleteCreditStatement(id) {
+    async deleteCreditStatement(id, skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
-            const stmt = await tx.store.get(id)
             await tx.store.delete(id)
             await tx.done
-            if (stmt)
-                await this.logChange('delete', 'credit_statements', id, {
-                    uuid: stmt.uuid,
-                    ledgerId: stmt.ledgerId,
-                })
             return true
         } catch (error) {
             console.error(`Failed to delete credit statement ${id}:`, error)
@@ -5068,12 +5099,35 @@ class DataService {
 
             const tx = this.db.transaction('ledgers', 'readwrite')
             let uuid = null
-            if (!skipLog) {
-                const ledger = await tx.store.get(id)
-                uuid = ledger?.uuid
+            let sharedManifestId = null
+            const ledger = await tx.store.get(id)
+            if (ledger) {
+                uuid = ledger.uuid
+                sharedManifestId = ledger.sharedManifestId
             }
             await tx.store.delete(id)
             await tx.done
+
+            // 清理共用帳本之設定與快取旗標，防止殘留造成殭屍狀態
+            if (uuid) {
+                const devLogKey = `sync_shared_devlog_${uuid}`
+                const devLogSetting = await this.getSetting(devLogKey)
+                const devLogId = devLogSetting?.value
+                await this.saveSetting({ key: devLogKey, value: null })
+                await this.saveSetting({ key: `shared_migrated_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_member_checked_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_incomplete_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_granted_${uuid}`, value: null })
+                if (devLogId) {
+                    await this.saveSetting({ key: `sync_shared_granted_${uuid}_${devLogId}`, value: null })
+                }
+            }
+            if (sharedManifestId) {
+                await this.saveSetting({
+                    key: `sync_manifest_pending_${sharedManifestId}`,
+                    value: null,
+                })
+            }
 
             if (!skipLog)
                 await this.logChange('delete', 'ledgers', id, { uuid })

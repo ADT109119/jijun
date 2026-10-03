@@ -2332,6 +2332,59 @@ describe('DataService — 帳本切換與邊界情境', () => {
         expect(ds.activeLedgerId).toBe(1)
         expect(localStorage.getItem('activeLedgerId')).toBe('1')
     })
+
+    it('deleteLedger 級聯清理共用帳本相關的 6 組 settings 鍵', async () => {
+        const ledger = {
+            id: 9,
+            name: '待刪共用帳本',
+            uuid: 'target-shared-uuid',
+            sharedManifestId: 'mf_cleanup_test',
+        }
+        ds.db._storeData.ledgers.push(ledger)
+
+        await ds.saveSetting({ key: 'sync_shared_devlog_target-shared-uuid', value: 'dl_1' })
+        await ds.saveSetting({ key: 'shared_migrated_target-shared-uuid', value: true })
+        await ds.saveSetting({ key: 'sync_shared_member_checked_target-shared-uuid', value: {} })
+        await ds.saveSetting({ key: 'sync_shared_incomplete_target-shared-uuid', value: {} })
+        await ds.saveSetting({ key: 'sync_shared_granted_target-shared-uuid_dl_1', value: ['a@test.com'] })
+        await ds.saveSetting({ key: 'sync_manifest_pending_mf_cleanup_test', value: ['pending@test.com'] })
+
+        await ds.deleteLedger(9)
+
+        expect((await ds.getSetting('sync_shared_devlog_target-shared-uuid'))?.value).toBeNull()
+        expect((await ds.getSetting('shared_migrated_target-shared-uuid'))?.value).toBeNull()
+        expect((await ds.getSetting('sync_shared_member_checked_target-shared-uuid'))?.value).toBeNull()
+        expect((await ds.getSetting('sync_shared_incomplete_target-shared-uuid'))?.value).toBeNull()
+        expect((await ds.getSetting('sync_shared_granted_target-shared-uuid_dl_1'))?.value).toBeNull()
+        expect((await ds.getSetting('sync_manifest_pending_mf_cleanup_test'))?.value).toBeNull()
+    })
+
+    it('N1 防護：addAmortization 與 addRecurringTransaction 在 skipLog=true 時剝離外部傳入的 id，避免主鍵撞擊', async () => {
+        const id1 = await ds.addAmortization({ name: '分期 1', periods: 12, totalAmount: 1200 })
+        const id2 = await ds.addAmortization({ id: id1, name: '分期 2', periods: 6, totalAmount: 600 }, true)
+        expect(id2).not.toBe(id1)
+        expect(id2).toBeGreaterThan(id1)
+
+        const rt1 = await ds.addRecurringTransaction({ description: '週期 1', amount: 100 })
+        const rt2 = await ds.addRecurringTransaction({ id: rt1, description: '週期 2', amount: 200 }, true)
+        expect(rt2).not.toBe(rt1)
+        expect(rt2).toBeGreaterThan(rt1)
+    })
+
+    it('logChange 自動補齊 amortizationUuid', async () => {
+        const amortId = await ds.addAmortization({ name: '計畫A', periods: 3, totalAmount: 300 })
+        const amort = await ds.getAmortization(amortId)
+
+        await ds.logChange('add', 'records', 99, {
+            description: '分期明細',
+            amount: 100,
+            amortizationId: amortId,
+        })
+
+        const logs = await ds.db.getAll('sync_log')
+        const lastLog = logs[logs.length - 1]
+        expect(lastLog.data.amortizationUuid).toBe(amort.uuid)
+    })
 })
 
 describe('DataService — 帳戶 CRUD 驗證', () => {
