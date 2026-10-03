@@ -523,7 +523,7 @@ export class LedgersPage {
                 <div class="mt-6 p-4 bg-wabi-bg rounded-lg border border-wabi-border">
                     <p class="text-xs text-wabi-text-secondary mb-1">現有共用代碼（已啟用）：</p>
                     <div class="flex items-center gap-2 mb-3">
-                        <input type="text" readonly value="${shareCode}" class="flex-1 bg-wabi-surface border border-wabi-border rounded px-2 py-1 text-xs text-wabi-text-primary outline-none" />
+                        <input type="text" readonly value="${escapeHTML(shareCode)}" class="flex-1 bg-wabi-surface border border-wabi-border rounded px-2 py-1 text-xs text-wabi-text-primary outline-none" />
                         <button class="copy-code-btn px-3 py-1 bg-wabi-bg hover:bg-wabi-border rounded text-xs transition-colors shrink-0">複製</button>
                     </div>
                     

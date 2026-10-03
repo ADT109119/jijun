@@ -2762,6 +2762,22 @@ class DataService {
                     )
                     if (record?.uuid) syncData.recordUuid = record.uuid
                 }
+                // 6. Amortization UUID (for records)
+                if (syncData.amortizationId && !syncData.amortizationUuid) {
+                    const amort = await this.db.get(
+                        'amortizations',
+                        syncData.amortizationId
+                    )
+                    if (amort?.uuid) syncData.amortizationUuid = amort.uuid
+                }
+                // 7. Statement UUID (for records)
+                if (syncData.statementId && !syncData.statementUuid) {
+                    const stmt = await this.db.get(
+                        'credit_statements',
+                        syncData.statementId
+                    )
+                    if (stmt?.uuid) syncData.statementUuid = stmt.uuid
+                }
             }
 
             const tx = this.db.transaction('sync_log', 'readwrite')
@@ -3276,17 +3292,19 @@ class DataService {
     }
 
     // --- Credit Card Statement Methods ---
-    async addCreditStatement(stmt) {
+    async addCreditStatement(stmt, skipLog = false) {
         try {
             if (!stmt.uuid) stmt.uuid = this.generateUUID()
             stmt.ledgerId = stmt.ledgerId ?? this.activeLedgerId
             const tx = this.db.transaction('credit_statements', 'readwrite')
             const id = await tx.store.add(stmt)
             await tx.done
-            await this.logChange('add', 'credit_statements', id, {
-                ...stmt,
-                id,
-            })
+            if (!skipLog) {
+                await this.logChange('add', 'credit_statements', id, {
+                    ...stmt,
+                    id,
+                })
+            }
             return id
         } catch (error) {
             console.error('Failed to add credit statement:', error)
@@ -3330,15 +3348,22 @@ class DataService {
         }
     }
 
-    async updateCreditStatement(id, updates) {
+    async updateCreditStatement(id, updates, skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
             const stmt = await tx.store.get(id)
             if (stmt) {
-                const updated = { ...stmt, ...updates }
+                const finalUpdates = { ...updates }
+                if (skipLog) {
+                    delete finalUpdates.id
+                    if (stmt.uuid) finalUpdates.uuid = stmt.uuid
+                }
+                const updated = { ...stmt, ...finalUpdates }
                 await tx.store.put(updated)
                 await tx.done
-                await this.logChange('update', 'credit_statements', id, updated)
+                if (!skipLog) {
+                    await this.logChange('update', 'credit_statements', id, updated)
+                }
                 return updated
             }
             throw new Error('Credit statement not found')
@@ -3348,13 +3373,13 @@ class DataService {
         }
     }
 
-    async deleteCreditStatement(id) {
+    async deleteCreditStatement(id, skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
             const stmt = await tx.store.get(id)
             await tx.store.delete(id)
             await tx.done
-            if (stmt)
+            if (!skipLog && stmt)
                 await this.logChange('delete', 'credit_statements', id, {
                     uuid: stmt.uuid,
                     ledgerId: stmt.ledgerId,
@@ -5099,7 +5124,20 @@ class DataService {
             await tx.store.delete(id)
             await tx.done
 
-            // N3 防護：若刪除之帳本為共用帳本，清理 pending 授權佇列
+            // 清理共用帳本之設定與快取旗標，防止殘留造成殭屍狀態
+            if (uuid) {
+                const devLogKey = `sync_shared_devlog_${uuid}`
+                const devLogSetting = await this.getSetting(devLogKey)
+                const devLogId = devLogSetting?.value
+                await this.saveSetting({ key: devLogKey, value: null })
+                await this.saveSetting({ key: `shared_migrated_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_member_checked_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_incomplete_${uuid}`, value: null })
+                await this.saveSetting({ key: `sync_shared_granted_${uuid}`, value: null })
+                if (devLogId) {
+                    await this.saveSetting({ key: `sync_shared_granted_${uuid}_${devLogId}`, value: null })
+                }
+            }
             if (sharedManifestId) {
                 await this.saveSetting({
                     key: `sync_manifest_pending_${sharedManifestId}`,

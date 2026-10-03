@@ -205,6 +205,14 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
     - **Google Drive 完整分頁遍歷**：`listBackups` 與 `markAllRemoteChangesAsPulled` 導入 `nextPageToken` 迴圈支援跨多頁檔案清單查詢
     - **ETag 遙測警示與 JSDoc 校正**：`_downloadFileStrict` 缺少 ETag 標頭時輸出警示日誌避免靜默降級；`_appendToDeviceLog` JSDoc 校正為全量保留變更歷史
     - **推送階段 API 呼叫節流**：`pushSharedLedgerChanges` 本地無待推送變更時略過重複之 `_ensureSharedInfra` 呼叫，減省 Drive API 配額
+    - **OCR 全量審查加固 (H-A / H-B / H-C)**：
+        - **H-A 完整覆蓋 amortizations 與 credit_statements**：`syncService.js` 之 `_applyAdd`, `_applyUpdateWithId`, `_applyDeleteWithId` 補全 `amortizations` 與 `credit_statements` 的處理邏輯；`_resolveAllForeignKeys` 補全 `amortizationUuid` 與 `statementUuid` 解析；`dataService.js` 補齊 `skipLog` 參數杜絕回聲日誌
+        - **H-B options 委派透傳與防劫持守門**：`_applyUpdate` 委派至 `_applyUpdateWithId` 時完整透傳 `options`，確保 `options.isShared` 不遺失，共用帳本變更不會因外鍵缺失回退至本地使用中的 `activeLedgerId`
+        - **H-C 撤銷權限大小寫不敏感正規化比對**：`ledgerManager.js:removeSharedUser` 抽取 `_revokePermissionByEmail`，將 Drive 權限之 `emailAddress` 與邀請 email 統一 `toLowerCase()` 進行比對，杜絕大小寫差異導致撤權失敗
+        - **Shared Drive organizer 角色支援**：`ledgerManager.js` 與 `syncService.js` 定義 `OWNER_ROLES = new Set(['owner', 'organizer'])`，完整相容 Google Workspace Shared Drive 組織者管理員身分
+        - **帳本刪除 settings 鍵級聯清理與雲端最佳努力清理**：`dataService.deleteLedger` 完整清理所有與帳本 uuid / manifest 相關之 settings 鍵 (`sync_shared_devlog_*`, `shared_migrated_*`, `sync_shared_member_checked_*`, `sync_shared_incomplete_*`, `sync_shared_granted_*`, `sync_manifest_pending_*`)；`ledgerManager.deleteLedger` 進行雲端檔案最佳努力刪除與雙重防禦防殘留
+        - **sync_shared_granted 快取綁定 devLogId**：避免舊鍵殘留導致重建 DevLog 後被誤判為已授權
+        - **Drive API 搜尋補齊 pageSize=100**：`pullChanges` 查詢裝置日誌補齊 `pageSize=100`，避免退回預設 10 筆
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
@@ -230,9 +238,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出
 - `statistics.test.js` # 測試統計分析頁面 (跨月比較、XSS 防護)
 - `dataService.test.js` # 測試 IndexedDB 資料層 (含紀錄多層級排序 date/timestamp/id 與刪除帳本級聯清理)
-- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試)
-- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護)
+- `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試、OCR 全量審查加固測試)
+- `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護、大小寫不敏感權限撤銷與 organizer 角色支援)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 38 個測試檔案，1674 項測試全部通過）
+- ...等等（共有 38 個測試檔案，1680 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

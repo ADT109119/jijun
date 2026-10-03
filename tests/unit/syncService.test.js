@@ -627,7 +627,8 @@ describe('SyncService', () => {
             expect(updateWithIdSpy).toHaveBeenCalledWith(
                 'accounts',
                 42,
-                expect.objectContaining({ uuid: 'acc-uuid-exist' })
+                expect.objectContaining({ uuid: 'acc-uuid-exist' }),
+                {}
             )
             expect(applyAddSpy).not.toHaveBeenCalled()
         })
@@ -4539,6 +4540,150 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             expect(ds.saveSetting).not.toHaveBeenCalledWith(
                 expect.objectContaining({ key: 'sync_shared_applied_keys' })
             )
+        })
+
+        it('H-A 防護：applyRemoteChanges 完整支援 amortizations 與 credit_statements 的 add/update/delete', async () => {
+            ds.addAmortization = vi.fn(async () => 101)
+            ds.updateAmortization = vi.fn(async () => ({ id: 101 }))
+            ds.deleteAmortization = vi.fn(async () => true)
+
+            ds.addCreditStatement = vi.fn(async () => 201)
+            ds.updateCreditStatement = vi.fn(async () => ({ id: 201 }))
+            ds.deleteCreditStatement = vi.fn(async () => true)
+
+            ds.getByUUID = vi.fn(async (store, uuid) => {
+                if (uuid === 'amort-uuid-2') return { id: 101, uuid }
+                if (uuid === 'stmt-uuid-2') return { id: 201, uuid }
+                return null
+            })
+
+            const now = Date.now()
+            const changes = [
+                {
+                    storeName: 'amortizations',
+                    operation: 'add',
+                    recordId: 101,
+                    timestamp: now,
+                    data: { uuid: 'amort-uuid-1', name: '分期計畫 1' },
+                },
+                {
+                    storeName: 'amortizations',
+                    operation: 'update',
+                    recordId: 101,
+                    timestamp: now + 1,
+                    data: { uuid: 'amort-uuid-2', name: '分期計畫更新' },
+                },
+                {
+                    storeName: 'amortizations',
+                    operation: 'delete',
+                    recordId: 101,
+                    timestamp: now + 2,
+                    data: { uuid: 'amort-uuid-2' },
+                },
+                {
+                    storeName: 'credit_statements',
+                    operation: 'add',
+                    recordId: 201,
+                    timestamp: now + 3,
+                    data: { uuid: 'stmt-uuid-1', period: '2026-09' },
+                },
+                {
+                    storeName: 'credit_statements',
+                    operation: 'update',
+                    recordId: 201,
+                    timestamp: now + 4,
+                    data: { uuid: 'stmt-uuid-2', period: '2026-09-updated' },
+                },
+                {
+                    storeName: 'credit_statements',
+                    operation: 'delete',
+                    recordId: 201,
+                    timestamp: now + 5,
+                    data: { uuid: 'stmt-uuid-2' },
+                },
+            ]
+
+            const appliedKeys = await ss.applyRemoteChanges(changes)
+
+            expect(ds.addAmortization).toHaveBeenCalledWith(
+                expect.objectContaining({ uuid: 'amort-uuid-1' }),
+                true
+            )
+            expect(ds.updateAmortization).toHaveBeenCalledWith(
+                101,
+                expect.objectContaining({ uuid: 'amort-uuid-2' }),
+                true
+            )
+            expect(ds.deleteAmortization).toHaveBeenCalledWith(101, true)
+
+            expect(ds.addCreditStatement).toHaveBeenCalledWith(
+                expect.objectContaining({ uuid: 'stmt-uuid-1' }),
+                true
+            )
+            expect(ds.updateCreditStatement).toHaveBeenCalledWith(
+                201,
+                expect.objectContaining({ uuid: 'stmt-uuid-2' }),
+                true
+            )
+            expect(ds.deleteCreditStatement).toHaveBeenCalledWith(201, true)
+
+            expect(appliedKeys.size).toBe(6)
+        })
+
+        it('H-B 防護：_applyUpdate 委派至 _applyUpdateWithId 時保留 options，共用帳本變更不回退至 activeLedgerId', async () => {
+            const existingRecord = { id: 88, uuid: 'rec-target-uuid', ledgerId: 2 }
+            ds.getByUUID = vi.fn(async (store, uuid) => {
+                if (store === 'records' && uuid === 'rec-target-uuid') return existingRecord
+                return null
+            })
+            // 本地帳本清單不包含遠端變更中的 ledgerUuid
+            ds.getLedgers = vi.fn(async () => [
+                { id: 1, uuid: 'personal-ledger-1' },
+            ])
+            ds.activeLedgerId = 1
+            ds.updateRecord = vi.fn(async () => ({ id: 88 }))
+
+            const remoteData = {
+                id: 88,
+                uuid: 'rec-target-uuid',
+                ledgerUuid: 'nonexistent-shared-ledger-uuid',
+                amount: 500,
+            }
+
+            await ss._applyUpdate('records', 88, remoteData, { isShared: true })
+
+            // 確保 _resolveLedgerId 收到 options.isShared: true，未匹配到時不回退至 activeLedgerId (1)
+            expect(ds.updateRecord).toHaveBeenCalledWith(
+                88,
+                expect.not.objectContaining({ ledgerId: 1 }),
+                true
+            )
+        })
+
+        it('Shared Drive 相容：_ensureSharedInfra 識別 organizer 角色為合法的舊檔擁有者', async () => {
+            const ledger = {
+                id: 10,
+                uuid: 'uuid-shared-drive',
+                name: '團隊共用帳本',
+                isShared: true,
+                sharedFileId: 'shared_drive_file_id',
+            }
+            ss.userInfo = { email: 'organizer@company.com' }
+            // Google Workspace Shared Drive 回傳 role: 'organizer'
+            ss.getFilePermissions = vi.fn(async () => [
+                { role: 'organizer', emailAddress: 'organizer@company.com' },
+                { role: 'writer', emailAddress: 'member@company.com' },
+            ])
+            ss._createSharedFile = vi.fn(async () => ({ id: 'mf_organizer' }))
+            globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ files: [] }) }))
+            ss._downloadFileStrict = vi.fn(async () => ({ data: { changes: [], members: [] }, etag: 'etag1' }))
+            ss._updateFile = vi.fn(async () => {})
+            ss._grantDevLogPermissions = vi.fn(async () => {})
+            ss._registerSelfInManifest = vi.fn(async () => true)
+
+            // 不應拋出「尚未由擁有者完成新版遷移」例外
+            const infra = await ss._ensureSharedInfra(ledger)
+            expect(infra.manifestId).toBe('mf_organizer')
         })
     })
 })

@@ -39,6 +39,9 @@ const LEDGER_ICONS = [
     'fa-solid fa-users',
 ]
 
+// 支援 Google Drive 一般雲端硬碟 (owner) 與共用雲端硬碟 (organizer) 角色
+const OWNER_ROLES = new Set(['owner', 'organizer'])
+
 export class LedgerManager {
     /**
      * @param {import('./dataService.js').default} dataService
@@ -182,8 +185,32 @@ export class LedgerManager {
      */
     async deleteLedger(id) {
         const ledger = await this.dataService.getLedger(id)
+        if (ledger && this.app?.syncService?.isSignedIn?.()) {
+            try {
+                const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                const devLogId = (
+                    await this.dataService.getSetting(devLogKey)
+                )?.value
+                if (devLogId) {
+                    await this.app.syncService.deleteFile(devLogId).catch(() => {})
+                }
+                const isOwner = await this.isLedgerOwner(id).catch(() => false)
+                if (isOwner && ledger.sharedManifestId) {
+                    await this.app.syncService
+                        .deleteFile(ledger.sharedManifestId)
+                        .catch(() => {})
+                }
+                if (isOwner && ledger.sharedFileId) {
+                    await this.app.syncService
+                        .deleteFile(ledger.sharedFileId)
+                        .catch(() => {})
+                }
+            } catch (e) {
+                console.warn('[LedgerManager] 刪除帳本雲端檔案失敗:', e)
+            }
+        }
         if (ledger?.sharedManifestId) {
-            await this.dataService.saveSetting({
+            await this.dataService.saveSetting?.({
                 key: `sync_manifest_pending_${ledger.sharedManifestId}`,
                 value: null,
             })
@@ -254,7 +281,7 @@ export class LedgerManager {
                     ) {
                         await this.dataService.saveSetting({
                             key: grantedKey,
-                            value: [...grantedList, email],
+                            value: [...grantedList, email.toLowerCase()],
                         })
                     }
                 } catch (_) {}
@@ -330,6 +357,7 @@ export class LedgerManager {
         //    _ensureSharedInfra 會把剛寫入舊檔的初始變更併入自己的日誌，
         //    並把 manifest 指標寫回舊檔
         const updatedLedger = await this.dataService.getLedger(ledgerId)
+        if (!updatedLedger) throw new Error('帳本不存在')
         const infra =
             await this.app.syncService._ensureSharedInfra(updatedLedger)
 
@@ -448,7 +476,7 @@ export class LedgerManager {
             } catch (_) {}
 
             const driveOwner = Array.isArray(drivePerms)
-                ? drivePerms.find(p => p.role === 'owner')
+                ? drivePerms.find(p => OWNER_ROLES.has(p.role))
                 : null
             const verifiedOwnerEmail = driveOwner?.emailAddress
 
@@ -465,7 +493,7 @@ export class LedgerManager {
                 verifiedOwnerEmail || manifest?.ownerEmail
 
             const memberList = (manifest?.members || []).map((m, i) => ({
-                id: m.deviceId,
+                id: m.deviceId || `device_${i}`,
                 emailAddress: m.ownerEmail,
                 displayName: '',
                 // 優先以 Drive 伺服器端驗證的 owner 判定；否則頂層 ownerEmail；否則退回位置判定
@@ -493,7 +521,7 @@ export class LedgerManager {
                         id: perm.id,
                         emailAddress: perm.emailAddress,
                         displayName: perm.displayName || '',
-                        role: perm.role === 'owner' ? 'owner' : 'writer',
+                        role: OWNER_ROLES.has(perm.role) ? 'owner' : 'writer',
                     })
                     knownEmails.add(perm.emailAddress.toLowerCase())
                 }
@@ -560,67 +588,23 @@ export class LedgerManager {
                 throw new Error('移除成員失敗，可能是並行衝突或網路錯誤')
             }
             if (removedEmail) {
-                // 撤銷該成員在 Google Drive Manifest、舊檔案及本地 devLog 上的權限
-                try {
-                    const manifestPerms =
-                        await this.app.syncService.getFilePermissions(
-                            ledger.sharedManifestId
-                        )
-                    const p = manifestPerms.find(
-                        x => x.emailAddress === removedEmail
-                    )
-                    if (p) {
-                        await this.app.syncService.removeFilePermission(
-                            ledger.sharedManifestId,
-                            p.id
-                        )
-                    }
-                } catch (e) {
-                    console.warn('[LedgerManager] 撤銷 Manifest 權限失敗:', e)
-                }
-
+                // 撤銷該成員在 Google Drive Manifest、舊檔案及本地 devLog 上的權限（忽略大小寫 H-C）
+                await this._revokePermissionByEmail(
+                    ledger.sharedManifestId,
+                    removedEmail
+                )
                 if (ledger.sharedFileId) {
-                    try {
-                        const filePerms =
-                            await this.app.syncService.getFilePermissions(
-                                ledger.sharedFileId
-                            )
-                        const p = filePerms.find(
-                            x => x.emailAddress === removedEmail
-                        )
-                        if (p) {
-                            await this.app.syncService.removeFilePermission(
-                                ledger.sharedFileId,
-                                p.id
-                            )
-                        }
-                    } catch (e) {
-                        console.warn('[LedgerManager] 撤銷共用舊檔權限失敗:', e)
-                    }
+                    await this._revokePermissionByEmail(
+                        ledger.sharedFileId,
+                        removedEmail
+                    )
                 }
-
-                try {
-                    const devLogKey = `sync_shared_devlog_${ledger.uuid}`
-                    const devLogId = (
-                        await this.dataService.getSetting(devLogKey)
-                    )?.value
-                    if (devLogId) {
-                        const devLogPerms =
-                            await this.app.syncService.getFilePermissions(
-                                devLogId
-                            )
-                        const p = devLogPerms.find(
-                            x => x.emailAddress === removedEmail
-                        )
-                        if (p) {
-                            await this.app.syncService.removeFilePermission(
-                                devLogId,
-                                p.id
-                            )
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[LedgerManager] 撤銷日誌檔權限失敗:', e)
+                const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                const devLogId = (
+                    await this.dataService.getSetting(devLogKey)
+                )?.value
+                if (devLogId) {
+                    await this._revokePermissionByEmail(devLogId, removedEmail)
                 }
 
                 // 清理本機已授權快取，確保日後重新邀請/加入時能正確重新授予 DevLog 讀取權限
@@ -675,6 +659,25 @@ export class LedgerManager {
     }
 
     /**
+     * 撤銷指定 Google Drive 檔案對某 email 的權限（忽略大小寫）
+     * @param {string} fileId
+     * @param {string} email
+     */
+    async _revokePermissionByEmail(fileId, email) {
+        if (!fileId || !email) return
+        try {
+            const perms = await this.app.syncService.getFilePermissions(fileId)
+            const target = email.toLowerCase()
+            const p = perms.find(x => x.emailAddress?.toLowerCase() === target)
+            if (p) {
+                await this.app.syncService.removeFilePermission(fileId, p.id)
+            }
+        } catch (e) {
+            console.warn(`[LedgerManager] 撤銷檔案 ${fileId} 權限失敗:`, e)
+        }
+    }
+
+    /**
      * 判斷當前使用者是否為該共用帳本的擁有者
      * @param {number} ledgerId
      * @returns {Promise<boolean>}
@@ -698,7 +701,7 @@ export class LedgerManager {
                         )
                     if (Array.isArray(drivePerms) && drivePerms.length > 0) {
                         const driveOwner = drivePerms.find(
-                            p => p.role === 'owner'
+                            p => OWNER_ROLES.has(p.role)
                         )
                         if (driveOwner?.emailAddress) {
                             return (

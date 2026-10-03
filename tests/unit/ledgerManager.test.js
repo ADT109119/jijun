@@ -33,6 +33,8 @@ describe('LedgerManager', () => {
                 credit_statements: [],
                 records: [],
             }),
+            saveSetting: vi.fn(),
+            getSetting: vi.fn(),
         }
 
         mockApp = {
@@ -1139,6 +1141,103 @@ describe('LedgerManager', () => {
             expect(Array.isArray(icons)).toBe(true)
             expect(icons.length).toBeGreaterThan(0)
             expect(icons[0]).toBe('fa-solid fa-book')
+        })
+    })
+
+    describe('PR #69 OCR 全量審查驗證 (H-C & Organizer Role)', () => {
+        let mockSyncService
+
+        beforeEach(() => {
+            mockSyncService = {
+                _downloadFile: vi.fn(),
+                removeManifestMember: vi.fn(),
+                getFilePermissions: vi.fn(),
+                removeFilePermission: vi.fn(),
+                deleteFile: vi.fn(),
+                isSignedIn: vi.fn().mockReturnValue(true),
+                userInfo: { email: 'me@example.com' },
+            }
+            mockApp.syncService = mockSyncService
+        })
+
+        it('H-C 防護：removeSharedUser 撤銷權限時進行大小寫不敏感比對', async () => {
+            const ledger = {
+                id: 1,
+                uuid: 'ledger-uuid',
+                sharedManifestId: 'mf_123',
+                sharedFileId: 'f_123',
+            }
+            mockDataService.getLedger.mockResolvedValue(ledger)
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+
+            // manifest 中的 email 為 MixedCase: "OtherUser@Example.COM"
+            mockSyncService._downloadFile = vi.fn().mockResolvedValue({
+                data: {
+                    members: [
+                        { deviceId: 'dev_me', ownerEmail: 'me@example.com' },
+                        { deviceId: 'dev_other', ownerEmail: 'OtherUser@Example.COM' },
+                    ],
+                },
+            })
+            mockSyncService.removeManifestMember = vi.fn().mockResolvedValue(true)
+            // Drive API 回傳全小寫 emailAddress: "otheruser@example.com"
+            mockSyncService.getFilePermissions = vi.fn(async fileId => {
+                if (fileId === 'mf_123') return [{ id: 'perm_mf_1', emailAddress: 'otheruser@example.com' }]
+                if (fileId === 'f_123') return [{ id: 'perm_f_1', emailAddress: 'OTHERUSER@example.com' }]
+                if (fileId === 'devlog_123') return [{ id: 'perm_dl_1', emailAddress: 'OtherUser@example.com' }]
+                return []
+            })
+            mockSyncService.removeFilePermission = vi.fn().mockResolvedValue()
+            mockDataService.getSetting = vi.fn(async key => {
+                if (key === 'sync_shared_devlog_ledger-uuid') return { value: 'devlog_123' }
+                return null
+            })
+
+            await ledgerManager.removeSharedUser(1, 'dev_other')
+
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('mf_123', 'perm_mf_1')
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('f_123', 'perm_f_1')
+            expect(mockSyncService.removeFilePermission).toHaveBeenCalledWith('devlog_123', 'perm_dl_1')
+        })
+
+        it('Shared Drive 支援：isLedgerOwner 判定 organizer 角色為擁有者', async () => {
+            mockDataService.getLedger.mockResolvedValue({
+                id: 1,
+                sharedManifestId: 'mf_organizer',
+            })
+            mockSyncService.userInfo = { email: 'team_lead@company.com' }
+            mockSyncService.getFilePermissions = vi.fn().mockResolvedValue([
+                { id: 'p1', role: 'organizer', emailAddress: 'team_lead@company.com' },
+                { id: 'p2', role: 'writer', emailAddress: 'member@company.com' },
+            ])
+
+            const isOwner = await ledgerManager.isLedgerOwner(1)
+            expect(isOwner).toBe(true)
+        })
+
+        it('deleteLedger 刪除帳本時連帶進行雲端檔案最佳努力清理', async () => {
+            const ledger = {
+                id: 2,
+                uuid: 'uuid-delete',
+                sharedManifestId: 'mf_delete',
+                sharedFileId: 'f_delete',
+            }
+            mockDataService.getLedger.mockResolvedValue(ledger)
+            mockSyncService.isSignedIn = vi.fn().mockReturnValue(true)
+            mockSyncService.deleteFile = vi.fn().mockResolvedValue()
+            ledgerManager.isLedgerOwner = vi.fn().mockResolvedValue(true)
+            mockDataService.getSetting = vi.fn(async key => {
+                if (key === 'sync_shared_devlog_uuid-delete') return { value: 'dl_delete' }
+                return null
+            })
+            mockDataService.deleteLedger = vi.fn().mockResolvedValue(true)
+
+            await ledgerManager.deleteLedger(2)
+
+            expect(mockSyncService.deleteFile).toHaveBeenCalledWith('dl_delete')
+            expect(mockSyncService.deleteFile).toHaveBeenCalledWith('mf_delete')
+            expect(mockSyncService.deleteFile).toHaveBeenCalledWith('f_delete')
+            expect(mockDataService.deleteLedger).toHaveBeenCalledWith(2)
         })
     })
 })

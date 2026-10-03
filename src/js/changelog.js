@@ -5,7 +5,7 @@ export const CHANGELOG = {
         title: 'Per-Device 獨立日誌共用帳本同步架構與 Google Drive 權限安全閉環',
         features: [
             'Per-Device 獨立變更日誌共用架構：每個裝置擁有專屬雲端變更日誌檔（Append-only），徹底杜絕多人同時記帳時互相覆蓋（Last-Write-Wins）與資料遺失問題。',
-            'Manifest 成員協同與 CAS 樂觀鎖（ETag / If-Match）：透過成員清單註冊表管理各裝置日誌，並於衝突時自動合併重試，保證成員註冊無競態。',
+            'Manifest 成員協同與 CAS 樂觀鎖（ETag / If-Match）：透過成員清單註冊表管理各裝置日誌，並於衝突時自動合併重試，降低成員註冊並行競態風險。',
         ],
         improvements: [
             '共用帳本 Google Drive 權限安全閉環：邀請新成員時自動補授權 Manifest 與個人日誌檔，移除成員時同步向 Google Drive 撤銷檔案權限，落實資安最小權限原則。',

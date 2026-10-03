@@ -845,7 +845,7 @@ export class SyncService {
                 ? `&pageToken=${encodeURIComponent(pageToken)}`
                 : ''
             const resList = await fetch(
-                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)${pageParam}`,
+                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100${pageParam}`,
                 { headers: { Authorization: `Bearer ${this.accessToken}` } }
             )
 
@@ -1328,10 +1328,8 @@ export class SyncService {
                 isPersonalEnabled,
             })
 
-            let personalMaxTs = null
-            let sharedMaxTs = undefined
-            if (isPersonalEnabled) personalMaxTs = await this.pushChanges()
-            sharedMaxTs = await this.pushSharedLedgerChanges()
+            if (isPersonalEnabled) await this.pushChanges()
+            const sharedMaxTs = await this.pushSharedLedgerChanges()
 
             if (isPersonalEnabled) await this.pullChanges()
             await this.pullSharedLedgerChanges()
@@ -1677,7 +1675,6 @@ export class SyncService {
                 throw e
             }
         }
-        return 0
     }
 
     /**
@@ -1935,10 +1932,7 @@ export class SyncService {
         try {
             const grantedKey = `sync_shared_granted_${ledgerUuid}_${devLogId}`
             const grantedSetting =
-                (await this.dataService.getSetting(grantedKey)) ||
-                (await this.dataService.getSetting(
-                    `sync_shared_granted_${ledgerUuid}`
-                ))
+                await this.dataService.getSetting(grantedKey)
             const granted = new Set(grantedSetting?.value || [])
             let m = null
             try {
@@ -2198,7 +2192,9 @@ export class SyncService {
                             (await this.getFilePermissions(
                                 ledger.sharedFileId
                             )) || []
-                        const owner = legacyPerms.find(p => p.role === 'owner')
+                        const owner = legacyPerms.find(
+                            p => p.role === 'owner' || p.role === 'organizer'
+                        )
                         if (owner?.emailAddress) {
                             ownerEmail = owner.emailAddress
                             const myEmail = this.userInfo?.email || ''
@@ -3169,6 +3165,38 @@ export class SyncService {
         }
     }
 
+    async _resolveRecordAmortizationId(data) {
+        if (!data.amortizationUuid) return data
+        try {
+            const amort = await this.dataService.getByUUID(
+                'amortizations',
+                data.amortizationUuid
+            )
+            return {
+                ...data,
+                amortizationId: amort ? amort.id : data.amortizationId || null,
+            }
+        } catch (_) {
+            return data
+        }
+    }
+
+    async _resolveRecordStatementId(data) {
+        if (!data.statementUuid) return data
+        try {
+            const stmt = await this.dataService.getByUUID(
+                'credit_statements',
+                data.statementUuid
+            )
+            return {
+                ...data,
+                statementId: stmt ? stmt.id : data.statementId || null,
+            }
+        } catch (_) {
+            return data
+        }
+    }
+
     async _resolveAllForeignKeys(storeName, data) {
         if (!data) return data
         let resolved = await this._resolveLedgerId(data)
@@ -3176,12 +3204,19 @@ export class SyncService {
             resolved = await this._resolveRecordAccountId(resolved)
             resolved = await this._resolveRecordDebtId(resolved)
             resolved = await this._resolveRecordGroupId(resolved)
+            resolved = await this._resolveRecordAmortizationId(resolved)
+            resolved = await this._resolveRecordStatementId(resolved)
         } else if (storeName === 'debts') {
             resolved = await this._resolveRecordAccountId(resolved)
             resolved = await this._resolveRecordDebtId(resolved)
         }
         if (storeName === 'recurring_transactions') {
             resolved = await this._resolveRecurringAccountId(resolved)
+        } else if (
+            storeName === 'amortizations' ||
+            storeName === 'credit_statements'
+        ) {
+            resolved = await this._resolveRecordAccountId(resolved)
         }
         return resolved
     }
@@ -3398,6 +3433,10 @@ export class SyncService {
                 resolvedRecord =
                     await this._resolveRecordAccountId(resolvedRecord)
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
+                resolvedRecord =
+                    await this._resolveRecordAmortizationId(resolvedRecord)
+                resolvedRecord =
+                    await this._resolveRecordStatementId(resolvedRecord)
                 await this.dataService.addRecord(resolvedRecord, true)
                 break
             }
@@ -3464,6 +3503,25 @@ export class SyncService {
                 await this.dataService.addRecurringTransaction(
                     resolvedRecurring
                 )
+                break
+            }
+            case 'amortizations': {
+                let resolvedAmortization = await this._resolveLedgerId(
+                    data,
+                    options
+                )
+                resolvedAmortization =
+                    await this._resolveRecordAccountId(resolvedAmortization)
+                await this.dataService.addAmortization(
+                    resolvedAmortization,
+                    true
+                )
+                break
+            }
+            case 'credit_statements': {
+                let resolvedStmt = await this._resolveLedgerId(data, options)
+                resolvedStmt = await this._resolveRecordAccountId(resolvedStmt)
+                await this.dataService.addCreditStatement(resolvedStmt, true)
                 break
             }
             default:
@@ -3643,7 +3701,12 @@ export class SyncService {
                 data.uuid
             )
             if (existing) {
-                await this._applyUpdateWithId(storeName, existing.id, data)
+                await this._applyUpdateWithId(
+                    storeName,
+                    existing.id,
+                    data,
+                    options
+                )
                 return
             } else {
                 // 針對預設帳本 (id: 1) 的特殊處理：不同裝置初始化時預設帳本會有不同的 UUID，
@@ -3658,7 +3721,12 @@ export class SyncService {
                     const localDefaultLedger =
                         await this.dataService.getLedger(1)
                     if (localDefaultLedger && !localDefaultLedger.isShared) {
-                        await this._applyUpdateWithId(storeName, 1, data)
+                        await this._applyUpdateWithId(
+                            storeName,
+                            1,
+                            data,
+                            options
+                        )
                         return
                     }
                 }
@@ -3714,6 +3782,10 @@ export class SyncService {
                 resolvedRecord =
                     await this._resolveRecordAccountId(resolvedRecord)
                 resolvedRecord = await this._resolveRecordDebtId(resolvedRecord)
+                resolvedRecord =
+                    await this._resolveRecordAmortizationId(resolvedRecord)
+                resolvedRecord =
+                    await this._resolveRecordStatementId(resolvedRecord)
                 await this.dataService.updateRecord(id, resolvedRecord, true)
                 break
             }
@@ -3796,6 +3868,30 @@ export class SyncService {
                 )
                 break
             }
+            case 'amortizations': {
+                let resolvedAmortization = await this._resolveLedgerId(
+                    data,
+                    options
+                )
+                resolvedAmortization =
+                    await this._resolveRecordAccountId(resolvedAmortization)
+                await this.dataService.updateAmortization(
+                    id,
+                    resolvedAmortization,
+                    true
+                )
+                break
+            }
+            case 'credit_statements': {
+                let resolvedStmt = await this._resolveLedgerId(data, options)
+                resolvedStmt = await this._resolveRecordAccountId(resolvedStmt)
+                await this.dataService.updateCreditStatement(
+                    id,
+                    resolvedStmt,
+                    true
+                )
+                break
+            }
             default:
                 console.warn(
                     '[SyncService] Unknown store for update:',
@@ -3855,6 +3951,12 @@ export class SyncService {
                 break
             case 'recurring_transactions':
                 await this.dataService.deleteRecurringTransaction(id, true)
+                break
+            case 'amortizations':
+                await this.dataService.deleteAmortization(id, true)
+                break
+            case 'credit_statements':
+                await this.dataService.deleteCreditStatement(id, true)
                 break
             default:
                 console.warn(
