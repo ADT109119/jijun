@@ -340,8 +340,15 @@ export class SyncSettingsPage {
                                         if (result.success) {
                                             // Reset sync history to avoid replaying old changes
                                             await this.app.syncService.markAllRemoteChangesAsPulled()
+                                            showToast(
+                                                '備份還原成功！正在重新載入...',
+                                                'success'
+                                            )
                                             this.app.currentHash = null
-                                            window.location.hash = '#home'
+                                            setTimeout(() => {
+                                                window.location.hash = '#home'
+                                                window.location.reload()
+                                            }, 1200)
                                         }
                                     } catch (err) {
                                         showToast(

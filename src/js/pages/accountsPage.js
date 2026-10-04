@@ -64,6 +64,7 @@ export class AccountsPage {
     }
 
     async setupAccountsPageListeners() {
+        await this.app.dataService.deduplicateAccounts()
         const accounts = await this.app.dataService.getAccounts()
         const allRecords = await this.app.dataService.getRecords() // Get all records once
         // 建立「我欠別人」(payable) 欠款的 id 集合，用於從帳戶餘額中排除其原始欠款紀錄

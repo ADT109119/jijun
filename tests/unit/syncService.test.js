@@ -503,7 +503,8 @@ describe('SyncService', () => {
                     type: 'expense',
                     amount: 100,
                     uuid: 'rt-uuid-add-1',
-                })
+                }),
+                true
             )
         })
 
@@ -531,7 +532,8 @@ describe('SyncService', () => {
                     ledgerId: 5,
                     accountId: 20,
                     amount: 200,
-                })
+                }),
+                true
             )
         })
     })

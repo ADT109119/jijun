@@ -1020,6 +1020,79 @@ export class SyncService {
                     }
                 }
 
+                // 帳戶與聯絡人同名冪等防護：若為 add 且同帳本同名項目已存在，視為冪等略過，杜絕備份還原與同步重播生成同名重複帳戶/聯絡人
+                if (
+                    operation === 'add' &&
+                    (storeName === 'accounts' || storeName === 'contacts')
+                ) {
+                    const resolved = await this._resolveLedgerId(data, options)
+                    const targetLedgerId = resolved.ledgerId || 1
+                    const normName = (resolved.name || '').trim().toLowerCase()
+                    if (normName) {
+                        if (storeName === 'accounts') {
+                            const accounts =
+                                await this.dataService.getAccounts({
+                                    allLedgers: true,
+                                })
+                            const existing = accounts.find(
+                                a =>
+                                    (a.ledgerId || 1) === targetLedgerId &&
+                                    (a.name || '').trim().toLowerCase() ===
+                                        normName
+                            )
+                            if (existing) {
+                                if (data?.uuid && existing.uuid !== data.uuid) {
+                                    if (typeof this.dataService.alignAccountUuid === 'function') {
+                                        await this.dataService.alignAccountUuid(
+                                            existing.id,
+                                            data.uuid,
+                                            existing.uuid
+                                        )
+                                    } else {
+                                        await this.dataService.updateAccount(
+                                            existing.id,
+                                            { uuid: data.uuid },
+                                            true
+                                        )
+                                    }
+                                }
+                                appliedKeys.add(this._changeKey(change))
+                                continue
+                            }
+                        } else if (storeName === 'contacts') {
+                            const contacts =
+                                await this.dataService.getContacts({
+                                    allLedgers: true,
+                                })
+                            const existing = contacts.find(
+                                c =>
+                                    (c.ledgerId || 1) === targetLedgerId &&
+                                    (c.name || '').trim().toLowerCase() ===
+                                        normName
+                            )
+                            if (existing) {
+                                if (data?.uuid && existing.uuid !== data.uuid) {
+                                    if (typeof this.dataService.alignContactUuid === 'function') {
+                                        await this.dataService.alignContactUuid(
+                                            existing.id,
+                                            data.uuid,
+                                            existing.uuid
+                                        )
+                                    } else {
+                                        await this.dataService.updateContact(
+                                            existing.id,
+                                            { uuid: data.uuid },
+                                            true
+                                        )
+                                    }
+                                }
+                                appliedKeys.add(this._changeKey(change))
+                                continue
+                            }
+                        }
+                    }
+                }
+
                 switch (operation) {
                     case 'add':
                         await this._applyAdd(storeName, data, options)
@@ -1045,6 +1118,12 @@ export class SyncService {
                 )
             }
         }
+
+        // 若本次變更批次包含帳戶，執行自動去重整併
+        try {
+            await this.dataService.deduplicateAccounts()
+        } catch (_) {}
+
         return appliedKeys
     }
 
@@ -1073,13 +1152,23 @@ export class SyncService {
             } while (pageToken)
             const files = allFiles
 
+            const checkedSetting = await this.dataService.getSetting(
+                'sync_personal_checked_map'
+            )
+            const checkedMap = checkedSetting?.value || {}
+
             const appliedSetting = await this.dataService.getSetting(
                 'sync_personal_applied_keys'
             )
             const appliedKeys = new Set(appliedSetting?.value || [])
 
             for (const file of files) {
-                if (file.name === `sync_log_${this.deviceId}.json`) continue
+                const modifiedMs = file.modifiedTime
+                    ? new Date(file.modifiedTime).getTime()
+                    : 0
+                if (modifiedMs) {
+                    checkedMap[file.id] = modifiedMs
+                }
                 try {
                     const resFile = await this._downloadFile(file.id)
                     for (const c of resFile?.data?.changes || []) {
@@ -1088,7 +1177,11 @@ export class SyncService {
                 } catch (_) {}
             }
 
-            // 持久化已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 R1）
+            // 持久化已檢查時間戳與已套用鍵（全量保留，杜絕個人日誌重新重播導致已刪除或舊紀錄幽靈復活，與共用側對齊 R1）
+            await this.dataService.saveSetting({
+                key: 'sync_personal_checked_map',
+                value: checkedMap,
+            })
             await this.dataService.saveSetting({
                 key: 'sync_personal_applied_keys',
                 value: [...appliedKeys],
@@ -3424,6 +3517,36 @@ export class SyncService {
                     data,
                     options
                 )
+                const targetLedgerId = resolvedAccount.ledgerId || 1
+                const normName = (resolvedAccount.name || '').trim().toLowerCase()
+                if (normName) {
+                    const accounts = await this.dataService.getAccounts({
+                        allLedgers: true,
+                    })
+                    const existingAcc = accounts.find(
+                        a =>
+                            (a.ledgerId || 1) === targetLedgerId &&
+                            (a.name || '').trim().toLowerCase() === normName
+                    )
+                    if (existingAcc) {
+                        if (resolvedAccount.uuid && existingAcc.uuid !== resolvedAccount.uuid) {
+                            if (typeof this.dataService.alignAccountUuid === 'function') {
+                                await this.dataService.alignAccountUuid(
+                                    existingAcc.id,
+                                    resolvedAccount.uuid,
+                                    existingAcc.uuid
+                                )
+                            } else {
+                                await this.dataService.updateAccount(
+                                    existingAcc.id,
+                                    { uuid: resolvedAccount.uuid },
+                                    true
+                                )
+                            }
+                        }
+                        break
+                    }
+                }
                 await this.dataService.addAccount(resolvedAccount, true)
                 break
             }
@@ -3432,6 +3555,36 @@ export class SyncService {
                     data,
                     options
                 )
+                const targetLedgerId = resolvedContact.ledgerId || 1
+                const normName = (resolvedContact.name || '').trim().toLowerCase()
+                if (normName) {
+                    const contacts = await this.dataService.getContacts({
+                        allLedgers: true,
+                    })
+                    const existingContact = contacts.find(
+                        c =>
+                            (c.ledgerId || 1) === targetLedgerId &&
+                            (c.name || '').trim().toLowerCase() === normName
+                    )
+                    if (existingContact) {
+                        if (resolvedContact.uuid && existingContact.uuid !== resolvedContact.uuid) {
+                            if (typeof this.dataService.alignContactUuid === 'function') {
+                                await this.dataService.alignContactUuid(
+                                    existingContact.id,
+                                    resolvedContact.uuid,
+                                    existingContact.uuid
+                                )
+                            } else {
+                                await this.dataService.updateContact(
+                                    existingContact.id,
+                                    { uuid: resolvedContact.uuid },
+                                    true
+                                )
+                            }
+                        }
+                        break
+                    }
+                }
                 await this.dataService.addContact(resolvedContact, true)
                 break
             }
@@ -3479,8 +3632,45 @@ export class SyncService {
                 )
                 resolvedRecurring =
                     await this._resolveRecurringAccountId(resolvedRecurring)
+                const targetLedgerId = resolvedRecurring.ledgerId || 1
+                if (typeof this.dataService.getRecurringTransactions === 'function') {
+                    const recurringTxs =
+                        await this.dataService.getRecurringTransactions({
+                            allLedgers: true,
+                        })
+                    const existingRt = (recurringTxs || []).find(
+                        r =>
+                            (r.ledgerId || 1) === targetLedgerId &&
+                            (r.description || '').trim() ===
+                                (resolvedRecurring.description || '').trim() &&
+                            r.type === resolvedRecurring.type &&
+                            Number(r.amount) === Number(resolvedRecurring.amount) &&
+                            r.frequency === resolvedRecurring.frequency
+                    )
+                    if (existingRt) {
+                        if (
+                            resolvedRecurring.uuid &&
+                            existingRt.uuid !== resolvedRecurring.uuid
+                        ) {
+                            if (typeof this.dataService.alignRecurringTransactionUuid === 'function') {
+                                await this.dataService.alignRecurringTransactionUuid(
+                                    existingRt.id,
+                                    resolvedRecurring.uuid
+                                )
+                            } else {
+                                await this.dataService.updateRecurringTransaction(
+                                    existingRt.id,
+                                    { uuid: resolvedRecurring.uuid },
+                                    true
+                                )
+                            }
+                        }
+                        break
+                    }
+                }
                 await this.dataService.addRecurringTransaction(
-                    resolvedRecurring
+                    resolvedRecurring,
+                    true
                 )
                 break
             }
@@ -3707,7 +3897,125 @@ export class SyncService {
                         return
                     }
                 }
-                // Not found by UUID, treat as Add (upsert)
+
+                // 業務鍵對齊防護：若 UUID 不匹配，先用業務特徵尋找本地實體，就地對齊 UUID 並更新，絕不退回 _applyAdd 產生重複項！
+                if (storeName === 'accounts' && typeof this.dataService.getAccounts === 'function') {
+                    const resolvedAcc = await this._resolveLedgerId(data, options)
+                    const targetLedgerId = resolvedAcc.ledgerId || 1
+                    const normName = (resolvedAcc.name || '').trim().toLowerCase()
+                    if (normName) {
+                        const accounts = await this.dataService.getAccounts({
+                            allLedgers: true,
+                        })
+                        const matchedAcc = (accounts || []).find(
+                            a =>
+                                (a.ledgerId || 1) === targetLedgerId &&
+                                (a.name || '').trim().toLowerCase() === normName
+                        )
+                        if (matchedAcc) {
+                            if (data.uuid && matchedAcc.uuid !== data.uuid) {
+                                if (typeof this.dataService.alignAccountUuid === 'function') {
+                                    await this.dataService.alignAccountUuid(
+                                        matchedAcc.id,
+                                        data.uuid,
+                                        matchedAcc.uuid
+                                    )
+                                } else {
+                                    await this.dataService.updateAccount(
+                                        matchedAcc.id,
+                                        { uuid: data.uuid },
+                                        true
+                                    )
+                                }
+                            }
+                            await this._applyUpdateWithId(
+                                storeName,
+                                matchedAcc.id,
+                                data,
+                                options
+                            )
+                            return
+                        }
+                    }
+                } else if (storeName === 'contacts' && typeof this.dataService.getContacts === 'function') {
+                    const resolvedContact = await this._resolveLedgerId(data, options)
+                    const targetLedgerId = resolvedContact.ledgerId || 1
+                    const normName = (resolvedContact.name || '').trim().toLowerCase()
+                    if (normName) {
+                        const contacts = await this.dataService.getContacts({
+                            allLedgers: true,
+                        })
+                        const matchedContact = (contacts || []).find(
+                            c =>
+                                (c.ledgerId || 1) === targetLedgerId &&
+                                (c.name || '').trim().toLowerCase() === normName
+                        )
+                        if (matchedContact) {
+                            if (data.uuid && matchedContact.uuid !== data.uuid) {
+                                if (typeof this.dataService.alignContactUuid === 'function') {
+                                    await this.dataService.alignContactUuid(
+                                        matchedContact.id,
+                                        data.uuid,
+                                        matchedContact.uuid
+                                    )
+                                } else {
+                                    await this.dataService.updateContact(
+                                        matchedContact.id,
+                                        { uuid: data.uuid },
+                                        true
+                                    )
+                                }
+                            }
+                            await this._applyUpdateWithId(
+                                storeName,
+                                matchedContact.id,
+                                data,
+                                options
+                            )
+                            return
+                        }
+                    }
+                } else if (storeName === 'recurring_transactions' && typeof this.dataService.getRecurringTransactions === 'function') {
+                    const resolvedRt = await this._resolveLedgerId(data, options)
+                    const targetLedgerId = resolvedRt.ledgerId || 1
+                    const recurringTxs =
+                        await this.dataService.getRecurringTransactions({
+                            allLedgers: true,
+                        })
+                    const matchedRt = (recurringTxs || []).find(
+                        r =>
+                            (r.ledgerId || 1) === targetLedgerId &&
+                            (r.description || '').trim() ===
+                                (resolvedRt.description || '').trim() &&
+                            r.type === resolvedRt.type &&
+                            Number(r.amount) === Number(resolvedRt.amount)
+                    )
+                    if (matchedRt) {
+                        if (data.uuid && matchedRt.uuid !== data.uuid) {
+                            if (typeof this.dataService.alignRecurringTransactionUuid === 'function') {
+                                await this.dataService.alignRecurringTransactionUuid(
+                                    matchedRt.id,
+                                    data.uuid
+                                )
+                            } else {
+                                await this.dataService.updateRecurringTransaction(
+                                    matchedRt.id,
+                                    { uuid: data.uuid },
+                                    true
+                                )
+                            }
+                        }
+                        await this._applyUpdateWithId(
+                            storeName,
+                            matchedRt.id,
+                            data,
+                            options
+                        )
+                        return
+                    }
+                }
+
+                // Not found by UUID or business key, treat as Add (upsert)
                 await this._applyAdd(storeName, data, options)
                 return
             }
@@ -3885,6 +4193,59 @@ export class SyncService {
                 await this._applyDeleteWithId(storeName, existing.id)
                 return
             } else {
+                // Secondary business key lookup for delete:
+                // 若遠端刪除的 UUID 在本地不存在（例如因跨裝置/還原時歷史 UUID 分歧），嘗試依業務特徵刪除，防止刪除脫鉤！
+                if (storeName === 'accounts' && data.name && typeof this.dataService.getAccounts === 'function') {
+                    const targetLedgerId = data.ledgerId || 1
+                    const normName = data.name.trim().toLowerCase()
+                    const accounts = await this.dataService.getAccounts({
+                        allLedgers: true,
+                    })
+                    const match = (accounts || []).find(
+                        a =>
+                            (a.ledgerId || 1) === targetLedgerId &&
+                            (a.name || '').trim().toLowerCase() === normName
+                    )
+                    if (match) {
+                        await this._applyDeleteWithId(storeName, match.id)
+                        return
+                    }
+                } else if (storeName === 'contacts' && data.name && typeof this.dataService.getContacts === 'function') {
+                    const targetLedgerId = data.ledgerId || 1
+                    const normName = data.name.trim().toLowerCase()
+                    const contacts = await this.dataService.getContacts({
+                        allLedgers: true,
+                    })
+                    const match = (contacts || []).find(
+                        c =>
+                            (c.ledgerId || 1) === targetLedgerId &&
+                            (c.name || '').trim().toLowerCase() === normName
+                    )
+                    if (match) {
+                        await this._applyDeleteWithId(storeName, match.id)
+                        return
+                    }
+                } else if (
+                    storeName === 'recurring_transactions' &&
+                    data.description &&
+                    typeof this.dataService.getRecurringTransactions === 'function'
+                ) {
+                    const targetLedgerId = data.ledgerId || 1
+                    const recurringTxs =
+                        await this.dataService.getRecurringTransactions({
+                            allLedgers: true,
+                        })
+                    const match = (recurringTxs || []).find(
+                        r =>
+                            (r.ledgerId || 1) === targetLedgerId &&
+                            (r.description || '').trim() ===
+                                data.description.trim()
+                    )
+                    if (match) {
+                        await this._applyDeleteWithId(storeName, match.id)
+                        return
+                    }
+                }
                 // Not found, maybe already deleted
                 return
             }

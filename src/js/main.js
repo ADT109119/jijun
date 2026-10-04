@@ -155,6 +155,7 @@ export class EasyAccountingApp {
         )
         this.advancedModeEnabled = !!advancedModeSetting?.value
         if (this.advancedModeEnabled) {
+            await this.dataService.deduplicateAccounts()
             this.accounts = await this.dataService.getAccounts()
         } else {
             this.accounts = []

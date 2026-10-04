@@ -127,22 +127,12 @@ export class DebtManager {
     if (!container) return;
 
     const allDebts = await this.dataService.getDebts({ settled: false });
-
-    // 過濾掉屬於群組的個人欠款（若該欠款已在群組中，只呈現群組卡片）
     const allRecords = await this.dataService.getRecords();
     const recordsMap = new Map(allRecords.map(r => [r.id, r]));
-    const groupFilteredDebts = allDebts.filter(d => {
-      if (d.groupId) return false;
-      if (d.recordId) {
-        const rec = recordsMap.get(d.recordId);
-        if (rec && rec.groupId) return false;
-      }
-      return true;
-    });
 
-    let filteredDebts = groupFilteredDebts;
+    let filteredDebts = allDebts;
     if (this.currentContactFilter) {
-      filteredDebts = groupFilteredDebts.filter(d => d.contactId === this.currentContactFilter);
+      filteredDebts = allDebts.filter(d => String(d.contactId) === String(this.currentContactFilter));
     }
     
     let totalReceivable = 0;
@@ -171,7 +161,7 @@ export class DebtManager {
       if (this.currentContactFilter) {
         const contactGroupIds = new Set();
         allDebts.forEach(d => {
-          if (d.contactId === this.currentContactFilter && !d.settled) {
+          if (String(d.contactId) === String(this.currentContactFilter) && !d.settled) {
             if (d.groupId) contactGroupIds.add(d.groupId);
             if (d.recordId) {
               const rec = recordsMap.get(d.recordId);
@@ -180,7 +170,7 @@ export class DebtManager {
           }
         });
         allRecords.forEach(r => {
-          if (r.groupId && r.contactId === this.currentContactFilter && r.groupStatus !== 'settled') {
+          if (r.groupId && String(r.contactId) === String(this.currentContactFilter) && r.groupStatus !== 'settled') {
             contactGroupIds.add(r.groupId);
           }
         });
@@ -217,21 +207,9 @@ export class DebtManager {
     const allDebts = await this.dataService.getDebts({ settled: false });
     const contacts = await this.dataService.getContacts();
 
-    // 過濾掉屬於群組的個人欠款（群組欠款由群組卡片/總結呈現，避免雙重計數）
-    const allRecords = await this.dataService.getRecords();
-    const recordsMap = new Map(allRecords.map(r => [r.id, r]));
-    const personalDebts = allDebts.filter(d => {
-      if (d.groupId) return false;
-      if (d.recordId) {
-        const rec = recordsMap.get(d.recordId);
-        if (rec && rec.groupId) return false;
-      }
-      return true;
-    });
-
-    // Build summary per contact
+    // Build summary per contact (包含所有未結清欠款，即便加入群組亦計入聯絡人欠款)
     const contactSummary = {};
-    personalDebts.forEach(debt => {
+    allDebts.forEach(debt => {
       const contactId = debt.contactId;
       if (!contactSummary[contactId]) {
         contactSummary[contactId] = { receivable: 0, payable: 0 };

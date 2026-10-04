@@ -1386,7 +1386,8 @@ class DataService {
                 const finalUpdates = { ...updates, ...extraUpdates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (transaction.uuid) finalUpdates.uuid = transaction.uuid
+                    if (transaction.uuid)
+                        finalUpdates.uuid = transaction.uuid
                 }
                 const updatedTransaction = { ...transaction, ...finalUpdates }
                 await tx.store.put(updatedTransaction)
@@ -1416,16 +1417,20 @@ class DataService {
                 'recurring_transactions',
                 'readwrite'
             )
-            let uuid = null
+            let itemData = null
             if (!skipLog) {
-                const rt = await tx.store.get(id)
-                uuid = rt?.uuid
+                itemData = await tx.store.get(id)
             }
             await tx.store.delete(id)
             await tx.done
-            if (!skipLog)
+            if (!skipLog && itemData)
                 await this.logChange('delete', 'recurring_transactions', id, {
-                    uuid,
+                    uuid: itemData.uuid,
+                    ledgerId: itemData.ledgerId,
+                    description: itemData.description,
+                    frequency: itemData.frequency,
+                    amount: itemData.amount,
+                    type: itemData.type,
                 })
             return true
         } catch (error) {
@@ -1862,6 +1867,16 @@ class DataService {
                     await this.clearAllGroupMeta()
                     if (!this.useLocalStorage) {
                         try {
+                            const txSync = this.db.transaction(
+                                'sync_log',
+                                'readwrite'
+                            )
+                            await txSync.store.clear()
+                            await txSync.done
+                        } catch (e) {
+                            console.warn('Silenced error:', e)
+                        }
+                        try {
                             const txR = this.db.transaction(
                                 'recurring_transactions',
                                 'readwrite'
@@ -2040,21 +2055,67 @@ class DataService {
                         })
                     }
 
-                    // 4. 匯入帳戶並建立 ID Map
+                    // 4. 匯入帳戶並建立 ID Map（含同帳本同名帳戶分組去重與關聯優先綁定）
                     const oldAccountIdToNewIdMap = new Map()
                     if (
                         advancedModeEnabled &&
                         data.accounts &&
                         Array.isArray(data.accounts)
                     ) {
+                        const refCounts = new Map()
+                        if (Array.isArray(data.records)) {
+                            for (const r of data.records) {
+                                if (r.accountId != null) {
+                                    refCounts.set(r.accountId, (refCounts.get(r.accountId) || 0) + 1)
+                                }
+                            }
+                        }
+                        if (Array.isArray(data.debts)) {
+                            for (const d of data.debts) {
+                                if (d.accountId != null) {
+                                    refCounts.set(d.accountId, (refCounts.get(d.accountId) || 0) + 1)
+                                }
+                            }
+                        }
+
+                        const accountGroups = new Map()
                         for (const account of data.accounts) {
-                            const oldId = account.id
-                            const { id, ...accountData } = account
-                            accountData.ledgerId = getMappedLedgerId(
-                                accountData.ledgerId
-                            )
-                            const newId = await this.addAccount(accountData)
-                            oldAccountIdToNewIdMap.set(oldId, newId)
+                            const mappedLid = getMappedLedgerId(account.ledgerId)
+                            const normName = (account.name || '').trim().toLowerCase()
+                            const key = `${mappedLid}:::${normName}`
+                            if (!accountGroups.has(key)) {
+                                accountGroups.set(key, [])
+                            }
+                            accountGroups.get(key).push(account)
+                        }
+
+                        for (const group of accountGroups.values()) {
+                            group.sort((a, b) => {
+                                const countA = refCounts.get(a.id) || 0
+                                const countB = refCounts.get(b.id) || 0
+                                if (countB !== countA) return countB - countA
+                                const uuidA = a.uuid ? 1 : 0
+                                const uuidB = b.uuid ? 1 : 0
+                                if (uuidB !== uuidA) return uuidB - uuidA
+                                const balA = Math.abs(a.balance || 0)
+                                const balB = Math.abs(b.balance || 0)
+                                if (balB !== balA) return balB - balA
+                                return (a.id || 0) - (b.id || 0)
+                            })
+
+                            const primaryAccount = group[0]
+                            const { id: _oldPrimaryId, ...primaryData } = primaryAccount
+                            primaryData.ledgerId = getMappedLedgerId(primaryData.ledgerId)
+
+                            if ((!primaryData.balance || primaryData.balance === 0) && group.some(a => a.balance)) {
+                                primaryData.balance = group.find(a => a.balance)?.balance || primaryData.balance
+                            }
+
+                            const newId = await this.addAccount(primaryData, true)
+
+                            for (const acc of group) {
+                                oldAccountIdToNewIdMap.set(acc.id, newId)
+                            }
                         }
                     }
 
@@ -2133,24 +2194,53 @@ class DataService {
                         await txF.done
                     }
 
-                    // 5. 匯入聯絡人並建立 ID Map
+                    // 5. 匯入聯絡人並建立 ID Map（含同名分組去重與 skipLog = true）
                     const oldContactIdToNewIdMap = new Map()
                     if (data.contacts && Array.isArray(data.contacts)) {
+                        const contactRefCounts = new Map()
+                        if (Array.isArray(data.debts)) {
+                            for (const d of data.debts) {
+                                if (d.contactId != null) {
+                                    contactRefCounts.set(d.contactId, (contactRefCounts.get(d.contactId) || 0) + 1)
+                                }
+                            }
+                        }
+
+                        const contactGroups = new Map()
                         for (const contact of data.contacts) {
-                            const oldId = contact.id
-                            const { id, ...contactData } = contact
-                            contactData.ledgerId = getMappedLedgerId(
-                                contactData.ledgerId
-                            )
-                            // 重新映射頭像檔案 ID
+                            const mappedLid = getMappedLedgerId(contact.ledgerId)
+                            const normName = (contact.name || '').trim().toLowerCase()
+                            const key = `${mappedLid}:::${normName}`
+                            if (!contactGroups.has(key)) {
+                                contactGroups.set(key, [])
+                            }
+                            contactGroups.get(key).push(contact)
+                        }
+
+                        for (const group of contactGroups.values()) {
+                            group.sort((a, b) => {
+                                const countA = contactRefCounts.get(a.id) || 0
+                                const countB = contactRefCounts.get(b.id) || 0
+                                if (countB !== countA) return countB - countA
+                                const uuidA = a.uuid ? 1 : 0
+                                const uuidB = b.uuid ? 1 : 0
+                                if (uuidB !== uuidA) return uuidB - uuidA
+                                return (a.id || 0) - (b.id || 0)
+                            })
+
+                            const primaryContact = group[0]
+                            const { id: _oldPrimaryId, ...contactData } = primaryContact
+                            contactData.ledgerId = getMappedLedgerId(contactData.ledgerId)
                             if (contactData.avatarFileId) {
                                 contactData.avatarFileId =
                                     oldFileIdToNewIdMap.get(
                                         contactData.avatarFileId
                                     ) || null
                             }
-                            const newId = await this.addContact(contactData)
-                            oldContactIdToNewIdMap.set(oldId, newId)
+                            const newId = await this.addContact(contactData, true)
+                            for (const c of group) {
+                                oldContactIdToNewIdMap.set(c.id, newId)
+                            }
                         }
                     }
 
@@ -2458,6 +2548,13 @@ class DataService {
                         } catch (e) {
                             console.warn('匯入信用卡帳單資料時發生錯誤:', e)
                         }
+                    }
+
+                    // 執行一次全域帳戶去重整合，確保歷史舊備份或邊界狀態中的同名帳戶乾淨合併
+                    try {
+                        await this.deduplicateAccounts()
+                    } catch (e) {
+                        console.warn('[DataService] post-import deduplicateAccounts warning:', e)
                     }
 
                     // 匯入成功：清除緊急快照（失敗時保留供手動救援）
@@ -3184,7 +3281,8 @@ class DataService {
                 const finalUpdates = { ...updates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (account.uuid) finalUpdates.uuid = account.uuid
+                    if (account.uuid)
+                        finalUpdates.uuid = account.uuid
                 }
                 const updatedAccount = { ...account, ...finalUpdates }
                 await tx.store.put(updatedAccount)
@@ -3250,6 +3348,7 @@ class DataService {
                     await this.logChange('delete', 'accounts', id, {
                         uuid: itemData.uuid,
                         ledgerId: itemData.ledgerId,
+                        name: itemData.name,
                     })
                 }
                 for (const stmt of deletedStatements) {
@@ -3265,6 +3364,311 @@ class DataService {
         } catch (error) {
             console.error(`Failed to delete account ${id}:`, error)
             throw error
+        }
+    }
+
+    /**
+     * 自動清理並合併資料庫中重複的帳戶（同帳本且同名稱）
+     * 將所有關聯的 records, debts, recurring_transactions, amortizations, credit_statements 轉移至主帳戶，
+     * 並安全刪除冗餘的同名帳戶。
+     * @returns {Promise<{ mergedCount: number, groupsProcessed: number }>}
+     */
+    async deduplicateAccounts() {
+        if (!this.db || this.useLocalStorage) {
+            return { mergedCount: 0, groupsProcessed: 0 }
+        }
+        try {
+            const allAccounts = await this.getAccounts({ allLedgers: true })
+            if (!allAccounts || allAccounts.length <= 1) {
+                return { mergedCount: 0, groupsProcessed: 0 }
+            }
+
+            // 分組：依 ledgerId + ':::' + name.trim().toLowerCase()
+            const groups = new Map()
+            for (const acc of allAccounts) {
+                const normName = (acc.name || '').trim().toLowerCase()
+                if (!normName) continue
+                const key = `${acc.ledgerId || 1}:::${normName}`
+                if (!groups.has(key)) {
+                    groups.set(key, [])
+                }
+                groups.get(key).push(acc)
+            }
+
+            const duplicateGroups = [...groups.values()].filter(g => g.length > 1)
+            if (duplicateGroups.length === 0) {
+                return { mergedCount: 0, groupsProcessed: 0 }
+            }
+
+            const allRecords = await this.getRecords({ allLedgers: true })
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const allRecurring = await this.getRecurringTransactions({ allLedgers: true })
+            const allAmortizations = await this.getAmortizations({ allLedgers: true })
+            const allStatements = await this.getCreditStatements({ allLedgers: true })
+
+            // 統計各 accountId 的關聯紀錄數量
+            const recordCountMap = new Map()
+            for (const r of allRecords) {
+                if (r.accountId != null) {
+                    recordCountMap.set(r.accountId, (recordCountMap.get(r.accountId) || 0) + 1)
+                }
+            }
+            const debtCountMap = new Map()
+            for (const d of allDebts) {
+                if (d.accountId != null) {
+                    debtCountMap.set(d.accountId, (debtCountMap.get(d.accountId) || 0) + 1)
+                }
+            }
+
+            let mergedCount = 0
+
+            for (const group of duplicateGroups) {
+                // 評分排序：record 權重 10，debt 權重 5
+                group.sort((a, b) => {
+                    const scoreA = (recordCountMap.get(a.id) || 0) * 10 + (debtCountMap.get(a.id) || 0) * 5
+                    const scoreB = (recordCountMap.get(b.id) || 0) * 10 + (debtCountMap.get(b.id) || 0) * 5
+                    if (scoreB !== scoreA) return scoreB - scoreA
+                    const uuidA = a.uuid ? 1 : 0
+                    const uuidB = b.uuid ? 1 : 0
+                    if (uuidB !== uuidA) return uuidB - uuidA
+                    const balA = Math.abs(a.balance || 0)
+                    const balB = Math.abs(b.balance || 0)
+                    if (balB !== balA) return balB - balA
+                    return (a.id || 0) - (b.id || 0)
+                })
+
+                const primary = group[0]
+                const redundants = group.slice(1)
+
+                // 若主帳戶初始餘額為 0，而冗餘帳戶有非零餘額，繼承之
+                if ((!primary.balance || primary.balance === 0) && redundants.some(r => r.balance)) {
+                    const foundBal = redundants.find(r => r.balance)?.balance
+                    if (foundBal !== undefined) {
+                        await this.updateAccount(primary.id, { balance: foundBal }, true)
+                        primary.balance = foundBal
+                    }
+                }
+
+                // 批次轉移關聯資料
+                for (const redundant of redundants) {
+                    const redId = redundant.id
+
+                    // 1. 轉移 records
+                    const recordsToUpdate = allRecords.filter(r => r.accountId === redId)
+                    for (const rec of recordsToUpdate) {
+                        await this.updateRecord(rec.id, {
+                            accountId: primary.id,
+                            accountUuid: primary.uuid || null
+                        }, true)
+                        rec.accountId = primary.id
+                        rec.accountUuid = primary.uuid || null
+                    }
+
+                    // 2. 轉移 debts
+                    const debtsToUpdate = allDebts.filter(d => d.accountId === redId)
+                    for (const debt of debtsToUpdate) {
+                        await this.updateDebt(debt.id, {
+                            accountId: primary.id
+                        }, true)
+                        debt.accountId = primary.id
+                    }
+
+                    // 3. 轉移 recurring_transactions
+                    const recurringsToUpdate = allRecurring.filter(rt => rt.accountId === redId)
+                    for (const rt of recurringsToUpdate) {
+                        await this.updateRecurringTransaction(rt.id, {
+                            accountId: primary.id,
+                            accountUuid: primary.uuid || null
+                        }, true)
+                        rt.accountId = primary.id
+                        rt.accountUuid = primary.uuid || null
+                    }
+
+                    // 4. 轉移 amortizations
+                    const amortizationsToUpdate = allAmortizations.filter(am => am.accountId === redId)
+                    for (const am of amortizationsToUpdate) {
+                        await this.updateAmortization(am.id, {
+                            accountId: primary.id,
+                            accountUuid: primary.uuid || null
+                        }, true)
+                        am.accountId = primary.id
+                        am.accountUuid = primary.uuid || null
+                    }
+
+                    // 5. 轉移 credit_statements
+                    const stmtsToUpdate = allStatements.filter(s => s.accountId === redId)
+                    for (const stmt of stmtsToUpdate) {
+                        await this.updateCreditStatement(stmt.id, {
+                            accountId: primary.id
+                        }, true)
+                        stmt.accountId = primary.id
+                    }
+
+                    // 6. 轉移 其他帳戶的 autoPayAccountId
+                    for (const acc of allAccounts) {
+                        if (acc.autoPayAccountId === redId) {
+                            await this.updateAccount(acc.id, {
+                                autoPayAccountId: primary.id
+                            }, true)
+                            acc.autoPayAccountId = primary.id
+                        }
+                    }
+
+                    // 7. 刪除冗餘帳戶 (帶 skipLog = true)
+                    await this.deleteAccount(redId, true)
+                    mergedCount++
+                }
+            }
+
+            console.log(`[DataService] deduplicateAccounts: 合併了 ${mergedCount} 個重複帳戶`)
+            return { mergedCount, groupsProcessed: duplicateGroups.length }
+        } catch (error) {
+            console.error('[DataService] deduplicateAccounts error:', error)
+            return { mergedCount: 0, groupsProcessed: 0, error }
+        }
+    }
+
+    /**
+     * 主動對齊帳戶 UUID（UUID Alignment），並同步更新關聯 records, recurring_transactions, amortizations 的 accountUuid
+     * @param {number} accountId
+     * @param {string} targetUuid
+     * @param {string|null} [oldUuid=null]
+     */
+    async alignAccountUuid(accountId, targetUuid, oldUuid = null) {
+        if (!this.db || this.useLocalStorage || !accountId || !targetUuid) return
+        try {
+            const tx = this.db.transaction('accounts', 'readwrite')
+            const store = tx.objectStore('accounts')
+            const acc = await store.get(accountId)
+            if (!acc) return
+            const actualOldUuid = oldUuid || acc.uuid || null
+            if (acc.uuid === targetUuid) return // 已經一致
+
+            acc.uuid = targetUuid
+            await store.put(acc)
+            await tx.done
+
+            // 批次對齊關聯 records
+            const records = await this.getRecords({ allLedgers: true })
+            for (const r of records) {
+                if (
+                    r.accountId === accountId ||
+                    (actualOldUuid && r.accountUuid === actualOldUuid)
+                ) {
+                    if (r.accountUuid !== targetUuid) {
+                        await this.updateRecord(
+                            r.id,
+                            { accountUuid: targetUuid },
+                            true
+                        )
+                    }
+                }
+            }
+
+            // 批次對齊關聯 recurring_transactions
+            const recurringTxs = await this.getRecurringTransactions({
+                allLedgers: true,
+            })
+            for (const rt of recurringTxs) {
+                if (
+                    rt.accountId === accountId ||
+                    (actualOldUuid && rt.accountUuid === actualOldUuid)
+                ) {
+                    if (rt.accountUuid !== targetUuid) {
+                        await this.updateRecurringTransaction(
+                            rt.id,
+                            { accountUuid: targetUuid },
+                            true
+                        )
+                    }
+                }
+            }
+
+            // 批次對齊關聯 amortizations
+            const amortizations = await this.getAmortizations({
+                allLedgers: true,
+            })
+            for (const am of amortizations) {
+                if (
+                    am.accountId === accountId ||
+                    (actualOldUuid && am.accountUuid === actualOldUuid)
+                ) {
+                    if (am.accountUuid !== targetUuid) {
+                        await this.updateAmortization(
+                            am.id,
+                            { accountUuid: targetUuid },
+                            true
+                        )
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[DataService] alignAccountUuid error:', error)
+        }
+    }
+
+    /**
+     * 主動對齊聯絡人 UUID（UUID Alignment），並同步更新關聯 debts 的 contactUuid
+     * @param {number} contactId
+     * @param {string} targetUuid
+     * @param {string|null} [oldUuid=null]
+     */
+    async alignContactUuid(contactId, targetUuid, oldUuid = null) {
+        if (!this.db || this.useLocalStorage || !contactId || !targetUuid) return
+        try {
+            const tx = this.db.transaction('contacts', 'readwrite')
+            const store = tx.objectStore('contacts')
+            const contact = await store.get(contactId)
+            if (!contact) return
+            const actualOldUuid = oldUuid || contact.uuid || null
+            if (contact.uuid === targetUuid) return // 已經一致
+
+            contact.uuid = targetUuid
+            await store.put(contact)
+            await tx.done
+
+            // 批次對齊關聯 debts
+            const debts = await this.getDebts({ allLedgers: true })
+            for (const d of debts) {
+                if (
+                    d.contactId === contactId ||
+                    (actualOldUuid && d.contactUuid === actualOldUuid)
+                ) {
+                    if (d.contactUuid !== targetUuid) {
+                        await this.updateDebt(
+                            d.id,
+                            { contactUuid: targetUuid },
+                            true
+                        )
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[DataService] alignContactUuid error:', error)
+        }
+    }
+
+    /**
+     * 主動對齊週期交易 UUID（UUID Alignment）
+     * @param {number} rtId
+     * @param {string} targetUuid
+     */
+    async alignRecurringTransactionUuid(rtId, targetUuid) {
+        if (!this.db || this.useLocalStorage || !rtId || !targetUuid) return
+        try {
+            const tx = this.db.transaction('recurring_transactions', 'readwrite')
+            const store = tx.objectStore('recurring_transactions')
+            const rt = await store.get(rtId)
+            if (!rt) return
+            if (rt.uuid === targetUuid) return
+            rt.uuid = targetUuid
+            await store.put(rt)
+            await tx.done
+        } catch (error) {
+            console.error(
+                '[DataService] alignRecurringTransactionUuid error:',
+                error
+            )
         }
     }
 
@@ -4319,7 +4723,8 @@ class DataService {
                 const finalUpdates = { ...updates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (contact.uuid) finalUpdates.uuid = contact.uuid
+                    if (contact.uuid)
+                        finalUpdates.uuid = contact.uuid
                 }
                 const updatedContact = { ...contact, ...finalUpdates }
                 await tx.store.put(updatedContact)
@@ -4353,6 +4758,7 @@ class DataService {
                 await this.logChange('delete', 'contacts', id, {
                     uuid: itemData.uuid,
                     ledgerId: itemData.ledgerId,
+                    name: itemData.name,
                 })
             return true
         } catch (error) {

@@ -310,19 +310,19 @@ describe('DebtManager - 核心業務邏輯（真實實例）', () => {
             expect(cards[2].textContent).toContain('0 個')
         })
 
-        it('群組內的个人欠款不計入總結卡片（避免雙重計數）', async () => {
+        it('群組內的欠款應正確計入總結卡片金額', async () => {
             const contact = await ds.addContact({
                 name: '小明',
                 phone: '0912345678',
             })
-            // 個人欠款 500（應收）應正常計入
+            // 個人欠款 500（應收）
             await ds.addDebt({
                 contactId: contact.id,
                 type: 'receivable',
                 amount: 500,
                 date: '2024-01-01',
             })
-            // 屬於群組的欠款 999（應收）：关联记录有 groupId，應被排除
+            // 屬於群組的欠款 999（應收）：關聯記錄有 groupId，亦應被計入
             const groupRecord = await ds.addRecord({
                 groupId: 'group-1',
                 type: 'expense',
@@ -341,9 +341,51 @@ describe('DebtManager - 核心業務邏輯（真實實例）', () => {
             const cards = container.querySelectorAll(
                 '#summary-cards-container > div'
             )
-            // 应收卡片只含个人欠款 500，不含群组欠款 999
+            // 應收卡片應同時包含個人欠款 500 與群組欠款 999 (總計 1499)
+            expect(cards[0].textContent).toContain('1499')
+        })
+
+        it('同一群組中有多個欠款人時，篩選個別聯絡人不會誤算其他人的欠款', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+            const cBob = await ds.addContact({ name: 'Bob', phone: '0922' })
+
+            // 同一個群組 group-multi
+            await ds.addDebt({
+                contactId: cAlice.id,
+                type: 'receivable',
+                amount: 500,
+                groupId: 'group-multi',
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cBob.id,
+                type: 'receivable',
+                amount: 300,
+                groupId: 'group-multi',
+                date: '2024-01-02',
+            })
+
+            const container = await renderPage(dm)
+
+            // 1. 未篩選聯絡人：總應收為 500 + 300 = 800
+            let cards = container.querySelectorAll('#summary-cards-container > div')
+            expect(cards[0].textContent).toContain('800')
+
+            // 2. 篩選 Alice：應收 Alice 僅有 500，絕不含 Bob 的 300
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            cards = container.querySelectorAll('#summary-cards-container > div')
             expect(cards[0].textContent).toContain('500')
-            expect(cards[0].textContent).not.toContain('999')
+            expect(cards[0].textContent).not.toContain('800')
+            expect(cards[0].textContent).not.toContain('300')
+
+            // 3. 篩選 Bob：應收 Bob 僅有 300，絕不含 Alice 的 500
+            dm.currentContactFilter = cBob.id
+            await dm.updateSummaryCards()
+            cards = container.querySelectorAll('#summary-cards-container > div')
+            expect(cards[0].textContent).toContain('300')
+            expect(cards[0].textContent).not.toContain('800')
+            expect(cards[0].textContent).not.toContain('500')
         })
     })
 
@@ -407,6 +449,36 @@ describe('DebtManager - 核心業務邏輯（真實實例）', () => {
             const modal = document.querySelector('#contact-summary-modal')
             expect(modal.textContent).toContain('500')
             expect(modal.textContent).not.toContain('999')
+        })
+
+        it('加入群組的欠款亦正確計入聯絡人摘要', async () => {
+            const c1 = await ds.addContact({ name: '小明', phone: '0911111111' })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'receivable',
+                amount: 800,
+                groupId: 'group-1',
+                date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: c1.id,
+                type: 'payable',
+                amount: 200,
+                groupId: 'group-2',
+                date: '2024-01-02',
+            })
+
+            await renderPage(dm)
+            await dm.showContactSummaryModal()
+            const modal = document.querySelector('#contact-summary-modal')
+            expect(modal).toBeTruthy()
+            const rows = modal.querySelectorAll('tr[data-contact-id]')
+            expect(rows.length).toBe(1)
+            // 應收 800，應付 200，淨額 +600
+            expect(rows[0].textContent).toContain('小明')
+            expect(rows[0].textContent).toContain('800')
+            expect(rows[0].textContent).toContain('200')
+            expect(rows[0].textContent).toContain('600')
         })
     })
 
