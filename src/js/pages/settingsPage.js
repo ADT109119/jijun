@@ -1,4 +1,4 @@
-import { showToast, customConfirm } from '../utils.js'
+import { showToast, customConfirm, showProgressModal } from '../utils.js'
 import { THEME_MODES } from '../themeManager.js'
 
 export class SettingsPage {
@@ -419,11 +419,33 @@ export class SettingsPage {
             this.showConfirmModal(
                 '匯入資料將會覆蓋所有現有紀錄，確定要繼續嗎？',
                 async () => {
+                    const progressModal = showProgressModal(
+                        '匯入資料',
+                        '正在準備匯入...'
+                    )
                     try {
-                        await this.app.dataService.importData(file)
-                        showToast('資料已成功匯入！正在重整...', 'success')
-                        setTimeout(() => window.location.reload(), 2000)
+                        const result = await this.app.dataService.importData(file, {
+                            skipConfirm: true,
+                            onProgress: (percent, message) => {
+                                progressModal.update(percent, message)
+                            },
+                        })
+                        if (result && result.success) {
+                            progressModal.update(95, '正在重新載入資料...')
+                            await this.app.reloadAppData()
+                            progressModal.update(100, '資料匯入完成！')
+                            setTimeout(() => {
+                                progressModal.close(() => {
+                                    showToast('資料已成功匯入！正在重整...', 'success')
+                                    setTimeout(() => window.location.reload(), 300)
+                                })
+                            }, 500)
+                        } else {
+                            progressModal.close()
+                            showToast(result?.message || '資料匯入取消或失敗', 'error')
+                        }
                     } catch (error) {
+                        progressModal.close()
                         console.error('匯入失敗:', error)
                         showToast('資料匯入失敗', 'error')
                     }

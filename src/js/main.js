@@ -160,6 +160,7 @@ export class EasyAccountingApp {
         } else {
             this.accounts = []
         }
+        await this.dataService.deduplicateContacts()
 
         this.registerServiceWorker()
         this.setupOfflineBanner()
@@ -343,6 +344,32 @@ export class EasyAccountingApp {
                 }, 100);
             }
         });
+    }
+
+    /**
+     * 重新載入系統在記憶體中的資料與快取（用於匯入、雲端還原或跨帳本切換後無縫即時生效）
+     */
+    async reloadAppData() {
+        await Promise.all([
+            this.themeManager.init(),
+            this.categoryManager.init(),
+            this.budgetManager.loadBudget(),
+            this.ledgerManager.init(),
+        ])
+
+        const advancedModeSetting = await this.dataService.getSetting(
+            'advancedAccountModeEnabled'
+        )
+        this.advancedModeEnabled = !!advancedModeSetting?.value
+        if (this.advancedModeEnabled) {
+            await this.dataService.deduplicateAccounts()
+            this.accounts = await this.dataService.getAccounts()
+        } else {
+            this.accounts = []
+        }
+        await this.dataService.deduplicateContacts()
+        this.updateNavAddIcon()
+        this.updateSidebarLedger()
     }
 
     /**

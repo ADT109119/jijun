@@ -537,4 +537,41 @@ describe('CategoryManager', () => {
             expect(Array.isArray(result)).toBe(true)
         })
     })
+
+    // ── reload / re-init 行為 ───────────────────────────────────────────
+    describe('reload / re-init behavior', () => {
+        it('重新執行 init() 能清空舊狀態並立即套用新載入的自訂分類', async () => {
+            // 先設定舊的分類
+            cm.customCategories = {
+                expense: [{ id: 'old_cat', name: '舊分類' }],
+                income: [],
+            }
+            expect(cm.getCategoryById('expense', 'old_cat')).not.toBeNull()
+
+            // 模擬還原後的新資料庫設定
+            const newCats = {
+                expense: [
+                    {
+                        id: 'restored_cat',
+                        name: '還原分類',
+                        icon: 'fa-solid fa-gift',
+                    },
+                ],
+                income: [],
+            }
+            mockDS.getCategorySetting.mockImplementation(async key => {
+                if (key === 'custom_categories') return { value: newCats }
+                return null
+            })
+
+            // 重新執行 init()
+            await cm.init()
+
+            // 舊分類應被清空，新分類應即時生效
+            expect(cm.getCategoryById('expense', 'old_cat')).toBeNull()
+            const found = cm.getCategoryById('expense', 'restored_cat')
+            expect(found).not.toBeNull()
+            expect(found.name).toBe('還原分類')
+        })
+    })
 })

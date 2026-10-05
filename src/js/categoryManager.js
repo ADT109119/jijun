@@ -17,10 +17,17 @@ export class CategoryManager {
             console.warn(
                 'CategoryManager: DataService not provided, falling back to empty categories'
             )
+            this.customCategories = { expense: [], income: [] }
+            this.categoryOrder = { expense: [], income: [] }
+            this.hiddenCategories = { expense: [], income: [] }
             return
         }
 
         try {
+            this.customCategories = { expense: [], income: [] }
+            this.categoryOrder = { expense: [], income: [] }
+            this.hiddenCategories = { expense: [], income: [] }
+
             let saved =
                 await this.dataService.getCategorySetting('custom_categories')
 
@@ -28,11 +35,15 @@ export class CategoryManager {
             if (!saved || !saved.value) {
                 const localSaved = localStorage.getItem('customCategories')
                 if (localSaved) {
-                    saved = { value: JSON.parse(localSaved) }
-                    await this.dataService.saveCategorySetting(
-                        'custom_categories',
-                        saved.value
-                    )
+                    try {
+                        saved = { value: JSON.parse(localSaved) }
+                        await this.dataService.saveCategorySetting(
+                            'custom_categories',
+                            saved.value
+                        )
+                    } catch (e) {
+                        console.warn('Failed to parse localStorage customCategories:', e)
+                    }
                 }
             }
 

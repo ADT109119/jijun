@@ -1801,10 +1801,13 @@ class DataService {
         }
     }
 
-    // 匯入資料（支援舊版格式）
-    async importData(file) {
+    // 匯入資料（支援舊版格式與進度回報）
+    async importData(file, options = {}) {
+        const { onProgress = null, skipConfirm = false } = options
         return new Promise((resolve, reject) => {
             const reader = new FileReader()
+
+            if (onProgress) onProgress(5, '正在讀取備份檔案...')
 
             reader.onload = async event => {
                 let backupSnapshot = null
@@ -1813,10 +1816,11 @@ class DataService {
                     if (!this.db && !this.useLocalStorage) {
                         await this.init()
                     }
+                    if (onProgress) onProgress(15, '正在解析資料格式...')
                     const data = JSON.parse(event.target.result)
 
-                    // 確認是否要覆蓋現有資料
-                    if ((await this.getRecords()).length > 0) {
+                    // 確認是否要覆蓋現有資料（呼叫端已確認時可透過 skipConfirm 跳過）
+                    if (!skipConfirm && (await this.getRecords()).length > 0) {
                         const confirmed = await customConfirm(
                             `匯入新資料將會覆蓋所有現有資料 (包含紀錄、帳戶、分類設定)。\n\n確定要繼續嗎？`
                         )
@@ -1830,6 +1834,7 @@ class DataService {
                     }
 
                     // --- 建立備份快照（用於錯誤時還原）---
+                    if (onProgress) onProgress(20, '正在建立安全快照...')
                     try {
                         backupSnapshot = await this._exportFullBackup()
                     } catch (e) {
@@ -1859,6 +1864,7 @@ class DataService {
                     }
 
                     // --- 清除所有舊資料 ---
+                    if (onProgress) onProgress(30, '正在清理現有資料...')
                     await this.clearAllRecords()
                     await this.clearAllAccounts()
                     await this.clearAllContacts()
@@ -1933,6 +1939,7 @@ class DataService {
                     })
 
                     // 2. 匯入帳本 (ledgers) 及建立 mapped ID（必須在分類之前）
+                    if (onProgress) onProgress(40, '正在匯入帳本與分類...')
                     const oldLedgerIdToNewIdMap = new Map()
                     if (
                         data.ledgers &&
@@ -2001,7 +2008,16 @@ class DataService {
                             dataVal.income !== undefined
                         if (isLegacyFormat) {
                             await this.saveCategorySetting(settingKey, dataVal)
+                            await this.saveSetting({ key: settingKey, value: dataVal })
+                            if (settingKey === 'custom_categories') {
+                                try {
+                                    localStorage.setItem('customCategories', JSON.stringify(dataVal))
+                                } catch (e) {
+                                    console.warn('LocalStorage customCategories sync failed:', e)
+                                }
+                            }
                         } else {
+                            let matchedActive = false
                             for (const [oldLidStr, val] of Object.entries(
                                 dataVal
                             )) {
@@ -2014,6 +2030,30 @@ class DataService {
                                     val,
                                     newLid
                                 )
+                                if (newLid === this.activeLedgerId) {
+                                    matchedActive = true
+                                    await this.saveSetting({ key: settingKey, value: val })
+                                    if (settingKey === 'custom_categories') {
+                                        try {
+                                            localStorage.setItem('customCategories', JSON.stringify(val))
+                                        } catch (e) {
+                                            console.warn('LocalStorage customCategories sync failed:', e)
+                                        }
+                                    }
+                                }
+                            }
+                            if (!matchedActive) {
+                                const firstVal = Object.values(dataVal)[0]
+                                if (firstVal) {
+                                    await this.saveSetting({ key: settingKey, value: firstVal })
+                                    if (settingKey === 'custom_categories') {
+                                        try {
+                                            localStorage.setItem('customCategories', JSON.stringify(firstVal))
+                                        } catch (e) {
+                                            console.warn('LocalStorage customCategories sync failed:', e)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2035,6 +2075,7 @@ class DataService {
                             data.budgetSettingsMap
                         )) {
                             let newKey = key
+                            let suffix = ''
                             if (newKey !== 'budget_settings') {
                                 // rewrite ledger id if it has one
                                 const parts = newKey.split('_')
@@ -2043,19 +2084,68 @@ class DataService {
                                     !isNaN(lId) &&
                                     oldLedgerIdToNewIdMap.has(lId)
                                 ) {
-                                    newKey = `budget_settings_${oldLedgerIdToNewIdMap.get(lId)}`
+                                    const mappedId = oldLedgerIdToNewIdMap.get(lId)
+                                    newKey = `budget_settings_${mappedId}`
+                                    suffix = `_${mappedId}`
                                 }
                             }
                             await this.saveSetting({ key: newKey, value: val })
+                            try {
+                                if (val && typeof val === 'object') {
+                                    localStorage.setItem(
+                                        `monthlyBudget${suffix}`,
+                                        (val.monthlyBudget || 0).toString()
+                                    )
+                                    localStorage.setItem(
+                                        `categoryBudgets${suffix}`,
+                                        JSON.stringify(val.categoryBudgets || {})
+                                    )
+                                    localStorage.setItem(
+                                        `categoryBudgetOrder${suffix}`,
+                                        JSON.stringify(val.categoryBudgetOrder || [])
+                                    )
+                                    localStorage.setItem(
+                                        `excludedBudgetCategories${suffix}`,
+                                        JSON.stringify(val.excludedBudgetCategories || [])
+                                    )
+                                }
+                            } catch (e) {
+                                console.warn('LocalStorage budget sync failed during import:', e)
+                            }
                         }
                     } else if (data.budgetSettings) {
                         await this.saveSetting({
                             key: 'budget_settings',
                             value: data.budgetSettings,
                         })
+                        if (this.activeLedgerId) {
+                            await this.saveSetting({
+                                key: `budget_settings_${this.activeLedgerId}`,
+                                value: data.budgetSettings,
+                            })
+                        }
+                        try {
+                            const val = data.budgetSettings
+                            const suffix = this.activeLedgerId ? `_${this.activeLedgerId}` : ''
+                            if (val && typeof val === 'object') {
+                                localStorage.setItem('monthlyBudget', (val.monthlyBudget || 0).toString())
+                                localStorage.setItem('categoryBudgets', JSON.stringify(val.categoryBudgets || {}))
+                                localStorage.setItem('categoryBudgetOrder', JSON.stringify(val.categoryBudgetOrder || []))
+                                localStorage.setItem('excludedBudgetCategories', JSON.stringify(val.excludedBudgetCategories || []))
+                                if (suffix) {
+                                    localStorage.setItem(`monthlyBudget${suffix}`, (val.monthlyBudget || 0).toString())
+                                    localStorage.setItem(`categoryBudgets${suffix}`, JSON.stringify(val.categoryBudgets || {}))
+                                    localStorage.setItem(`categoryBudgetOrder${suffix}`, JSON.stringify(val.categoryBudgetOrder || []))
+                                    localStorage.setItem(`excludedBudgetCategories${suffix}`, JSON.stringify(val.excludedBudgetCategories || []))
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('LocalStorage budget sync failed during legacy import:', e)
+                        }
                     }
 
                     // 4. 匯入帳戶並建立 ID Map（含同帳本同名帳戶分組去重與關聯優先綁定）
+                    if (onProgress) onProgress(55, '正在匯入帳戶資料...')
                     const oldAccountIdToNewIdMap = new Map()
                     if (
                         advancedModeEnabled &&
@@ -2120,6 +2210,7 @@ class DataService {
                     }
 
                     // 4.5 匯入檔案 (頭像等) 並建立 ID Map
+                    if (onProgress) onProgress(65, '正在處理附件檔案...')
                     const oldFileIdToNewIdMap = new Map()
                     if (
                         !this.useLocalStorage &&
@@ -2195,6 +2286,7 @@ class DataService {
                     }
 
                     // 5. 匯入聯絡人並建立 ID Map（含同名分組去重與 skipLog = true）
+                    if (onProgress) onProgress(75, '正在匯入欠款與聯絡人...')
                     const oldContactIdToNewIdMap = new Map()
                     if (data.contacts && Array.isArray(data.contacts)) {
                         const contactRefCounts = new Map()
@@ -2333,6 +2425,7 @@ class DataService {
                     }
 
                     // 7. 匯入紀錄
+                    if (onProgress) onProgress(85, '正在匯入收支明細...')
                     const oldRecordIdToNewIdMap = new Map()
 
                     let recordsSource = []
@@ -2454,6 +2547,7 @@ class DataService {
                     }
 
                     // 9. 匯入 Recurring Transactions
+                    if (onProgress) onProgress(95, '正在建立定期與分期項目...')
                     if (
                         data.recurring_transactions &&
                         Array.isArray(data.recurring_transactions)
@@ -2550,11 +2644,12 @@ class DataService {
                         }
                     }
 
-                    // 執行一次全域帳戶去重整合，確保歷史舊備份或邊界狀態中的同名帳戶乾淨合併
+                    // 執行一次全域帳戶與聯絡人去重整合，確保歷史舊備份或邊界狀態中的同名帳戶/聯絡人乾淨合併
                     try {
                         await this.deduplicateAccounts()
+                        await this.deduplicateContacts()
                     } catch (e) {
-                        console.warn('[DataService] post-import deduplicateAccounts warning:', e)
+                        console.warn('[DataService] post-import deduplicate warning:', e)
                     }
 
                     // 匯入成功：清除緊急快照（失敗時保留供手動救援）
@@ -2565,6 +2660,7 @@ class DataService {
                         // 忽略
                     }
 
+                    if (onProgress) onProgress(100, '資料匯入完成！')
                     resolve({
                         success: true,
                         message: `成功匯入 ${validRecords.length} 筆記錄`,
@@ -3051,17 +3147,78 @@ class DataService {
                 d.contactUuid || contactUuidMap.get(d.contactId) || null,
         }))
 
-        const customCategoriesSetting =
-            await this.getCategorySetting('custom_categories')
-        const customCategories = customCategoriesSetting?.value || null
-        const categoryOrderSetting =
-            await this.getCategorySetting('category_order')
-        const categoryOrder = categoryOrderSetting?.value || null
-        const hiddenCategoriesSetting =
-            await this.getCategorySetting('hidden_categories')
-        const hiddenCategories = hiddenCategoriesSetting?.value || null
-        const budgetSettingsSetting = await this.getSetting('budget_settings')
-        const budgetSettings = budgetSettingsSetting?.value || null
+        let customCategories = null
+        let categoryOrder = null
+        let hiddenCategories = null
+        let budgetSettingsMap = {}
+        let budgetSettings = null
+
+        if (!isSharedSync) {
+            customCategories =
+                await this.getCategorySettingsMap('custom_categories')
+            categoryOrder =
+                await this.getCategorySettingsMap('category_order')
+            hiddenCategories =
+                await this.getCategorySettingsMap('hidden_categories')
+
+            let allSettings = []
+            if (!this.useLocalStorage && this.db) {
+                try {
+                    allSettings = await this.db.getAll('settings')
+                } catch (e) {
+                    console.warn('Failed to get settings from IndexedDB:', e)
+                }
+            } else {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i)
+                    if (
+                        k &&
+                        (k === 'budget_settings' ||
+                            k.startsWith('budget_settings_'))
+                    ) {
+                        try {
+                            const val = JSON.parse(localStorage.getItem(k))
+                            allSettings.push({
+                                key: k,
+                                value: val?.value !== undefined ? val.value : val,
+                            })
+                        } catch (_) {}
+                    }
+                }
+            }
+
+            allSettings.forEach(s => {
+                if (
+                    s.key &&
+                    (s.key === 'budget_settings' ||
+                        s.key.startsWith('budget_settings_'))
+                ) {
+                    if (s.key === 'budget_settings') {
+                        budgetSettingsMap[s.key] = s.value
+                        if (!budgetSettings) budgetSettings = s.value
+                    } else {
+                        const parts = s.key.split('_')
+                        const lId = parseInt(parts[2])
+                        if (
+                            isNaN(lId) ||
+                            validLedgerIds.size === 0 ||
+                            validLedgerIds.has(lId)
+                        ) {
+                            budgetSettingsMap[s.key] = s.value
+                        }
+                    }
+                }
+            })
+
+            if (
+                !budgetSettings &&
+                budgetSettingsMap[`budget_settings_${this.activeLedgerId}`]
+            ) {
+                budgetSettings =
+                    budgetSettingsMap[`budget_settings_${this.activeLedgerId}`]
+            }
+        }
+
         const advancedAccountModeEnabled = await this.getSetting(
             'advancedAccountModeEnabled'
         )
@@ -3081,6 +3238,7 @@ class DataService {
                 debtManagementEnabled: debtManagementEnabled?.value || false,
                 groupManagementEnabled: groupManagementEnabled?.value || false,
             },
+            activeLedgerId: this.activeLedgerId,
             ledgers,
             accounts,
             records,
@@ -3097,6 +3255,7 @@ class DataService {
                       categoryOrder,
                       hiddenCategories,
                       budgetSettings,
+                      budgetSettingsMap,
                   }),
             metadata: {
                 totalRecords: records.length,
@@ -3524,6 +3683,124 @@ class DataService {
             return { mergedCount, groupsProcessed: duplicateGroups.length }
         } catch (error) {
             console.error('[DataService] deduplicateAccounts error:', error)
+            return { mergedCount: 0, groupsProcessed: 0, error }
+        }
+    }
+
+    /**
+     * 全域聯絡人自動去重與關聯安全移轉（Contact Deduplication）
+     * 掃描所有帳本中的同名聯絡人，智慧評估關聯活躍度選出主聯絡人，
+     * 將所有關聯的 debts (欠款) 與 records (記帳明細) 安全移轉至主聯絡人，
+     * 並安全刪除冗餘的同名聯絡人。
+     * @returns {Promise<{ mergedCount: number, groupsProcessed: number }>}
+     */
+    async deduplicateContacts() {
+        if (!this.db || this.useLocalStorage) {
+            return { mergedCount: 0, groupsProcessed: 0 }
+        }
+        try {
+            const allContacts = await this.getContacts({ allLedgers: true })
+            if (!allContacts || allContacts.length <= 1) {
+                return { mergedCount: 0, groupsProcessed: 0 }
+            }
+
+            // 分組：依 (contact.ledgerId || 1) + ':::' + normName
+            const groups = new Map()
+            for (const contact of allContacts) {
+                const normName = (contact.name || '').trim().toLowerCase()
+                if (!normName) continue
+                const key = `${contact.ledgerId || 1}:::${normName}`
+                if (!groups.has(key)) {
+                    groups.set(key, [])
+                }
+                groups.get(key).push(contact)
+            }
+
+            const duplicateGroups = [...groups.values()].filter(g => g.length > 1)
+            if (duplicateGroups.length === 0) {
+                return { mergedCount: 0, groupsProcessed: 0 }
+            }
+
+            const allDebts = await this.getDebts({ allLedgers: true })
+            const allRecords = await this.getRecords({ allLedgers: true })
+
+            // 統計各 contactId 的關聯紀錄數量
+            const debtCountMap = new Map()
+            for (const d of allDebts) {
+                if (d.contactId != null) {
+                    debtCountMap.set(d.contactId, (debtCountMap.get(d.contactId) || 0) + 1)
+                }
+            }
+            const recordCountMap = new Map()
+            for (const r of allRecords) {
+                if (r.contactId != null) {
+                    recordCountMap.set(r.contactId, (recordCountMap.get(r.contactId) || 0) + 1)
+                }
+            }
+
+            let mergedCount = 0
+
+            for (const group of duplicateGroups) {
+                // 評分排序：debt 權重 10，record 權重 5，有頭像優先，有 UUID 優先，建立時間早（ID小）優先
+                group.sort((a, b) => {
+                    const scoreA = (debtCountMap.get(a.id) || 0) * 10 + (recordCountMap.get(a.id) || 0) * 5
+                    const scoreB = (debtCountMap.get(b.id) || 0) * 10 + (recordCountMap.get(b.id) || 0) * 5
+                    if (scoreB !== scoreA) return scoreB - scoreA
+                    const avatarA = a.avatarFileId ? 1 : 0
+                    const avatarB = b.avatarFileId ? 1 : 0
+                    if (avatarB !== avatarA) return avatarB - avatarA
+                    const uuidA = a.uuid ? 1 : 0
+                    const uuidB = b.uuid ? 1 : 0
+                    if (uuidB !== uuidA) return uuidB - uuidA
+                    return (a.id || 0) - (b.id || 0)
+                })
+
+                const primary = group[0]
+                const redundants = group.slice(1)
+
+                // 若主聯絡人無頭像，冗餘聯絡人有頭像，繼承之
+                if (!primary.avatarFileId && redundants.some(r => r.avatarFileId)) {
+                    const foundAvatar = redundants.find(r => r.avatarFileId)?.avatarFileId
+                    if (foundAvatar) {
+                        await this.updateContact(primary.id, { avatarFileId: foundAvatar }, true)
+                        primary.avatarFileId = foundAvatar
+                    }
+                }
+
+                // 批次轉移關聯資料
+                for (const redundant of redundants) {
+                    const redId = redundant.id
+
+                    // 1. 轉移 debts
+                    const debtsToUpdate = allDebts.filter(d => d.contactId === redId)
+                    for (const debt of debtsToUpdate) {
+                        await this.updateDebt(debt.id, {
+                            contactId: primary.id,
+                            contactUuid: primary.uuid || null
+                        }, true)
+                        debt.contactId = primary.id
+                        debt.contactUuid = primary.uuid || null
+                    }
+
+                    // 2. 轉移 records (例如群組分帳或欠款紀錄的 contactId)
+                    const recordsToUpdate = allRecords.filter(r => r.contactId === redId)
+                    for (const rec of recordsToUpdate) {
+                        await this.updateRecord(rec.id, {
+                            contactId: primary.id
+                        }, true)
+                        rec.contactId = primary.id
+                    }
+
+                    // 3. 刪除冗餘聯絡人 (帶 skipLog = true 避免產生刪除日誌)
+                    await this.deleteContact(redId, true)
+                    mergedCount++
+                }
+            }
+
+            console.log(`[DataService] deduplicateContacts: 合併了 ${mergedCount} 個重複聯絡人`)
+            return { mergedCount, groupsProcessed: duplicateGroups.length }
+        } catch (error) {
+            console.error('[DataService] deduplicateContacts error:', error)
             return { mergedCount: 0, groupsProcessed: 0, error }
         }
     }

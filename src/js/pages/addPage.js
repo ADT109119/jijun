@@ -521,6 +521,18 @@ export class AddPage {
                             customAlert('請輸入聯絡人名稱')
                             return
                         }
+                        // 檢查同帳本是否已存在同名聯絡人，若存在則直接選用
+                        const existingContacts = await this.app.dataService.getContacts()
+                        const normName = name.toLowerCase()
+                        const existing = existingContacts.find(c => (c.name || '').trim().toLowerCase() === normName)
+                        if (existing) {
+                            closeModal()
+                            await loadContacts(existing.id)
+                            debtContactId = existing.id
+                            updateDebtBtn()
+                            showToast('已選取現有同名聯絡人', 'info')
+                            return
+                        }
                         const newId = await this.app.dataService.addContact({
                             name,
                         })

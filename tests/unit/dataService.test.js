@@ -2640,6 +2640,91 @@ describe('DataService — groupManagementEnabled 設定項匯出/匯入/同步',
             restore()
         }
     })
+
+    it('exportDataForSync 應包含 budgetSettingsMap 與 activeLedgerId，並提供 budgetSettings fallback', async () => {
+        const budgetPayload = {
+            monthlyBudget: 25000,
+            categoryBudgets: { food: 8000, transport: 3000 },
+            categoryBudgetOrder: ['food', 'transport'],
+            excludedBudgetCategories: ['investment'],
+        }
+        await ds.saveSetting({
+            key: `budget_settings_${ds.activeLedgerId}`,
+            value: budgetPayload,
+        })
+
+        const syncExport = await ds.exportDataForSync()
+        expect(syncExport.activeLedgerId).toBe(ds.activeLedgerId)
+        expect(syncExport.budgetSettingsMap).toBeDefined()
+        expect(syncExport.budgetSettingsMap[`budget_settings_${ds.activeLedgerId}`]).toEqual(budgetPayload)
+        expect(syncExport.budgetSettings).toEqual(budgetPayload)
+    })
+
+    it('importData 應正確還原 budgetSettingsMap 並重寫 ledgerId，同時同步 localStorage', async () => {
+        const budgetPayload = {
+            monthlyBudget: 30000,
+            categoryBudgets: { dining: 10000 },
+            categoryBudgetOrder: ['dining'],
+            excludedBudgetCategories: [],
+        }
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {},
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '主帳本', uuid: 'ledger-uuid-test' }],
+            records: [],
+            budgetSettingsMap: {
+                budget_settings_1: budgetPayload,
+            },
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            const ledgers = await ds.getLedgers()
+            const newLedgerId = ledgers[0].id
+            const setting = await ds.getSetting(`budget_settings_${newLedgerId}`)
+            expect(setting?.value).toEqual(budgetPayload)
+            expect(localStorage.getItem(`monthlyBudget_${newLedgerId}`)).toBe('30000')
+        } finally {
+            restore()
+        }
+    })
+
+    it('importData 應支援只有舊版 budgetSettings 的備份檔並補齊當前帳本 key', async () => {
+        const legacyBudget = {
+            monthlyBudget: 15000,
+            categoryBudgets: { snack: 2000 },
+            categoryBudgetOrder: ['snack'],
+            excludedBudgetCategories: [],
+        }
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {},
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '主帳本', uuid: 'ledger-uuid-legacy' }],
+            records: [],
+            budgetSettings: legacyBudget,
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            const ledgers = await ds.getLedgers()
+            const newLedgerId = ledgers[0].id
+            const scopedSetting = await ds.getSetting(`budget_settings_${newLedgerId}`)
+            expect(scopedSetting?.value).toEqual(legacyBudget)
+            const globalSetting = await ds.getSetting('budget_settings')
+            expect(globalSetting?.value).toEqual(legacyBudget)
+            expect(localStorage.getItem('monthlyBudget')).toBe('15000')
+        } finally {
+            restore()
+        }
+    })
 })
 
 describe('DataService — addAmortization chargeMode', () => {
@@ -2675,5 +2760,87 @@ describe('DataService — addAmortization chargeMode', () => {
         })
         const item = await ds.getAmortization(id)
         expect(item.chargeMode).toBe('upfront')
+    })
+})
+
+describe('importData 進度回報與確認跳過', () => {
+    let ds
+    beforeEach(async () => {
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('importData 觸發 onProgress 並支援 skipConfirm', async () => {
+        // 先建立一筆紀錄，若無 skipConfirm 則會調用 customConfirm
+        await ds.addRecord({
+            type: 'expense',
+            amount: 50,
+            date: '2024-01-01',
+            category: '餐飲',
+            ledgerId: 1,
+            uuid: 'existing-rec',
+        })
+
+        const customCats = {
+            expense: [
+                {
+                    id: 'custom_cat_1',
+                    name: '自訂分類A',
+                    icon: 'fa-solid fa-star',
+                    color: 'bg-yellow-400',
+                },
+            ],
+            income: [],
+        }
+
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {},
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '主帳本', uuid: 'ledger-uuid-test' }],
+            records: [
+                {
+                    id: 1,
+                    type: 'expense',
+                    amount: 100,
+                    date: '2024-01-02',
+                    category: 'custom_cat_1',
+                    ledgerId: 1,
+                    uuid: 'rec-1',
+                },
+            ],
+            customCategories: {
+                "1": customCats,
+            },
+        })
+        const restore = stubFileReader(json)
+
+        const progressUpdates = []
+        try {
+            const result = await ds.importData(
+                { name: 'backup.json' },
+                {
+                    skipConfirm: true,
+                    onProgress: (percent, message) => {
+                        progressUpdates.push({ percent, message })
+                    },
+                }
+            )
+
+            expect(result.success).toBe(true)
+            expect(progressUpdates.length).toBeGreaterThan(0)
+            expect(progressUpdates[0].percent).toBe(5)
+            expect(progressUpdates[progressUpdates.length - 1].percent).toBe(100)
+
+            // 驗證自訂類別同步到 global settings 及 localStorage
+            const scopedSetting = await ds.getCategorySetting('custom_categories', ds.activeLedgerId)
+            expect(scopedSetting?.value).toEqual(customCats)
+            const globalSetting = await ds.getSetting('custom_categories')
+            expect(globalSetting?.value).toEqual(customCats)
+            expect(JSON.parse(localStorage.getItem('customCategories'))).toEqual(customCats)
+        } finally {
+            restore()
+        }
     })
 })

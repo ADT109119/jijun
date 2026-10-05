@@ -14,6 +14,7 @@ import {
     calculateNextDueDate,
     shouldSkipDate,
     calculateAmortizationDetails,
+    showProgressModal,
 } from '../../src/js/utils.js'
 
 describe('escapeHTML', () => {
@@ -738,5 +739,34 @@ describe('calculateAmortizationDetails', () => {
     it('負期數回傳零值', () => {
         const result = calculateAmortizationDetails(10000, -5, 0, 'monthly')
         expect(result.amountPerPeriod).toBe(0)
+    })
+})
+
+describe('showProgressModal', () => {
+    it('正確建立進度 Modal DOM，並可更新百分比與文字', () => {
+        const modal = showProgressModal('測試匯入', '初始化中...')
+        const messageEl = document.querySelector('.progress-modal-message')
+        const percentEl = document.querySelector('.progress-modal-percent')
+        const barEl = document.querySelector('.progress-modal-bar')
+
+        expect(messageEl?.textContent).toBe('初始化中...')
+        expect(percentEl?.textContent).toBe('0%')
+        expect(barEl?.style.width).toBe('0%')
+
+        modal.update(45, '正在處理第 1 階段...')
+        expect(messageEl?.textContent).toBe('正在處理第 1 階段...')
+        expect(percentEl?.textContent).toBe('45%')
+        expect(barEl?.style.width).toBe('45%')
+
+        modal.update(120, '超過上限應被限制在 100%')
+        expect(percentEl?.textContent).toBe('100%')
+        expect(barEl?.style.width).toBe('100%')
+
+        modal.update(-10, '低於下限應被限制在 0%')
+        expect(percentEl?.textContent).toBe('0%')
+        expect(barEl?.style.width).toBe('0%')
+
+        modal.close()
+        expect(document.querySelector('.progress-modal-message')).toBeNull()
     })
 })

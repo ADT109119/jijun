@@ -17,6 +17,9 @@ export class DebtManager {
 
   // 渲染欠款管理頁面
   async renderDebtsPage(container, params = null) {
+    if (typeof this.dataService.deduplicateContacts === 'function') {
+      await this.dataService.deduplicateContacts();
+    }
     this.container = container;
     
     // Reset filters on page load
@@ -1471,6 +1474,9 @@ export class DebtManager {
 
   // 渲染聯絡人管理頁面
   async renderContactsPage(container) {
+    if (typeof this.dataService.deduplicateContacts === 'function') {
+      await this.dataService.deduplicateContacts();
+    }
     this.container = container;
     const contacts = await this.dataService.getContacts();
 
@@ -1647,6 +1653,17 @@ export class DebtManager {
 
       if (!name) {
         customAlert('請輸入聯絡人名稱');
+        return;
+      }
+
+      // 檢查同帳本是否已存在同名聯絡人
+      const existingContacts = await this.dataService.getContacts();
+      const normName = name.toLowerCase();
+      const isDuplicate = existingContacts.some(c => 
+        (c.name || '').trim().toLowerCase() === normName && (!isEdit || c.id !== contactToEdit.id)
+      );
+      if (isDuplicate) {
+        customAlert('已存在同名聯絡人，請使用其他名稱');
         return;
       }
 

@@ -1,4 +1,4 @@
-import { showToast, customConfirm, closeModalWithAnimation } from '../utils.js'
+import { showToast, customConfirm, closeModalWithAnimation, showProgressModal } from '../utils.js'
 
 export class SyncSettingsPage {
     constructor(app) {
@@ -312,9 +312,15 @@ export class SyncSettingsPage {
                                     return
                                 const fileId = btn.dataset.fileId
                                 closeModal(async () => {
+                                    const progressModal = showProgressModal(
+                                        '雲端還原',
+                                        '正在從雲端下載備份...'
+                                    )
+                                    progressModal.update(10, '正在從 Google Drive 下載備份...')
                                     try {
                                         const backupData =
                                             await this.app.syncService.restoreFromDrive(fileId)
+                                        progressModal.update(25, '正在準備還原資料...')
                                         // Use the import logic — create a temporary blob
                                         const blob = new Blob(
                                             [JSON.stringify(backupData)],
@@ -331,26 +337,44 @@ export class SyncSettingsPage {
                                         )
                                         const result =
                                             await this.app.dataService.importData(
-                                                file
+                                                file,
+                                                {
+                                                    skipConfirm: true,
+                                                    onProgress: (pct, msg) => {
+                                                        // Map 0-100% of import to 25% - 85%
+                                                        progressModal.update(25 + Math.round(pct * 0.6), msg)
+                                                    }
+                                                }
                                             )
-                                        showToast(
-                                            result.message,
-                                            result.success ? 'success' : 'error'
-                                        )
                                         if (result.success) {
+                                            progressModal.update(88, '正在更新同步狀態...')
                                             // Reset sync history to avoid replaying old changes
                                             await this.app.syncService.markAllRemoteChangesAsPulled()
-                                            showToast(
-                                                '備份還原成功！正在重新載入...',
-                                                'success'
-                                            )
-                                            this.app.currentHash = null
+                                            progressModal.update(94, '正在重新載入系統設定...')
+                                            await this.app.reloadAppData()
+                                            progressModal.update(100, '備份還原成功！')
                                             setTimeout(() => {
-                                                window.location.hash = '#home'
-                                                window.location.reload()
-                                            }, 1200)
+                                                progressModal.close(() => {
+                                                    showToast(
+                                                        '備份還原成功！正在重新載入...',
+                                                        'success'
+                                                    )
+                                                    this.app.currentHash = null
+                                                    window.location.hash = '#home'
+                                                    setTimeout(() => {
+                                                        window.location.reload()
+                                                    }, 300)
+                                                })
+                                            }, 500)
+                                        } else {
+                                            progressModal.close()
+                                            showToast(
+                                                result.message || '還原失敗',
+                                                'error'
+                                            )
                                         }
                                     } catch (err) {
+                                        progressModal.close()
                                         showToast(
                                             '還原失敗：' + err.message,
                                             'error'

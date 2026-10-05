@@ -1119,9 +1119,10 @@ export class SyncService {
             }
         }
 
-        // 若本次變更批次包含帳戶，執行自動去重整併
+        // 若本次變更批次包含帳戶或聯絡人，執行自動去重整併
         try {
             await this.dataService.deduplicateAccounts()
+            await this.dataService.deduplicateContacts()
         } catch (_) {}
 
         return appliedKeys
@@ -3092,7 +3093,7 @@ export class SyncService {
     async _resolveDebtContactId(data) {
         if (!data.contactUuid) return data
         try {
-            const contacts = await this.dataService.getContacts()
+            const contacts = await this.dataService.getContacts({ allLedgers: true })
             const matched = contacts.find(c => c.uuid === data.contactUuid)
             return { ...data, contactId: matched ? matched.id : null }
         } catch (_) {

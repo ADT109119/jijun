@@ -910,7 +910,7 @@ export class GuideManager {
       <div class="flex-1 overflow-y-auto pr-0.5">
         <p class="text-sm text-wabi-text-secondary leading-relaxed mb-2 whitespace-pre-line">${escapeHTML(body)}</p>
       </div>
-      ${onNext ? `<button id="guide-tour-next" class="mt-2 w-full py-2 rounded-xl bg-wabi-primary text-white font-bold text-sm hover:opacity-90 transition-all">${escapeHTML(nextLabel)} <i class="fa-solid fa-arrow-right ml-1"></i></button>` : ''}
+      ${onNext ? `<button id="guide-tour-next" class="mt-2 w-full py-2 rounded-xl bg-wabi-primary text-wabi-surface font-bold text-sm hover:opacity-90 transition-all">${escapeHTML(nextLabel)} <i class="fa-solid fa-arrow-right ml-1"></i></button>` : ''}
     `
         const targetEl = targetSel ? document.querySelector(targetSel) : null
         if (targetEl) {

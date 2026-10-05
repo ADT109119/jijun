@@ -150,6 +150,52 @@ export function customAlert(message, title = '提示') {
     })
 }
 
+/**
+ * 顯示帶有進度條、圖示與狀態說明的進度彈窗 (Progress Modal)
+ * @param {string} [title='處理中'] - 彈窗標題
+ * @param {string} [initialMessage='正在處理...'] - 初始步驟說明文字
+ * @returns {{ update: (percent: number, message?: string) => void, close: (onComplete?: Function) => void }}
+ */
+export function showProgressModal(title = '處理中', initialMessage = '正在處理...') {
+    const modal = document.createElement('div')
+    modal.className =
+        'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in'
+    modal.innerHTML = `
+        <div class="bg-wabi-surface rounded-2xl w-full max-w-sm overflow-hidden shadow-xl transform transition-all animate-modal-pop p-6">
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-wabi-primary/10 text-wabi-primary flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-spinner fa-spin text-lg"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-base font-bold text-wabi-text-primary truncate">${escapeHTML(title)}</h3>
+                    <p class="text-xs text-wabi-text-secondary truncate progress-modal-message mt-0.5">${escapeHTML(initialMessage)}</p>
+                </div>
+                <span class="text-sm font-semibold text-wabi-primary progress-modal-percent flex-shrink-0">0%</span>
+            </div>
+            <div class="w-full bg-wabi-bg rounded-full h-2.5 overflow-hidden">
+                <div class="progress-modal-bar bg-wabi-primary h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+    `
+    document.body.appendChild(modal)
+
+    const messageEl = modal.querySelector('.progress-modal-message')
+    const percentEl = modal.querySelector('.progress-modal-percent')
+    const barEl = modal.querySelector('.progress-modal-bar')
+
+    return {
+        update(percent, message) {
+            const clamped = Math.max(0, Math.min(100, Math.round(percent)))
+            if (barEl) barEl.style.width = `${clamped}%`
+            if (percentEl) percentEl.textContent = `${clamped}%`
+            if (message && messageEl) messageEl.textContent = message
+        },
+        close(onComplete) {
+            closeModalWithAnimation(modal, modal.firstElementChild, onComplete)
+        },
+    }
+}
+
 export function formatCurrency(amount) {
     if (isNaN(amount)) return '0'
     return new Intl.NumberFormat('zh-TW', {

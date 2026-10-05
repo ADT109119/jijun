@@ -137,6 +137,46 @@ describe('BudgetManager', () => {
             expect(bm.categoryBudgets).toEqual({})
         })
 
+        it('從 IndexedDB 讀取成功後同步寫入 localStorage 快照', async () => {
+            ds.getSetting.mockResolvedValueOnce({
+                key: 'budget_settings_1',
+                value: {
+                    monthlyBudget: 12000,
+                    categoryBudgets: { food: 4000 },
+                    categoryBudgetOrder: ['food'],
+                    excludedBudgetCategories: ['investment'],
+                },
+            })
+
+            await bm.loadBudget()
+
+            expect(localStorage.getItem('monthlyBudget_1')).toBe('12000')
+            expect(JSON.parse(localStorage.getItem('categoryBudgets_1'))).toEqual({ food: 4000 })
+        })
+
+        it('當 activeLedgerId 非 1 但為第一主帳本時，讀取不到可 fallback 至全域 budget_settings', async () => {
+            ds.activeLedgerId = 2
+            ds.getLedgers = vi.fn().mockResolvedValue([{ id: 2, name: '主帳本' }])
+            ds.getSetting.mockImplementation(async key => {
+                if (key === 'budget_settings_2') return null
+                if (key === 'budget_settings') {
+                    return {
+                        key: 'budget_settings',
+                        value: {
+                            monthlyBudget: 20000,
+                            categoryBudgets: {},
+                        },
+                    }
+                }
+                return null
+            })
+
+            await bm.loadBudget()
+
+            expect(bm.currentBudget).toBe(20000)
+            expect(localStorage.getItem('monthlyBudget_2')).toBe('20000')
+        })
+
         it('預算值與分類預算非數字時，防禦回退為 0', async () => {
             ds.getSetting.mockResolvedValueOnce({
                 key: 'budget_settings_1',

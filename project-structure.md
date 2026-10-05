@@ -6,39 +6,39 @@
 
 ```
 src/js/
-├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon, 初始化自動執行 deduplicateAccounts)
+├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon, 初始化與喚醒自動執行 deduplicateAccounts / deduplicateContacts，支援 reloadAppData 重新載入記憶體中各模組快取)
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援 + 群組分帳與單筆個別還款 + deduplicateAccounts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援 + 群組分帳與單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── groupManager.js      # 群組分帳管理商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數
-├── categoryManager.js   # 分類管理 UI 邏輯
+├── categoryManager.js   # 分類管理 UI 邏輯 (支援自訂分類、排序、隱藏，init 自動清空舊狀態防跨帳本殘留，與 IndexedDB/localStorage 雙向同步)
 ├── statistics.js        # 統計分析頁面 (包含跨月比較報表等功能)
 ├── comparisonReport.js   # 跨月比較報表與 CSV 匯出 (包含結構比例、日均支出、儲蓄率)
 ├── calendarCashFlow.js   # 行事曆金流檢視 (月曆網格、Top 3 支出標籤、每日明細 Modal)
 ├── recordsList.js       # 記帳紀錄列表
-├── budgetManager.js     # 預算管理
+├── budgetManager.js     # 預算管理 (支援多帳本 per-ledger 預算設定、第一主帳本相容 fallback 與 IndexedDB/localStorage 雙向快照同步)
 ├── quickSelectManager.js# 快速選擇管理
-├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，金額統計卡片與聯絡人總表完整納入群組欠款)
+├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，金額統計卡片與聯絡人總表完整納入群組欠款，進入頁面自動去重與新增聯絡人同名防呆)
 ├── changelog.js         # 更新日誌
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 雲端備份&同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 UUID 外鍵解析)
+├── syncService.js       # Google Drive 雲端備份&同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
 ├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
 ├── router.js            # 路由管理
 ├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取)
-└── utils.js             # 共用工具函數 (格式化、Toast 等)
+└── utils.js             # 共用工具函數 (格式化、Toast、customConfirm/customAlert、showProgressModal 即時進度彈窗等)
 
 src/js/pages/
 ├── homePage.js          # 首頁：收支摘要、小工具、快速記帳
-├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提
+├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提 (快速新增聯絡人同名自動選用現有聯絡人防重複)
 ├── recordsPage.js       # 明細列表：篩選、搜尋、日期範圍、分頁
 ├── statsPage.js         # 統計報表：圖表、類別分析、趨勢
-├── settingsPage.js      # 設定：主題、進階模式、匯入匯出、通知
+├── settingsPage.js      # 設定：主題、進階模式、匯入匯出 (整合 showProgressModal 與 reloadAppData 即時套用)、通知
 ├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶
 ├── debtsPage.js         # 欠款管理頁面（極簡直觀顯示個人欠款與待結清群組，前端路由）
 ├── groupsPage.js        # 獨立群組與專案管理頁面（建立/重命名/刪除/檢視專案與分帳群組）
@@ -51,7 +51,7 @@ src/js/pages/
 ├── themesPage.js        # 主題管理
 ├── themeStorePage.js    # 主題商店
 ├── storePage.js         # 商店頁面
-├── syncSettingsPage.js  # 同步設定
+├── syncSettingsPage.js  # 同步設定 (整合雲端還原 showProgressModal 即時進度展示、skipConfirm 與 reloadAppData)
 ├── privacyPage.js       # 隱私權政策
 └── licensePage.js       # 授權條款
 
@@ -238,15 +238,20 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
     - 以 `EasyAccounting_SharedManifest_<uuid>.json` 記錄所有參與成員的 deviceId、email 與日誌檔 ID，寫入時使用 ETag / If-Match 樂觀鎖重試防競態，註冊失敗立即中斷防孤立成員
     - 加入與共用流程：邀請時自動對 manifest 與日誌檔授權，取消/移除成員時閉環撤銷 Google Drive 檔案權限
     - 帳本本體支援 `sharedManifestId` 與 `sharedFileId` 雙向相容推進與取消共用
-- **欠款與群組金額統計對齊 (Debt & Group Summary Alignment)**:
-    - **統計完整納入群組欠款**：欠款頁面頂部「總應收」與「總應付」摘要卡片 (`updateSummaryCards`) 以及「聯絡人欠款總表」彈窗 (`showContactSummaryModal`) 不再排除帶有 `groupId` 或關聯紀錄含有 `groupId` 的欠款，確保未結清之應收/應付款項百分之百如實累加與分類統計。
-    - **列表顯示與防重呈現分離**：欠款列表 (`loadDebtList`) 則維持個人欠款防重過濾，屬於群組的欠款統一以群組卡片彙整呈現並支援點擊檢視明細與個別還款，兼顧總額統計的正確精準與介面清單的整潔。
+    - **聯絡人去重與防重整合架構 (Contact Deduplication & Idempotence)**：
+        - **全域聯絡人自動去重與關聯移轉 (deduplicateContacts)**：`dataService` 提供 `deduplicateContacts()`，依帳本智慧辨識同名聯絡人（不分大小寫與空白），依關聯欠款（權重 10）與明細（權重 5）活躍度選定主聯絡人，主聯絡人缺頭像時自動繼承冗餘聯絡人之頭像，將關聯之 `debts`（`contactId` 與 `contactUuid`）和 `records`（`contactId`）安全轉移至主聯絡人後以 `skipLog = true` 刪除冗餘聯絡人；於 SPA 初始化 (`main.js`)、喚醒 (`resume`)、進入欠款頁與聯絡人頁面 (`debtManager.js`)、匯入還原及同步拉取後自動執行。
+        - **跨帳本聯絡人外鍵解析修復**：修復 `syncService._resolveDebtContactId` 查詢聯絡人時漏傳 `{ allLedgers: true }` 的問題，避免非當前選取帳本之欠款聯絡人外鍵被誤重設為 null。
+        - **同名建立防呆**：聯絡人管理彈窗 (`debtManager.js`) 新增同名阻擋提示；新增記帳頁面快速新增聯絡人 (`addPage.js`) 輸入同名時自動選用現有同名聯絡人，防止同帳本重複建立同名聯絡人。
+    - **欠款與群組金額統計對齊 (Debt & Group Summary Alignment)**:
+        - **統計完整納入群組欠款**：欠款頁面頂部「總應收」與「總應付」摘要卡片 (`updateSummaryCards`) 以及「聯絡人欠款總表」彈窗 (`showContactSummaryModal`) 不再排除帶有 `groupId` 或關聯紀錄含有 `groupId` 的欠款，確保未結清之應收/應付款項百分之百如實累加與分類統計。
+        - **列表顯示與防重呈現分離**：欠款列表 (`loadDebtList`) 則維持個人欠款防重過濾，屬於群組的欠款統一以群組卡片彙整呈現並支援點擊檢視明細與個別還款，兼顧總額統計的正確精準與介面清單的整潔。
 
 ## 測試結構
 
 所有的單元測試位於 `tests/unit/` 目錄下：
 
 - `accountDeduplication.test.js` # 測試帳戶去重、備份匯入分組映射、同步同名冪等防護、還原檢查點持久化、UUID 主動對齊 (UUID Alignment)、Update 業務鍵防重複與 Delete 業務鍵防脫鉤
+- `contactDeduplication.test.js` # 測試聯絡人去重 (deduplicateContacts)、debts 與 records 關聯安全移轉、頭像繼承、大小寫不敏感辨識、跨帳本隔離、備份匯入去重、雲端同步 UUID 對齊與跨帳本外鍵解析
 - `creditInstallment.test.js` # 測試信用卡分期 (upfront 模式、轉帳對生成、額度釋放、末期差額與補跑快取同步)
 - `dataServiceInit.test.js` # 測試 IndexedDB 初始化安全 (版本探測、VersionError 防護、blocked 偵測與持久化)
 - `recordsList.test.js` # 測試明細紀錄列表、群組標頭排版/折疊展開、預設時間範圍設定與搜尋清空按鈕
@@ -267,6 +272,6 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `syncService.test.js` # 測試雲端同步 (含 per-device 獨立日誌檔、manifest 註冊表、ETag 樂觀鎖、appliedKeys 去重與個人/共用雙軌全量保留、舊帳本防斷網遷移、reader 權限與撤銷對齊、原子性 checkedMap、ledgers 變更永久留存與 ledgerMeta 快照回退、ID 精準清理杜絕掉單、預設帳本防劫持雙防線、UUID 主動對齊、Update/Delete 業務鍵兜底比對、N1-N5 回歸測試、Round 2 增量審查 P1-P2 強化測試、Round 3 審查驗證測試、Round 4 修復輪 R1-R4 驗證測試、Round 5 OCR 輪次 N1-N4 加固測試)
 - `ledgerManager.test.js` # 測試帳本管理 (含建立、切換、刪除、新舊共用加入/分享/取消與 Drive 權限撤銷、reader 權限指派、shareLedger/removeSharedUser 擁有者校驗、sync_shared_granted 快取清理、Drive 伺服器端 owner 權限優先採信與 Fail-Closed 判定、舊版單檔加入 isShared 防護、大小寫不敏感權限撤銷與 organizer 角色支援)
 - `tourManager.test.js` # 測試導覽功能 (歡迎 Modal、氣泡導覽、自動實操演示、狀態持久化與取消中斷)
-- ...等等（共有 39 個測試檔案，1698 項測試全部通過）
+- ...等等（共有 40 個測試檔案，1718 項測試全部通過）
 - 透過 `npm test` (`npx vitest run`) 執行所有單元測試
 

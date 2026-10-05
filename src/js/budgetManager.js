@@ -24,13 +24,20 @@ export class BudgetManager {
                 )
 
                 // Fallback for migration from single-ledger to multi-ledger
-                if (
-                    !budgetSettings &&
-                    ledgerSuffix !== '' &&
-                    ledgerSuffix === '_1'
-                ) {
-                    budgetSettings =
-                        await this.dataService.getSetting('budget_settings')
+                if (!budgetSettings && ledgerSuffix !== '') {
+                    let isPrimaryLedger = ledgerSuffix === '_1'
+                    if (!isPrimaryLedger && typeof this.dataService.getLedgers === 'function') {
+                        try {
+                            const ledgers = await this.dataService.getLedgers()
+                            if (ledgers && ledgers.length > 0 && ledgers[0].id === this.dataService.activeLedgerId) {
+                                isPrimaryLedger = true
+                            }
+                        } catch (_) {}
+                    }
+                    if (isPrimaryLedger) {
+                        budgetSettings =
+                            await this.dataService.getSetting('budget_settings')
+                    }
                 }
 
                 if (budgetSettings && budgetSettings.value) {
@@ -56,6 +63,26 @@ export class BudgetManager {
                     
                     const rawExcluded = excludedBudgetCategories || []
                     this.excludedBudgetCategories = [...new Set(rawExcluded)]
+
+                    try {
+                        localStorage.setItem(
+                            `monthlyBudget${ledgerSuffix}`,
+                            this.currentBudget.toString()
+                        )
+                        localStorage.setItem(
+                            `categoryBudgets${ledgerSuffix}`,
+                            JSON.stringify(this.categoryBudgets)
+                        )
+                        localStorage.setItem(
+                            `categoryBudgetOrder${ledgerSuffix}`,
+                            JSON.stringify(this.categoryBudgetOrder)
+                        )
+                        localStorage.setItem(
+                            `excludedBudgetCategories${ledgerSuffix}`,
+                            JSON.stringify(this.excludedBudgetCategories)
+                        )
+                    } catch (_) {}
+
                     return
                 }
             }
