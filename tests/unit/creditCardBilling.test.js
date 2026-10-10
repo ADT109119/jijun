@@ -1,0 +1,552 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import DataService from '../../src/js/dataService.js'
+
+function clearMockData() {
+    if (globalThis.indexedDB && globalThis.indexedDB._storeData) {
+        for (const name of Object.keys(globalThis.indexedDB._storeData)) {
+            globalThis.indexedDB._storeData[name].length = 0
+        }
+    }
+}
+
+describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+    })
+
+    describe('getCreditCardBillingInfo', () => {
+        it('非信用卡帳戶回傳 null', async () => {
+            const accId = await ds.addAccount({
+                name: '現金皮夾',
+                type: 'wallet',
+                balance: 1000,
+            })
+            const info = await ds.getCreditCardBillingInfo(accId)
+            expect(info).toBeNull()
+        })
+
+        it('未達出帳日時，正確劃分即時未出帳週期與統計金額', async () => {
+            // 結帳日 25 日，參考日期 2026-10-05 (5 <= 25)
+            // 未出帳週期應為 2026-09-26 ~ 2026-10-25
+            const cardId = await ds.addAccount({
+                name: '國泰CUBE卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                creditLimit: 50000,
+                balance: 0,
+            })
+
+            // 建立歷史已結帳交易 (2026-09-20)
+            await ds.addRecord({
+                type: 'expense',
+                amount: 3000,
+                date: '2026-09-20',
+                accountId: cardId,
+                description: '前期消費',
+            })
+
+            // 建立本期未出帳交易 (2026-09-28, 2026-10-02)
+            await ds.addRecord({
+                type: 'expense',
+                amount: 1200,
+                date: '2026-09-28',
+                accountId: cardId,
+                description: '未出帳消費A',
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 800,
+                date: '2026-10-02',
+                accountId: cardId,
+                description: '未出帳消費B',
+            })
+            // 建立一筆退款 (收入)
+            await ds.addRecord({
+                type: 'income',
+                amount: 200,
+                date: '2026-10-03',
+                accountId: cardId,
+                description: '未出帳刷退',
+            })
+
+            // 建立一筆未繳帳單 (前期 2026-09 期)
+            await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-08',
+                statementDate: new Date(2026, 8, 25).getTime(),
+                dueDate: new Date(2026, 9, 15).getTime(),
+                amount: 3000,
+                status: 'unpaid',
+                ledgerId: 1,
+            })
+
+            const refDate = new Date(2026, 9, 5) // 2026-10-05
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+
+            expect(info).not.toBeNull()
+            expect(info.unbilledPeriod.startStr).toBe('2026-09-26')
+            expect(info.unbilledPeriod.endStr).toBe('2026-10-25')
+            expect(info.unbilledRecords).toHaveLength(3) // 2 expense + 1 income
+            expect(info.unbilledExpense).toBe(2000) // 1200 + 800
+            expect(info.unbilledRepayment).toBe(200)
+            expect(info.unbilledTotal).toBe(1800) // 2000 - 200
+
+            // 準備繳納帳單驗證
+            expect(info.billedDueTotal).toBe(3000)
+            expect(info.unpaidStatements).toHaveLength(1)
+            expect(info.nextDueDate).toBe(new Date(2026, 9, 15).getTime())
+
+            // 總欠款與可用額度
+            // 總支出 3000 + 1200 + 800 = 5000，收入 200，總欠款 = 4800
+            expect(info.totalDebt).toBe(4800)
+            expect(info.availableCredit).toBe(50000 - 4800)
+        })
+
+        it('已過出帳日時，正確推進到下個未出帳週期', async () => {
+            // 結帳日 25 日，參考日期 2026-10-28 (28 > 25)
+            // 未出帳週期應為 2026-10-26 ~ 2026-11-25
+            const cardId = await ds.addAccount({
+                name: '富邦J卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 10,
+                creditLimit: 30000,
+            })
+
+            await ds.addRecord({
+                type: 'expense',
+                amount: 500,
+                date: '2026-10-27',
+                accountId: cardId,
+                description: '過結帳日後的新消費',
+            })
+
+            const refDate = new Date(2026, 9, 28) // 2026-10-28
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+
+            expect(info.unbilledPeriod.startStr).toBe('2026-10-26')
+            expect(info.unbilledPeriod.endStr).toBe('2026-11-25')
+            expect(info.unbilledTotal).toBe(500)
+            expect(info.unbilledRecords).toHaveLength(1)
+        })
+    })
+
+    describe('getStatementRecords', () => {
+        it('精確回傳該期帳單起訖日內的明細紀錄', async () => {
+            const cardId = await ds.addAccount({
+                name: '玉山Ubear',
+                type: 'credit_card',
+                statementDay: 20,
+            })
+
+            // 假設 period = '2026-05' (依 getStatementPeriod 算法: 2026-05-21 ~ 2026-06-20)
+            await ds.addRecord({
+                type: 'expense',
+                amount: 100,
+                date: '2026-05-20', // 前期，不應包含
+                accountId: cardId,
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 250,
+                date: '2026-05-25', // 本期包含
+                accountId: cardId,
+                description: '晚餐',
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 450,
+                date: '2026-06-15', // 本期包含
+                accountId: cardId,
+                description: '加油',
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 800,
+                date: '2026-06-22', // 次期，不應包含
+                accountId: cardId,
+            })
+
+            const records = await ds.getStatementRecords(cardId, '2026-05')
+            expect(records).toHaveLength(2)
+            expect(records[0].amount).toBe(450) // 新到舊排序
+            expect(records[1].amount).toBe(250)
+        })
+    })
+
+    describe('getStatementPeriod 月底溢位保護', () => {
+        it('遇短月如2月時，不溢位到3月', () => {
+            const card = { statementDay: 31 }
+            // period '2026-01' 的計費區間為 1月到2月，結束於 2 月
+            // 2026 年 2 月只有 28 天
+            const { startDate, endDate } = ds.getStatementPeriod(card, '2026-01')
+            // endDate 應為 2 月最後一天 (2026-02-28)，不應溢位到 3 月
+            expect(endDate.getFullYear()).toBe(2026)
+            expect(endDate.getMonth()).toBe(1) // 2月 (0-indexed 為 1)
+            expect(endDate.getDate()).toBe(28)
+        })
+    })
+
+    describe('autoGenerateCreditStatements 與繳款日計算', () => {
+        it('當今日日期小於結帳日 (now.getDate() < statementDay)，仍能正確產生前一期已過結帳日的帳單', async () => {
+            const cardId = await ds.addAccount({
+                name: '台新黑狗卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 10,
+                creditLimit: 50000,
+            })
+
+            // 建立 2026-08-28 消費 2500 (屬於 2026-08 期，結帳日為 2026-09-25)
+            await ds.addRecord({
+                type: 'expense',
+                amount: 2500,
+                date: '2026-08-28',
+                accountId: cardId,
+                description: '網購消費',
+            })
+
+            // 模擬今日為 2026-10-06 (6 < 25)
+            const originalDate = globalThis.Date
+            class MockDate extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-10-06T10:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-10-06T10:00:00').getTime()
+                }
+            }
+
+            try {
+                globalThis.Date = MockDate
+                await ds.autoGenerateCreditStatements()
+
+                const statements = await ds.getCreditStatements({
+                    accountId: cardId,
+                })
+                // 應包含 2026-08 期 (結帳日 2026-09-25，小於今日 2026-10-06)
+                const stmt08 = statements.find(s => s.period === '2026-08')
+                expect(stmt08).toBeDefined()
+                expect(stmt08.amount).toBe(2500)
+                expect(stmt08.status).toBe('unpaid')
+                // 繳款日應為 2026-10-10
+                const due = new Date(stmt08.dueDate)
+                expect(due.getFullYear()).toBe(2026)
+                expect(due.getMonth()).toBe(9) // 10月
+                expect(due.getDate()).toBe(10)
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
+
+        it('當 dueDay > statementDay (同月繳款) vs dueDay <= statementDay (次月繳款) 正確計算繳款日', async () => {
+            // 卡片 A: 結帳日 5 日、繳款日 25 日 (同一月)
+            const cardAId = await ds.addAccount({
+                name: '星展饗樂卡',
+                type: 'credit_card',
+                statementDay: 5,
+                dueDay: 25,
+            })
+            // 卡片 B: 結帳日 20 日、繳款日 5 日 (次月)
+            const cardBId = await ds.addAccount({
+                name: '聯邦賴點卡',
+                type: 'credit_card',
+                statementDay: 20,
+                dueDay: 5,
+            })
+
+            await ds.addRecord({
+                type: 'expense',
+                amount: 1500,
+                date: '2026-05-30', // 屬於 2026-05 期 (5/6 ~ 6/5)
+                accountId: cardAId,
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 2000,
+                date: '2026-05-30', // 屬於 2026-05 期 (5/21 ~ 6/20)
+                accountId: cardBId,
+            })
+
+            const originalDate = globalThis.Date
+            class MockDate extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-06-28T10:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-06-28T10:00:00').getTime()
+                }
+            }
+
+            try {
+                globalThis.Date = MockDate
+                await ds.autoGenerateCreditStatements()
+
+                const stmtA = (
+                    await ds.getCreditStatements({ accountId: cardAId })
+                ).find(s => s.period === '2026-05')
+                const stmtB = (
+                    await ds.getCreditStatements({ accountId: cardBId })
+                ).find(s => s.period === '2026-05')
+
+                expect(stmtA).toBeDefined()
+                expect(stmtB).toBeDefined()
+
+                // 卡片 A: 結帳日為 6月5日，dueDay=25 > 5，繳款日應為 6月25日 (同月份)
+                const dueA = new Date(stmtA.dueDate)
+                expect(dueA.getFullYear()).toBe(2026)
+                expect(dueA.getMonth()).toBe(5) // 6月
+                expect(dueA.getDate()).toBe(25)
+
+                // 卡片 B: 結帳日為 6月20日，dueDay=5 <= 20，繳款日應為 7月5日 (次月份)
+                const dueB = new Date(stmtB.dueDate)
+                expect(dueB.getFullYear()).toBe(2026)
+                expect(dueB.getMonth()).toBe(6) // 7月
+                expect(dueB.getDate()).toBe(5)
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
+    })
+
+    describe('autoPayCreditStatements 與平帳機制', () => {
+        it('繳款日當天或過後自動扣繳卡費，生成 transfer 記帳記錄並平帳，不計入日常支出', async () => {
+            // 扣款活存帳戶 (餘額 20000)
+            const bankId = await ds.addAccount({
+                name: '國泰活存',
+                type: 'bank',
+                balance: 20000,
+                ledgerId: 1,
+            })
+
+            // 信用卡帳戶 (開啟自動扣款，綁定國泰活存)
+            const cardId = await ds.addAccount({
+                name: '國泰CUBE',
+                type: 'credit_card',
+                balance: 0,
+                statementDay: 20,
+                dueDay: 5,
+                autoPayEnabled: true,
+                autoPayAccountId: bankId,
+                ledgerId: 1,
+            })
+
+            // 建立一筆刷卡消費 (前期消費)
+            await ds.addRecord({
+                type: 'expense',
+                category: 'food',
+                amount: 3500,
+                date: '2026-09-10',
+                accountId: cardId,
+                description: '餐廳刷卡',
+            })
+
+            // 帳單：繳款日為 2026-10-05，金額 3500，未繳
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-08',
+                statementDate: new Date('2026-09-20').getTime(),
+                dueDate: new Date('2026-10-05T00:00:00').getTime(),
+                amount: 3500,
+                status: 'unpaid',
+                ledgerId: 1,
+            })
+
+            // 模擬今日為 2026-10-06 (繳款日 10-05 已過)
+            const originalDate = globalThis.Date
+            class MockDate extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-10-06T12:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-10-06T12:00:00').getTime()
+                }
+            }
+
+            try {
+                globalThis.Date = MockDate
+                const processed = await ds.autoPayCreditStatements()
+
+                expect(processed).toHaveLength(1)
+                expect(processed[0].amount).toBe(3500)
+
+                // 驗證產生的扣繳記錄
+                const bankRecords = await ds.db.getAllFromIndex(
+                    'records',
+                    'accountId',
+                    bankId
+                )
+                const cardRecords = await ds.db.getAllFromIndex(
+                    'records',
+                    'accountId',
+                    cardId
+                )
+
+                // 銀行扣款支出
+                const debitExpense = bankRecords.find(
+                    r => r.type === 'expense' && r.category === 'transfer'
+                )
+                expect(debitExpense).toBeDefined()
+                expect(debitExpense.amount).toBe(3500)
+                expect(debitExpense.description).toContain('[卡費扣繳]')
+
+                // 信用卡入帳收入
+                const cardIncome = cardRecords.find(
+                    r => r.type === 'income' && r.category === 'transfer'
+                )
+                expect(cardIncome).toBeDefined()
+                expect(cardIncome.amount).toBe(3500)
+                expect(cardIncome.description).toContain('[卡費扣繳]')
+
+                // 帳單狀態已標記為 paid
+                const updatedStmt = await ds.getCreditStatement(stmtId)
+                expect(updatedStmt.status).toBe('paid')
+
+                // 驗證帳戶餘額平帳：
+                // 銀行餘額從 20000 扣除 3500 變為 16500
+                const allBankRecs = await ds.getRecords({ accountId: bankId })
+                const bankBal = allBankRecs.reduce(
+                    (b, r) => b + (r.type === 'income' ? r.amount : -r.amount),
+                    20000
+                )
+                expect(bankBal).toBe(16500)
+
+                // 信用卡欠款從 3500 (刷卡) 扣繳 3500 後歸零 (balance = 0)
+                const allCardRecs = await ds.getRecords({ accountId: cardId })
+                const cardBal = allCardRecs.reduce(
+                    (b, r) => b + (r.type === 'income' ? r.amount : -r.amount),
+                    0
+                )
+                expect(cardBal).toBe(0)
+
+                // 驗證生活支出統計：transfer 類別不被計入支出總計 (不重複計算)
+                const stats = await ds.getStatistics(
+                    '2026-10-01',
+                    '2026-10-31',
+                    null,
+                    true
+                )
+                expect(stats.totalExpense).toBe(0) // 10月份沒有新的生活支出
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
+    })
+
+    describe('payCreditStatement 單筆扣繳平帳 Helper', () => {
+        it('支援指定扣款帳戶與金額繳清帳單，立即平帳', async () => {
+            const bankId = await ds.addAccount({
+                name: '台新活儲',
+                type: 'bank',
+                balance: 50000,
+            })
+            const cardId = await ds.addAccount({
+                name: '台新FlyGo',
+                type: 'credit_card',
+                balance: 0,
+            })
+
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-09',
+                statementDate: new Date('2026-10-01').getTime(),
+                dueDate: new Date('2026-10-20').getTime(),
+                amount: 8800,
+                status: 'unpaid',
+            })
+
+            const result = await ds.payCreditStatement(stmtId, bankId, 8800)
+            expect(result.amount).toBe(8800)
+
+            const stmt = await ds.getCreditStatement(stmtId)
+            expect(stmt.status).toBe('paid')
+
+            const bankRecs = await ds.getRecords({ accountId: bankId })
+            expect(
+                bankRecs.some(
+                    r =>
+                        r.type === 'expense' &&
+                        r.category === 'transfer' &&
+                        r.amount === 8800
+                )
+            ).toBe(true)
+        })
+
+        it('當信用卡欠款已為 0 時，支援 deductOnly 僅扣款帳戶平帳，不重複增加信用卡餘額', async () => {
+            const bankId = await ds.addAccount({
+                name: '玉山薪轉戶',
+                type: 'bank',
+                balance: 60000,
+            })
+            const cardId = await ds.addAccount({
+                name: '玉山Pi卡',
+                type: 'credit_card',
+                balance: 0,
+            })
+
+            // 信用卡欠款已歸零 (balance = 0，無任何未還欠款)
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-09',
+                statementDate: new Date('2026-10-01').getTime(),
+                dueDate: new Date('2026-10-15').getTime(),
+                amount: 5200,
+                status: 'unpaid',
+            })
+
+            // 使用 deductOnly 扣繳平帳
+            const result = await ds.payCreditStatement(stmtId, bankId, 5200, null, {
+                deductOnly: true,
+            })
+            expect(result.deductOnly).toBe(true)
+            expect(result.amount).toBe(5200)
+
+            // 1. 驗證銀行帳戶成功扣款 5200 (類別為 transfer)
+            const bankRecs = await ds.getRecords({ accountId: bankId })
+            expect(bankRecs).toHaveLength(1)
+            expect(bankRecs[0].type).toBe('expense')
+            expect(bankRecs[0].amount).toBe(5200)
+            expect(bankRecs[0].category).toBe('transfer')
+            expect(bankRecs[0].description).toContain('[卡費扣繳平帳]')
+
+            // 計算銀行餘額：從 60000 扣除 5200 變為 54800
+            const bankBal = bankRecs.reduce(
+                (b, r) => b + (r.type === 'income' ? r.amount : -r.amount),
+                60000
+            )
+            expect(bankBal).toBe(54800)
+
+            // 2. 驗證信用卡沒有被寫入多餘的收入紀錄，保持為 0，避免產生溢繳款
+            const cardRecs = await ds.getRecords({ accountId: cardId })
+            expect(cardRecs).toHaveLength(0)
+
+            // 3. 驗證帳單標記為 paid
+            const stmt = await ds.getCreditStatement(stmtId)
+            expect(stmt.status).toBe('paid')
+
+            // 4. 驗證生活支出統計：transfer 類別不被計入日常支出 (平帳專用)
+            const stats = await ds.getStatistics(
+                '2026-10-01',
+                '2026-10-31',
+                null,
+                true
+            )
+            expect(stats.totalExpense).toBe(0)
+        })
+    })
+})

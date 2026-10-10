@@ -21,8 +21,19 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
         // 1. 計算今日支出 (使用本地時區日期)
         const today = formatDateToString(new Date())
         const records = await dataService.getRecords() // 預設已過濾 active ledger
+        const isNonLivingExpense = r =>
+            r.category === 'transfer' ||
+            r.category === 'debt_collection' ||
+            r.category === 'debt_repayment' ||
+            r.category === 'balance_adjustment'
+
         const todayExpense = records
-            .filter(r => r.date === today && r.type === 'expense')
+            .filter(
+                r =>
+                    r.date === today &&
+                    r.type === 'expense' &&
+                    !isNonLivingExpense(r)
+            )
             .reduce((sum, r) => sum + r.amount, 0)
 
         // 2. 計算本月結餘
@@ -36,8 +47,12 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
         const endOfMonth = formatDateToString(lastDay)
         const monthRecords = records.filter(r => r.date >= startOfMonth && r.date <= endOfMonth)
         
-        const income = monthRecords.filter(r => r.type === 'income').reduce((sum, r) => sum + r.amount, 0)
-        const expense = monthRecords.filter(r => r.type === 'expense').reduce((sum, r) => sum + r.amount, 0)
+        const income = monthRecords
+            .filter(r => r.type === 'income' && !isNonLivingExpense(r))
+            .reduce((sum, r) => sum + r.amount, 0)
+        const expense = monthRecords
+            .filter(r => r.type === 'expense' && !isNonLivingExpense(r))
+            .reduce((sum, r) => sum + r.amount, 0)
         const monthBalance = income - expense
 
         // 3. 計算本月預算進度與分類預算狀態

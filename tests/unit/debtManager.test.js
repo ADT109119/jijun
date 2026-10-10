@@ -1084,6 +1084,68 @@ describe('DebtManager - 建構與基本狀態', () => {
             expect(modal.innerHTML).not.toContain('部分退款')
             modal.remove()
         })
+
+        it('應在群組明細清單中清楚顯示關聯欠款人／成員標籤與角色', async () => {
+            const contactAlice = { id: 10, name: 'Alice' }
+            const contactBob = { id: 20, name: 'Bob' }
+            ds.getGroupMeta.mockResolvedValue({ name: '日本旅遊', settled: false })
+            ds.getContacts.mockResolvedValue([contactAlice, contactBob])
+            ds.getDebts.mockResolvedValue([
+                { id: 101, contactId: 10, type: 'receivable' },
+                { id: 102, contactId: 20, type: 'payable' }
+            ])
+            ds.getGroupRecords.mockResolvedValue([
+                { id: 1, debtId: 101, type: 'expense', amount: 300, description: '洋蔥餅', category: 'food', date: '2024-01-01', groupStatus: 'active' },
+                { id: 2, debtId: 102, type: 'income', amount: 500, description: '藥妝', category: 'daily', date: '2024-01-02', groupStatus: 'active' },
+                { id: 3, type: 'expense', amount: 150, description: '車票', category: 'traffic', date: '2024-01-03' }
+            ])
+            ds._calculateGroupNetAsync.mockResolvedValue({
+                netAmount: 300,
+                totalExpense: 450,
+                totalIncome: 500,
+            })
+
+            await dm.showGroupDetailsModal('group-1')
+            const modal = document.querySelector('#group-details-modal')
+            expect(modal).toBeTruthy()
+
+            // 頂部成員清單
+            expect(modal.textContent).toContain('群組成員:')
+            expect(modal.textContent).toContain('Alice')
+            expect(modal.textContent).toContain('Bob')
+
+            // 第一筆：應收 Alice（欠款人）
+            expect(modal.textContent).toContain('欠款人：Alice')
+            expect(modal.innerHTML).toContain('Alice')
+
+            // 第二筆：應付 Bob（代墊人）
+            expect(modal.textContent).toContain('代墊人：Bob')
+            expect(modal.innerHTML).toContain('Bob')
+
+            // 第三筆：一般消費無關聯欠款人
+            expect(modal.textContent).toContain('一般消費')
+
+            modal.remove()
+        })
+    })
+
+    describe('單筆明細個別還款彈窗 (showSettleGroupRecordModal)', () => {
+        it('應在確認還款彈窗中顯示欠款人／對象名稱', async () => {
+            const contactAlice = { id: 10, name: 'Alice' }
+            ds.getRecords.mockResolvedValue([
+                { id: 1, debtId: 101, type: 'expense', amount: 300, description: '洋蔥餅', date: '2024-01-01', groupStatus: 'active' }
+            ])
+            ds.getDebt.mockResolvedValue({ id: 101, contactId: 10, type: 'receivable' })
+            ds.getContact.mockResolvedValue(contactAlice)
+
+            await dm.showSettleGroupRecordModal(1, 'group-1')
+            const modal = document.querySelector('.fixed.inset-0.z-\\[60\\]')
+            expect(modal).toBeTruthy()
+            expect(modal.textContent).toContain('洋蔥餅')
+            expect(modal.textContent).toContain('Alice')
+            expect(modal.textContent).toContain('欠款人：Alice')
+            modal.remove()
+        })
     })
 
     describe('聯絡人篩選群組邏輯 (loadDebtList & updateSummaryCards)', () => {

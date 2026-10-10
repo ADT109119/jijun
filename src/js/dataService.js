@@ -4118,6 +4118,7 @@ class DataService {
             currentBalance: Math.max(0, currentBalance),
             availableCredit,
             creditLimit,
+            recordCount: periodRecords.length,
         }
     }
 
@@ -4131,10 +4132,16 @@ class DataService {
         const [year, month] = period.split('-').map(Number)
         const statementDay = account.statementDay || 25
 
-        // 帳單日當月
-        const startDate = new Date(year, month - 1, statementDay + 1)
-        // 到下個月的帳單日
-        const endDate = new Date(year, month, statementDay)
+        // 防止月底日（如 28/30 日）溢位
+        const clampDay = (y, mIndex, d) => {
+            const lastDay = new Date(y, mIndex + 1, 0).getDate()
+            return Math.min(d, lastDay)
+        }
+
+        const startDay = clampDay(year, month - 1, statementDay)
+        const startDate = new Date(year, month - 1, startDay + 1)
+        const endDay = clampDay(year, month, statementDay)
+        const endDate = new Date(year, month, endDay)
 
         return { startDate, endDate }
     }
@@ -4149,79 +4156,303 @@ class DataService {
         for (const card of creditCards) {
             const now = new Date()
             const statementDay = card.statementDay || 25
-
-            let targetYear = now.getFullYear()
-            let targetMonth = now.getMonth() + 1 // 1-indexed
-
-            // 原代碼 getStatementPeriod 的期別約定：
-            // 'YYYY-MM' 的結束日是下個月的 statementDay (例如 '2026-05' 的結束日是 6月25日)
-            // 如果今天是 6月28日，大於 25日，代表最近已結帳的期別是 '2026-05' (5/26 ~ 6/25)
-            // 如果今天是 6月20日，小於 25日，代表最近已結帳的期別是 '2026-04' (4/26 ~ 5/25)
-            if (now.getDate() >= statementDay) {
-                targetMonth -= 1
-            } else {
-                targetMonth -= 2
-            }
-
-            if (targetMonth <= 0) {
-                targetMonth += 12
-                targetYear -= 1
-            }
-
-            const period = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
-
-            // 檢查該期間是否已有帳單
-            const existing = await this.getCreditStatements({
-                accountId: card.id,
-                period,
-                allLedgers: true,
-            })
-
-            if (existing.length > 0) continue
-
-            // 計算本期消費
-            const { startDate, endDate } = this.getStatementPeriod(card, period)
-
-            // 防禦：如果今天還沒到該週期的結束日，不要產生帳單
-            if (now < endDate) continue
-
-            const balance = await this.calculateCreditCardBalance(
-                card.id,
-                startDate,
-                endDate
-            )
-
-            // 繳款日計算：結帳日 (endDate) 往後推到下個月的 dueDay
             const dueDay = card.dueDay || 15
-            // JS Date 的 month 是 0-11，但若傳入 12 會自動進位至明年 1 月
-            const dueDate = new Date(
-                endDate.getFullYear(),
-                endDate.getMonth() + 1,
-                dueDay
-            )
 
-            await this.addCreditStatement({
-                accountId: card.id,
-                period,
-                statementDate: endDate.getTime(), // 結帳日當天
-                dueDate: dueDate.getTime(),
-                amount: balance.currentBalance,
-                status: balance.currentBalance > 0 ? 'unpaid' : 'zero',
-                recordCount: 0,
-                ledgerId: card.ledgerId,
-                createdAt: Date.now(),
-            })
+            // 檢查過去 4 個已過結帳日的週期，確保未補產生的歷史帳單自動補齊
+            // 期別 'YYYY-MM' 的結束日為該期結帳日 (例如 5月期的結束日為 6月25日)
+            for (let offset = 4; offset >= 0; offset--) {
+                let targetYear = now.getFullYear()
+                let targetMonth = now.getMonth() + 1 - offset
+
+                while (targetMonth <= 0) {
+                    targetMonth += 12
+                    targetYear -= 1
+                }
+
+                const period = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
+
+                // 計算本期消費起訖日
+                const { startDate, endDate } = this.getStatementPeriod(
+                    card,
+                    period
+                )
+
+                // 防禦：如果今天還沒到該週期的結束日，不要產生帳單
+                if (now < endDate) continue
+
+                // 檢查該期間是否已有帳單
+                const existing = await this.getCreditStatements({
+                    accountId: card.id,
+                    period,
+                    allLedgers: true,
+                })
+
+                if (existing.length > 0) continue
+
+                const balance = await this.calculateCreditCardBalance(
+                    card.id,
+                    startDate,
+                    endDate
+                )
+
+                // 繳款日計算：
+                // 若 dueDay > statementDay，繳款日落在同一月 (例如 5日結帳、25日繳款)
+                // 若 dueDay <= statementDay，繳款日落在下個月 (例如 25日結帳、次月10日繳款)
+                const dueMonth =
+                    dueDay > statementDay
+                        ? endDate.getMonth()
+                        : endDate.getMonth() + 1
+                const maxDueDays = new Date(
+                    endDate.getFullYear(),
+                    dueMonth + 1,
+                    0
+                ).getDate()
+                const clampedDueDay = Math.min(dueDay, maxDueDays)
+                const dueDate = new Date(
+                    endDate.getFullYear(),
+                    dueMonth,
+                    clampedDueDay
+                )
+                dueDate.setHours(0, 0, 0, 0)
+
+                const normalizedStatementDate = new Date(
+                    endDate.getFullYear(),
+                    endDate.getMonth(),
+                    endDate.getDate()
+                ).getTime()
+
+                await this.addCreditStatement({
+                    accountId: card.id,
+                    period,
+                    statementDate: normalizedStatementDate,
+                    dueDate: dueDate.getTime(),
+                    amount: balance.currentBalance,
+                    status: balance.currentBalance > 0 ? 'unpaid' : 'zero',
+                    recordCount: balance.recordCount || 0,
+                    ledgerId: card.ledgerId,
+                    createdAt: Date.now(),
+                })
+            }
         }
     }
 
     /**
-     * 執行信用卡的自動扣款（於繳款日當天或之後自動轉帳還款）
+     * 取得信用卡當前的即時消費（未出帳）與已出帳帳單（準備繳納金額）資訊
+     * @param {number} accountId - 信用卡帳戶 ID
+     * @param {Date} [referenceDate=new Date()] - 參考時間 (預設今日)
+     * @returns {Promise<object|null>}
+     */
+    async getCreditCardBillingInfo(accountId, referenceDate = new Date()) {
+        const account = await this.getAccount(accountId)
+        if (!account || account.type !== 'credit_card') return null
+
+        const statementDay = account.statementDay || 25
+        const dueDay = account.dueDay || 15
+        const creditLimit = account.creditLimit || 0
+
+        const now =
+            referenceDate instanceof Date
+                ? referenceDate
+                : new Date(referenceDate)
+        const currentYear = now.getFullYear()
+        const currentMonth = now.getMonth() // 0-indexed
+        const currentDate = now.getDate()
+
+        // 判斷最近一次已結帳日與當前未出帳週期
+        let unbilledStartDate, unbilledEndDate, lastStatementEndDate
+        if (currentDate > statementDay) {
+            // 今天已過結帳日：本期未出帳從本月 statementDay + 1 開始，到下月 statementDay 結束
+            lastStatementEndDate = new Date(
+                currentYear,
+                currentMonth,
+                statementDay
+            )
+            unbilledStartDate = new Date(
+                currentYear,
+                currentMonth,
+                statementDay + 1
+            )
+            unbilledEndDate = new Date(
+                currentYear,
+                currentMonth + 1,
+                statementDay
+            )
+        } else {
+            // 今天未過結帳日：本期未出帳從上月 statementDay + 1 開始，到本月 statementDay 結束
+            lastStatementEndDate = new Date(
+                currentYear,
+                currentMonth - 1,
+                statementDay
+            )
+            unbilledStartDate = new Date(
+                currentYear,
+                currentMonth - 1,
+                statementDay + 1
+            )
+            unbilledEndDate = new Date(
+                currentYear,
+                currentMonth,
+                statementDay
+            )
+        }
+
+        const toDateStr = d =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const startStr = toDateStr(unbilledStartDate)
+        const endStr = toDateStr(unbilledEndDate)
+        const lastStatementEndStr = toDateStr(lastStatementEndDate)
+
+        // 計算距結帳日剩餘天數
+        const diffTime =
+            unbilledEndDate.getTime() -
+            new Date(currentYear, currentMonth, currentDate).getTime()
+        const daysUntilStatement = Math.max(
+            0,
+            Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+        )
+
+        // 取得該卡所有 records
+        const allRecords = await this.db.getAllFromIndex(
+            'records',
+            'accountId',
+            account.id
+        )
+
+        // 排除 payable 欠款原始紀錄（與 accountsPage 現有邏輯一致）
+        const debts = await this.getDebts({ allLedgers: true })
+        const payableDebtIds = new Set(
+            debts.filter(d => d.type === 'payable').map(d => String(d.id))
+        )
+        const isBalanceExempt = r =>
+            r.debtId !== null &&
+            payableDebtIds.has(String(r.debtId)) &&
+            r.category !== 'debt_repayment'
+
+        const validRecords = allRecords.filter(r => !isBalanceExempt(r))
+
+        // 本期未出帳明細 (即時消費: date >= startStr)
+        const unbilledRecords = validRecords
+            .filter(r => r.date >= startStr)
+            .sort(
+                (a, b) =>
+                    b.date.localeCompare(a.date) ||
+                    (b.createdAt || 0) - (a.createdAt || 0)
+            )
+
+        let unbilledExpense = 0
+        let unbilledRepayment = 0
+        for (const r of unbilledRecords) {
+            if (r.type === 'expense') {
+                unbilledExpense += r.amount
+            } else if (r.type === 'income') {
+                unbilledRepayment += r.amount
+            }
+        }
+        const unbilledTotal = Math.max(0, unbilledExpense - unbilledRepayment)
+
+        // 取得帳單
+        const statements = await this.getCreditStatements({
+            accountId: account.id,
+            allLedgers: true,
+        })
+        statements.sort((a, b) =>
+            (b.period || '').localeCompare(a.period || '')
+        )
+
+        const unpaidStatements = statements.filter(s => s.status === 'unpaid')
+        const billedDueTotal = unpaidStatements.reduce(
+            (sum, s) => sum + (s.amount || 0),
+            0
+        )
+
+        // 下一次繳款截止日
+        let nextDueDate = null
+        if (unpaidStatements.length > 0) {
+            nextDueDate = Math.min(
+                ...unpaidStatements.map(s => s.dueDate || Infinity)
+            )
+            if (nextDueDate === Infinity) nextDueDate = null
+        } else if (statements.length > 0 && statements[0].dueDate) {
+            nextDueDate = statements[0].dueDate
+        }
+
+        // 計算整體歷史欠款與可用額度
+        const balance = validRecords.reduce((bal, r) => {
+            return bal + (r.type === 'income' ? r.amount : -r.amount)
+        }, account.balance || 0)
+        const totalDebt = Math.max(0, -balance)
+        const availableCredit = Math.max(0, creditLimit - totalDebt)
+
+        return {
+            account,
+            statementDay,
+            dueDay,
+            creditLimit,
+            totalDebt,
+            availableCredit,
+            unbilledPeriod: {
+                startDate: unbilledStartDate,
+                endDate: unbilledEndDate,
+                startStr,
+                endStr,
+                lastStatementEndStr,
+            },
+            daysUntilStatement,
+            unbilledRecords,
+            unbilledExpense,
+            unbilledRepayment,
+            unbilledTotal,
+            statements,
+            unpaidStatements,
+            billedDueTotal,
+            nextDueDate,
+        }
+    }
+
+    /**
+     * 取得指定期別帳單所涵蓋的交易明細
+     * @param {object|number} accountOrId - 信用卡帳戶或帳戶 ID
+     * @param {string} period - 帳單期間 (如 '2026-05')
+     * @returns {Promise<Array>}
+     */
+    async getStatementRecords(accountOrId, period) {
+        const account =
+            typeof accountOrId === 'object'
+                ? accountOrId
+                : await this.getAccount(accountOrId)
+        if (!account || !period) return []
+
+        const { startDate, endDate } = this.getStatementPeriod(account, period)
+        const toDateStr = d =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const startStr = toDateStr(startDate)
+        const endStr = toDateStr(endDate)
+
+        const records = await this.db.getAllFromIndex(
+            'records',
+            'accountId',
+            account.id
+        )
+
+        return records
+            .filter(r => r.date >= startStr && r.date <= endStr)
+            .sort(
+                (a, b) =>
+                    b.date.localeCompare(a.date) ||
+                    (b.createdAt || 0) - (a.createdAt || 0)
+            )
+    }
+
+    /**
+     * 執行信用卡的自動扣款（於繳款日當天或之後自動轉帳還款，不計入生活支出但調整帳戶餘額以達平帳）
      */
     async autoPayCreditStatements() {
         const accounts = await this.getAccounts({ allLedgers: true })
         const creditCards = accounts.filter(
             a => a.type === 'credit_card' && a.autoPayEnabled
         )
+
+        const processedRecords = []
 
         for (const card of creditCards) {
             if (!card.autoPayAccountId) continue
@@ -4248,20 +4479,29 @@ class DataService {
             ).getTime()
 
             for (const stmt of unpaidStatements) {
-                // 如果今天大於或等於繳款截止日，且尚未繳款
-                if (today >= stmt.dueDate) {
-                    const amountToPay = stmt.amount
-                    if (amountToPay <= 0) continue
+                // 正規化繳款日時間為 0 點比較
+                const stmtDue = new Date(stmt.dueDate).setHours(0, 0, 0, 0)
 
-                    // 模擬轉帳還款：寫入支出 (扣款帳戶) 與收入 (信用卡帳戶)
-                    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+                // 如果今天大於或等於繳款截止日，且尚未繳款
+                if (today >= stmtDue) {
+                    const amountToPay = stmt.amount
+                    if (amountToPay <= 0) {
+                        await this.updateCreditStatement(stmt.id, {
+                            status: 'paid',
+                        })
+                        continue
+                    }
+
+                    // 扣款日期以帳單繳款日記帳，維持與銀行實際扣繳日一致
+                    const payDateObj = new Date(stmt.dueDate)
+                    const payDateStr = `${payDateObj.getFullYear()}-${String(payDateObj.getMonth() + 1).padStart(2, '0')}-${String(payDateObj.getDate()).padStart(2, '0')}`
 
                     const expenseRecord = {
                         type: 'expense',
                         category: 'transfer',
                         amount: amountToPay,
-                        date: dateStr,
-                        description: `[自動扣款] 繳納信用卡費 (${card.name} ${stmt.period} 期)`,
+                        date: payDateStr,
+                        description: `[卡費扣繳] 繳納信用卡費 (${card.name} ${stmt.period} 期)`,
                         accountId: debitAccount.id,
                         ledgerId: card.ledgerId,
                         createdAt: Date.now(),
@@ -4271,17 +4511,123 @@ class DataService {
                         type: 'income',
                         category: 'transfer',
                         amount: amountToPay,
-                        date: dateStr,
-                        description: `[自動扣款] 從 ${debitAccount.name} 扣款繳費 (${stmt.period} 期)`,
+                        date: payDateStr,
+                        description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費 (${stmt.period} 期)`,
                         accountId: card.id,
                         ledgerId: card.ledgerId,
                         createdAt: Date.now(),
                     }
 
-                    await this.addRecord(expenseRecord)
-                    await this.addRecord(incomeRecord)
+                    const expId = await this.addRecord(expenseRecord)
+                    const incId = await this.addRecord(incomeRecord)
+
+                    // 立即更新帳單狀態為 paid
+                    await this.updateCreditStatement(stmt.id, {
+                        status: 'paid',
+                    })
+
+                    processedRecords.push({
+                        card,
+                        debitAccount,
+                        statement: stmt,
+                        amount: amountToPay,
+                        expenseId: expId,
+                        incomeId: incId,
+                    })
                 }
             }
+        }
+
+        // 自動執行沖銷以維持狀態一致
+        await this.updateCreditStatementsStatus()
+        return processedRecords
+    }
+
+    /**
+     * 執行單筆信用卡帳單繳款 / 卡費扣繳平帳
+     * 產生轉帳記錄（扣款帳戶支出、信用卡帳戶收入），不計入日常支出但調整帳戶餘額以達平帳
+     * 若信用卡欠款已為 0 或指定 deductOnly，則僅扣款帳戶平帳，不重複增加信用卡餘額
+     * @param {number} statementId - 帳單 ID
+     * @param {number} debitAccountId - 扣款/還款帳戶 ID
+     * @param {number} [customAmount] - 自訂金額 (未填則預設帳單全額)
+     * @param {string} [customDate] - 記帳日期 (未填則預設今日或繳款日)
+     * @param {object} [options] - 其他選項 { deductOnly?: boolean, skipCardIncome?: boolean }
+     * @returns {Promise<object>}
+     */
+    async payCreditStatement(
+        statementId,
+        debitAccountId,
+        customAmount = null,
+        customDate = null,
+        options = {}
+    ) {
+        const stmt = await this.getCreditStatement(statementId)
+        if (!stmt) throw new Error('找不到該筆帳單')
+
+        const card = await this.getAccount(stmt.accountId)
+        if (!card) throw new Error('找不到該信用卡帳戶')
+
+        const debitAccount = await this.getAccount(debitAccountId)
+        if (!debitAccount) throw new Error('找不到扣款帳戶')
+
+        const amountToPay =
+            customAmount !== null ? customAmount : (stmt.amount || 0)
+        if (amountToPay <= 0) throw new Error('扣繳金額必須大於 0')
+
+        const now = new Date()
+        const toDateStr = d =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const dateStr = customDate || toDateStr(now)
+
+        // 若明確指定 deductOnly/skipCardIncome，則僅扣款帳戶平帳
+        const shouldSkipCardIncome =
+            options?.deductOnly === true || options?.skipCardIncome === true
+
+        const expenseRecord = {
+            type: 'expense',
+            category: 'transfer',
+            amount: amountToPay,
+            date: dateStr,
+            description: shouldSkipCardIncome
+                ? `[卡費扣繳平帳] 扣除 ${card.name} 卡費 (${stmt.period || ''} 期) (信用卡已歸零)`
+                : `[卡費扣繳] 繳納信用卡費 (${card.name} ${stmt.period || ''} 期)`,
+            accountId: debitAccount.id,
+            ledgerId: card.ledgerId,
+            createdAt: Date.now(),
+        }
+
+        const expId = await this.addRecord(expenseRecord)
+        let incId = null
+
+        if (!shouldSkipCardIncome) {
+            const incomeRecord = {
+                type: 'income',
+                category: 'transfer',
+                amount: amountToPay,
+                date: dateStr,
+                description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費 (${stmt.period || ''} 期)`,
+                accountId: card.id,
+                ledgerId: card.ledgerId,
+                createdAt: Date.now(),
+            }
+            incId = await this.addRecord(incomeRecord)
+        }
+
+        // 若繳足帳單金額，標記為 paid
+        if (amountToPay >= (stmt.amount || 0)) {
+            await this.updateCreditStatement(stmt.id, {
+                status: 'paid',
+            })
+        }
+
+        await this.updateCreditStatementsStatus()
+
+        return {
+            expenseId: expId,
+            incomeId: incId,
+            amount: amountToPay,
+            statement: stmt,
+            deductOnly: shouldSkipCardIncome,
         }
     }
 

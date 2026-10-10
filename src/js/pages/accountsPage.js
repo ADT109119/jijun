@@ -7,6 +7,7 @@ import {
     customConfirm,
 } from '../utils.js'
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
+import { getCategoryName, getCategoryIcon } from '../categories.js'
 
 export class AccountsPage {
     constructor(app) {
@@ -65,6 +66,16 @@ export class AccountsPage {
 
     async setupAccountsPageListeners() {
         await this.app.dataService.deduplicateAccounts()
+
+        // 每次載入帳戶管理時，自動檢查並產生到期帳單與執行自動扣繳平帳
+        try {
+            await this.app.dataService.autoGenerateCreditStatements()
+            await this.app.dataService.autoPayCreditStatements()
+            await this.app.dataService.updateCreditStatementsStatus()
+        } catch (err) {
+            console.warn('自動處理信用卡帳單扣繳失敗:', err)
+        }
+
         const accounts = await this.app.dataService.getAccounts()
         const allRecords = await this.app.dataService.getRecords() // Get all records once
         // 建立「我欠別人」(payable) 欠款的 id 集合，用於從帳戶餘額中排除其原始欠款紀錄
@@ -113,48 +124,110 @@ export class AccountsPage {
                 -1 * (typeof currentBalance === 'number' ? currentBalance : 0)
             )
 
-            // 信用卡不計入總資產，而是計入總欠款
-            if (account.type === 'credit_card') {
+            const isCreditCard = account.type === 'credit_card'
+            let billingInfo = null
+            let hasOverdue = false
+            if (isCreditCard) {
                 hasCreditCard = true
                 totalCreditDebt += cardDebt
+                billingInfo =
+                    await this.app.dataService.getCreditCardBillingInfo(
+                        account.id
+                    )
+                const today0 = new Date().setHours(0, 0, 0, 0)
+                hasOverdue = (billingInfo?.unpaidStatements || []).some(
+                    s => s.dueDate && today0 >= new Date(s.dueDate).setHours(0, 0, 0, 0)
+                )
             } else {
                 totalAssets += currentBalance
             }
 
             const availableCredit = Math.max(0, creditLimit - cardDebt)
+            const billedDueTotal = billingInfo?.billedDueTotal || 0
+            const unbilledTotal = billingInfo?.unbilledTotal || 0
 
             const accountEl = document.createElement('div')
-            const isCreditCard = account.type === 'credit_card'
             accountEl.className =
-                'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border'
+                'flex items-center justify-between bg-wabi-surface p-3.5 sm:p-4 rounded-lg border border-wabi-border hover:border-wabi-primary/40 transition-colors'
             const isHex = account.color && account.color.startsWith('#')
             const colorClass = isHex ? '' : (account.color || 'bg-gray-500')
             const colorStyle = isHex
                 ? `style="background-color: ${escapeHTML(account.color)}"`
                 : ''
-            accountEl.innerHTML = `
-                <div class="flex items-center gap-4">
-                    <div class="relative">
-                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-12" ${colorStyle}>
-                            <i class="${account.icon} text-2xl"></i>
+
+            if (isCreditCard) {
+                accountEl.innerHTML = `
+                    <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 cursor-pointer credit-card-card-click" data-id="${account.id}" title="點擊查看帳務明細 (即時消費 / 出帳帳單)">
+                        <div class="relative shrink-0">
+                            <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-11 sm:size-12" ${colorStyle}>
+                                <i class="${account.icon} text-xl sm:text-2xl"></i>
+                            </div>
+                            <span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-[10px] px-1 rounded-full font-bold" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>
                         </div>
-                        ${isCreditCard ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
-                    </div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <p class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</p>
-                            ${isCreditCard ? '<span class="text-xs bg-wabi-expense/10 text-wabi-expense px-2 py-0.5 rounded-full">信用卡</span>' : ''}
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                <p class="font-bold text-wabi-text-primary text-sm sm:text-base truncate">${escapeHTML(account.name)}</p>
+                                <span class="text-[11px] bg-wabi-expense/10 text-wabi-expense px-1.5 py-0.5 rounded-full shrink-0 font-medium">信用卡</span>
+                                ${hasOverdue ? '<span class="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0 font-medium">已到期待扣款</span>' : ''}
+                            </div>
+                            <div class="mt-1 space-y-0.5">
+                                <div class="flex items-center gap-1.5 sm:gap-2 text-xs flex-wrap">
+                                    <span class="${billedDueTotal > 0 ? 'text-wabi-expense font-bold' : 'text-wabi-text-secondary'}">
+                                        準備繳納: ${formatCurrency(billedDueTotal)}
+                                    </span>
+                                    <span class="text-wabi-border">|</span>
+                                    <span class="text-blue-600 dark:text-blue-400 font-medium">
+                                        即時未出帳: ${formatCurrency(unbilledTotal)}
+                                    </span>
+                                </div>
+                                <p class="text-[11px] sm:text-xs text-wabi-text-secondary truncate">
+                                    總欠款: ${formatCurrency(cardDebt)}${creditLimit > 0 ? ` · 可用 ${formatCurrency(availableCredit)} / 額度 ${formatCurrency(creditLimit)}` : ''}
+                                </p>
+                            </div>
                         </div>
-                        <p class="text-sm ${isCreditCard ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">${isCreditCard ? '欠款' : '餘額'}: ${formatCurrency(isCreditCard ? cardDebt : currentBalance)}${isCreditCard && creditLimit > 0 ? ` <span class="text-wabi-text-secondary">(額度 ${formatCurrency(creditLimit)} / 可用 ${formatCurrency(availableCredit)})</span>` : ''}</p>
                     </div>
-                </div>
-                <div class="flex gap-2">
-                    ${isCreditCard ? `<button class="credit-pay-btn" data-id="${account.id}" title="立即繳款" style="color:#22c55e"><i class="fa-solid fa-money-bill-wave"></i></button>` : ''}
-                    <button class="adjust-balance-btn" data-id="${account.id}" data-balance="${currentBalance}"><i class="fa-solid fa-scale-balanced text-wabi-text-secondary"></i></button>
-                    <button class="edit-account-btn" data-id="${account.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
-                    <button class="delete-account-btn" data-id="${account.id}"><i class="fa-solid fa-trash-can text-wabi-expense"></i></button>
-                </div>
-            `
+                    <div class="flex items-center gap-1 sm:gap-2 shrink-0 ml-2">
+                        <button class="credit-detail-btn p-1.5 sm:p-2 text-wabi-primary hover:text-wabi-accent transition-colors" data-id="${account.id}" title="查看帳單與即時消費">
+                            <i class="fa-solid fa-file-invoice-dollar text-base sm:text-lg"></i>
+                        </button>
+                        <button class="credit-pay-btn p-1.5 sm:p-2 ${hasOverdue ? 'text-amber-600 hover:text-amber-700' : 'text-green-600 hover:text-green-700'} transition-colors" data-id="${account.id}" title="${hasOverdue ? '已到期，立即扣繳平帳' : '立即繳款'}">
+                            <i class="fa-solid fa-money-bill-wave text-base sm:text-lg"></i>
+                        </button>
+                        <button class="adjust-balance-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" data-balance="${currentBalance}" title="餘額矯正">
+                            <i class="fa-solid fa-scale-balanced text-sm sm:text-base"></i>
+                        </button>
+                        <button class="edit-account-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" title="編輯帳戶">
+                            <i class="fa-solid fa-pen text-sm sm:text-base"></i>
+                        </button>
+                        <button class="delete-account-btn p-1.5 sm:p-2 text-wabi-expense hover:text-red-700 transition-colors" data-id="${account.id}" title="刪除帳戶">
+                            <i class="fa-solid fa-trash-can text-sm sm:text-base"></i>
+                        </button>
+                    </div>
+                `
+            } else {
+                accountEl.innerHTML = `
+                    <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                        <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-11 sm:size-12" ${colorStyle}>
+                            <i class="${account.icon} text-xl sm:text-2xl"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="font-medium text-wabi-text-primary text-sm sm:text-base truncate">${escapeHTML(account.name)}</p>
+                            <p class="text-sm text-wabi-text-secondary">餘額: ${formatCurrency(currentBalance)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1 sm:gap-2 shrink-0 ml-2">
+                        <button class="adjust-balance-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" data-balance="${currentBalance}" title="餘額矯正">
+                            <i class="fa-solid fa-scale-balanced text-sm sm:text-base"></i>
+                        </button>
+                        <button class="edit-account-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" title="編輯帳戶">
+                            <i class="fa-solid fa-pen text-sm sm:text-base"></i>
+                        </button>
+                        <button class="delete-account-btn p-1.5 sm:p-2 text-wabi-expense hover:text-red-700 transition-colors" data-id="${account.id}" title="刪除帳戶">
+                            <i class="fa-solid fa-trash-can text-sm sm:text-base"></i>
+                        </button>
+                    </div>
+                `
+            }
             container.appendChild(accountEl)
         }
 
@@ -180,6 +253,20 @@ export class AccountsPage {
             .getElementById('transfer-btn')
             .addEventListener('click', () => {
                 this.showTransferModal()
+            })
+
+        container
+            .querySelectorAll('.credit-detail-btn, .credit-card-card-click')
+            .forEach(btn => {
+                btn.addEventListener('click', async e => {
+                    const accountId = parseInt(e.currentTarget.dataset.id, 10)
+                    if (Number.isNaN(accountId)) return
+                    const account =
+                        await this.app.dataService.getAccount(accountId)
+                    if (account) {
+                        this.showCreditDetailModal(account)
+                    }
+                })
             })
 
         container.querySelectorAll('.adjust-balance-btn').forEach(btn => {
@@ -233,13 +320,18 @@ export class AccountsPage {
         })
     }
 
-    showAdjustBalanceModal(account, currentBalance) {
+    async showAdjustBalanceModal(account, currentBalance) {
+        // 取得所有信用卡帳戶供「補扣卡費」平帳選擇
+        const allAccounts = await this.app.dataService.getAccounts()
+        const creditCards = allAccounts.filter(a => a.type === 'credit_card')
+        const isNotCreditCard = account.type !== 'credit_card'
+
         const modal = document.createElement('div')
         modal.id = 'adjust-balance-modal'
         modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
         modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col overflow-hidden box-border">
                 <h3 class="text-lg font-bold text-wabi-primary">餘額矯正</h3>
 
                 <div class="space-y-4">
@@ -254,6 +346,29 @@ export class AccountsPage {
                     <div id="difference-display" class="hidden">
                         <p class="text-sm font-medium text-wabi-text-secondary">差額</p>
                         <p id="difference-amount" class="text-lg font-bold mt-1"></p>
+                    </div>
+                    <div id="diff-reason-section" class="space-y-2 pt-2 border-t border-wabi-border/40 hidden">
+                        <label class="text-xs font-semibold text-wabi-text-secondary">平帳原因</label>
+                        <div class="space-y-1.5 text-xs">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="adjust-reason" value="general" checked class="text-wabi-primary focus:ring-wabi-primary">
+                                <span class="text-wabi-text-primary">一般帳務差額 (平帳)</span>
+                            </label>
+                            ${isNotCreditCard && creditCards.length > 0 ? `
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="adjust-reason" value="credit_pay" class="text-wabi-primary focus:ring-wabi-primary">
+                                <span class="text-wabi-text-primary">補記信用卡費扣繳 (不計入生活支出)</span>
+                            </label>
+                            ` : ''}
+                        </div>
+                        ${isNotCreditCard && creditCards.length > 0 ? `
+                        <div id="adjust-card-select-container" class="hidden mt-1.5 pl-6">
+                            <label class="text-[11px] text-wabi-text-secondary block mb-1">選擇扣繳的信用卡</label>
+                            <select id="adjust-credit-card-select" class="w-full text-xs p-2 rounded-lg border-wabi-border bg-wabi-surface text-wabi-text-primary truncate">
+                                ${creditCards.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')}
+                            </select>
+                        </div>
+                        ` : ''}
                     </div>
                     <div class="flex items-center gap-2 mt-2">
                         <input type="checkbox" id="add-adjustment-record" class="h-4 w-4 text-wabi-primary focus:ring-wabi-primary border-gray-300 rounded" checked>
@@ -273,12 +388,27 @@ export class AccountsPage {
         const actualBalanceInput = modal.querySelector('#actual-balance-input')
         const diffDisplay = modal.querySelector('#difference-display')
         const diffAmountEl = modal.querySelector('#difference-amount')
+        const diffReasonSection = modal.querySelector('#diff-reason-section')
+        const adjustCardSelectContainer = modal.querySelector('#adjust-card-select-container')
+
+        modal.querySelectorAll('input[name="adjust-reason"]').forEach(radio => {
+            radio.addEventListener('change', e => {
+                if (adjustCardSelectContainer) {
+                    if (e.target.value === 'credit_pay') {
+                        adjustCardSelectContainer.classList.remove('hidden')
+                    } else {
+                        adjustCardSelectContainer.classList.add('hidden')
+                    }
+                }
+            })
+        })
 
         const updateDifference = () => {
             const actual = parseFloat(actualBalanceInput.value) || 0
             const diff = actual - currentBalance
             if (diff === 0) {
                 diffDisplay.classList.add('hidden')
+                if (diffReasonSection) diffReasonSection.classList.add('hidden')
             } else {
                 diffDisplay.classList.remove('hidden')
                 diffAmountEl.textContent = formatCurrency(Math.abs(diff))
@@ -286,10 +416,14 @@ export class AccountsPage {
                     diffAmountEl.className =
                         'text-lg font-bold mt-1 text-wabi-income'
                     diffAmountEl.textContent = '+ ' + diffAmountEl.textContent
+                    if (diffReasonSection) diffReasonSection.classList.add('hidden')
                 } else {
                     diffAmountEl.className =
                         'text-lg font-bold mt-1 text-wabi-expense'
                     diffAmountEl.textContent = '- ' + diffAmountEl.textContent
+                    if (diffReasonSection && isNotCreditCard && creditCards.length > 0) {
+                        diffReasonSection.classList.remove('hidden')
+                    }
                 }
             }
         }
@@ -318,11 +452,30 @@ export class AccountsPage {
                     return
                 }
 
-                    const createRecord = modal.querySelector(
-                        '#add-adjustment-record'
-                    ).checked
+                const createRecord = modal.querySelector(
+                    '#add-adjustment-record'
+                ).checked
 
-                    if (createRecord) {
+                if (createRecord) {
+                    const reason = modal.querySelector('input[name="adjust-reason"]:checked')?.value || 'general'
+                    if (diff < 0 && reason === 'credit_pay' && isNotCreditCard) {
+                        const cardId = parseInt(modal.querySelector('#adjust-credit-card-select')?.value, 10)
+                        const card = creditCards.find(c => c.id === cardId)
+                        const newRecord = {
+                            amount: Math.abs(diff),
+                            type: 'expense',
+                            category: 'transfer',
+                            date: formatDateToString(new Date()),
+                            description: card
+                                ? `[卡費扣繳平帳] 扣除 ${card.name} 卡費 (信用卡已歸零)`
+                                : '[卡費扣繳平帳] 扣除信用卡費 (信用卡已歸零)',
+                            accountId: account.id,
+                            ledgerId: account.ledgerId,
+                            createdAt: Date.now(),
+                        }
+                        await this.app.dataService.addRecord(newRecord)
+                        showToast(`已新增卡費扣繳平帳紀錄，扣除 ${formatCurrency(Math.abs(diff))}！`)
+                    } else {
                         // 平帳紀錄：使用隱藏的「帳務差額」分類（不可手動選擇，不計入收支統計，但會影響帳戶餘額）
                         const type = diff > 0 ? 'income' : 'expense'
                         const newRecord = {
@@ -332,9 +485,12 @@ export class AccountsPage {
                             date: formatDateToString(new Date()),
                             description: '平帳',
                             accountId: account.id,
+                            ledgerId: account.ledgerId,
+                            createdAt: Date.now(),
                         }
                         await this.app.dataService.addRecord(newRecord)
                         showToast('已新增平帳紀錄')
+                    }
                 } else {
                     account.balance += diff
                     await this.app.dataService.updateAccount(
@@ -364,56 +520,56 @@ export class AccountsPage {
         const modal = document.createElement('div')
         modal.id = 'account-form-modal'
         modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
         const defaultCreditIcon = 'fa-solid fa-credit-card'
         const defaultWalletIcon = 'fa-solid fa-wallet'
         const currentIcon = accountToEdit?.icon || defaultWalletIcon
         modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col overflow-hidden box-border">
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
                 
-                <div class="flex-1 overflow-y-auto pr-2 space-y-4">
+                <div class="flex-1 overflow-y-auto overflow-x-hidden pr-1 sm:pr-2 space-y-4">
                     <div>
                         <label class="text-sm font-medium text-wabi-text-secondary">帳戶類型</label>
                         <div class="flex gap-2 mt-1">
-                            <label class="flex-1 cursor-pointer">
+                            <label class="flex-1 cursor-pointer min-w-0">
                                 <input type="radio" name="account-type" value="wallet" ${accountType === 'wallet' ? 'checked' : ''} class="sr-only peer">
-                                <div class="p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
-                                    <i class="fa-solid fa-wallet text-lg mb-1"></i>
-                                    <p class="text-sm font-medium">一般帳戶</p>
+                                <div class="p-2.5 sm:p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
+                                    <i class="fa-solid fa-wallet text-base sm:text-lg mb-1"></i>
+                                    <p class="text-xs sm:text-sm font-medium">一般帳戶</p>
                                 </div>
                             </label>
-                            <label class="flex-1 cursor-pointer">
+                            <label class="flex-1 cursor-pointer min-w-0">
                                 <input type="radio" name="account-type" value="credit_card" ${accountType === 'credit_card' ? 'checked' : ''} class="sr-only peer">
-                                <div class="p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
-                                    <i class="fa-solid fa-credit-card text-lg mb-1"></i>
-                                    <p class="text-sm font-medium">信用卡</p>
+                                <div class="p-2.5 sm:p-3 rounded-lg border-2 border-wabi-border bg-wabi-surface text-center peer-checked:border-wabi-primary peer-checked:bg-wabi-primary/10 peer-checked:text-wabi-primary transition-all">
+                                    <i class="fa-solid fa-credit-card text-base sm:text-lg mb-1"></i>
+                                    <p class="text-xs sm:text-sm font-medium">信用卡</p>
                                 </div>
                             </label>
                         </div>
                     </div>
                     <div>
                         <label class="text-sm font-medium text-wabi-text-secondary">帳戶名稱</label>
-                        <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" required>
+                        <input type="text" id="account-name-input" value="${escapeHTML(accountToEdit?.name || '')}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" required>
                     </div>
                     <div>
                         <label class="text-sm font-medium text-wabi-text-secondary" id="account-balance-label">初始餘額</label>
-                        <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
+                        <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
                     </div>
 
                     <div id="credit-card-fields" class="space-y-3 ${accountType === 'credit_card' ? '' : 'hidden'}">
                         <div>
                             <label class="text-sm font-medium text-wabi-text-secondary">信用額度</label>
-                            <input type="number" id="credit-limit-input" value="${accountToEdit?.creditLimit || 0}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            <input type="number" id="credit-limit-input" value="${accountToEdit?.creditLimit || 0}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                         </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="text-sm font-medium text-wabi-text-secondary">出帳日</label>
-                                <input type="number" id="statement-day-input" min="1" max="31" value="${accountToEdit?.statementDay || 25}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                        <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                            <div class="min-w-0">
+                                <label class="text-xs sm:text-sm font-medium text-wabi-text-secondary">出帳日</label>
+                                <input type="number" id="statement-day-input" min="1" max="31" value="${accountToEdit?.statementDay || 25}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
                             </div>
-                            <div>
-                                <label class="text-sm font-medium text-wabi-text-secondary">繳款日</label>
-                                <input type="number" id="due-day-input" min="1" max="31" value="${accountToEdit?.dueDay || 15}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            <div class="min-w-0">
+                                <label class="text-xs sm:text-sm font-medium text-wabi-text-secondary">繳款日</label>
+                                <input type="number" id="due-day-input" min="1" max="31" value="${accountToEdit?.dueDay || 15}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
                             </div>
                         </div>
                         <!-- 自動繳款與扣款帳戶設定 -->
@@ -427,7 +583,7 @@ export class AccountsPage {
                         </div>
                         <div id="auto-pay-account-container" class="${accountToEdit?.autoPayEnabled ? '' : 'hidden'}">
                             <label class="text-sm font-medium text-wabi-text-secondary">自動扣款帳戶</label>
-                            <select id="auto-pay-account-select" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            <select id="auto-pay-account-select" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary truncate">
                                 <option value="">-- 選擇扣款帳戶 --</option>
                                 ${debitAccounts
                                     .map(
@@ -447,8 +603,8 @@ export class AccountsPage {
                                 <input type="text" id="custom-icon-input" 
                                        placeholder="設定預設 (如: fas fa-wallet)"
                                        value="${escapeHTML(currentIcon)}"
-                                       class="flex-1 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
-                                <button type="button" id="preview-icon-btn" class="px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
+                                       class="flex-1 min-w-0 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                                <button type="button" id="preview-icon-btn" class="shrink-0 px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
                                     <i class="${currentIcon}"></i>
                                   </span>
@@ -456,25 +612,25 @@ export class AccountsPage {
                             </div>
                             <input type="text" id="icon-search-input" 
                                    placeholder="搜尋內建圖示... (例: wallet)"
-                                   class="w-full p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary mb-2">
+                                   class="w-full min-w-0 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary mb-2">
                         </div>
-                        <div class="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto border border-wabi-border rounded-lg p-3 bg-wabi-surface" id="icon-selector">
+                        <div class="grid grid-cols-6 gap-1.5 sm:gap-2 max-h-40 overflow-y-auto overflow-x-hidden border border-wabi-border rounded-lg p-2 sm:p-3 bg-wabi-surface" id="icon-selector">
                             <!-- 圖標將從 JavaScript 動態渲染 -->
                         </div>
                     </div>
                     
                     <div>
                         <label class="block text-sm font-medium text-wabi-text-secondary mb-2">選擇顏色</label>
-                        <div class="grid grid-cols-6 gap-3 p-3 border border-wabi-border rounded-lg bg-wabi-surface" id="color-selector">
+                        <div class="grid grid-cols-6 gap-2 p-2 sm:gap-3 sm:p-3 border border-wabi-border rounded-lg bg-wabi-surface overflow-x-hidden" id="color-selector">
                           ${this.getAvailableColors()
                               .map(
                                   color => `
-                            <button type="button" class="color-option w-8 h-8 rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
+                            <button type="button" class="color-option w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-lg border-2 border-transparent hover:border-wabi-primary transition-colors ${color}" data-color="${color}">
                             </button>
                           `
                               )
                               .join('')}
-                          <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-8 h-8 rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
+                          <label for="custom-color-picker-input" id="custom-color-picker-label" class="w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-lg border-2 border-dashed border-wabi-border flex items-center justify-center cursor-pointer hover:border-wabi-primary">
                             <i class="fas fa-palette text-wabi-text-secondary text-sm"></i>
                             <input type="color" id="custom-color-picker-input" class="absolute w-0 h-0 opacity-0" value="#3B82F6">
                           </label>
@@ -804,7 +960,469 @@ export class AccountsPage {
             })
     }
 
-    async showCreditPayModal(account) {
+    async showCreditDetailModal(account) {
+        const billingInfo =
+            await this.app.dataService.getCreditCardBillingInfo(account.id)
+        if (!billingInfo) return
+
+        const existingModal = document.getElementById('credit-detail-modal')
+        if (existingModal) existingModal.remove()
+
+        const modal = document.createElement('div')
+        modal.id = 'credit-detail-modal'
+        modal.className =
+            'fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
+
+        const isHex = account.color && account.color.startsWith('#')
+        const colorClass = isHex ? '' : (account.color || 'bg-gray-500')
+        const colorStyle = isHex
+            ? `style="background-color: ${escapeHTML(account.color)}"`
+            : ''
+
+        const {
+            statementDay,
+            dueDay,
+            creditLimit,
+            availableCredit,
+            totalDebt,
+            unbilledPeriod,
+            daysUntilStatement,
+            unbilledRecords,
+            unbilledTotal,
+            statements,
+            billedDueTotal,
+            nextDueDate,
+        } = billingInfo
+
+        const nextDueDateText = nextDueDate
+            ? `${formatDateToString(new Date(nextDueDate))} 繳款截止`
+            : '目前無待繳帳單'
+        const isOverdue =
+            nextDueDate && Date.now() > nextDueDate && billedDueTotal > 0
+
+        modal.innerHTML = `
+            <div class="bg-wabi-bg rounded-2xl max-w-lg w-full p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden box-border">
+                <!-- Header -->
+                <div class="flex items-center justify-between border-b border-wabi-border/60 pb-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="size-10 sm:size-11 rounded-xl flex items-center justify-center text-wabi-surface shrink-0 ${colorClass}" ${colorStyle}>
+                            <i class="${account.icon} text-lg sm:text-xl"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h3 class="font-bold text-base sm:text-lg text-wabi-text-primary truncate">${escapeHTML(account.name)}</h3>
+                            <p class="text-[11px] sm:text-xs text-wabi-text-secondary truncate">
+                                出帳日: 每月 ${statementDay} 日 · 繳款日: 每月 ${dueDay} 日
+                            </p>
+                        </div>
+                    </div>
+                    <button id="close-credit-detail-btn" class="text-wabi-text-secondary hover:text-wabi-primary p-2 shrink-0 rounded-lg hover:bg-wabi-surface transition-colors">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- 頂部摘要雙卡 -->
+                <div class="grid grid-cols-2 gap-2.5 sm:gap-3 shrink-0">
+                    <!-- 準備繳納 (已出帳待繳) -->
+                    <div class="bg-wabi-surface border ${billedDueTotal > 0 ? 'border-wabi-expense/30 bg-wabi-expense/5' : 'border-wabi-border'} rounded-xl p-3 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-semibold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">
+                                    <i class="fa-solid fa-clock mr-1"></i>準備繳納 (已出帳)
+                                </span>
+                                ${billedDueTotal > 0 ? `<span class="text-[10px] ${isOverdue ? 'bg-red-600 text-white' : 'bg-wabi-expense text-wabi-surface'} px-1.5 py-0.5 rounded-full font-bold">${isOverdue ? '已逾期' : '待繳'}</span>` : '<span class="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full font-bold">已結清</span>'}
+                            </div>
+                            <p class="text-lg sm:text-2xl font-bold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
+                                ${formatCurrency(billedDueTotal)}
+                            </p>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-wabi-border/30 text-[11px] sm:text-xs text-wabi-text-secondary flex items-center justify-between">
+                            <span class="${isOverdue ? 'text-red-600 font-bold' : ''}">${nextDueDateText}</span>
+                            ${billedDueTotal > 0 ? `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-green-600 font-bold hover:underline shrink-0">立即繳納</button>` : `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-wabi-primary font-bold hover:underline shrink-0" title="自扣款帳戶扣除卡費以達平帳">扣款平帳</button>`}
+                        </div>
+                    </div>
+
+                    <!-- 即時消費 (未出帳) -->
+                    <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                                    <i class="fa-solid fa-bolt mr-1"></i>即時消費 (未出帳)
+                                </span>
+                                <span class="text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium">累積中</span>
+                            </div>
+                            <p class="text-lg sm:text-2xl font-bold text-wabi-text-primary">
+                                ${formatCurrency(unbilledTotal)}
+                            </p>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-wabi-border/30 text-[11px] sm:text-xs text-wabi-text-secondary">
+                            <span>距結帳約 ${daysUntilStatement} 天 (每月 ${statementDay} 日)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 額度資訊條 -->
+                <div class="bg-wabi-surface/60 border border-wabi-border/50 rounded-lg p-2.5 px-3 flex items-center justify-between text-xs text-wabi-text-secondary shrink-0">
+                    <span>總欠款: <strong class="text-wabi-text-primary">${formatCurrency(totalDebt)}</strong></span>
+                    ${creditLimit > 0 ? `<span>可用額度: <strong class="text-green-600 dark:text-green-400">${formatCurrency(availableCredit)}</strong> / 額度 ${formatCurrency(creditLimit)}</span>` : ''}
+                </div>
+
+                <!-- 頁籤 Tabs -->
+                <div class="flex border-b border-wabi-border gap-2 shrink-0">
+                    <button id="tab-unbilled-btn" class="py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-wabi-primary text-wabi-primary transition-colors">
+                        即時消費明細 (${unbilledRecords.length})
+                    </button>
+                    <button id="tab-billed-btn" class="py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-transparent text-wabi-text-secondary hover:text-wabi-primary transition-colors">
+                        出帳帳單 (${statements.length})
+                    </button>
+                </div>
+
+                <!-- Tab 內容容器 -->
+                <div id="credit-tab-content" class="flex-1 overflow-y-auto overflow-x-hidden space-y-3 min-h-[200px] pr-1">
+                    <!-- 動態渲染 -->
+                </div>
+            </div>
+        `
+        document.body.appendChild(modal)
+
+        const closeModal = () => modal.remove()
+        modal
+            .querySelector('#close-credit-detail-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        const payBtn = modal.querySelector('#detail-pay-btn')
+        if (payBtn) {
+            payBtn.addEventListener('click', () => {
+                if (billedDueTotal > 0) {
+                    this.showCreditPayModal(account, billedDueTotal)
+                } else {
+                    this.showCreditPayModal(account, null, { deductOnly: true })
+                }
+            })
+        }
+
+        // Tab 切換與內容渲染
+        const tabUnbilledBtn = modal.querySelector('#tab-unbilled-btn')
+        const tabBilledBtn = modal.querySelector('#tab-billed-btn')
+        const contentContainer = modal.querySelector('#credit-tab-content')
+
+        let currentTab = 'unbilled'
+
+        const renderTabContent = () => {
+            if (currentTab === 'unbilled') {
+                tabUnbilledBtn.className =
+                    'py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-wabi-primary text-wabi-primary transition-colors'
+                tabBilledBtn.className =
+                    'py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-transparent text-wabi-text-secondary hover:text-wabi-primary transition-colors'
+
+                if (unbilledRecords.length === 0) {
+                    contentContainer.innerHTML = `
+                        <div class="text-center py-12 text-wabi-text-secondary">
+                            <i class="fa-solid fa-receipt text-3xl mb-2 opacity-40 block"></i>
+                            <p class="text-sm font-medium">本期尚無未出帳的即時消費</p>
+                            <p class="text-xs text-wabi-text-secondary/70 mt-1">週期：${unbilledPeriod.startStr} ~ ${unbilledPeriod.endStr}</p>
+                        </div>
+                    `
+                    return
+                }
+
+                contentContainer.innerHTML = `
+                    <div class="text-xs text-wabi-text-secondary bg-wabi-surface/50 border border-wabi-border/40 rounded-lg p-2 flex items-center justify-between">
+                        <span><i class="fa-regular fa-calendar mr-1"></i>本期未出帳週期：${unbilledPeriod.startStr} ~ ${unbilledPeriod.endStr}</span>
+                        <span class="font-semibold text-wabi-text-primary">共 ${unbilledRecords.length} 筆</span>
+                    </div>
+                    <div class="space-y-1.5" id="unbilled-records-list">
+                        ${unbilledRecords
+                            .map(r => {
+                                const isExp = r.type === 'expense'
+                                const catName = getCategoryName(
+                                    r.type,
+                                    r.category
+                                )
+                                const catIcon = getCategoryIcon(
+                                    r.type,
+                                    r.category
+                                )
+                                return `
+                                <div class="flex items-center justify-between p-2.5 bg-wabi-surface rounded-xl border border-wabi-border/60 hover:border-wabi-border transition-colors">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="size-8 rounded-lg flex items-center justify-center shrink-0 ${isExp ? 'bg-wabi-expense/10 text-wabi-expense' : 'bg-green-500/10 text-green-600'}">
+                                            <i class="${catIcon} text-sm"></i>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="text-xs font-bold text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
+                                                <span class="text-[10px] bg-wabi-bg text-wabi-text-secondary px-1.5 py-0.2 rounded border border-wabi-border/40 shrink-0">${escapeHTML(catName)}</span>
+                                            </div>
+                                            <p class="text-[11px] text-wabi-text-secondary">${r.date}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right shrink-0 ml-2">
+                                        <span class="font-bold text-sm ${isExp ? 'text-wabi-expense' : 'text-green-600'}">
+                                            ${isExp ? '-' : '+'}${formatCurrency(r.amount)}
+                                        </span>
+                                    </div>
+                                </div>
+                            `
+                            })
+                            .join('')}
+                    </div>
+                `
+            } else {
+                // 出帳帳單
+                tabUnbilledBtn.className =
+                    'py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-transparent text-wabi-text-secondary hover:text-wabi-primary transition-colors'
+                tabBilledBtn.className =
+                    'py-2 px-3 sm:px-4 font-bold text-xs sm:text-sm border-b-2 border-wabi-primary text-wabi-primary transition-colors'
+
+                if (statements.length === 0) {
+                    contentContainer.innerHTML = `
+                        <div class="text-center py-12 text-wabi-text-secondary">
+                            <i class="fa-solid fa-file-invoice text-3xl mb-2 opacity-40 block"></i>
+                            <p class="text-sm font-medium">尚無任何出帳帳單</p>
+                            <p class="text-xs text-wabi-text-secondary/70 mt-1">到達結帳日後系統將自動生成帳單</p>
+                        </div>
+                    `
+                    return
+                }
+
+                contentContainer.innerHTML = `
+                    <div class="space-y-3" id="statements-list">
+                        ${statements
+                            .map(stmt => {
+                                const isPaid = stmt.status === 'paid'
+                                const isZero =
+                                    stmt.status === 'zero' || stmt.amount === 0
+                                const stmtPeriodInfo =
+                                    this.app.dataService.getStatementPeriod(
+                                        account,
+                                        stmt.period
+                                    )
+                                const toDateStr = d =>
+                                    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                                const periodRange = `${toDateStr(stmtPeriodInfo.startDate)} ~ ${toDateStr(stmtPeriodInfo.endDate)}`
+                                const stmtDueDateStr = stmt.dueDate
+                                    ? formatDateToString(
+                                          new Date(stmt.dueDate)
+                                      )
+                                    : ''
+                                const today0 = new Date().setHours(0, 0, 0, 0)
+                                const stmtDue0 = stmt.dueDate
+                                    ? new Date(stmt.dueDate).setHours(0, 0, 0, 0)
+                                    : null
+                                const stmtOverdue =
+                                    !isPaid &&
+                                    !isZero &&
+                                    stmtDue0 !== null &&
+                                    today0 >= stmtDue0
+
+                                return `
+                                <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3.5 space-y-2.5 transition-all" data-period="${stmt.period}">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-sm sm:text-base text-wabi-text-primary">${stmt.period} 期帳單</span>
+                                            ${isPaid ? '<span class="text-[10px] bg-green-500/10 text-green-600 font-bold px-2 py-0.5 rounded-full">已繳清</span>' : isZero ? '<span class="text-[10px] bg-gray-400/10 text-gray-500 font-medium px-2 py-0.5 rounded-full">無欠款</span>' : `<span class="text-[10px] ${stmtOverdue ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30' : 'bg-wabi-expense text-wabi-surface'} font-bold px-2.5 py-0.5 rounded-full">${stmtOverdue ? '已到期待扣繳' : '待繳納'}</span>`}
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-base sm:text-lg font-bold ${isPaid || isZero ? 'text-wabi-text-primary' : 'text-wabi-expense'}">
+                                                ${formatCurrency(stmt.amount)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="text-xs text-wabi-text-secondary flex items-center justify-between border-t border-wabi-border/40 pt-2 flex-wrap gap-1">
+                                        <span>計費區間: ${periodRange}</span>
+                                        ${stmtDueDateStr ? `<span>繳款日: ${stmtDueDateStr}</span>` : ''}
+                                    </div>
+
+                                    <div class="flex items-center justify-between pt-1">
+                                        <button class="toggle-stmt-records-btn text-xs text-wabi-primary hover:text-wabi-accent font-medium flex items-center gap-1" data-period="${stmt.period}">
+                                            <span>查看該期消費明細</span>
+                                            <i class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
+                                        </button>
+                                        ${!isPaid && !isZero ? `
+                                            <button class="pay-single-stmt-btn text-xs ${stmtOverdue ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-wabi-accent text-wabi-primary hover:bg-wabi-accent/90'} font-bold px-2.5 py-1 rounded-lg transition-colors" data-period="${stmt.period}" data-amount="${stmt.amount}" data-stmt-id="${stmt.id}">${stmtOverdue ? '扣繳平帳' : '繳款'}</button>
+                                        ` : isPaid && stmt.amount > 0 ? `
+                                            <button class="reconcile-stmt-btn text-[11px] text-wabi-text-secondary hover:text-wabi-primary border border-wabi-border hover:border-wabi-primary/50 font-medium px-2 py-0.5 rounded-lg transition-colors" data-period="${stmt.period}" data-amount="${stmt.amount}" data-stmt-id="${stmt.id}" title="若扣款帳戶尚未扣除此期卡費，可點此補扣平帳">
+                                                <i class="fa-solid fa-scale-balanced mr-1"></i>扣款平帳
+                                            </button>
+                                        ` : ''}
+                                    </div>
+
+                                    <!-- 折疊明細容器 -->
+                                    <div class="stmt-records-container hidden border-t border-wabi-border/30 pt-2 mt-2 space-y-1.5" data-period="${stmt.period}">
+                                        <div class="text-center py-2 text-xs text-wabi-text-secondary"><i class="fa-solid fa-spinner fa-spin mr-1"></i>載入明細中...</div>
+                                    </div>
+                                </div>
+                            `
+                            })
+                            .join('')}
+                    </div>
+                `
+
+                // 綁定帳單明細折疊與繳款按鈕
+                contentContainer
+                    .querySelectorAll('.toggle-stmt-records-btn')
+                    .forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            const period = e.currentTarget.dataset.period
+                            const card = contentContainer.querySelector(
+                                `[data-period="${period}"]`
+                            )
+                            const detailBox = card.querySelector(
+                                `.stmt-records-container[data-period="${period}"]`
+                            )
+                            const icon = e.currentTarget.querySelector('i')
+
+                            if (detailBox.classList.contains('hidden')) {
+                                detailBox.classList.remove('hidden')
+                                icon.classList.add('rotate-180')
+
+                                // 撈取資料
+                                const records =
+                                    await this.app.dataService.getStatementRecords(
+                                        account,
+                                        period
+                                    )
+                                if (records.length === 0) {
+                                    detailBox.innerHTML =
+                                        '<p class="text-center py-3 text-xs text-wabi-text-secondary">該期無相關消費記錄</p>'
+                                } else {
+                                    detailBox.innerHTML = records
+                                        .map(r => {
+                                            const isExp = r.type === 'expense'
+                                            const catName = getCategoryName(
+                                                r.type,
+                                                r.category
+                                            )
+                                            const catIcon = getCategoryIcon(
+                                                r.type,
+                                                r.category
+                                            )
+                                            return `
+                                        <div class="flex items-center justify-between p-2 bg-wabi-bg/60 rounded-lg text-xs">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <i class="${catIcon} ${isExp ? 'text-wabi-expense' : 'text-green-600'} text-xs"></i>
+                                                <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
+                                                <span class="text-[10px] text-wabi-text-secondary">${r.date}</span>
+                                            </div>
+                                            <span class="font-semibold ${isExp ? 'text-wabi-expense' : 'text-green-600'} ml-2 shrink-0">
+                                                ${isExp ? '-' : '+'}${formatCurrency(r.amount)}
+                                            </span>
+                                        </div>
+                                    `
+                                        })
+                                        .join('')
+                                }
+                            } else {
+                                detailBox.classList.add('hidden')
+                                icon.classList.remove('rotate-180')
+                            }
+                        })
+                    })
+
+                contentContainer
+                    .querySelectorAll('.pay-single-stmt-btn')
+                    .forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            const amount = parseFloat(
+                                e.currentTarget.dataset.amount
+                            )
+                            const stmtId = parseInt(
+                                e.currentTarget.dataset.stmtId,
+                                10
+                            )
+                            const period = e.currentTarget.dataset.period
+
+                            if (
+                                account.autoPayAccountId &&
+                                !Number.isNaN(stmtId)
+                            ) {
+                                const debitAcc =
+                                    await this.app.dataService.getAccount(
+                                        account.autoPayAccountId
+                                    )
+                                if (debitAcc) {
+                                    const confirmed = await customConfirm(
+                                        totalDebt <= 0
+                                            ? `此信用卡欠款已為 0，是否確認立即由指定帳戶「${escapeHTML(debitAcc.name)}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（將僅扣除扣款帳戶餘額以達平帳，不重複增加信用卡餘額，且不計入生活支出）`
+                                            : `是否確認立即由指定帳戶「${escapeHTML(debitAcc.name)}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（此紀錄不計入生活支出，但會調整帳戶餘額以達平帳）`
+                                    )
+                                    if (confirmed) {
+                                        try {
+                                            await this.app.dataService.payCreditStatement(
+                                                stmtId,
+                                                debitAcc.id,
+                                                amount,
+                                                null,
+                                                { deductOnly: totalDebt <= 0 }
+                                            )
+                                            showToast(
+                                                '卡費扣繳成功，已完成平帳！'
+                                            )
+                                            this.render()
+                                            this.showCreditDetailModal(account)
+                                            return
+                                        } catch (err) {
+                                            console.error('扣繳失敗:', err)
+                                            showToast(
+                                                '扣繳失敗，請稍後重試',
+                                                'error'
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            this.showCreditPayModal(account, amount, {
+                                statementId: stmtId,
+                                period,
+                                deductOnly: totalDebt <= 0,
+                            })
+                        })
+                    })
+
+                contentContainer
+                    .querySelectorAll('.reconcile-stmt-btn')
+                    .forEach(btn => {
+                        btn.addEventListener('click', e => {
+                            const amount = parseFloat(
+                                e.currentTarget.dataset.amount
+                            )
+                            const stmtId = parseInt(
+                                e.currentTarget.dataset.stmtId,
+                                10
+                            )
+                            const period = e.currentTarget.dataset.period
+                            this.showCreditPayModal(account, amount, {
+                                statementId: stmtId,
+                                period,
+                                deductOnly: true,
+                            })
+                        })
+                    })
+            }
+        }
+
+        tabUnbilledBtn.addEventListener('click', () => {
+            currentTab = 'unbilled'
+            renderTabContent()
+        })
+        tabBilledBtn.addEventListener('click', () => {
+            currentTab = 'billed'
+            renderTabContent()
+        })
+
+        // 預設渲染即時未出帳
+        renderTabContent()
+    }
+
+    async showCreditPayModal(account, prefilledAmount = null, options = {}) {
+        const statementId = options?.statementId || null
+        const period = options?.period || null
+
         // 取得扣款賬戶 (排除信用卡和當前賬戶)
         const allAccounts = await this.app.dataService.getAccounts()
         const debitAccounts = allAccounts.filter(
@@ -812,51 +1430,133 @@ export class AccountsPage {
         )
 
         if (debitAccounts.length === 0) {
-            showToast('你需要至少一個非信用卡賬戶才能繳款', 'warning')
+            showToast('你需要至少一個非信用卡賬戶才能扣繳/繳款', 'warning')
             return
         }
 
-        // 獲取該信用卡未繳的賬單總額
-        const unpaidStatements = await this.app.dataService.getCreditStatements({
+        // 計算該信用卡目前欠款
+        const allRecords = await this.app.dataService.getRecords()
+        const recordsForCard = allRecords.filter(
+            r => r.accountId === account.id
+        )
+        const currentCardBal = recordsForCard.reduce(
+            (bal, r) => bal + (r.type === 'income' ? r.amount : -r.amount),
+            account.balance || 0
+        )
+        const cardDebt = Math.max(0, -currentCardBal)
+
+        // 獲取該信用卡所有帳單以取得未繳帳單及最近一期資訊
+        const allStatements = await this.app.dataService.getCreditStatements({
             accountId: account.id,
-            status: 'unpaid',
             allLedgers: true,
         })
+        const unpaidStatements = allStatements.filter(s => s.status === 'unpaid')
         const unpaidTotal = unpaidStatements.reduce(
             (sum, s) => sum + (s.amount || 0),
             0
         )
+        const recentStatement = allStatements
+            .filter(s => (s.amount || 0) > 0)
+            .sort((a, b) => b.period.localeCompare(a.period))[0]
+
+        let amountToPay = 0
+        if (prefilledAmount !== null) {
+            amountToPay = prefilledAmount
+        } else if (unpaidTotal > 0) {
+            amountToPay = unpaidTotal
+        } else if (recentStatement) {
+            amountToPay = recentStatement.amount
+        }
+
+        const isDeductOnlyDefault =
+            options?.deductOnly === true || cardDebt <= 0
 
         const modal = document.createElement('div')
         modal.id = 'credit-pay-modal'
         modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
+
+        // 預設選中卡片設定的自動扣款帳戶 (若有)，否則選第一個
+        const selectedDebitId =
+            account.autoPayAccountId &&
+            debitAccounts.some(a => a.id === account.autoPayAccountId)
+                ? account.autoPayAccountId
+                : debitAccounts[0]?.id
 
         const accountOptions = debitAccounts
-            .map(a => `<option value="${a.id}">${escapeHTML(a.name)}</option>`)
+            .map(
+                a =>
+                    `<option value="${a.id}" ${a.id === selectedDebitId ? 'selected' : ''}>${escapeHTML(a.name)}</option>`
+            )
             .join('')
 
+        const titleText = period
+            ? `扣繳信用卡費 (${period} 期)`
+            : cardDebt <= 0
+              ? '信用卡扣款平帳'
+              : '繳納信用卡費 / 扣繳平帳'
+
         modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
-                <h3 class="text-lg font-bold text-wabi-primary">繳納信用卡費</h3>
-                <p class="text-sm text-wabi-text-secondary">${escapeHTML(account.name)} — 未繳賬單合計: <span class="font-semibold text-wabi-expense">${formatCurrency(unpaidTotal)}</span></p>
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 overflow-hidden box-border">
+                <h3 class="text-lg font-bold text-wabi-primary">${titleText}</h3>
+                <p class="text-sm text-wabi-text-secondary">${escapeHTML(account.name)} — 未繳賬單合計: <span class="font-semibold text-wabi-expense">${formatCurrency(unpaidTotal)}</span> (總欠款: ${formatCurrency(cardDebt)})</p>
+                ${cardDebt <= 0 ? `
+                <div class="text-xs text-blue-700 dark:text-blue-300 bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-lg flex items-start gap-2">
+                    <i class="fa-solid fa-circle-info text-sm mt-0.5 shrink-0 text-blue-500"></i>
+                    <div class="space-y-1">
+                        <p class="font-bold">信用卡目前欠款已為 ${formatCurrency(0)}</p>
+                        <p class="text-[11px] opacity-90 leading-relaxed">
+                            若銀行帳戶在現實中已被扣款，請勾選下方<strong>「僅扣款帳戶平帳」</strong>：系統將只自扣款帳戶扣除此筆卡費，<strong>不會重複增加信用卡餘額</strong>，且<strong>不計入日常生活支出</strong>。
+                        </p>
+                    </div>
+                </div>
+                ` : `
+                <div class="text-xs text-wabi-text-secondary bg-wabi-surface/80 p-2.5 rounded-lg border border-wabi-border/40">
+                    <i class="fa-solid fa-circle-info text-wabi-accent mr-1"></i>此扣繳將調整帳戶餘額以達平帳，<strong>不計入日常生活支出</strong>。
+                </div>
+                `}
                 <div>
                     <label class="text-sm text-wabi-text-secondary">扣款賬戶</label>
-                    <select id="credit-pay-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                    <select id="credit-pay-account" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface truncate text-wabi-text-primary">${accountOptions}</select>
                 </div>
                 <div>
-                    <label class="text-sm text-wabi-text-secondary">繳款金額</label>
-                    <input type="number" id="credit-pay-amount" placeholder="0.00" min="0" step="0.01" value="${unpaidTotal > 0 ? unpaidTotal : ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <label class="text-sm text-wabi-text-secondary">扣繳金額</label>
+                    <input type="number" id="credit-pay-amount" placeholder="0.00" min="0" step="0.01" value="${amountToPay > 0 ? amountToPay : ''}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface text-wabi-text-primary">
+                    ${recentStatement ? `
+                    <div class="flex items-center justify-between text-[11px] text-wabi-text-secondary mt-1 px-0.5">
+                        <span>最近一期 (${recentStatement.period} 期): ${formatCurrency(recentStatement.amount)}</span>
+                        <button type="button" id="use-recent-stmt-amount-btn" class="text-wabi-accent font-bold hover:underline" data-amount="${recentStatement.amount}">帶入金額</button>
+                    </div>
+                    ` : ''}
+                </div>
+                <div class="flex items-center justify-between p-2.5 rounded-lg bg-wabi-surface border border-wabi-border/60">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="credit-pay-deduct-only" class="h-4 w-4 rounded text-wabi-primary focus:ring-wabi-primary" ${isDeductOnlyDefault ? 'checked' : ''}>
+                        <label for="credit-pay-deduct-only" class="text-xs font-semibold text-wabi-text-primary cursor-pointer">
+                            僅扣款帳戶平帳
+                        </label>
+                    </div>
+                    <span class="text-[10px] text-wabi-text-secondary">不增加信用卡餘額</span>
                 </div>
                 <div class="flex gap-2 mt-6">
-                    <button id="confirm-credit-pay-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">確認繳款</button>
-                    <button id="cancel-credit-pay-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                    <button id="confirm-credit-pay-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">確認扣繳平帳</button>
+                    <button id="cancel-credit-pay-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
         `
         document.body.appendChild(modal)
 
         const closeModal = () => modal.remove()
+
+        const useRecentBtn = modal.querySelector('#use-recent-stmt-amount-btn')
+        if (useRecentBtn) {
+            useRecentBtn.addEventListener('click', () => {
+                const amt = useRecentBtn.dataset.amount
+                if (amt) {
+                    modal.querySelector('#credit-pay-amount').value = amt
+                }
+            })
+        }
 
         modal
             .querySelector('#cancel-credit-pay-btn')
@@ -886,43 +1586,73 @@ export class AccountsPage {
                     showToast('無法找到扣款賬戶', 'error')
                     return
                 }
-                const dateStr = formatDateToString(new Date())
 
-                // 寫扣款賬戶支出
-                const expenseRecord = {
-                    type: 'expense',
-                    category: 'transfer',
-                    amount,
-                    date: dateStr,
-                    description: `[手動繳款] 繳納信用卡費 (${account.name})`,
-                    accountId: debitId,
-                    ledgerId: account.ledgerId,
-                }
-
-                // 寫信用卡收入
-                const incomeRecord = {
-                    type: 'income',
-                    category: 'transfer',
-                    amount,
-                    date: dateStr,
-                    description: `[手動繳款] 從 ${debitAccount.name} 繳款 (${account.name})`,
-                    accountId: account.id,
-                    ledgerId: account.ledgerId,
-                }
+                const isDeductOnly =
+                    modal.querySelector('#credit-pay-deduct-only')?.checked ||
+                    false
 
                 try {
-                    await this.app.dataService.addRecord(expenseRecord)
-                    await this.app.dataService.addRecord(incomeRecord)
+                    if (statementId) {
+                        await this.app.dataService.payCreditStatement(
+                            statementId,
+                            debitId,
+                            amount,
+                            null,
+                            { deductOnly: isDeductOnly }
+                        )
+                    } else {
+                        const dateStr = formatDateToString(new Date())
+                        const descSuffix = period
+                            ? ` (${account.name} ${period} 期)`
+                            : ` (${account.name})`
 
-                    // FIFO 沖銷未繳賬單狀態
-                    await this.app.dataService.updateCreditStatementsStatus()
+                        // 寫扣款賬戶支出 (類別 transfer，不計入日常支出但扣減餘額以達平帳)
+                        const expenseRecord = {
+                            type: 'expense',
+                            category: 'transfer',
+                            amount,
+                            date: dateStr,
+                            description: isDeductOnly
+                                ? `[卡費扣繳平帳] 扣除 ${account.name} 卡費${descSuffix} (信用卡已歸零)`
+                                : `[卡費扣繳] 繳納信用卡費${descSuffix}`,
+                            accountId: debitId,
+                            ledgerId: account.ledgerId,
+                            createdAt: Date.now(),
+                        }
+                        await this.app.dataService.addRecord(expenseRecord)
 
-                    showToast('繳款成功！')
+                        if (!isDeductOnly) {
+                            // 寫信用卡收入
+                            const incomeRecord = {
+                                type: 'income',
+                                category: 'transfer',
+                                amount,
+                                date: dateStr,
+                                description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費${descSuffix}`,
+                                accountId: account.id,
+                                ledgerId: account.ledgerId,
+                                createdAt: Date.now(),
+                            }
+                            await this.app.dataService.addRecord(incomeRecord)
+                        }
+
+                        // FIFO 沖銷未繳賬單狀態
+                        await this.app.dataService.updateCreditStatementsStatus()
+                    }
+
+                    showToast(
+                        isDeductOnly
+                            ? '扣款帳戶已成功扣除卡費並完成平帳！'
+                            : '卡費扣繳成功，已完成平帳！'
+                    )
                     this.render()
                     closeModal()
+                    if (document.getElementById('credit-detail-modal')) {
+                        this.showCreditDetailModal(account)
+                    }
                 } catch (err) {
-                    console.error('信用卡繳款失敗:', err)
-                    showToast('繳款失敗，請稍後重試', 'error')
+                    console.error('信用卡扣繳平帳失敗:', err)
+                    showToast('扣繳失敗，請稍後重試', 'error')
                 }
             })
     }
@@ -937,7 +1667,7 @@ export class AccountsPage {
         const modal = document.createElement('div')
         modal.id = 'transfer-form-modal'
         modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
 
         const accountOptions = accounts
             .map(
@@ -947,31 +1677,31 @@ export class AccountsPage {
             .join('')
 
         modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
+            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 overflow-hidden box-border">
                 <h3 class="text-lg font-bold text-wabi-primary">建立轉帳</h3>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">從</label>
-                    <select id="transfer-from-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                    <select id="transfer-from-account" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface truncate">${accountOptions}</select>
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">至</label>
-                    <select id="transfer-to-account" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">${accountOptions}</select>
+                    <select id="transfer-to-account" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface truncate">${accountOptions}</select>
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">金額</label>
-                    <input type="number" id="transfer-amount" placeholder="0.00" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="number" id="transfer-amount" placeholder="0.00" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">日期</label>
-                    <input type="date" id="transfer-date" value="${formatDateToString(new Date())}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="date" id="transfer-date" value="${formatDateToString(new Date())}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">備註</label>
-                    <input type="text" id="transfer-note" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="text" id="transfer-note" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
                 <div class="flex gap-2 mt-6">
-                    <button id="save-transfer-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">儲存</button>
-                    <button id="cancel-transfer-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
+                    <button id="save-transfer-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">儲存</button>
+                    <button id="cancel-transfer-btn" class="flex-1 py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-bg transition-colors">取消</button>
                 </div>
             </div>
         `

@@ -1827,6 +1827,7 @@ export class AddPage {
                         })
                         await this.app.dataService.updateRecord(numericId, {
                             debtId: debtId,
+                            contactId: debtContactId,
                         })
                         showToast('更新成功並建立欠款記錄！')
                     } else {
@@ -1858,6 +1859,7 @@ export class AddPage {
                     })
                     await this.app.dataService.updateRecord(newRecordId, {
                         debtId: debtId,
+                        contactId: debtContactId,
                     })
                     showToast('儲存成功並建立欠款記錄！')
                 } else {

@@ -1940,10 +1940,34 @@ export class DebtManager {
 
     const groupRecords = await this.dataService.getGroupRecords(groupId);
     const { netAmount, totalExpense, totalIncome } = await this.dataService._calculateGroupNetAsync(groupRecords);
-    const allDebts = await this.dataService.getDebts({ allLedgers: true });
-    const debtsMap = new Map(allDebts.map(d => [d.id, d]));
+    const [allDebts, allContacts] = await Promise.all([
+      this.dataService.getDebts({ allLedgers: true }),
+      this.dataService.getContacts({ allLedgers: true })
+    ]);
+    const debtsMap = new Map();
+    const debtByRecordIdMap = new Map();
+    allDebts.forEach(d => {
+      debtsMap.set(d.id, d);
+      debtsMap.set(String(d.id), d);
+      if (d.recordId) {
+        debtByRecordIdMap.set(d.recordId, d);
+        debtByRecordIdMap.set(String(d.recordId), d);
+      }
+    });
+
+    const contactsMap = new Map();
+    allContacts.forEach(c => {
+      contactsMap.set(c.id, c);
+      contactsMap.set(String(c.id), c);
+    });
 
     const netDirection = netAmount > 0 ? `應收 ` : netAmount < 0 ? `應付 ` : '已平衡';
+
+    const uniqueContacts = [...new Set(groupRecords.map(r => {
+      const debt = (r.debtId ? debtsMap.get(r.debtId) : null) || debtByRecordIdMap.get(r.id);
+      const cid = debt?.contactId || r.contactId;
+      return cid ? contactsMap.get(cid)?.name : null;
+    }).filter(Boolean))];
 
     const modal = document.createElement('div');
     modal.id = 'group-details-modal';
@@ -1959,13 +1983,23 @@ export class DebtManager {
       const colorStyle = isHexColor ? `style="background-color: ${cat.color};"` : '';
       const colorClass = isHexColor ? '' : (cat.color || 'bg-gray-500');
 
+      // 判定關聯欠款與聯絡人
+      const debt = (r.debtId ? debtsMap.get(r.debtId) : null) || debtByRecordIdMap.get(r.id) || null;
+      let contactName = '';
+      if (debt && debt.contactId && contactsMap.has(debt.contactId)) {
+        contactName = contactsMap.get(debt.contactId).name || '';
+      } else if (r.contactId && contactsMap.has(r.contactId)) {
+        contactName = contactsMap.get(r.contactId).name || '';
+      } else if (debt && debt.contactName) {
+        contactName = debt.contactName;
+      }
+
       // 判定是否有實際欠款 & 債務方向標籤 (專業用語)
       let hasDebt = false;
       let debtTagHtml = '';
 
-      if (r.debtId && debtsMap.has(r.debtId)) {
+      if (debt) {
         hasDebt = true;
-        const debt = debtsMap.get(r.debtId);
         if (debt.type === 'receivable') {
           const label = isIncome ? '待收收入' : '墊付款 (應收)';
           debtTagHtml = `<span class="text-[10px] whitespace-nowrap bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium border border-emerald-500/20 shrink-0">${label}</span>`;
@@ -1984,6 +2018,11 @@ export class DebtManager {
         debtTagHtml = `<span class="text-[10px] whitespace-nowrap bg-wabi-text-secondary/10 text-wabi-text-secondary/70 px-1.5 py-0.5 rounded font-normal border border-wabi-border/60 shrink-0">一般消費</span>`;
       }
 
+      const contactRole = (debt?.type === 'payable' || (!debt && isIncome)) ? '代墊人' : '欠款人';
+      const contactTagHtml = contactName
+        ? `<span class="text-[10px] whitespace-nowrap bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-medium border border-blue-500/20 shrink-0 inline-flex items-center gap-1" title="${contactRole}：${escapeHTML(contactName)}"><i class="fa-solid fa-user text-[9px]"></i>${escapeHTML(contactName)}</span>`
+        : '';
+
       return `
         <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-xl border border-wabi-border gap-2">
           <div class="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1992,11 +2031,12 @@ export class DebtManager {
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5 flex-wrap min-w-0">
-                <p class="font-medium text-wabi-text-primary text-sm truncate max-w-[130px] sm:max-w-[180px]">${escapeHTML(r.description || cat.name)}</p>
+                <p class="font-medium text-wabi-text-primary text-sm truncate max-w-[110px] sm:max-w-[160px]">${escapeHTML(r.description || cat.name)}</p>
+                ${contactTagHtml}
                 ${debtTagHtml}
                 ${isSettled ? `<span class="text-[10px] whitespace-nowrap bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium shrink-0">已結清</span>` : ''}
               </div>
-              <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${formatDate(r.date, 'short')} · ${cat.name}</p>
+              <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${formatDate(r.date, 'short')} · ${cat.name}${contactName ? ` · <span class="text-wabi-text-primary font-medium">${contactRole}：${escapeHTML(contactName)}</span>` : ''}</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0 ml-1">
@@ -2048,6 +2088,14 @@ export class DebtManager {
             <span>總支出: <strong class="text-wabi-expense font-semibold">${formatCurrency(totalExpense)}</strong></span>
             <span>總收入: <strong class="text-wabi-income font-semibold">${formatCurrency(totalIncome)}</strong></span>
           </div>
+          ${uniqueContacts.length > 0 ? `
+            <div class="flex items-center gap-1.5 text-xs text-wabi-text-secondary pt-1.5 border-t border-wabi-border/50 flex-wrap">
+              <span class="shrink-0"><i class="fa-solid fa-users text-[11px] mr-1 text-wabi-text-secondary"></i>群組成員:</span>
+              <div class="flex items-center gap-1 flex-wrap">
+                ${uniqueContacts.map(name => `<span class="bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded text-[11px] font-medium border border-blue-500/20">${escapeHTML(name)}</span>`).join('')}
+              </div>
+            </div>
+          ` : ''}
         </div>
 
         <div class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4">
@@ -2147,6 +2195,25 @@ export class DebtManager {
     const record = records.find(r => r.id === recordId);
     if (!record) return;
 
+    let contactName = '';
+    let associatedDebt = null;
+    if (record.debtId) {
+      associatedDebt = await this.dataService.getDebt(record.debtId);
+    }
+    if (!associatedDebt) {
+      const allDebts = await this.dataService.getDebts({ allLedgers: true });
+      associatedDebt = allDebts.find(d => d.recordId === record.id || String(d.recordId) === String(record.id));
+    }
+    if (associatedDebt?.contactId) {
+      const contact = await this.dataService.getContact(associatedDebt.contactId);
+      contactName = contact?.name || '';
+    } else if (record.contactId) {
+      const contact = await this.dataService.getContact(record.contactId);
+      contactName = contact?.name || '';
+    } else if (associatedDebt?.contactName) {
+      contactName = associatedDebt.contactName;
+    }
+
     const advancedModeSetting = await this.dataService.getSetting('advancedAccountModeEnabled');
     const isAdvancedMode = !!advancedModeSetting?.value;
     let accounts = [];
@@ -2162,6 +2229,7 @@ export class DebtManager {
 
     const isExpense = record.type === 'expense';
     const actionText = isExpense ? '收回款項 (入帳)' : '退還款項 (出帳)';
+    const contactRole = (associatedDebt?.type === 'payable' || (!associatedDebt && !isExpense)) ? '代墊人' : '欠款人';
 
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4';
@@ -2170,9 +2238,16 @@ export class DebtManager {
         <h3 class="text-lg font-semibold mb-3 text-emerald-600">
           <i class="fa-solid fa-handshake mr-2"></i>單筆明細個別還款
         </h3>
-        <div class="bg-wabi-surface p-3 rounded-lg border border-wabi-border mb-4">
-          <p class="font-medium text-wabi-text-primary text-sm">${escapeHTML(record.description || '單筆紀錄')}</p>
-          <p class="text-xs text-wabi-text-secondary mt-1">${formatDate(record.date, 'short')} · 金額：<span class="font-bold ${isExpense ? 'text-wabi-expense' : 'text-wabi-income'}">${formatCurrency(record.amount)}</span></p>
+        <div class="bg-wabi-surface p-3.5 rounded-xl border border-wabi-border mb-4 shadow-sm">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <p class="font-medium text-wabi-text-primary text-sm truncate">${escapeHTML(record.description || '單筆紀錄')}</p>
+            ${contactName ? `
+              <span class="text-xs whitespace-nowrap bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-medium border border-blue-500/20 shrink-0 inline-flex items-center gap-1">
+                <i class="fa-solid fa-user text-[10px]"></i>${escapeHTML(contactName)}
+              </span>
+            ` : ''}
+          </div>
+          <p class="text-xs text-wabi-text-secondary mt-0.5">${formatDate(record.date, 'short')}${contactName ? ` · ${contactRole}：<span class="font-medium text-wabi-text-primary">${escapeHTML(contactName)}</span>` : ''} · 金額：<span class="font-bold ${isExpense ? 'text-wabi-expense' : 'text-wabi-income'}">${formatCurrency(record.amount)}</span></p>
         </div>
         <p class="text-xs text-wabi-text-secondary mb-4">這將建立一筆「${actionText}」沖銷紀錄，並標記此明細為已結清。</p>
         ${isAdvancedMode ? `

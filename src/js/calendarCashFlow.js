@@ -65,6 +65,11 @@ export class CalendarCashFlow {
         let totalExpense = 0
         for (const dateRecords of Object.values(grouped)) {
             for (const r of dateRecords) {
+                if (
+                    r.category === 'transfer' ||
+                    r.category === 'balance_adjustment'
+                )
+                    continue
                 if (r.type === 'income') totalIncome += r.amount
                 else if (r.type === 'expense') totalExpense += r.amount
             }
@@ -194,12 +199,22 @@ export class CalendarCashFlow {
 
         let incomeSum = 0
         for (const r of dayRecords) {
+            if (
+                r.category === 'transfer' ||
+                r.category === 'balance_adjustment'
+            )
+                continue
             if (r.type === 'income') incomeSum += r.amount
         }
 
         // Get top 3 expense records (by amount desc)
         const expenseRecords = dayRecords
-            .filter(r => r.type === 'expense')
+            .filter(
+                r =>
+                    r.type === 'expense' &&
+                    r.category !== 'transfer' &&
+                    r.category !== 'balance_adjustment'
+            )
             .sort((a, b) => b.amount - a.amount)
             .slice(0, 3)
 
