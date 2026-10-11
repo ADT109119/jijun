@@ -156,55 +156,80 @@ export class AccountsPage {
                 : ''
 
             if (isCreditCard) {
+                accountEl.className =
+                    'bg-wabi-surface p-3.5 sm:p-4 rounded-xl border border-wabi-border hover:border-wabi-primary/40 transition-colors space-y-3'
                 accountEl.innerHTML = `
-                    <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0 cursor-pointer credit-card-card-click" data-id="${account.id}" title="點擊查看帳務明細 (即時消費 / 出帳帳單)">
-                        <div class="relative shrink-0">
-                            <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-11 sm:size-12" ${colorStyle}>
-                                <i class="${account.icon} text-xl sm:text-2xl"></i>
-                            </div>
-                            <span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-[10px] px-1 rounded-full font-bold" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                                <p class="font-bold text-wabi-text-primary text-sm sm:text-base truncate">${escapeHTML(account.name)}</p>
-                                <span class="text-[11px] bg-wabi-expense/10 text-wabi-expense px-1.5 py-0.5 rounded-full shrink-0 font-medium">信用卡</span>
-                                ${hasOverdue ? '<span class="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0 font-medium">已到期待扣款</span>' : ''}
-                            </div>
-                            <div class="mt-1 space-y-0.5">
-                                <div class="flex items-center gap-1.5 sm:gap-2 text-xs flex-wrap">
-                                    <span class="${billedDueTotal > 0 ? 'text-wabi-expense font-bold' : 'text-wabi-text-secondary'}">
-                                        準備繳納: ${formatCurrency(billedDueTotal)}
-                                    </span>
-                                    <span class="text-wabi-border">|</span>
-                                    <span class="text-blue-600 dark:text-blue-400 font-medium">
-                                        即時未出帳: ${formatCurrency(unbilledTotal)}
-                                    </span>
+                    <!-- 頂部：卡片圖示、名稱、標籤與繳款快捷按鈕 -->
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer credit-card-card-click" data-id="${account.id}" title="點擊查看帳務明細 (即時消費 / 出帳帳單)">
+                            <div class="relative shrink-0">
+                                <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-10 sm:size-11" ${colorStyle}>
+                                    <i class="${account.icon} text-lg sm:text-xl"></i>
                                 </div>
-                                <p class="text-[11px] sm:text-xs text-wabi-text-secondary truncate">
-                                    總欠款: ${formatCurrency(cardDebt)}${creditLimit > 0 ? ` · 可用 ${formatCurrency(availableCredit)} / 額度 ${formatCurrency(creditLimit)}` : ''}
+                                <span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-[9px] px-1 rounded-full font-bold" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <p class="font-bold text-wabi-text-primary text-sm sm:text-base truncate">${escapeHTML(account.name)}</p>
+                                    <span class="text-[10px] bg-wabi-expense/10 text-wabi-expense px-1.5 py-0.5 rounded-full shrink-0 font-medium">信用卡</span>
+                                    ${hasOverdue ? '<span class="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0 font-medium">已到期待扣款</span>' : ''}
+                                </div>
+                                <p class="text-[11px] sm:text-xs text-wabi-text-secondary mt-0.5 truncate">
+                                    總欠款: <span class="font-semibold text-wabi-expense">${formatCurrency(cardDebt)}</span>${creditLimit > 0 ? ` · 可用 ${formatCurrency(availableCredit)} / 額度 ${formatCurrency(creditLimit)}` : ''}
                                 </p>
                             </div>
                         </div>
+                        <div class="shrink-0 flex items-center">
+                            <button class="credit-pay-btn px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 ${hasOverdue ? 'bg-amber-500 hover:bg-amber-600 text-white' : billedDueTotal > 0 ? 'bg-wabi-expense hover:opacity-90 text-white' : 'bg-wabi-bg text-wabi-text-secondary hover:text-wabi-primary border border-wabi-border'}" data-id="${account.id}" title="${hasOverdue ? '已到期，立即扣繳平帳' : '立即繳款'}">
+                                <i class="fa-solid fa-money-bill-wave text-[11px]"></i>
+                                <span>${hasOverdue ? '扣繳平帳' : '繳款'}</span>
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-1 sm:gap-2 shrink-0 ml-2">
-                        <button class="credit-detail-btn p-1.5 sm:p-2 text-wabi-primary hover:text-wabi-accent transition-colors" data-id="${account.id}" title="查看帳單與即時消費">
-                            <i class="fa-solid fa-file-invoice-dollar text-base sm:text-lg"></i>
+
+                    <!-- 中間：準備繳納 與 即時未出帳 獨立雙欄卡片 -->
+                    <div class="grid grid-cols-2 gap-2 cursor-pointer credit-card-card-click" data-id="${account.id}" title="點擊查看帳務明細 (即時消費 / 出帳帳單)">
+                        <div class="bg-wabi-bg/70 dark:bg-wabi-bg/40 p-2.5 rounded-lg border border-wabi-border/60">
+                            <span class="text-[11px] text-wabi-text-secondary block truncate">
+                                <i class="fa-solid fa-clock mr-1 text-[10px] text-wabi-expense"></i>準備繳納 (已出帳)
+                            </span>
+                            <p class="text-sm sm:text-base font-bold mt-0.5 truncate ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
+                                ${formatCurrency(billedDueTotal)}
+                            </p>
+                        </div>
+                        <div class="bg-wabi-bg/70 dark:bg-wabi-bg/40 p-2.5 rounded-lg border border-wabi-border/60">
+                            <span class="text-[11px] text-wabi-text-secondary block truncate">
+                                <i class="fa-solid fa-bolt mr-1 text-[10px] text-blue-500"></i>即時未出帳
+                            </span>
+                            <p class="text-sm sm:text-base font-bold mt-0.5 truncate text-blue-600 dark:text-blue-400">
+                                ${formatCurrency(unbilledTotal)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 底部：帳單消費明細入口與管理功能 (矯正、編輯、刪除) -->
+                    <div class="flex items-center justify-between pt-2 border-t border-wabi-border/50 text-xs">
+                        <button class="credit-detail-btn text-wabi-primary hover:text-wabi-accent font-medium flex items-center gap-1.5 transition-colors py-0.5" data-id="${account.id}" title="查看帳單與即時消費">
+                            <i class="fa-solid fa-file-invoice-dollar text-sm"></i>
+                            <span>帳單與消費明細</span>
+                            <i class="fa-solid fa-chevron-right text-[10px] opacity-60"></i>
                         </button>
-                        <button class="credit-pay-btn p-1.5 sm:p-2 ${hasOverdue ? 'text-amber-600 hover:text-amber-700' : 'text-green-600 hover:text-green-700'} transition-colors" data-id="${account.id}" title="${hasOverdue ? '已到期，立即扣繳平帳' : '立即繳款'}">
-                            <i class="fa-solid fa-money-bill-wave text-base sm:text-lg"></i>
-                        </button>
-                        <button class="adjust-balance-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" data-balance="${currentBalance}" title="餘額矯正">
-                            <i class="fa-solid fa-scale-balanced text-sm sm:text-base"></i>
-                        </button>
-                        <button class="edit-account-btn p-1.5 sm:p-2 text-wabi-text-secondary hover:text-wabi-primary transition-colors" data-id="${account.id}" title="編輯帳戶">
-                            <i class="fa-solid fa-pen text-sm sm:text-base"></i>
-                        </button>
-                        <button class="delete-account-btn p-1.5 sm:p-2 text-wabi-expense hover:text-red-700 transition-colors" data-id="${account.id}" title="刪除帳戶">
-                            <i class="fa-solid fa-trash-can text-sm sm:text-base"></i>
-                        </button>
+                        <div class="flex items-center gap-1 text-wabi-text-secondary">
+                            <button class="adjust-balance-btn p-1.5 hover:text-wabi-primary transition-colors" data-id="${account.id}" data-balance="${currentBalance}" title="餘額矯正">
+                                <i class="fa-solid fa-scale-balanced text-sm"></i>
+                            </button>
+                            <button class="edit-account-btn p-1.5 hover:text-wabi-primary transition-colors" data-id="${account.id}" title="編輯帳戶">
+                                <i class="fa-solid fa-pen text-sm"></i>
+                            </button>
+                            <button class="delete-account-btn p-1.5 text-wabi-expense hover:text-red-700 transition-colors" data-id="${account.id}" title="刪除帳戶">
+                                <i class="fa-solid fa-trash-can text-sm"></i>
+                            </button>
+                        </div>
                     </div>
                 `
             } else {
+                accountEl.className =
+                    'flex items-center justify-between bg-wabi-surface p-3.5 sm:p-4 rounded-xl border border-wabi-border hover:border-wabi-primary/40 transition-colors'
                 accountEl.innerHTML = `
                     <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                         <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-11 sm:size-12" ${colorStyle}>
@@ -994,9 +1019,17 @@ export class AccountsPage {
             nextDueDate,
         } = billingInfo
 
-        const nextDueDateText = nextDueDate
-            ? `${formatDateToString(new Date(nextDueDate))} 繳款截止`
-            : '目前無待繳帳單'
+        let nextDueDateText = '無待繳帳單'
+        let nextDueDateFull = ''
+        if (nextDueDate) {
+            const dueDateObj = new Date(nextDueDate)
+            nextDueDateFull = `${formatDateToString(dueDateObj)} 繳款截止`
+            const isDiffYear = dueDateObj.getFullYear() !== new Date().getFullYear()
+            const dueDateShort = isDiffYear
+                ? `${dueDateObj.getFullYear()}/${dueDateObj.getMonth() + 1}/${dueDateObj.getDate()}`
+                : `${dueDateObj.getMonth() + 1}/${dueDateObj.getDate()}`
+            nextDueDateText = `${dueDateShort} 截止`
+        }
         const isOverdue =
             nextDueDate && Date.now() > nextDueDate && billedDueTotal > 0
 
@@ -1023,39 +1056,39 @@ export class AccountsPage {
                 <!-- 頂部摘要雙卡 -->
                 <div class="grid grid-cols-2 gap-2.5 sm:gap-3 shrink-0">
                     <!-- 準備繳納 (已出帳待繳) -->
-                    <div class="bg-wabi-surface border ${billedDueTotal > 0 ? 'border-wabi-expense/30 bg-wabi-expense/5' : 'border-wabi-border'} rounded-xl p-3 flex flex-col justify-between">
+                    <div class="bg-wabi-surface border ${billedDueTotal > 0 ? 'border-wabi-expense/30 bg-wabi-expense/5' : 'border-wabi-border'} rounded-xl p-3 flex flex-col justify-between min-w-0">
                         <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="text-xs font-semibold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'}">
-                                    <i class="fa-solid fa-clock mr-1"></i>準備繳納 (已出帳)
+                            <div class="flex items-center justify-between gap-1 mb-1 min-w-0">
+                                <span class="text-xs font-semibold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-secondary'} truncate">
+                                    <i class="fa-solid fa-clock mr-1 text-[10px]"></i>準備繳納
                                 </span>
-                                ${billedDueTotal > 0 ? `<span class="text-[10px] ${isOverdue ? 'bg-red-600 text-white' : 'bg-wabi-expense text-wabi-surface'} px-1.5 py-0.5 rounded-full font-bold">${isOverdue ? '已逾期' : '待繳'}</span>` : '<span class="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full font-bold">已結清</span>'}
+                                ${billedDueTotal > 0 ? `<span class="text-[10px] ${isOverdue ? 'bg-red-600 text-white' : 'bg-wabi-expense text-wabi-surface'} px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">${isOverdue ? '已逾期' : '待繳'}</span>` : '<span class="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">已結清</span>'}
                             </div>
-                            <p class="text-lg sm:text-2xl font-bold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-primary'}">
+                            <p class="text-lg sm:text-2xl font-bold ${billedDueTotal > 0 ? 'text-wabi-expense' : 'text-wabi-text-primary'} truncate">
                                 ${formatCurrency(billedDueTotal)}
                             </p>
                         </div>
-                        <div class="mt-2 pt-2 border-t border-wabi-border/30 text-[11px] sm:text-xs text-wabi-text-secondary flex items-center justify-between">
-                            <span class="${isOverdue ? 'text-red-600 font-bold' : ''}">${nextDueDateText}</span>
-                            ${billedDueTotal > 0 ? `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-green-600 font-bold hover:underline shrink-0">立即繳納</button>` : `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-wabi-primary font-bold hover:underline shrink-0" title="自扣款帳戶扣除卡費以達平帳">扣款平帳</button>`}
+                        <div class="mt-2 pt-2 border-t border-wabi-border/30 text-[11px] sm:text-xs text-wabi-text-secondary flex items-center justify-between gap-1 min-w-0">
+                            <span class="truncate min-w-0 ${isOverdue ? 'text-red-600 font-bold' : ''}" title="${nextDueDateFull || nextDueDateText}">${nextDueDateText}</span>
+                            ${billedDueTotal > 0 ? `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-green-600 dark:text-green-400 font-bold hover:underline shrink-0 whitespace-nowrap ml-1">立即繳納</button>` : `<button id="detail-pay-btn" class="text-[11px] sm:text-xs text-wabi-primary font-bold hover:underline shrink-0 whitespace-nowrap ml-1" title="自扣款帳戶扣除卡費以達平帳">扣款平帳</button>`}
                         </div>
                     </div>
 
                     <!-- 即時消費 (未出帳) -->
-                    <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3 flex flex-col justify-between">
+                    <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3 flex flex-col justify-between min-w-0">
                         <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                                    <i class="fa-solid fa-bolt mr-1"></i>即時消費 (未出帳)
+                            <div class="flex items-center justify-between gap-1 mb-1 min-w-0">
+                                <span class="text-xs font-semibold text-blue-600 dark:text-blue-400 truncate">
+                                    <i class="fa-solid fa-bolt mr-1 text-[10px]"></i>即時消費
                                 </span>
-                                <span class="text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium">累積中</span>
+                                <span class="text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0">未出帳</span>
                             </div>
-                            <p class="text-lg sm:text-2xl font-bold text-wabi-text-primary">
+                            <p class="text-lg sm:text-2xl font-bold text-wabi-text-primary truncate">
                                 ${formatCurrency(unbilledTotal)}
                             </p>
                         </div>
                         <div class="mt-2 pt-2 border-t border-wabi-border/30 text-[11px] sm:text-xs text-wabi-text-secondary">
-                            <span>距結帳約 ${daysUntilStatement} 天 (每月 ${statementDay} 日)</span>
+                            <span class="truncate block" title="距結帳約 ${daysUntilStatement} 天 (每月 ${statementDay} 日)">距結帳約 ${daysUntilStatement} 天 (每月 ${statementDay} 日)</span>
                         </div>
                     </div>
                 </div>
@@ -1223,7 +1256,7 @@ export class AccountsPage {
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-2">
                                             <span class="font-bold text-sm sm:text-base text-wabi-text-primary">${stmt.period} 期帳單</span>
-                                            ${isPaid ? '<span class="text-[10px] bg-green-500/10 text-green-600 font-bold px-2 py-0.5 rounded-full">已繳清</span>' : isZero ? '<span class="text-[10px] bg-gray-400/10 text-gray-500 font-medium px-2 py-0.5 rounded-full">無欠款</span>' : `<span class="text-[10px] ${stmtOverdue ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30' : 'bg-wabi-expense text-wabi-surface'} font-bold px-2.5 py-0.5 rounded-full">${stmtOverdue ? '已到期待扣繳' : '待繳納'}</span>`}
+                                            ${isPaid ? '<span class="text-[10px] bg-green-500/10 text-green-600 font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">已繳清</span>' : isZero ? '<span class="text-[10px] bg-gray-400/10 text-gray-500 font-medium px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">無欠款</span>' : `<span class="text-[10px] ${stmtOverdue ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30' : 'bg-wabi-expense text-wabi-surface'} font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">${stmtOverdue ? '已到期待扣繳' : '待繳納'}</span>`}
                                         </div>
                                         <div class="text-right">
                                             <span class="text-base sm:text-lg font-bold ${isPaid || isZero ? 'text-wabi-text-primary' : 'text-wabi-expense'}">
