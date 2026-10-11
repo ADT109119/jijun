@@ -12,6 +12,11 @@ export class SettingsPage {
                              window.Capacitor.isNativePlatform?.() && 
                              window.Capacitor.getPlatform?.() === 'android';
 
+        const isAdFree = this.app.rewardService?.isAdFree?.()
+        const adFreeRemaining = isAdFree
+            ? this.app.rewardService.formatRemaining()
+            : null
+
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
                 <div class="flex items-center p-4 pb-2 justify-between bg-wabi-bg sticky top-0 z-10">
@@ -285,7 +290,17 @@ export class SettingsPage {
                             </div>
                         </div>
 
-                        ${this.createSettingItem('fa-solid fa-rectangle-ad', '觀看廣告以移除廣告 7 天', 'sponsor-reward-ad-btn')}
+                        ${isAdFree
+                            ? this.createSettingItem(
+                                  'fa-solid fa-shield-heart text-green-600',
+                                  `已啟用無廣告模式 <span class="text-xs text-green-600 dark:text-green-400 font-medium ml-1">(${adFreeRemaining})</span>`,
+                                  'sponsor-reward-ad-btn'
+                              )
+                            : this.createSettingItem(
+                                  'fa-solid fa-rectangle-ad',
+                                  '觀看廣告以移除廣告 7 天',
+                                  'sponsor-reward-ad-btn'
+                              )}
 
                     </div>
 
@@ -353,6 +368,14 @@ export class SettingsPage {
         const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn')
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
+                if (this.app.rewardService?.isAdFree?.()) {
+                    const remaining = this.app.rewardService.formatRemaining()
+                    showToast(
+                        `已啟用無廣告模式（剩餘 ${remaining}），期間內不會顯示任何廣告！`,
+                        'success'
+                    )
+                    return
+                }
                 try {
                     const granted =
                         await this.app.rewardService.showRewardedAd()

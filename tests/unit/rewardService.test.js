@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { RewardService } from '../../src/js/rewardService.js'
+import {
+    RewardService,
+    checkIsNative,
+    FALLBACK_INTERNAL_ADS,
+} from '../../src/js/rewardService.js'
 
 // Mock window.location.reload to prevent 'Not implemented' warning
 vi.stubGlobal('location', { reload: vi.fn() })
@@ -195,6 +199,92 @@ describe('RewardService', () => {
             } finally {
                 Storage.prototype.getItem = original
             }
+        })
+    })
+
+    describe('平臺偵測與備用推廣廣告', () => {
+        it('FALLBACK_INTERNAL_ADS 包含有效廣告項目', () => {
+            expect(Array.isArray(FALLBACK_INTERNAL_ADS)).toBe(true)
+            expect(FALLBACK_INTERNAL_ADS.length).toBeGreaterThan(0)
+            for (const ad of FALLBACK_INTERNAL_ADS) {
+                expect(ad.title).toBeTruthy()
+                expect(ad.buttonText).toBeTruthy()
+                expect(ad.url).toBeTruthy()
+            }
+        })
+
+        it('checkIsNative 在非 Native 環境回傳 false', () => {
+            expect(checkIsNative()).toBe(false)
+            expect(service.isNative).toBe(false)
+        })
+
+        it('checkIsNative 在 Capacitor Native 環境動態回傳 true', () => {
+            const originalCapacitor = window.Capacitor
+            try {
+                window.Capacitor = {
+                    isNativePlatform: () => true,
+                }
+                expect(checkIsNative()).toBe(true)
+                expect(service.isNative).toBe(true)
+            } finally {
+                window.Capacitor = originalCapacitor
+            }
+        })
+
+        it('formatRemaining 大於 1 天時正確顯示天數與小時', () => {
+            const future = Date.now() + (3 * 24 + 5) * 60 * 60 * 1000 // 3 天 5 小時
+            localStorage.setItem('adFreeUntil', String(future))
+            const formatted = service.formatRemaining()
+            expect(formatted).toContain('3 天')
+            expect(formatted).toContain('5 小時')
+        })
+
+        it('若已在無廣告期間，showRewardedAd 直接回傳 false', async () => {
+            service._grantAdFree()
+            const result = await service.showRewardedAd()
+            expect(result).toBe(false)
+        })
+
+        it('_fallbackToInternalAd 應執行清理並呼叫 _showInternalAd', async () => {
+            const cleanupSpy = vi.spyOn(service, '_cleanupRewardedSlot')
+            const internalSpy = vi
+                .spyOn(service, '_showInternalAd')
+                .mockResolvedValue(true)
+
+            let resolvedValue
+            service._resolveReward = v => {
+                resolvedValue = v
+            }
+            service._hasResolved = false
+
+            service._fallbackToInternalAd()
+
+            expect(cleanupSpy).toHaveBeenCalled()
+            expect(internalSpy).toHaveBeenCalled()
+            await Promise.resolve()
+            expect(resolvedValue).toBe(true)
+            expect(service._hasResolved).toBe(true)
+        })
+
+        it('Web 環境 GPT 無法載入時自動降級顯示內建推廣廣告', async () => {
+            const internalSpy = vi
+                .spyOn(service, '_showInternalAd')
+                .mockResolvedValue(true)
+
+            const appendSpy = vi
+                .spyOn(document.head, 'appendChild')
+                .mockImplementation(el => {
+                    if (el && el.tagName === 'SCRIPT' && typeof el.onerror === 'function') {
+                        el.onerror()
+                    }
+                    return el
+                })
+
+            delete window.googletag
+            const result = await service.showRewardedAd()
+            expect(internalSpy).toHaveBeenCalled()
+            expect(result).toBe(true)
+            appendSpy.mockRestore()
         })
     })
 })

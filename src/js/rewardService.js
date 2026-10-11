@@ -22,24 +22,82 @@ const ADMOB_REWARDED_ID = __AD_ADMOB_REWARDED_ID__
 const AD_IS_TESTING = __AD_IS_TESTING__
 
 // ── 平臺偵測 ────────────────────────────────────────
-const isNative =
-    typeof window !== 'undefined' &&
-    window.Capacitor?.isNativePlatform?.() === true
+export function checkIsNative() {
+    return (
+        typeof window !== 'undefined' &&
+        window.Capacitor &&
+        typeof window.Capacitor.isNativePlatform === 'function' &&
+        window.Capacitor.isNativePlatform() === true
+    )
+}
 
-// ── 內建推廣廣告（Web 備案） ──────────────────────────
+// ── 內建推廣廣告（Web / 離線 / 降級備案） ──────────────
+export const FALLBACK_INTERNAL_ADS = [
+    {
+        icon: 'fa-brands fa-github',
+        color: '#333333',
+        title: '為此專案按個 Star ⭐',
+        description: '你的 Star 是我持續開發的動力！',
+        buttonText: '前往 GitHub',
+        url: 'https://github.com/ADT109119/jijun',
+        image: '',
+    },
+    {
+        icon: 'fa-brands fa-youtube',
+        color: '#FF0000',
+        title: '訂閱 The walking fish步行魚 頻道',
+        description: '教學影片、開發日誌，不定期更新！',
+        buttonText: '前往 YouTube',
+        url: 'https://www.youtube.com/@the_walking_fish',
+        image: '',
+    },
+    {
+        icon: 'fa-solid fa-blog',
+        color: '#6366f1',
+        title: '逛逛我的 Blog',
+        description: '技術文章、開發心得分享',
+        buttonText: '前往 Blog',
+        url: 'https://the-walking-fish.com',
+        image: '',
+    },
+    {
+        icon: 'fa-solid fa-wand-magic-sparkles',
+        color: '#e5a822',
+        title: 'Nano Banana WaterMark Remover',
+        description: '開源、純網頁前端，去除 Gemini Nano Banana 浮水印的工具',
+        buttonText: '前往網站',
+        url: 'https://banana.the-walking-fish.com/',
+        image: 'https://adt109119.github.io/projects/nanobananawatermarkremover/image.png',
+    },
+    {
+        icon: 'fa-solid fa-network-wired',
+        color: '#333333',
+        title: '分佈式 LLM 推理桌面應用程式',
+        description: '基於 llama.cpp 的分佈式 LLM 推理程式，利用區域網路協同推理。',
+        buttonText: '前往 GitHub',
+        url: 'https://github.com/ADT109119/llamacpp-distributed-inference',
+        image: 'https://adt109119.github.io/projects/llamacpp-distributed-inference/banner.jpg',
+    },
+]
+
 let _internalAdsCache = null
 
 async function loadInternalAds() {
-    if (_internalAdsCache) return _internalAdsCache
+    if (_internalAdsCache && _internalAdsCache.length > 0) return _internalAdsCache
     try {
         const res = await fetch('/internal-ads.json')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        _internalAdsCache = await res.json()
-        return _internalAdsCache
+        if (res.ok) {
+            const data = await res.json()
+            if (Array.isArray(data) && data.length > 0) {
+                _internalAdsCache = data
+                return _internalAdsCache
+            }
+        }
     } catch (e) {
-        console.warn('內建推廣廣告資料載入失敗:', e)
-        return null
+        console.warn('內建推廣廣告資料載入失敗，使用內建備用清單:', e)
     }
+    _internalAdsCache = FALLBACK_INTERNAL_ADS
+    return _internalAdsCache
 }
 
 // ── Web 模組層級狀態 ────────────────────────────────
@@ -56,24 +114,47 @@ let gptServicesEnabled = false
  * @param {string} src - 腳本 URL
  * @returns {Promise<boolean>} 是否載入成功
  */
-function loadScript(src) {
+function loadScript(src, timeoutMs = 3000) {
     return new Promise(resolve => {
+        let settled = false
+        const timer = setTimeout(() => {
+            if (!settled) {
+                settled = true
+                console.warn(`廣告腳本載入逾時: ${src}`)
+                resolve(false)
+            }
+        }, timeoutMs)
+
         try {
             const script = document.createElement('script')
             script.src = src
             script.async = true
             script.crossOrigin = 'anonymous'
-            script.onload = () => resolve(true)
+            script.onload = () => {
+                if (!settled) {
+                    settled = true
+                    clearTimeout(timer)
+                    resolve(true)
+                }
+            }
             script.onerror = () => {
-                console.warn(
-                    `廣告腳本載入失敗（可能被 Adblocker 攔截）: ${src}`
-                )
-                resolve(false)
+                if (!settled) {
+                    settled = true
+                    clearTimeout(timer)
+                    console.warn(
+                        `廣告腳本載入失敗（可能被 Adblocker 攔截）: ${src}`
+                    )
+                    resolve(false)
+                }
             }
             document.head.appendChild(script)
         } catch (e) {
-            console.warn('載入腳本時發生錯誤:', e)
-            resolve(false)
+            if (!settled) {
+                settled = true
+                clearTimeout(timer)
+                console.warn('載入腳本時發生錯誤:', e)
+                resolve(false)
+            }
         }
     })
 }
@@ -137,14 +218,20 @@ export class RewardService {
         this._admobListeners = [] // 原生事件監聽 handle，供清理
 
         // 原生環境：初始化 AdMob SDK
-        if (isNative) {
+        if (this.isNative) {
             this._initAdMob()
         }
+    }
+
+    /** 動態平臺屬性 */
+    get isNative() {
+        return checkIsNative()
     }
 
     // ── 原生 AdMob 初始化 ────────────────────────────
 
     async _initAdMob() {
+        if (!this.isNative) return
         try {
             // 動態 import，避免 Web 環境載入原生模組
             const { AdMob } = await import('@capacitor-community/admob')
@@ -189,8 +276,12 @@ export class RewardService {
     formatRemaining() {
         const ms = this.getAdFreeRemaining()
         if (ms <= 0) return null
-        const hours = Math.floor(ms / (1000 * 60 * 60))
+        const days = Math.floor(ms / (1000 * 60 * 60 * 24))
+        const hours = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
         const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60))
+        if (days > 0) {
+            return `${days} 天 ${hours} 小時`
+        }
         return `${hours} 小時 ${minutes} 分鐘`
     }
 
@@ -200,13 +291,9 @@ export class RewardService {
             const until = Date.now() + AD_FREE_DURATION_MS
             localStorage.setItem(AD_FREE_KEY, until.toString())
 
-            if (!isNative && typeof window !== 'undefined') {
+            if (!this.isNative && typeof window !== 'undefined') {
                 // 若為 Web 版，為了徹底清除已載入的 AdSense 自動廣告腳本且符合 Google 政策，
-                // 必須重新載入頁面，讓下一次載入時完全不渲染廣告代碼。
-                showToast(
-                    '已啟用無廣告模式，即將為您重新載入頁面套用設定...',
-                    'success'
-                )
+                // 於 2 秒後重新載入頁面，讓下一次載入時完全不渲染廣告代碼。
                 setTimeout(() => {
                     window.location.reload()
                 }, 2000)
@@ -232,7 +319,7 @@ export class RewardService {
         // 若處於無廣告期間，顯示感謝訊息
         if (this.isAdFree()) {
             // 原生環境：移除 banner overlay 並恢復 body padding
-            if (isNative && this._admobModule) {
+            if (this.isNative && this._admobModule) {
                 this._admobModule.removeBanner().catch(() => {})
                 document.body.style.paddingTop = ''
             }
@@ -247,39 +334,42 @@ export class RewardService {
         }
 
         // ── 原生平臺：使用 AdMob Banner ──
-        // Banner 是 Native Overlay，浮在 WebView 上方
-        // 透過 bannerAdSizeChanged 事件取得實際高度 → 設定 body padding-top 推動內容
-        if (isNative && this._admobModule) {
-            try {
-                const { BannerAdSize, BannerAdPosition } = await import(
-                    '@capacitor-community/admob'
-                )
-                const AdMob = this._admobModule
-
-                // 監聽 banner 尺寸變化，動態調整 body padding
-                this._bannerSizeListener?.remove?.().catch?.(() => {})
-                this._bannerSizeListener = await AdMob.addListener(
-                    'bannerAdSizeChanged',
-                    size => {
-                        document.body.style.paddingTop = `${size.height}px`
-                    }
-                )
-
-                await AdMob.showBanner({
-                    adId: ADMOB_BANNER_ID,
-                    adSize: BannerAdSize.ADAPTIVE_BANNER,
-                    position: BannerAdPosition.TOP_CENTER,
-                    isTesting: AD_IS_TESTING,
-                })
-
-                // container 不再需要佔位元素
-                container.innerHTML = ''
-            } catch (e) {
-                console.warn('AdMob Banner 顯示失敗:', e)
-                document.body.style.paddingTop = ''
-                container.innerHTML = ''
+        if (this.isNative) {
+            if (!this._admobInitialized) {
+                await this._initAdMob()
             }
-            return
+            if (this._admobModule) {
+                try {
+                    const { BannerAdSize, BannerAdPosition } = await import(
+                        '@capacitor-community/admob'
+                    )
+                    const AdMob = this._admobModule
+
+                    // 監聽 banner 尺寸變化，動態調整 body padding
+                    this._bannerSizeListener?.remove?.().catch?.(() => {})
+                    this._bannerSizeListener = await AdMob.addListener(
+                        'bannerAdSizeChanged',
+                        size => {
+                            document.body.style.paddingTop = `${size.height}px`
+                        }
+                    )
+
+                    await AdMob.showBanner({
+                        adId: ADMOB_BANNER_ID,
+                        adSize: BannerAdSize.ADAPTIVE_BANNER,
+                        position: BannerAdPosition.TOP_CENTER,
+                        isTesting: AD_IS_TESTING,
+                    })
+
+                    // container 不再需要佔位元素
+                    container.innerHTML = ''
+                } catch (e) {
+                    console.warn('AdMob Banner 顯示失敗:', e)
+                    document.body.style.paddingTop = ''
+                    container.innerHTML = ''
+                }
+                return
+            }
         }
 
         // ── Web 平臺：使用 AdSense ──
@@ -325,28 +415,29 @@ export class RewardService {
         }
 
         // ── 原生平臺：使用 AdMob Rewarded Video ──
-        if (isNative) {
+        if (this.isNative) {
             return this._showNativeRewardedAd()
         }
 
-        // ── Web 平臺：使用 GPT 獎勵廣告 ──
+        // ── Web 平臺：使用 GPT 獎勵廣告（逾時或無庫存自動降級為內建推廣廣告）──
         return this._showWebRewardedAd()
     }
 
     // ── 原生 AdMob 獎勵廣告 ──────────────────────────
 
     async _showNativeRewardedAd() {
+        if (!this._admobInitialized) {
+            await this._initAdMob()
+        }
         const AdMob = this._admobModule
 
         if (!AdMob || !this._admobInitialized) {
-            showToast('廣告系統尚未就緒，請稍後再試', 'error')
-            return false
+            console.warn('AdMob SDK 初始化失敗，降級顯示內建推廣廣告')
+            return this._showInternalAd()
         }
 
-        showToast('正在載入獎勵廣告...', 'success')
+        showToast('正在載入獎勵廣告...', 'info')
 
-        // 先註冊所有事件監聽，再 prepare + show
-        // 避免 prepare 回傳後事件已經觸發但 listener 還沒註冊的 race condition
         return new Promise(resolve => {
             const doWork = async () => {
                 let rewarded = false
@@ -361,21 +452,25 @@ export class RewardService {
                     ])
                 }
 
-                const safeResolve = value => {
+                const safeResolve = async (value, allowFallback = false) => {
                     if (resolved) return
                     resolved = true
                     cleanup()
-                    resolve(value)
+                    if (allowFallback && !rewarded) {
+                        const internalGranted = await this._showInternalAd()
+                        resolve(internalGranted)
+                    } else {
+                        resolve(value)
+                    }
                 }
 
-                // 30 秒逾時安全網
+                // 12 秒逾時安全網
                 const timeout = setTimeout(() => {
                     if (!resolved) {
-                        console.warn('獎勵廣告逾時')
-                        showToast('獎勵廣告載入逾時，請稍後再試', 'error')
-                        safeResolve(false)
+                        console.warn('AdMob 獎勵廣告逾時，降級顯示內建推廣廣告')
+                        safeResolve(false, true)
                     }
-                }, 30000)
+                }, 12000)
 
                 // 監聽：用戶獲得獎勵
                 const rewardHandle = AdMob.addListener(
@@ -396,22 +491,21 @@ export class RewardService {
                                 '感謝觀看！已啟用 7 天無廣告模式 🎉',
                                 'success'
                             )
-                            safeResolve(true)
+                            safeResolve(true, false)
                         } else {
                             showToast('未完成觀看，無法獲得獎勵', 'error')
-                            safeResolve(false)
+                            safeResolve(false, false)
                         }
                     }
                 )
 
-                // 監聯：顯示失敗
+                // 監聽：顯示失敗
                 const failShowHandle = AdMob.addListener(
                     'onRewardedVideoAdFailedToShow',
                     error => {
                         clearTimeout(timeout)
                         console.error('獎勵廣告顯示失敗:', error)
-                        showToast('獎勵廣告顯示失敗，請稍後再試', 'error')
-                        safeResolve(false)
+                        safeResolve(false, true)
                     }
                 )
 
@@ -421,8 +515,7 @@ export class RewardService {
                     error => {
                         clearTimeout(timeout)
                         console.error('獎勵廣告載入失敗:', error)
-                        showToast('獎勵廣告載入失敗，請稍後再試', 'error')
-                        safeResolve(false)
+                        safeResolve(false, true)
                     }
                 )
 
@@ -438,8 +531,7 @@ export class RewardService {
                 } catch (e) {
                     clearTimeout(timeout)
                     console.error('獎勵廣告流程異常:', e)
-                    showToast('獎勵廣告載入失敗，請稍後再試', 'error')
-                    safeResolve(false)
+                    safeResolve(false, true)
                 }
             }
             doWork()
@@ -478,7 +570,7 @@ export class RewardService {
         // 動態載入 GPT（adblocker 安全）
         const loaded = await ensureGptLoaded()
         if (!loaded || typeof googletag === 'undefined') {
-            // GPT 載入失敗，顯示內建推廣廣告作為備案
+            // GPT 載入失敗（例如被 Adblocker 擋下），顯示內建推廣廣告作為備案
             return this._showInternalAd()
         }
 
@@ -491,14 +583,12 @@ export class RewardService {
                 try {
                     // 前置檢查：確認 GPT API 完整可用
                     if (!googletag.enums?.OutOfPageFormat?.REWARDED) {
-                        this._showInternalAd().then(v =>
-                            this._resolveWithCleanup(v)
-                        )
+                        this._fallbackToInternalAd()
                         return
                     }
 
                     // 顯示載入提示
-                    showToast('正在載入獎勵廣告...', 'success')
+                    showToast('正在載入獎勵廣告...', 'info')
 
                     // 定義獎勵廣告 slot
                     this._rewardedSlot = googletag.defineOutOfPageSlot(
@@ -506,18 +596,25 @@ export class RewardService {
                         googletag.enums.OutOfPageFormat.REWARDED
                     )
 
-                    // 行動裝置檢查
+                    // 行動裝置檢查：若不支援 out-of-page rewarded，直接轉內建廣告
                     if (!this._rewardedSlot) {
-                        this._showInternalAd().then(v =>
-                            this._resolveWithCleanup(v)
-                        )
+                        this._fallbackToInternalAd()
                         return
                     }
 
                     this._rewardedSlot.addService(googletag.pubads())
 
-                    // 廣告就緒 → 顯示確認彈窗
+                    // 6 秒逾時安全網：若 GPT 無庫存 (No Fill) 或網路延遲，自動降級為內建推廣廣告
+                    const gptTimeout = setTimeout(() => {
+                        console.warn(
+                            'GPT 獎勵廣告載入逾時 (無庫存或無回應)，降級顯示內建推廣廣告'
+                        )
+                        this._fallbackToInternalAd()
+                    }, 6000)
+
+                    // 廣告就緒 → 清除逾時並顯示確認彈窗
                     this._addGptListener('rewardedSlotReady', event => {
+                        clearTimeout(gptTimeout)
                         this._showConfirmModal(() => {
                             event.makeRewardedVisible()
                         })
@@ -530,6 +627,7 @@ export class RewardService {
 
                     // 廣告關閉
                     this._addGptListener('rewardedSlotClosed', () => {
+                        clearTimeout(gptTimeout)
                         this._dismissModal()
 
                         if (this._rewardPayload) {
@@ -545,15 +643,14 @@ export class RewardService {
                         }
                     })
 
-                    // 無廣告可用 → 顯示內建推廣廣告
+                    // 監聽 slotRenderEnded：若 slot 為空 (No Fill)
                     this._addGptListener('slotRenderEnded', event => {
                         if (
                             event.slot === this._rewardedSlot &&
                             event.isEmpty
                         ) {
-                            this._showInternalAd().then(v =>
-                                this._resolveWithCleanup(v)
-                            )
+                            clearTimeout(gptTimeout)
+                            this._fallbackToInternalAd()
                         }
                     })
 
@@ -566,13 +663,22 @@ export class RewardService {
                     googletag.display(this._rewardedSlot)
                 } catch (e) {
                     console.error('獎勵廣告初始化失敗:', e)
-                    this._resolveWithCleanup(false)
+                    this._fallbackToInternalAd()
                 }
             })
         })
     }
 
-    // ── 內建推廣廣告（Web 備案） ────────────────────
+    _fallbackToInternalAd() {
+        this._cleanupRewardedSlot()
+        this._showInternalAd().then(v => {
+            if (this._hasResolved) return
+            this._hasResolved = true
+            this._resolveReward?.(v)
+        })
+    }
+
+    // ── 內建推廣廣告（Web / 降級備案） ───────────────
 
     /**
      * 顯示內建推廣廣告作為獎勵廣告備案
@@ -582,17 +688,11 @@ export class RewardService {
     async _showInternalAd() {
         const COUNTDOWN_SECONDS = 5
 
-        // 載入推廣資料
+        // 載入推廣資料（保證永不為空，有本機 fallback）
         const ads = await loadInternalAds()
-        if (!ads || ads.length === 0) {
-            showToast('目前沒有可用的獎勵廣告，請稍後再試', 'error')
-            return false
-        }
+        const ad = ads[Math.floor(Math.random() * ads.length)]
 
         return new Promise(resolve => {
-            // 隨機挑選一則
-            const ad = ads[Math.floor(Math.random() * ads.length)]
-
             // 圖片區塊：有圖顯示圖片，沒圖顯示 icon
             const heroHtml = ad.image
                 ? `<img src="${ad.image}" alt="${ad.title}" class="w-full rounded-xl mb-4 max-h-48 object-cover" />`
@@ -602,9 +702,9 @@ export class RewardService {
 
             const modal = document.createElement('div')
             modal.className =
-                'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in'
+                'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-fade-in'
             modal.innerHTML = `
-                <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+                <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center animate-modal-pop">
                     ${heroHtml}
                     <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
                     <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
@@ -675,9 +775,9 @@ export class RewardService {
     _showConfirmModal(onConfirm) {
         this._modal = document.createElement('div')
         this._modal.className =
-            'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animation-fade-in'
+            'fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 animate-fade-in'
         this._modal.innerHTML = `
-            <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center">
+            <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center animate-modal-pop">
                 <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-wabi-primary/10 flex items-center justify-center">
                     <i class="fa-solid fa-gift text-3xl text-wabi-primary"></i>
                 </div>
