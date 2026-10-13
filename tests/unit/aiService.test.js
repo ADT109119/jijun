@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AIService, QUANTIZATION_MODELS } from '../../src/js/aiService.js'
+import { AIService, QUANTIZATION_MODELS, fuzzyMatchAccount, fuzzyMatchCategory } from '../../src/js/aiService.js'
 
 describe('AIService - generateSystemPrompt', () => {
     it('動態分類與帳戶能正確注入 Prompt 內部的 enum 欄位與日期錨定', () => {
@@ -261,11 +261,177 @@ describe('AIService - 「花了100元」支出語意守門與糾錯機制', () =
         expect(record.amount).toBe(5000)
     })
 
-    it('System Prompt 內包含收支類型規則與 type 描述說明', () => {
+    it('System Prompt 與訓練集 Protocol 規範一致 (簡潔 properties 且包含所需 tools 定義)', () => {
         const prompt = aiService.generateSystemPrompt(['飲食', '其他'], ['現金'], new Date('2026-08-03'))
-        expect(prompt).toContain('type 必須為 expense')
-        expect(prompt).toContain('才為 income')
+        expect(prompt).toContain('你是一個記帳助理。你被賦予了以下 tools:\n')
         const toolDef = JSON.parse(prompt.split('被賦予了以下 tools:\n')[1].trim())
-        expect(toolDef.parameters.properties.type.description).toBeDefined()
+        expect(toolDef.name).toBe('add_record')
+        expect(toolDef.parameters.properties.amount.type).toBe('number')
+        expect(toolDef.parameters.properties.type.enum).toEqual(['expense', 'income'])
+        expect(toolDef.parameters.required).toEqual(['amount', 'category', 'account', 'type', 'date'])
     })
 })
+
+describe('AIService - 巢狀 JSON 與 Stop Token 截斷容錯 (v2~v4c 格式修復)', () => {
+    const aiService = new AIService({})
+
+    it('當模型輸出觸發 stop 未產生 </tool_call> 閉合標籤時，仍能正確提取巢狀 JSON', () => {
+        // stop token 是 </tool_call>，所以 responseText 常常不帶 </tool_call>
+        const truncatedOutput = '<tool_call>{"name": "add_record", "args": {"amount": 60, "category": "飲食", "account": "現金", "description": "早餐", "type": "expense", "date": "2026-04-10"}}'
+        const record = aiService.extractToolCall(truncatedOutput)
+        expect(record.amount).toBe(60)
+        expect(record.category).toBe('飲食')
+        expect(record.account).toBe('現金')
+        expect(record.description).toBe('早餐')
+        expect(record.type).toBe('expense')
+        expect(record.date).toBe('2026-04-10')
+    })
+
+    it('平衡括號解析器能正確跳過字串內部的括號', () => {
+        const complexOutput = '<tool_call>{"name": "add_record", "args": {"amount": 180, "category": "飲食", "account": "現金", "description": "漢堡包{特製醬}與可樂", "type": "expense", "date": "2026-04-10"}}</tool_call>'
+        const record = aiService.extractToolCall(complexOutput)
+        expect(record.amount).toBe(180)
+        expect(record.description).toBe('漢堡包{特製醬}與可樂')
+    })
+
+    it('當 JSON 結尾微截斷 (缺外層大括號) 時能自動補齊解析', () => {
+        const slightlyTruncated = '<tool_call>{"name": "add_record", "args": {"amount": 250, "category": "交通", "account": "悠遊卡", "description": "高鐵票", "type": "expense", "date": "2026-04-10"}'
+        const record = aiService.extractToolCall(slightlyTruncated)
+        expect(record.amount).toBe(250)
+        expect(record.category).toBe('交通')
+        expect(record.account).toBe('悠遊卡')
+    })
+
+    it('能正確解析 arguments 為 JSON 字串的情形', () => {
+        const stringifiedArgs = '<tool_call>{"name": "add_record", "arguments": "{\\"amount\\": 300, \\"category\\": \\"日常\\", \\"account\\": \\"現金\\", \\"description\\": \\"衛生紙\\", \\"type\\": \\"expense\\"}"}</tool_call>'
+        const record = aiService.extractToolCall(stringifiedArgs)
+        expect(record.amount).toBe(300)
+        expect(record.category).toBe('日常')
+    })
+})
+
+describe('AIService - 模型 Hash 比對與更新機制', () => {
+    it('checkForModelUpdate 支援 options.force 跳過冷卻時間並能依據 ETag 偵測更新', async () => {
+        const aiService = new AIService({})
+        localStorage.setItem('ai_model_downloaded_q4_0', 'true')
+        localStorage.setItem('ai_model_etag_q4_0', 'old_hash_12345')
+        localStorage.setItem('ai_model_update_available_q4_0', 'false')
+
+        // 模擬剛檢查過（在 12 小時冷卻內）
+        localStorage.setItem('ai_model_last_check_time_q4_0', Date.now().toString())
+
+        // 模擬遠端 HEAD 回傳新的 ETag
+        aiService.fetchRemoteModelHash = async () => 'new_hash_67890'
+
+        // 不帶 force：應受限於冷卻時間
+        const coolDownRes = await aiService.checkForModelUpdate('q4_0')
+        expect(coolDownRes.hasUpdate).toBe(false)
+
+        // 帶 force：跳過冷卻，比對出新 Hash
+        const forceRes = await aiService.checkForModelUpdate('q4_0', { force: true })
+        expect(forceRes.hasUpdate).toBe(true)
+        expect(forceRes.etag).toBe('new_hash_67890')
+        expect(aiService.hasModelUpdate('q4_0')).toBe(true)
+    })
+
+    it('當遠端 Hash 與本地相同時，判定為無更新', async () => {
+        const aiService = new AIService({})
+        localStorage.setItem('ai_model_downloaded_q4_0', 'true')
+        localStorage.setItem('ai_model_etag_q4_0', 'same_hash_12345')
+
+        aiService.fetchRemoteModelHash = async () => 'same_hash_12345'
+
+        const res = await aiService.checkForModelUpdate('q4_0', { force: true })
+        expect(res.hasUpdate).toBe(false)
+        expect(aiService.hasModelUpdate('q4_0')).toBe(false)
+    })
+})
+
+describe('AIService - 帳戶與分類模糊匹配 (fuzzyMatchAccount / fuzzyMatchCategory)', () => {
+    const mockAccounts = [
+        { id: 1, name: '現金', type: 'cash' },
+        { id: 2, name: '國泰世華銀行', type: 'bank' },
+        { id: 3, name: '台新 Richart', type: 'bank' },
+        { id: 4, name: '中國信託 LINE Pay 信用卡', type: 'credit_card' },
+        { id: 5, name: 'Apple Pay', type: 'other' },
+        { id: 6, name: '街口支付', type: 'other' }
+    ]
+
+    const mockCategories = [
+        { id: 'c1', name: '飲食' },
+        { id: 'c2', name: '交通' },
+        { id: 'c3', name: '日常' },
+        { id: 'c4', name: '娛樂' },
+        { id: 'c5', name: '醫療' },
+        { id: 'c6', name: '薪水' }
+    ]
+
+    describe('fuzzyMatchAccount', () => {
+        it('完全精確匹配', () => {
+            const acc = fuzzyMatchAccount('現金', mockAccounts)
+            expect(acc?.id).toBe(1)
+        })
+
+        it('忽略大小寫、空白與符號 (LINE Pay vs linepay)', () => {
+            const acc1 = fuzzyMatchAccount('line pay', mockAccounts)
+            expect(acc1?.id).toBe(4) // 包含 LINE Pay
+            const acc2 = fuzzyMatchAccount('applepay', mockAccounts)
+            expect(acc2?.id).toBe(5)
+        })
+
+        it('雙向子字串包含匹配 (國泰 -> 國泰世華銀行, Richart -> 台新 Richart, 街口 -> 街口支付)', () => {
+            const acc1 = fuzzyMatchAccount('國泰', mockAccounts)
+            expect(acc1?.id).toBe(2)
+            const acc2 = fuzzyMatchAccount('Richart', mockAccounts)
+            expect(acc2?.id).toBe(3)
+            const acc3 = fuzzyMatchAccount('街口', mockAccounts)
+            expect(acc3?.id).toBe(6)
+        })
+
+        it('信用卡口語關鍵字（刷卡/信用卡）精確匹配 credit_card 帳戶', () => {
+            const acc = fuzzyMatchAccount('信用卡', mockAccounts)
+            expect(acc?.id).toBe(4)
+            const acc2 = fuzzyMatchAccount('刷卡', mockAccounts)
+            expect(acc2?.id).toBe(4)
+        })
+
+        it('銀行/轉帳關鍵字精確匹配 bank 帳戶', () => {
+            const acc = fuzzyMatchAccount('轉帳', mockAccounts)
+            expect(acc?.type).toBe('bank')
+        })
+
+        it('空值或無匹配時安全回傳 null', () => {
+            expect(fuzzyMatchAccount('', mockAccounts)).toBeNull()
+            expect(fuzzyMatchAccount('不存在的虛擬幣', mockAccounts)).toBeNull()
+        })
+    })
+
+    describe('fuzzyMatchCategory', () => {
+        it('完全精確匹配', () => {
+            const cat = fuzzyMatchCategory('飲食', mockCategories)
+            expect(cat?.id).toBe('c1')
+        })
+
+        it('生活領域同義詞智能映射 (便當/火鍋/咖啡 -> 飲食, 捷運/公車/加油 -> 交通)', () => {
+            const cat1 = fuzzyMatchCategory('便當', mockCategories)
+            expect(cat1?.name).toBe('飲食')
+            const cat2 = fuzzyMatchCategory('火鍋', mockCategories)
+            expect(cat2?.name).toBe('飲食')
+            const cat3 = fuzzyMatchCategory('手搖飲料', mockCategories)
+            expect(cat3?.name).toBe('飲食')
+            const cat4 = fuzzyMatchCategory('捷運', mockCategories)
+            expect(cat4?.name).toBe('交通')
+            const cat5 = fuzzyMatchCategory('加油', mockCategories)
+            expect(cat5?.name).toBe('交通')
+            const cat6 = fuzzyMatchCategory('生活用品', mockCategories)
+            expect(cat6?.name).toBe('日常')
+        })
+
+        it('空值或無匹配時安全回傳 null', () => {
+            expect(fuzzyMatchCategory('', mockCategories)).toBeNull()
+            expect(fuzzyMatchCategory('天馬行空無關詞', mockCategories)).toBeNull()
+        })
+    })
+})
+
+

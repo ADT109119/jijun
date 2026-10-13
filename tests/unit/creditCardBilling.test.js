@@ -399,7 +399,7 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
 
                 // 銀行扣款支出
                 const debitExpense = bankRecords.find(
-                    r => r.type === 'expense' && r.category === 'transfer'
+                    r => r.type === 'expense' && r.category === 'debt_repayment'
                 )
                 expect(debitExpense).toBeDefined()
                 expect(debitExpense.amount).toBe(3500)
@@ -407,7 +407,7 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
 
                 // 信用卡入帳收入
                 const cardIncome = cardRecords.find(
-                    r => r.type === 'income' && r.category === 'transfer'
+                    r => r.type === 'income' && r.category === 'debt_repayment'
                 )
                 expect(cardIncome).toBeDefined()
                 expect(cardIncome.amount).toBe(3500)
@@ -481,7 +481,7 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
                 bankRecs.some(
                     r =>
                         r.type === 'expense' &&
-                        r.category === 'transfer' &&
+                        r.category === 'debt_repayment' &&
                         r.amount === 8800
                 )
             ).toBe(true)
@@ -516,12 +516,12 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
             expect(result.deductOnly).toBe(true)
             expect(result.amount).toBe(5200)
 
-            // 1. 驗證銀行帳戶成功扣款 5200 (類別為 transfer)
+            // 1. 驗證銀行帳戶成功扣款 5200 (類別為 debt_repayment)
             const bankRecs = await ds.getRecords({ accountId: bankId })
             expect(bankRecs).toHaveLength(1)
             expect(bankRecs[0].type).toBe('expense')
             expect(bankRecs[0].amount).toBe(5200)
-            expect(bankRecs[0].category).toBe('transfer')
+            expect(bankRecs[0].category).toBe('debt_repayment')
             expect(bankRecs[0].description).toContain('[卡費扣繳平帳]')
 
             // 計算銀行餘額：從 60000 扣除 5200 變為 54800
@@ -539,7 +539,7 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
             const stmt = await ds.getCreditStatement(stmtId)
             expect(stmt.status).toBe('paid')
 
-            // 4. 驗證生活支出統計：transfer 類別不被計入日常支出 (平帳專用)
+            // 4. 驗證生活支出統計：平帳專用紀錄不被計入日常支出
             const stats = await ds.getStatistics(
                 '2026-10-01',
                 '2026-10-31',
@@ -547,6 +547,212 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
                 true
             )
             expect(stats.totalExpense).toBe(0)
+        })
+    })
+
+    describe('信用卡消費遞延至下一期與還款隔離機制', () => {
+        it('支援將未繳帳單的消費明細遞延至下一期，並自動重算帳單金額', async () => {
+            const cardId = await ds.addAccount({
+                name: '國泰CUBE卡',
+                type: 'credit_card',
+                statementDay: 8,
+                dueDay: 23,
+                balance: 0,
+            })
+
+            // 在 09/09 ~ 10/08 週期內加入兩筆消費
+            const rec1Id = await ds.addRecord({
+                type: 'expense',
+                category: 'food',
+                amount: 1000,
+                date: '2026-09-15',
+                accountId: cardId,
+                description: '晚餐',
+            })
+            const rec2Id = await ds.addRecord({
+                type: 'expense',
+                category: 'fun',
+                amount: 2500,
+                date: '2026-09-20',
+                accountId: cardId,
+                description: '飯店預約 (商家延遲請款)',
+            })
+
+            // 建立 2026-09 期帳單 (金額 3500)
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-09',
+                statementDate: new Date('2026-10-08').getTime(),
+                dueDate: new Date('2026-10-23').getTime(),
+                amount: 3500,
+                status: 'unpaid',
+            })
+
+            // 執行遞延：將飯店預約遞延至下一期 (2026-10)
+            const deferResult = await ds.deferRecordToNextStatement(rec2Id, stmtId)
+            expect(deferResult.fromPeriod).toBe('2026-09')
+            expect(deferResult.toPeriod).toBe('2026-10')
+
+            // 1. 驗證 2026-09 期帳單金額從 3500 自動減少至 1000
+            const updatedStmt = await ds.getCreditStatement(stmtId)
+            expect(updatedStmt.amount).toBe(1000)
+
+            // 2. 驗證 2026-09 期帳單明細中只剩晚餐 (1000)
+            const stmtRecords = await ds.getStatementRecords(
+                await ds.getAccount(cardId),
+                '2026-09'
+            )
+            expect(stmtRecords).toHaveLength(1)
+            expect(stmtRecords[0].id).toBe(rec1Id)
+
+            // 3. 驗證在未出帳即時消費中能查到該筆由 2026-09 遞延過來的 2500 消費
+            const card = await ds.getAccount(cardId)
+            const billingInfo = await ds.getCreditCardBillingInfo(cardId)
+            const unbilledDeferred = billingInfo.unbilledRecords.find(r => r.id === rec2Id)
+            expect(unbilledDeferred).toBeDefined()
+            expect(unbilledDeferred.deferredFromPeriod).toBe('2026-09')
+            expect(unbilledDeferred.amount).toBe(2500)
+
+            // 4. 取消遞延：移回原期
+            await ds.undeferRecord(rec2Id, stmtId)
+            const restoredStmt = await ds.getCreditStatement(stmtId)
+            expect(restoredStmt.amount).toBe(3500)
+
+            const restoredStmtRecords = await ds.getStatementRecords(card, '2026-09')
+            expect(restoredStmtRecords).toHaveLength(2)
+        })
+
+        it('前期卡費還款與自動扣繳紀錄絕不會污染當期消費明細與扣減帳單金額', async () => {
+            const cardId = await ds.addAccount({
+                name: '富邦J卡',
+                type: 'credit_card',
+                statementDay: 8,
+                dueDay: 23,
+                balance: 0,
+            })
+
+            // 消費 15,000 (落在 2026-09 期：09/09 ~ 10/08)
+            await ds.addRecord({
+                type: 'expense',
+                category: 'life',
+                amount: 15000,
+                date: '2026-09-12',
+                accountId: cardId,
+                description: '買家電',
+            })
+
+            // 10/03 有一筆繳納上一期卡費的入帳 (日期落在 09/09 ~ 10/08 區間內)
+            await ds.addRecord({
+                type: 'income',
+                category: 'debt_repayment',
+                amount: 1352,
+                date: '2026-10-03',
+                accountId: cardId,
+                description: '[自動扣款] 自動扣繳卡費 (富邦J卡 2026-08 期)',
+            })
+
+            const card = await ds.getAccount(cardId)
+
+            // 1. 取得 2026-09 期的消費明細：絕不包含 1352 的還款紀錄
+            const stmtRecords = await ds.getStatementRecords(card, '2026-09')
+            expect(stmtRecords).toHaveLength(1)
+            expect(stmtRecords[0].description).toBe('買家電')
+            expect(stmtRecords[0].amount).toBe(15000)
+
+            // 2. 計算 2026-09 期帳單消費金額：必須為完整的 15,000，不可被誤減成 13,648
+            const periodBalance = await ds.calculateCreditCardBalance(card.id, '2026-09')
+            expect(periodBalance.totalExpense).toBe(15000)
+            expect(periodBalance.currentBalance).toBe(15000)
+            expect(periodBalance.totalRepayment).toBe(0)
+        })
+
+        it('當期有多筆即時消費且週期內有前期卡費扣繳時，即時消費未出帳金額與總欠款絕不可為 0 (台新信用卡 21 筆機票案例)', async () => {
+            const cardId = await ds.addAccount({
+                name: '台新信用卡',
+                type: 'credit_card',
+                statementDay: 17,
+                dueDay: 3,
+                creditLimit: 120000,
+                balance: 0,
+            })
+
+            // 10/03 有前期 (2026-08 期) 卡費扣繳入帳 50,000 元 (日期落在 09/18 ~ 10/17 週期內)
+            await ds.addRecord({
+                type: 'income',
+                category: 'debt_repayment',
+                amount: 50000,
+                date: '2026-10-03',
+                accountId: cardId,
+                description: '[卡費扣繳] 從 郵局 扣款繳費 (2026-08 期)',
+            })
+
+            // 10/13 新增 21 筆即期消費 (模擬機票消費，總計 49,000)
+            for (let i = 1; i <= 21; i++) {
+                await ds.addRecord({
+                    type: 'expense',
+                    category: 'traffic',
+                    amount: i === 21 ? 3000 : 2300, // 20 * 2300 + 3000 = 49000
+                    date: '2026-10-13',
+                    accountId: cardId,
+                    description: `機票 ${1000 + i}`,
+                })
+            }
+
+            const refDate = new Date(2026, 9, 13) // 2026-10-13
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+
+            expect(info).not.toBeNull()
+            expect(info.unbilledPeriod.startStr).toBe('2026-09-18')
+            expect(info.unbilledPeriod.endStr).toBe('2026-10-17')
+
+            // 21 筆消費全部正確納入，前期還款被排除
+            expect(info.unbilledRecords).toHaveLength(21)
+            expect(info.unbilledExpense).toBe(49000)
+            expect(info.unbilledRepayment).toBe(0)
+            expect(info.unbilledTotal).toBe(49000) // 絕不可為 0！
+
+            // 總欠款與可用額度正確反映即期消費
+            expect(info.totalDebt).toBe(49000) // 絕不可為 0！
+            expect(info.availableCredit).toBe(120000 - 49000) // 71,000
+        })
+
+        it('自動清理重複的卡費扣繳記錄 (deduplicateCreditCardPayments)', async () => {
+            const cardId = await ds.addAccount({
+                name: '台新信用卡',
+                type: 'credit_card',
+            })
+
+            // 模擬歷史 autoPay 產生的重複扣款
+            await ds.addRecord({
+                type: 'income',
+                category: 'debt_repayment',
+                amount: 10000,
+                date: '2026-10-03',
+                accountId: cardId,
+                description: '[卡費扣繳] 從 郵局 扣款繳費 (2026-08 期)',
+            })
+            await ds.addRecord({
+                type: 'income',
+                category: 'debt_repayment',
+                amount: 10000,
+                date: '2026-10-03',
+                accountId: cardId,
+                description: '[卡費扣繳] 從 郵局 扣款繳費 (2026-08 期)',
+            })
+
+            const beforeRecords = await ds.getRecords()
+            const cardPaysBefore = beforeRecords.filter(
+                r => r.accountId === cardId && r.description.startsWith('[卡費扣繳]')
+            )
+            expect(cardPaysBefore).toHaveLength(2)
+
+            await ds.deduplicateCreditCardPayments()
+
+            const afterRecords = await ds.getRecords()
+            const cardPaysAfter = afterRecords.filter(
+                r => r.accountId === cardId && r.description.startsWith('[卡費扣繳]')
+            )
+            expect(cardPaysAfter).toHaveLength(1)
         })
     })
 })

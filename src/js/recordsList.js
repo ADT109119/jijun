@@ -559,8 +559,13 @@ export class RecordsListManager {
         }
 
         // 2. Perform transfer offsetting on this base list to get records for summary calculation
+        // 排除卡費扣繳/自動扣款平帳紀錄（這些屬於平帳性質，不計入轉帳對沖也不計入日常收支）
+        const isCardPaymentRecord = r =>
+            r.description?.startsWith('[卡費扣繳]') ||
+            r.description?.startsWith('[自動扣款]')
+
         const transferRecords = baseFilteredRecords.filter(
-            r => r.category === 'transfer'
+            r => r.category === 'transfer' && !isCardPaymentRecord(r)
         )
         const normalRecords = baseFilteredRecords.filter(
             r => r.category !== 'transfer'
@@ -599,11 +604,12 @@ export class RecordsListManager {
         // Need to consider debt status for correct calculation
         const summary = recordsForSummary.reduce(
             (acc, r) => {
-                // Exclude debt collection and repayment categories from summary calculation
+                // Exclude debt collection, repayment, balance adjustment, and card repayments from summary calculation
                 if (
                     r.category === 'debt_collection' ||
                     r.category === 'debt_repayment' ||
-                    r.category === 'balance_adjustment'
+                    r.category === 'balance_adjustment' ||
+                    isCardPaymentRecord(r)
                 ) {
                     return acc
                 }

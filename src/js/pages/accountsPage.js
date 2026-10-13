@@ -119,7 +119,7 @@ export class AccountsPage {
             // 信用卡：currentBalance 為淨現金流（消費為負、繳款為正）。
             // 欠款（額度佔用）= 餘額為負時的欠款金額；餘額為正代表超繳，欠款為 0
             const creditLimit = account.creditLimit || 0
-            const cardDebt = Math.max(
+            let cardDebt = Math.max(
                 0,
                 -1 * (typeof currentBalance === 'number' ? currentBalance : 0)
             )
@@ -129,11 +129,14 @@ export class AccountsPage {
             let hasOverdue = false
             if (isCreditCard) {
                 hasCreditCard = true
-                totalCreditDebt += cardDebt
                 billingInfo =
                     await this.app.dataService.getCreditCardBillingInfo(
                         account.id
                     )
+                if (billingInfo?.totalDebt !== undefined) {
+                    cardDebt = billingInfo.totalDebt
+                }
+                totalCreditDebt += cardDebt
                 const today0 = new Date().setHours(0, 0, 0, 0)
                 hasOverdue = (billingInfo?.unpaidStatements || []).some(
                     s => s.dueDate && today0 >= new Date(s.dueDate).setHours(0, 0, 0, 0)
@@ -489,7 +492,7 @@ export class AccountsPage {
                         const newRecord = {
                             amount: Math.abs(diff),
                             type: 'expense',
-                            category: 'transfer',
+                            category: 'debt_repayment',
                             date: formatDateToString(new Date()),
                             description: card
                                 ? `[卡費扣繳平帳] 扣除 ${card.name} 卡費 (信用卡已歸零)`
@@ -985,7 +988,7 @@ export class AccountsPage {
             })
     }
 
-    async showCreditDetailModal(account) {
+    async showCreditDetailModal(account, initialTab = 'unbilled', openPeriod = null) {
         const billingInfo =
             await this.app.dataService.getCreditCardBillingInfo(account.id)
         if (!billingInfo) return
@@ -1141,7 +1144,7 @@ export class AccountsPage {
         const tabBilledBtn = modal.querySelector('#tab-billed-btn')
         const contentContainer = modal.querySelector('#credit-tab-content')
 
-        let currentTab = 'unbilled'
+        let currentTab = initialTab
 
         const renderTabContent = () => {
             if (currentTab === 'unbilled') {
@@ -1185,17 +1188,21 @@ export class AccountsPage {
                                             <i class="${catIcon} text-sm"></i>
                                         </div>
                                         <div class="min-w-0">
-                                            <div class="flex items-center gap-1.5">
+                                            <div class="flex items-center gap-1.5 flex-wrap">
                                                 <span class="text-xs font-bold text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
                                                 <span class="text-[10px] bg-wabi-bg text-wabi-text-secondary px-1.5 py-0.2 rounded border border-wabi-border/40 shrink-0">${escapeHTML(catName)}</span>
+                                                ${r.deferredFromPeriod ? `<span class="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">由 ${escapeHTML(r.deferredFromPeriod)} 期遞延</span>` : ''}
                                             </div>
                                             <p class="text-[11px] text-wabi-text-secondary">${r.date}</p>
                                         </div>
                                     </div>
-                                    <div class="text-right shrink-0 ml-2">
+                                    <div class="text-right shrink-0 ml-2 flex items-center gap-1.5">
                                         <span class="font-bold text-sm ${isExp ? 'text-wabi-expense' : 'text-green-600'}">
                                             ${isExp ? '-' : '+'}${formatCurrency(r.amount)}
                                         </span>
+                                        ${r.deferredFromPeriod ? `
+                                            <button class="undefer-record-btn text-[10px] text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-300/40 transition-colors shrink-0" data-record-id="${r.id}" title="移回原帳單期別">移回原期</button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             `
@@ -1203,6 +1210,41 @@ export class AccountsPage {
                             .join('')}
                     </div>
                 `
+
+                contentContainer
+                    .querySelectorAll('.undefer-record-btn')
+                    .forEach(btn => {
+                        btn.addEventListener('click', async e => {
+                            e.stopPropagation()
+                            const recordId = parseInt(
+                                e.currentTarget.dataset.recordId,
+                                10
+                            )
+                            const confirmed = await customConfirm(
+                                '是否確認將此筆消費移回原本帳單期別？'
+                            )
+                            if (confirmed) {
+                                try {
+                                    await this.app.dataService.undeferRecord(
+                                        recordId,
+                                        null
+                                    )
+                                    showToast('已將此筆消費移回原期！')
+                                    this.render()
+                                    this.showCreditDetailModal(
+                                        account,
+                                        'unbilled'
+                                    )
+                                } catch (err) {
+                                    console.error('取消遞延失敗:', err)
+                                    showToast(
+                                        '移回失敗：' + err.message,
+                                        'error'
+                                    )
+                                }
+                            }
+                        })
+                    })
             } else {
                 // 出帳帳單
                 tabUnbilledBtn.className =
@@ -1319,6 +1361,14 @@ export class AccountsPage {
                                         account,
                                         period
                                     )
+                                const stmt = statements.find(
+                                    s => s.period === period
+                                )
+                                const isPaid = stmt?.status === 'paid'
+                                const isZero =
+                                    stmt?.status === 'zero' ||
+                                    stmt?.amount === 0
+
                                 if (records.length === 0) {
                                     detailBox.innerHTML =
                                         '<p class="text-center py-3 text-xs text-wabi-text-secondary">該期無相關消費記錄</p>'
@@ -1337,17 +1387,143 @@ export class AccountsPage {
                                             return `
                                         <div class="flex items-center justify-between p-2 bg-wabi-bg/60 rounded-lg text-xs">
                                             <div class="flex items-center gap-2 min-w-0">
-                                                <i class="${catIcon} ${isExp ? 'text-wabi-expense' : 'text-green-600'} text-xs"></i>
-                                                <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
-                                                <span class="text-[10px] text-wabi-text-secondary">${r.date}</span>
+                                                <i class="${catIcon} ${isExp ? 'text-wabi-expense' : 'text-green-600'} text-xs shrink-0"></i>
+                                                <div class="min-w-0">
+                                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                                        <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
+                                                        ${r.deferredFromPeriod ? `<span class="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">由 ${escapeHTML(r.deferredFromPeriod)} 期遞延</span>` : ''}
+                                                    </div>
+                                                    <span class="text-[10px] text-wabi-text-secondary">${r.date}</span>
+                                                </div>
                                             </div>
-                                            <span class="font-semibold ${isExp ? 'text-wabi-expense' : 'text-green-600'} ml-2 shrink-0">
-                                                ${isExp ? '-' : '+'}${formatCurrency(r.amount)}
-                                            </span>
+                                            <div class="flex items-center gap-1.5 shrink-0 ml-2">
+                                                <span class="font-semibold ${isExp ? 'text-wabi-expense' : 'text-green-600'}">
+                                                    ${isExp ? '-' : '+'}${formatCurrency(r.amount)}
+                                                </span>
+                                                ${!isPaid && !isZero ? (
+                                                    r.deferredFromPeriod ? `
+                                                        <button class="undefer-record-btn text-[10px] text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-300/40 transition-colors shrink-0" data-record-id="${r.id}" data-stmt-id="${stmt ? stmt.id : ''}" data-period="${period}" title="移回原本帳單期別">移回原期</button>
+                                                    ` : `
+                                                        <button class="defer-record-btn text-[10px] text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-300/40 transition-colors shrink-0" data-record-id="${r.id}" data-stmt-id="${stmt ? stmt.id : ''}" data-period="${period}" title="商家延遲請款？將此筆消費遞延至下一期帳單">遞延下期</button>
+                                                    `
+                                                ) : ''}
+                                            </div>
                                         </div>
                                     `
                                         })
                                         .join('')
+
+                                    detailBox
+                                        .querySelectorAll('.defer-record-btn')
+                                        .forEach(dBtn => {
+                                            dBtn.addEventListener(
+                                                'click',
+                                                async ev => {
+                                                    ev.stopPropagation()
+                                                    const recordId = parseInt(
+                                                        dBtn.dataset.recordId,
+                                                        10
+                                                    )
+                                                    const stmtId = dBtn.dataset
+                                                        .stmtId
+                                                        ? parseInt(
+                                                              dBtn.dataset
+                                                                  .stmtId,
+                                                              10
+                                                          )
+                                                        : null
+                                                    const periodVal =
+                                                        dBtn.dataset.period
+                                                    const confirmed =
+                                                        await customConfirm(
+                                                            '是否確認將此筆消費遞延至下一期帳單？\n（適用於商家延遲請款，本期帳單將扣除此筆消費，移至下一期帳單出帳）'
+                                                        )
+                                                    if (confirmed) {
+                                                        try {
+                                                            await this.app.dataService.deferRecordToNextStatement(
+                                                                recordId,
+                                                                stmtId
+                                                            )
+                                                            showToast(
+                                                                '已將此筆消費遞延至下一期！'
+                                                            )
+                                                            this.render()
+                                                            this.showCreditDetailModal(
+                                                                account,
+                                                                'billed',
+                                                                periodVal
+                                                            )
+                                                        } catch (err) {
+                                                            console.error(
+                                                                '遞延失敗:',
+                                                                err
+                                                            )
+                                                            showToast(
+                                                                '遞延失敗：' +
+                                                                    err.message,
+                                                                'error'
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        })
+
+                                    detailBox
+                                        .querySelectorAll('.undefer-record-btn')
+                                        .forEach(uBtn => {
+                                            uBtn.addEventListener(
+                                                'click',
+                                                async ev => {
+                                                    ev.stopPropagation()
+                                                    const recordId = parseInt(
+                                                        uBtn.dataset.recordId,
+                                                        10
+                                                    )
+                                                    const stmtId = uBtn.dataset
+                                                        .stmtId
+                                                        ? parseInt(
+                                                              uBtn.dataset
+                                                                  .stmtId,
+                                                              10
+                                                          )
+                                                        : null
+                                                    const periodVal =
+                                                        uBtn.dataset.period
+                                                    const confirmed =
+                                                        await customConfirm(
+                                                            '是否確認將此筆消費移回原本帳單期別？'
+                                                        )
+                                                    if (confirmed) {
+                                                        try {
+                                                            await this.app.dataService.undeferRecord(
+                                                                recordId,
+                                                                stmtId
+                                                            )
+                                                            showToast(
+                                                                '已將此筆消費移回原期！'
+                                                            )
+                                                            this.render()
+                                                            this.showCreditDetailModal(
+                                                                account,
+                                                                'billed',
+                                                                periodVal
+                                                            )
+                                                        } catch (err) {
+                                                            console.error(
+                                                                '取消遞延失敗:',
+                                                                err
+                                                            )
+                                                            showToast(
+                                                                '移回失敗：' +
+                                                                    err.message,
+                                                                'error'
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        })
                                 }
                             } else {
                                 detailBox.classList.add('hidden')
@@ -1436,19 +1612,29 @@ export class AccountsPage {
                             })
                         })
                     })
+            if (currentTab === 'billed' && openPeriod) {
+                const targetBtn = contentContainer.querySelector(
+                    `.toggle-stmt-records-btn[data-period="${openPeriod}"]`
+                )
+                if (targetBtn) {
+                    targetBtn.click()
+                }
             }
         }
+    }
 
         tabUnbilledBtn.addEventListener('click', () => {
             currentTab = 'unbilled'
+            openPeriod = null
             renderTabContent()
         })
         tabBilledBtn.addEventListener('click', () => {
             currentTab = 'billed'
+            openPeriod = null
             renderTabContent()
         })
 
-        // 預設渲染即時未出帳
+        // 渲染初次頁籤內容
         renderTabContent()
     }
 
@@ -1476,7 +1662,10 @@ export class AccountsPage {
             (bal, r) => bal + (r.type === 'income' ? r.amount : -r.amount),
             account.balance || 0
         )
-        const cardDebt = Math.max(0, -currentCardBal)
+        const billingInfo =
+            await this.app.dataService.getCreditCardBillingInfo(account.id)
+        const cardDebt =
+            billingInfo?.totalDebt ?? Math.max(0, -currentCardBal)
 
         // 獲取該信用卡所有帳單以取得未繳帳單及最近一期資訊
         const allStatements = await this.app.dataService.getCreditStatements({
@@ -1639,10 +1828,10 @@ export class AccountsPage {
                             ? ` (${account.name} ${period} 期)`
                             : ` (${account.name})`
 
-                        // 寫扣款賬戶支出 (類別 transfer，不計入日常支出但扣減餘額以達平帳)
+                        // 寫扣款賬戶支出 (類別 debt_repayment，不計入日常支出但扣減餘額以達平帳)
                         const expenseRecord = {
                             type: 'expense',
-                            category: 'transfer',
+                            category: 'debt_repayment',
                             amount,
                             date: dateStr,
                             description: isDeductOnly
@@ -1658,7 +1847,7 @@ export class AccountsPage {
                             // 寫信用卡收入
                             const incomeRecord = {
                                 type: 'income',
-                                category: 'transfer',
+                                category: 'debt_repayment',
                                 amount,
                                 date: dateStr,
                                 description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費${descSuffix}`,

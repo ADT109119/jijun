@@ -3680,10 +3680,51 @@ class DataService {
             }
 
             console.log(`[DataService] deduplicateAccounts: 合併了 ${mergedCount} 個重複帳戶`)
+            await this.deduplicateCreditCardPayments()
             return { mergedCount, groupsProcessed: duplicateGroups.length }
         } catch (error) {
             console.error('[DataService] deduplicateAccounts error:', error)
             return { mergedCount: 0, groupsProcessed: 0, error }
+        }
+    }
+
+    /**
+     * 清理重複的卡費扣繳記錄 (防禦歷史 autoPay 重複生成的扣繳記錄)
+     */
+    async deduplicateCreditCardPayments() {
+        if (!this.db || this.useLocalStorage) return
+        try {
+            const records = await this.db.getAll('records')
+            const seen = new Set()
+            let removedCount = 0
+
+            for (const r of records) {
+                if (r.description && r.description.startsWith('[卡費扣繳]')) {
+                    const key = [
+                        r.accountId,
+                        r.type,
+                        r.date,
+                        r.description,
+                        r.amount,
+                    ].join('|')
+                    if (seen.has(key)) {
+                        await this.deleteRecord(r.id)
+                        removedCount++
+                    } else {
+                        seen.add(key)
+                    }
+                }
+            }
+            if (removedCount > 0) {
+                console.log(
+                    `[DataService] deduplicateCreditCardPayments: 清理了 ${removedCount} 筆重複的卡費扣繳記錄`
+                )
+            }
+        } catch (err) {
+            console.warn(
+                '[DataService] deduplicateCreditCardPayments failed:',
+                err
+            )
         }
     }
 
@@ -4062,10 +4103,73 @@ class DataService {
      * @param {number} accountId - 信用卡帳戶 ID
      * @param {Date} startDate - 帳單週期開始日
      * @param {Date} endDate - 帳單週期結束日
-     * @returns {Promise<{ totalExpense: number, totalRepayment: number, currentBalance: number, availableCredit: number, creditLimit: number }>}
+    /**
+     * 取得交易日期所屬的自然帳單期別
+     * @param {object} account - 信用卡帳戶物件
+     * @param {string} dateStr - 交易日期 (YYYY-MM-DD)
+     * @returns {string} 帳單期別 (如 '2026-09')
      */
-    async calculateCreditCardBalance(accountId, startDate, endDate) {
-        const account = await this.getAccount(accountId)
+    getNaturalStatementPeriod(account, dateStr) {
+        if (!account || !dateStr) return ''
+        const statementDay = account.statementDay || 25
+        const [y, m, d] = dateStr.split('-').map(Number)
+        let targetYear = y
+        let targetMonth = m
+        if (d <= statementDay) {
+            targetMonth = m - 1
+            if (targetMonth <= 0) {
+                targetMonth = 12
+                targetYear -= 1
+            }
+        }
+        return `${targetYear}-${String(targetMonth).padStart(2, '0')}`
+    }
+
+    /**
+     * 取得下一個帳單期別
+     * @param {string} period - 當前帳單期別 (YYYY-MM)
+     * @returns {string}
+     */
+    getNextPeriod(period) {
+        if (!period) return ''
+        let [y, m] = period.split('-').map(Number)
+        m += 1
+        if (m > 12) {
+            m = 1
+            y += 1
+        }
+        return `${y}-${String(m).padStart(2, '0')}`
+    }
+
+    /**
+     * 取得上一個帳單期別
+     * @param {string} period - 當前帳單期別 (YYYY-MM)
+     * @returns {string}
+     */
+    getPreviousPeriod(period) {
+        if (!period) return ''
+        let [y, m] = period.split('-').map(Number)
+        m -= 1
+        if (m < 1) {
+            m = 12
+            y -= 1
+        }
+        return `${y}-${String(m).padStart(2, '0')}`
+    }
+
+    /**
+     * 計算信用卡特定期間的消費與還款金額
+     * @param {number} accountId - 信用卡帳戶 ID
+     * @param {Date} [startDate] - 開始日期
+     * @param {Date} [endDate] - 結束日期
+     * @param {string} [targetPeriod] - 指定帳單期別 (如 '2026-09')
+     * @returns {Promise<{ totalExpense: number, totalRepayment: number, currentBalance: number, availableCredit: number, creditLimit: number, recordCount: number }>}
+     */
+    async calculateCreditCardBalance(accountId, startDate, endDate, targetPeriod = null) {
+        const account =
+            typeof accountId === 'object' && accountId !== null
+                ? accountId
+                : await this.getAccount(accountId)
         if (!account || account.type !== 'credit_card') {
             return {
                 totalExpense: 0,
@@ -4073,25 +4177,65 @@ class DataService {
                 currentBalance: 0,
                 availableCredit: 0,
                 creditLimit: 0,
+                recordCount: 0,
             }
+        }
+
+        // 支援 (accountId, 'YYYY-MM') 簡寫調用
+        if (
+            typeof startDate === 'string' &&
+            !endDate &&
+            !targetPeriod &&
+            /^\d{4}-\d{2}$/.test(startDate)
+        ) {
+            targetPeriod = startDate
+            startDate = null
         }
 
         // 只查詢該帳戶的記錄，避免載入全部 records
         const records = await this.db.getAllFromIndex(
             'records',
             'accountId',
-            accountId
+            account.id
         )
 
         // 轉為字串 YYYY-MM-DD 比較以不受時區解析影響
-        const toDateStr = d =>
-            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        const startStr = toDateStr(startDate)
-        const endStr = toDateStr(endDate)
+        const toDateStr = d => {
+            if (!d) return null
+            if (typeof d?.getFullYear === 'function') {
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            }
+            return String(d)
+        }
+        const period =
+            targetPeriod ||
+            (endDate
+                ? this.getNaturalStatementPeriod(account, toDateStr(endDate))
+                : null)
+        const startStr = startDate ? toDateStr(startDate) : null
+        const endStr = endDate ? toDateStr(endDate) : null
 
         const periodRecords = records.filter(r => {
-            const recordDate = r.date // YYYY-MM-DD
-            return recordDate >= startStr && recordDate <= endStr
+            // 排除卡費還款/扣繳/平帳紀錄（還款不屬於當期消費明細，不可扣減新一期消費出帳金額）
+            if (
+                r.category === 'debt_repayment' ||
+                r.category === 'transfer' ||
+                r.category === 'balance_adjustment' ||
+                r.description?.startsWith('[卡費扣繳]') ||
+                r.description?.startsWith('[自動扣款]')
+            ) {
+                return false
+            }
+
+            if (period) {
+                const rPeriod =
+                    r.statementPeriod ||
+                    this.getNaturalStatementPeriod(account, r.date)
+                return rPeriod === period
+            } else if (startStr && endStr) {
+                return r.date >= startStr && r.date <= endStr
+            }
+            return true
         })
 
         let totalExpense = 0
@@ -4102,20 +4246,20 @@ class DataService {
             if (record.type === 'expense') {
                 totalExpense += record.amount
             }
-            // 信用卡還款：type='income' 且 account 為該信用卡 (還款是收入項目)
+            // 商家退款/刷退：type='income' 且為一般非還款分類
             else if (record.type === 'income') {
                 totalRepayment += record.amount
             }
         }
 
-        const currentBalance = totalExpense - totalRepayment
+        const currentBalance = Math.max(0, totalExpense - totalRepayment)
         const creditLimit = account.creditLimit || 0
         const availableCredit = Math.max(0, creditLimit - currentBalance)
 
         return {
             totalExpense,
             totalRepayment,
-            currentBalance: Math.max(0, currentBalance),
+            currentBalance,
             availableCredit,
             creditLimit,
             recordCount: periodRecords.length,
@@ -4192,7 +4336,8 @@ class DataService {
                 const balance = await this.calculateCreditCardBalance(
                     card.id,
                     startDate,
-                    endDate
+                    endDate,
+                    period
                 )
 
                 // 繳款日計算：
@@ -4329,10 +4474,30 @@ class DataService {
             r.category !== 'debt_repayment'
 
         const validRecords = allRecords.filter(r => !isBalanceExempt(r))
+        const unbilledPeriodName = this.getNaturalStatementPeriod(
+            account,
+            toDateStr(now)
+        )
 
-        // 本期未出帳明細 (即時消費: date >= startStr)
+        // 本期未出帳明細 (排除卡費還款/扣繳，且有效所屬期別為未出帳期別)
         const unbilledRecords = validRecords
-            .filter(r => r.date >= startStr)
+            .filter(r => {
+                if (
+                    r.category === 'debt_repayment' ||
+                    r.category === 'transfer' ||
+                    r.category === 'balance_adjustment' ||
+                    r.description?.startsWith('[卡費扣繳]') ||
+                    r.description?.startsWith('[自動扣款]')
+                ) {
+                    return false
+                }
+                const rPeriod =
+                    r.statementPeriod ||
+                    this.getNaturalStatementPeriod(account, r.date)
+                if (rPeriod === unbilledPeriodName) return true
+                if (r.date >= startStr && !r.statementPeriod) return true
+                return false
+            })
             .sort(
                 (a, b) =>
                     b.date.localeCompare(a.date) ||
@@ -4359,6 +4524,18 @@ class DataService {
             (b.period || '').localeCompare(a.period || '')
         )
 
+        // 重新同步/核算未繳帳單的金額（修復歷史還款被誤扣或遞延明細）
+        for (const s of statements) {
+            if (s.status === 'unpaid') {
+                const refreshed = await this.recalculateStatement(s.id)
+                if (refreshed) {
+                    s.amount = refreshed.amount
+                    s.recordCount = refreshed.recordCount
+                    s.status = refreshed.status
+                }
+            }
+        }
+
         const unpaidStatements = statements.filter(s => s.status === 'unpaid')
         const billedDueTotal = unpaidStatements.reduce(
             (sum, s) => sum + (s.amount || 0),
@@ -4376,11 +4553,12 @@ class DataService {
             nextDueDate = statements[0].dueDate
         }
 
-        // 計算整體歷史欠款與可用額度
+        // 計算整體歷史欠款與可用額度 (欠款至少應包含所有待繳出帳帳單與未出帳即時消費)
         const balance = validRecords.reduce((bal, r) => {
             return bal + (r.type === 'income' ? r.amount : -r.amount)
         }, account.balance || 0)
-        const totalDebt = Math.max(0, -balance)
+        const netCashDebt = Math.max(0, -balance)
+        const totalDebt = Math.max(billedDueTotal + unbilledTotal, netCashDebt)
         const availableCredit = Math.max(0, creditLimit - totalDebt)
 
         return {
@@ -4422,12 +4600,6 @@ class DataService {
                 : await this.getAccount(accountOrId)
         if (!account || !period) return []
 
-        const { startDate, endDate } = this.getStatementPeriod(account, period)
-        const toDateStr = d =>
-            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        const startStr = toDateStr(startDate)
-        const endStr = toDateStr(endDate)
-
         const records = await this.db.getAllFromIndex(
             'records',
             'accountId',
@@ -4435,7 +4607,24 @@ class DataService {
         )
 
         return records
-            .filter(r => r.date >= startStr && r.date <= endStr)
+            .filter(r => {
+                // 排除卡費還款/扣繳/平帳紀錄（還款不屬於消費明細）
+                if (
+                    r.category === 'debt_repayment' ||
+                    r.category === 'transfer' ||
+                    r.category === 'balance_adjustment' ||
+                    r.description?.startsWith('[卡費扣繳]') ||
+                    r.description?.startsWith('[自動扣款]')
+                ) {
+                    return false
+                }
+
+                // 判斷期別：優先採用手動指定 statementPeriod，否則採用自然期別
+                const rPeriod =
+                    r.statementPeriod ||
+                    this.getNaturalStatementPeriod(account, r.date)
+                return rPeriod === period
+            })
             .sort(
                 (a, b) =>
                     b.date.localeCompare(a.date) ||
@@ -4444,7 +4633,143 @@ class DataService {
     }
 
     /**
-     * 執行信用卡的自動扣款（於繳款日當天或之後自動轉帳還款，不計入生活支出但調整帳戶餘額以達平帳）
+     * 將指定的信用卡消費明細遞延至下一期帳單（商家延遲請款）
+     * @param {number} recordId - 消費紀錄 ID
+     * @param {number} [currentStatementId] - 當前帳單 ID (可選)
+     * @returns {Promise<object>}
+     */
+    async deferRecordToNextStatement(recordId, currentStatementId = null) {
+        const record = await this.getRecord(recordId)
+        if (!record) throw new Error('找不到該筆紀錄')
+        const card = await this.getAccount(record.accountId)
+        if (!card || card.type !== 'credit_card') {
+            throw new Error('該紀錄不屬於信用卡帳戶')
+        }
+
+        let currentPeriod =
+            record.statementPeriod ||
+            this.getNaturalStatementPeriod(card, record.date)
+        if (currentStatementId) {
+            const stmt = await this.getCreditStatement(currentStatementId)
+            if (stmt && stmt.period) currentPeriod = stmt.period
+        }
+
+        const nextPeriod = this.getNextPeriod(currentPeriod)
+
+        // 更新該筆紀錄的帳單期別為下一期
+        await this.updateRecord(record.id, {
+            statementPeriod: nextPeriod,
+            deferredFromPeriod: currentPeriod,
+        })
+
+        // 重新計算原帳單金額 (若有)
+        if (currentStatementId) {
+            await this.recalculateStatement(currentStatementId)
+        } else {
+            const stmts = await this.getCreditStatements({
+                accountId: card.id,
+                period: currentPeriod,
+                allLedgers: true,
+            })
+            if (stmts.length > 0) {
+                await this.recalculateStatement(stmts[0].id)
+            }
+        }
+
+        // 若下一期帳單已存在，重新計算下一期帳單金額
+        const nextStmts = await this.getCreditStatements({
+            accountId: card.id,
+            period: nextPeriod,
+            allLedgers: true,
+        })
+        if (nextStmts.length > 0) {
+            await this.recalculateStatement(nextStmts[0].id)
+        }
+
+        return {
+            recordId: record.id,
+            fromPeriod: currentPeriod,
+            toPeriod: nextPeriod,
+        }
+    }
+
+    /**
+     * 取消信用卡消費明細的遞延，移回自然帳單期別
+     * @param {number} recordId - 消費紀錄 ID
+     * @param {number} [currentStatementId] - 當前帳單 ID (可選)
+     * @returns {Promise<object>}
+     */
+    async undeferRecord(recordId, currentStatementId = null) {
+        const record = await this.getRecord(recordId)
+        if (!record) throw new Error('找不到該筆紀錄')
+        const card = await this.getAccount(record.accountId)
+        if (!card || card.type !== 'credit_card') {
+            throw new Error('該紀錄不屬於信用卡帳戶')
+        }
+
+        const oldPeriod = record.statementPeriod
+        const naturalPeriod = this.getNaturalStatementPeriod(card, record.date)
+
+        await this.updateRecord(record.id, {
+            statementPeriod: null,
+            deferredFromPeriod: null,
+        })
+
+        if (currentStatementId) {
+            await this.recalculateStatement(currentStatementId)
+        } else if (oldPeriod) {
+            const stmts = await this.getCreditStatements({
+                accountId: card.id,
+                period: oldPeriod,
+                allLedgers: true,
+            })
+            if (stmts.length > 0) await this.recalculateStatement(stmts[0].id)
+        }
+
+        const natStmts = await this.getCreditStatements({
+            accountId: card.id,
+            period: naturalPeriod,
+            allLedgers: true,
+        })
+        if (natStmts.length > 0) await this.recalculateStatement(natStmts[0].id)
+
+        return { recordId: record.id, restoredPeriod: naturalPeriod }
+    }
+
+    /**
+     * 重新計算指定帳單的金額與筆數
+     * @param {number} statementId - 帳單 ID
+     * @returns {Promise<object|null>}
+     */
+    async recalculateStatement(statementId) {
+        const stmt = await this.getCreditStatement(statementId)
+        if (!stmt) return null
+        const card = await this.getAccount(stmt.accountId)
+        if (!card) return null
+
+        const records = await this.getStatementRecords(card, stmt.period)
+        let totalExp = 0
+        let totalRepay = 0
+        for (const r of records) {
+            if (r.type === 'expense') totalExp += r.amount
+            else if (r.type === 'income') totalRepay += r.amount
+        }
+        const newAmount = Math.max(0, totalExp - totalRepay)
+
+        const updateData = {
+            amount: newAmount,
+            recordCount: records.length,
+        }
+        if (stmt.status === 'unpaid' || stmt.status === 'zero') {
+            updateData.status = newAmount > 0 ? 'unpaid' : 'zero'
+        }
+
+        await this.updateCreditStatement(stmt.id, updateData)
+        return { ...stmt, ...updateData }
+    }
+
+    /**
+     * 執行信用卡的自動扣款（於繳款日當天或之後自動還款，不計入生活支出但調整帳戶餘額以達平帳）
      */
     async autoPayCreditStatements() {
         const accounts = await this.getAccounts({ allLedgers: true })
@@ -4492,13 +4817,31 @@ class DataService {
                         continue
                     }
 
+                    // 防重複扣款：檢查是否已有此帳單期別的扣款記錄
+                    const allCardRecords = await this.db.getAllFromIndex(
+                        'records',
+                        'accountId',
+                        card.id
+                    )
+                    const alreadyPaid = allCardRecords.some(
+                        r =>
+                            r.type === 'income' &&
+                            r.description?.includes(`${stmt.period} 期`)
+                    )
+                    if (alreadyPaid) {
+                        await this.updateCreditStatement(stmt.id, {
+                            status: 'paid',
+                        })
+                        continue
+                    }
+
                     // 扣款日期以帳單繳款日記帳，維持與銀行實際扣繳日一致
                     const payDateObj = new Date(stmt.dueDate)
                     const payDateStr = `${payDateObj.getFullYear()}-${String(payDateObj.getMonth() + 1).padStart(2, '0')}-${String(payDateObj.getDate()).padStart(2, '0')}`
 
                     const expenseRecord = {
                         type: 'expense',
-                        category: 'transfer',
+                        category: 'debt_repayment',
                         amount: amountToPay,
                         date: payDateStr,
                         description: `[卡費扣繳] 繳納信用卡費 (${card.name} ${stmt.period} 期)`,
@@ -4509,7 +4852,7 @@ class DataService {
 
                     const incomeRecord = {
                         type: 'income',
-                        category: 'transfer',
+                        category: 'debt_repayment',
                         amount: amountToPay,
                         date: payDateStr,
                         description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費 (${stmt.period} 期)`,
@@ -4545,7 +4888,7 @@ class DataService {
 
     /**
      * 執行單筆信用卡帳單繳款 / 卡費扣繳平帳
-     * 產生轉帳記錄（扣款帳戶支出、信用卡帳戶收入），不計入日常支出但調整帳戶餘額以達平帳
+     * 產生還款記錄（扣款帳戶支出、信用卡帳戶收入，類別 debt_repayment），不計入日常支出但調整帳戶餘額以達平帳
      * 若信用卡欠款已為 0 或指定 deductOnly，則僅扣款帳戶平帳，不重複增加信用卡餘額
      * @param {number} statementId - 帳單 ID
      * @param {number} debitAccountId - 扣款/還款帳戶 ID
@@ -4585,7 +4928,7 @@ class DataService {
 
         const expenseRecord = {
             type: 'expense',
-            category: 'transfer',
+            category: 'debt_repayment',
             amount: amountToPay,
             date: dateStr,
             description: shouldSkipCardIncome
@@ -4602,7 +4945,7 @@ class DataService {
         if (!shouldSkipCardIncome) {
             const incomeRecord = {
                 type: 'income',
-                category: 'transfer',
+                category: 'debt_repayment',
                 amount: amountToPay,
                 date: dateStr,
                 description: `[卡費扣繳] 從 ${debitAccount.name} 扣款繳費 (${stmt.period || ''} 期)`,

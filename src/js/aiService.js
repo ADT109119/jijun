@@ -179,16 +179,64 @@ export class AIService {
     }
 
     /**
-     * 刪除已下載的模型檔案與紀錄
+     * 從遠端 HEAD 取得模型檔案的 ETag/SHA-256 雜湊值 (帶超時防禦)
+     * @param {string} url
+     * @returns {Promise<string|null>}
      */
-    async deleteModel() {
+    async fetchRemoteModelHash(url) {
+        if (typeof window === 'undefined' || !navigator.onLine) return null;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(url, {
+                method: 'HEAD',
+                cache: 'no-cache',
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) return null;
+            const etag = res.headers.get('etag') || res.headers.get('x-linked-etag');
+            if (!etag) return null;
+            return etag.replace(/^W\//, '').replace(/"/g, '').trim();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * 刪除已下載的模型檔案與紀錄 (徹底清理 OPFS 快取實體)
+     * @param {string} [quant] - 指定刪除的量化版本，若未提供則清理所有模型
+     */
+    async deleteModel(quant) {
         await this._ensureUnloaded();
+
+        // 真實清理 OPFS 快取檔案實體
+        try {
+            const Wllama = await this._loadEngine();
+            const inst = new Wllama(
+                { default: '/vendor/wllama/esm/wasm/wllama.wasm' },
+                { allowOffline: true, suppressNativeLog: true }
+            );
+            if (quant && QUANTIZATION_MODELS[quant]) {
+                await inst.cacheManager.delete(QUANTIZATION_MODELS[quant].url);
+            } else {
+                await inst.cacheManager.clear();
+            }
+            if (typeof inst.exit === 'function') {
+                await inst.exit();
+            }
+        } catch (cacheErr) {
+            console.warn('清理 OPFS 模型快取失敗或不支援:', cacheErr);
+        }
+
         if (typeof window !== 'undefined') {
-            Object.keys(QUANTIZATION_MODELS).forEach(q => {
+            const targets = quant ? [quant] : Object.keys(QUANTIZATION_MODELS);
+            targets.forEach(q => {
                 localStorage.removeItem(`ai_model_downloaded_${q}`);
                 localStorage.removeItem(`ai_model_etag_${q}`);
                 localStorage.removeItem(`ai_model_update_available_${q}`);
                 localStorage.removeItem(`ai_model_last_check_time_${q}`);
+                localStorage.removeItem(`ai_model_remote_etag_${q}`);
             });
         }
         this.lastMode = 'llm';
@@ -196,22 +244,37 @@ export class AIService {
     }
 
     /**
-     * 執行模型下載流程並回報進度
+     * 執行模型下載流程並回報進度 (主動比對遠端 Hash 並清理舊快取以確保獲取最新模型)
      * @param {string} quant - 量化版本 ID
      * @param {function} onProgress - 回呼 ({ loadedBytes, totalBytes, percent })
+     * @param {object} [options] - 選項 { forceDownload?: boolean }
      * @returns {Promise<boolean>}
      */
-    async downloadModel(quant, onProgress) {
+    async downloadModel(quant, onProgress, options = {}) {
         const modelInfo = QUANTIZATION_MODELS[quant] || QUANTIZATION_MODELS.q4_0;
         await this._ensureUnloaded();
         this.wllama = await this._createWllama();
         const report = this._normalizeProgress(onProgress);
         try {
+            // 下載前先連網取得遠端最新的 ETag (SHA-256)
+            const remoteHash = await this.fetchRemoteModelHash(modelInfo.url);
+
+            // 清理舊快取以確保真正重新下載：
+            // 如果本地 OPFS 中已有快取檔且需要更新或重新下載，必須先行刪除舊快取
+            if (this.wllama && this.wllama.cacheManager) {
+                try {
+                    await this.wllama.cacheManager.delete(modelInfo.url);
+                } catch (delErr) {
+                    console.warn('清理舊模型快取時略過:', delErr);
+                }
+            }
+
             await this.wllama.loadModelFromUrl(modelInfo.url, {
                 useCache: true,
                 n_ctx: 2048,
                 progressCallback: report
             });
+
             // 完整性軟檢查：確認 OPFS 有該檔且長度合理
             try {
                 const name = await this.wllama.cacheManager.getNameFromURL(modelInfo.url);
@@ -224,26 +287,16 @@ export class AIService {
                 throw integrityError;
             }
 
-            // 抓取伺服器 ETag 作為本地版次基準
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
-                const headRes = await fetch(modelInfo.url, { method: 'HEAD', signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (headRes.ok) {
-                    const etag = headRes.headers.get('etag') || headRes.headers.get('x-linked-etag');
-                    if (etag && typeof window !== 'undefined') {
-                        localStorage.setItem(`ai_model_etag_${modelInfo.id}`, etag);
-                    }
-                }
-            } catch (e) {
-                // 靜默防護：下載已成功，即使 HEAD 取得 ETag 失敗不影響運作
+            // 保存最新 ETag/Hash 作為版本基準
+            if (remoteHash && typeof window !== 'undefined') {
+                localStorage.setItem(`ai_model_etag_${modelInfo.id}`, remoteHash);
             }
 
             this.isLoaded = true;
             this._markDownloaded(modelInfo.id);
             if (typeof window !== 'undefined') {
                 localStorage.removeItem(`ai_model_update_available_${modelInfo.id}`);
+                localStorage.removeItem(`ai_model_remote_etag_${modelInfo.id}`);
             }
             return true;
         } catch (error) {
@@ -254,11 +307,12 @@ export class AIService {
     }
 
     /**
-     * 檢查指定量化模型是否有新版本可更新 (帶 12 小時冷卻與 3 秒靜默逾時防禦)
+     * 檢查指定量化模型是否有新版本可更新 (支援 Hash 比對與 options.force 強制檢查)
      * @param {string} [quant]
-     * @returns {Promise<{hasUpdate: boolean, etag?: string}>}
+     * @param {object} [options] - { force?: boolean }
+     * @returns {Promise<{hasUpdate: boolean, etag?: string, localEtag?: string}>}
      */
-    async checkForModelUpdate(quant) {
+    async checkForModelUpdate(quant, options = {}) {
         if (typeof window === 'undefined' || !navigator.onLine) {
             return { hasUpdate: false };
         }
@@ -274,39 +328,30 @@ export class AIService {
 
         const lastCheck = parseInt(localStorage.getItem(lastCheckKey) || '0', 10);
         const now = Date.now();
-        // 12 小時冷卻時間
-        if (now - lastCheck < 12 * 60 * 60 * 1000) {
+        // 若非強制檢查，帶 12 小時冷卻時間
+        if (!options.force && (now - lastCheck < 12 * 60 * 60 * 1000)) {
             return { hasUpdate: localStorage.getItem(hasUpdateKey) === 'true' };
         }
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000);
-            const response = await fetch(modelInfo.url, {
-                method: 'HEAD',
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
+            const remoteHash = await this.fetchRemoteModelHash(modelInfo.url);
+            if (!remoteHash) {
                 return { hasUpdate: localStorage.getItem(hasUpdateKey) === 'true' };
             }
 
-            const remoteEtag = response.headers.get('etag') || response.headers.get('x-linked-etag');
-            const localEtag = localStorage.getItem(etagKey);
+            const rawLocalEtag = localStorage.getItem(etagKey);
+            const localHash = rawLocalEtag ? rawLocalEtag.replace(/^W\//, '').replace(/"/g, '').trim() : '';
 
             localStorage.setItem(lastCheckKey, now.toString());
 
-            if (remoteEtag && localEtag && remoteEtag !== localEtag) {
+            // 雜湊比對：若遠端 Hash 與本地不同，或者本地尚無 ETag 記錄（舊版過渡），標記有更新
+            if (remoteHash && (!localHash || remoteHash !== localHash)) {
                 localStorage.setItem(hasUpdateKey, 'true');
-                return { hasUpdate: true, etag: remoteEtag };
-            } else if (remoteEtag && !localEtag) {
-                localStorage.setItem(etagKey, remoteEtag);
-                localStorage.setItem(hasUpdateKey, 'false');
-                return { hasUpdate: false };
+                localStorage.setItem(`ai_model_remote_etag_${targetQuant}`, remoteHash);
+                return { hasUpdate: true, etag: remoteHash, localEtag: localHash };
             } else {
                 localStorage.setItem(hasUpdateKey, 'false');
-                return { hasUpdate: false };
+                return { hasUpdate: false, etag: remoteHash };
             }
         } catch (e) {
             return { hasUpdate: localStorage.getItem(hasUpdateKey) === 'true' };
@@ -385,15 +430,27 @@ export class AIService {
     }
 
     /**
-     * 生成包含動態分類、帳戶與日期錨定的 System Prompt (對齊 demo_gguf.py 訓練規範)
+     * 生成包含動態分類、帳戶與日期錨定的 System Prompt (對齊 tools.schema.json 與 build_prompt.py 訓練規範)
      * @param {string[]} categories - 分類清單
      * @param {string[]} accounts - 帳戶清單
      * @param {Date} [currentDate] - 當前錨定日期
      * @returns {string} - 組裝好的 System Prompt
      */
     generateSystemPrompt(categories, accounts, currentDate) {
-        const cleanCategories = Array.isArray(categories) && categories.length > 0 ? categories : ['飲食', '日常', '交通', '娛樂', '醫療', '教育', '還款', '薪水', '獎金', '零用錢', '兼職', '投資', '利息', '欠款回收', '其他'];
-        const cleanAccounts = Array.isArray(accounts) && accounts.length > 0 ? accounts : ['現金', '信用卡', '悠遊卡', '一卡通', '街口支付', 'LINE Pay', 'Apple Pay', 'Google Pay', '郵局帳戶', '銀行存款', '外幣帳戶', '加密貨幣', '悠遊付', 'icash'];
+        const rawCategories = Array.isArray(categories) && categories.length > 0
+            ? categories.map(c => typeof c === 'string' ? c.trim() : c?.name?.trim() || '').filter(Boolean)
+            : [];
+        const cleanCategories = rawCategories.length > 0
+            ? Array.from(new Set(rawCategories))
+            : ['飲食', '日常', '交通', '娛樂', '醫療', '教育', '還款', '薪水', '獎金', '零用錢', '兼職', '投資', '利息', '欠款回收', '其他'];
+
+        const rawAccounts = Array.isArray(accounts) && accounts.length > 0
+            ? accounts.map(a => typeof a === 'string' ? a.trim() : a?.name?.trim() || '').filter(Boolean)
+            : [];
+        const cleanAccounts = rawAccounts.length > 0
+            ? Array.from(new Set(rawAccounts))
+            : ['現金', '信用卡', '悠遊卡', '一卡通', '街口支付', 'LINE Pay', 'Apple Pay', 'Google Pay', '郵局帳戶', '銀行存款', '外幣帳戶', '加密貨幣', '悠遊付', 'icash'];
+
         const { formattedStr } = this.getCurrentDateAnchor(currentDate);
 
         const toolDef = {
@@ -402,18 +459,38 @@ export class AIService {
             parameters: {
                 type: "object",
                 properties: {
-                    amount: { type: "number", description: "交易金額數值（大於0）" },
-                    category: { type: "string", enum: cleanCategories, description: "交易分類名稱" },
-                    account: { type: "string", enum: cleanAccounts, description: "支付或入帳帳戶" },
-                    description: { type: "string", description: "交易詳細說明與品項" },
-                    type: { type: "string", enum: ["expense", "income"], description: "收支類型：消費花費（如花了、買、付、吃喝、搭乘等）填 expense；收入（如賺、領薪水、獎金、投資等）填 income。預設為 expense" },
-                    date: { type: "string", description: "ISO 8601 格式日期，例如 YYYY-MM-DD" }
+                    amount: { type: "number" },
+                    category: { type: "string", enum: cleanCategories },
+                    account: { type: "string", enum: cleanAccounts },
+                    description: { type: "string" },
+                    type: { type: "string", enum: ["expense", "income"] },
+                    date: { type: "string", description: "ISO 8601 格式日期，僅日期精度，例如 YYYY-MM-DD" }
                 },
                 required: ["amount", "category", "account", "type", "date"]
             }
         };
 
-        return `${formattedStr}。你是一個記帳助理。規則：凡是「花了」、「買了」、「消費」、「付了」、「吃」等消費行為，type 必須為 expense；「領了」、「賺了」、「薪水」、「入帳」等才為 income。未明確指明時預設為 expense。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
+        return `${formattedStr}。你是一個記帳助理。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
+    }
+
+    /**
+     * 智慧模糊匹配帳戶 (支援大小寫/空白忽略、子字串包含、語意別名與編輯距離容錯)
+     * @param {string} predicted
+     * @param {Array<object>} accounts
+     * @returns {object|null}
+     */
+    fuzzyMatchAccount(predicted, accounts) {
+        return fuzzyMatchAccount(predicted, accounts);
+    }
+
+    /**
+     * 智慧模糊匹配分類 (支援大小寫/空白忽略、子字串包含、同義詞映射與編輯距離容錯)
+     * @param {string} predicted
+     * @param {Array<object>} categories
+     * @returns {object|null}
+     */
+    fuzzyMatchCategory(predicted, categories) {
+        return fuzzyMatchCategory(predicted, categories);
     }
 
     /**
@@ -437,6 +514,64 @@ export class AIService {
             record.type = 'income';
         }
         return record;
+    }
+
+    /**
+     * 從文字中提取第一座完整且平衡的大括號 JSON 物件 (處理字串轉義與任意層級嵌套，防止非貪婪正則截斷)
+     * @param {string} text
+     * @returns {string|null}
+     * @private
+     */
+    _extractBalancedJson(text) {
+        if (!text) return null;
+        const start = text.indexOf('{');
+        if (start < 0) return null;
+
+        let depth = 0;
+        let inStr = false;
+        let escaped = false;
+
+        for (let i = start; i < text.length; i++) {
+            const ch = text[i];
+            if (inStr) {
+                if (escaped) {
+                    escaped = false;
+                } else if (ch === '\\') {
+                    escaped = true;
+                } else if (ch === '"') {
+                    inStr = false;
+                }
+            } else {
+                if (ch === '"') {
+                    inStr = true;
+                } else if (ch === '{') {
+                    depth++;
+                } else if (ch === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        return text.slice(start, i + 1);
+                    }
+                }
+            }
+        }
+
+        // 容錯修復：若模型因 stop token 或 max_tokens 剛好在最後一層大括號前截斷 (如 depth > 0 且非字串中)
+        if (depth > 0 && !inStr) {
+            let candidate = text.slice(start);
+            let patchDepth = depth;
+            while (patchDepth > 0) {
+                candidate += '}';
+                patchDepth--;
+            }
+            try {
+                JSON.parse(candidate);
+                return candidate;
+            } catch (_) {
+                // 自動補齊若仍不合法則放棄
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -511,7 +646,9 @@ export class AIService {
         }
 
         // 0. 剔除思考鏈標籤以相容 Reasoning/Thinking 模型 (如 DeepSeek-R1 / Qwen3 推理系列)
-        responseText = responseText.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, '').trim();
+        responseText = responseText.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
+        responseText = responseText.replace(/^[\s\S]*?<\/think(?:ing)?>/i, '').trim();
+        responseText = responseText.replace(/^\s*thinking\b[\s\S]*?(?=<tool_call>|\{)/i, '').trim();
 
         let result = null;
 
@@ -550,16 +687,14 @@ export class AIService {
                 date: args.date || undefined
             };
         } else {
-            // 2. 通用 JSON 格式解析
+            // 2. 通用 JSON 格式解析（支援嵌套 args、無閉合標籤容錯、平衡括號安全抽取）
             let jsonStr = '';
-            const toolCallMatch = responseText.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
+            const toolCallMatch = responseText.match(/<tool_call>([\s\S]*?)(?:<\/tool_call>|$)/i);
             if (toolCallMatch && toolCallMatch[1]) {
-                jsonStr = toolCallMatch[1].trim();
-            } else {
-                const braceMatch = responseText.match(/\{[\s\S]*?\}/);
-                if (braceMatch) {
-                    jsonStr = braceMatch[0].trim();
-                }
+                jsonStr = this._extractBalancedJson(toolCallMatch[1]);
+            }
+            if (!jsonStr) {
+                jsonStr = this._extractBalancedJson(responseText);
             }
 
             if (!jsonStr) {
@@ -574,10 +709,16 @@ export class AIService {
             }
 
             let args = parsed;
-            if (parsed.name === 'add_record' && parsed.args) {
-                args = parsed.args;
-            } else if (parsed.args) {
-                args = parsed.args;
+            if (parsed && typeof parsed === 'object') {
+                if (parsed.args && typeof parsed.args === 'object') {
+                    args = parsed.args;
+                } else if (parsed.arguments && typeof parsed.arguments === 'object') {
+                    args = parsed.arguments;
+                } else if (typeof parsed.arguments === 'string') {
+                    try {
+                        args = JSON.parse(parsed.arguments);
+                    } catch (_) {}
+                }
             }
 
             const amount = Number(args.amount);
@@ -644,4 +785,213 @@ export class AIService {
 
         return `<tool_call>[AMT]${amount}[CAT]${matchedCategory}[ACC]${matchedAccount}[DESC]${description}[DATE]${dateStr}[TYPE]${type}</tool_call>`;
     }
+}
+
+/**
+ * 智慧模糊匹配帳戶 (支援大小寫/空白忽略、雙向包含、語意別名與編輯距離容錯)
+ * @param {string} predicted - AI 模型解析出的帳戶名稱 (如 "信用卡", "Line Pay", "國泰", "Richart")
+ * @param {Array<object>} accounts - 現有帳戶物件清單 (每個帳戶含 id, name, type 等)
+ * @returns {object|null} - 匹配到的帳戶物件或 null
+ */
+export function fuzzyMatchAccount(predicted, accounts) {
+    if (!predicted || !Array.isArray(accounts) || accounts.length === 0) return null;
+    const cleanPredicted = String(predicted).trim();
+    if (!cleanPredicted) return null;
+
+    // 1. 完全精確匹配
+    const exact = accounts.find(a => a.name === cleanPredicted);
+    if (exact) return exact;
+
+    // 正規化函式：去除空白、符號、轉小寫
+    const norm = s => String(s || '').toLowerCase().replace(/[\s\-_/\\()（）「」【】]/g, '');
+    const normPred = norm(cleanPredicted);
+    if (!normPred) return null;
+
+    // 2. 正規化後完全相等 (解決大小寫、空格差異，如 "LINE Pay" vs "linepay")
+    const normExact = accounts.find(a => norm(a.name) === normPred);
+    if (normExact) return normExact;
+
+    // 3. 雙向子字串包含匹配 (長度 >= 2)
+    // 3a. 帳戶名稱包含預測名稱 (如 帳戶 "中國信託 LINE Pay 信用卡" 包含 "LINE Pay", 帳戶 "國泰世華銀行" 包含 "國泰")
+    const accountsContainingPred = accounts.filter(a => {
+        const na = norm(a.name);
+        return na.length >= 2 && normPred.length >= 2 && na.includes(normPred);
+    });
+    if (accountsContainingPred.length === 1) {
+        return accountsContainingPred[0];
+    } else if (accountsContainingPred.length > 1) {
+        // 多個命中時，優先取長度最接近（重合比例最高）者
+        return accountsContainingPred.sort((a, b) => norm(a.name).length - norm(b.name).length)[0];
+    }
+
+    // 3b. 預測名稱包含帳戶名稱 (如 預測 "玉山銀行存款" 包含 帳戶 "玉山銀行")
+    const accountsContainedInPred = accounts.filter(a => {
+        const na = norm(a.name);
+        return na.length >= 2 && normPred.includes(na);
+    });
+    if (accountsContainedInPred.length > 0) {
+        // 取帳戶名稱最長者（例如 "玉山銀行" 優於 "玉山"）
+        return accountsContainedInPred.sort((a, b) => norm(b.name).length - norm(a.name).length)[0];
+    }
+
+    // 4. 語意別名與帳戶類型匹配 (Semantic Type Aliases)
+    const isCreditCardKeyword = /(?:信用卡|刷卡|卡片|credit|card)/i.test(cleanPredicted);
+    if (isCreditCardKeyword) {
+        // 先找 type === 'credit_card' 或名稱含「卡」/「信用卡」的帳戶
+        const cardAccounts = accounts.filter(a => a.type === 'credit_card' || /信用卡|卡/.test(a.name));
+        if (cardAccounts.length === 1) {
+            return cardAccounts[0];
+        } else if (cardAccounts.length > 1) {
+            // 若有多張卡，檢查 predicted 中是否包含特定的銀行或卡名關鍵字
+            for (const card of cardAccounts) {
+                const cleanCardName = norm(card.name).replace(/信用卡|卡/g, '');
+                if (cleanCardName.length >= 2 && normPred.includes(cleanCardName)) {
+                    return card;
+                }
+            }
+            return cardAccounts[0]; // 預設使用第一張信用卡
+        }
+    }
+
+    const isCashKeyword = /(?:現金|皮夾|錢包|零錢|鈔票|cash)/i.test(cleanPredicted);
+    if (isCashKeyword) {
+        const cashAcc = accounts.find(a => a.type === 'cash' || /現金|皮夾|錢包|零錢/.test(a.name));
+        if (cashAcc) return cashAcc;
+    }
+
+    const isBankKeyword = /(?:轉帳|匯款|銀行|網銀|活存|存款|bank)/i.test(cleanPredicted);
+    if (isBankKeyword) {
+        const bankAccounts = accounts.filter(a => a.type === 'bank' || /銀行|郵局|存款|活存/.test(a.name));
+        if (bankAccounts.length === 1) {
+            return bankAccounts[0];
+        } else if (bankAccounts.length > 1) {
+            for (const b of bankAccounts) {
+                const cleanBankName = norm(b.name).replace(/銀行|帳戶|存款|活存/g, '');
+                if (cleanBankName.length >= 2 && normPred.includes(cleanBankName)) {
+                    return b;
+                }
+            }
+            return bankAccounts[0];
+        }
+    }
+
+    // 5. 編輯距離 Levenshtein <= 1 容錯
+    const levDist = (a, b) => {
+        if (a === b) return 0;
+        if (!a) return b.length;
+        if (!b) return a.length;
+        let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+        for (let i = 1; i <= a.length; i++) {
+            let curr = [i];
+            for (let j = 1; j <= b.length; j++) {
+                curr.push(Math.min(
+                    prev[j] + 1,
+                    curr[j - 1] + 1,
+                    prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+                ));
+            }
+            prev = curr;
+        }
+        return prev[b.length];
+    };
+
+    let bestAcc = null;
+    let bestDist = 2;
+    for (const a of accounts) {
+        const d = levDist(normPred, norm(a.name));
+        if (d < bestDist) {
+            bestDist = d;
+            bestAcc = a;
+        }
+    }
+    if (bestDist <= 1) return bestAcc;
+
+    return null;
+}
+
+/**
+ * 智慧模糊匹配分類 (支援大小寫/空白忽略、雙向包含、同義詞映射與編輯距離容錯)
+ * @param {string} predicted - AI 模型解析出的分類名稱
+ * @param {Array<object>} categories - 分類物件清單 (每個物件含 id, name 等)
+ * @returns {object|null}
+ */
+export function fuzzyMatchCategory(predicted, categories) {
+    if (!predicted || !Array.isArray(categories) || categories.length === 0) return null;
+    const cleanPredicted = String(predicted).trim();
+    if (!cleanPredicted) return null;
+
+    // 1. 完全精確匹配
+    const exact = categories.find(c => c.name === cleanPredicted);
+    if (exact) return exact;
+
+    const norm = s => String(s || '').toLowerCase().replace(/[\s\-_/\\()（）「」【】]/g, '');
+    const normPred = norm(cleanPredicted);
+    if (!normPred) return null;
+
+    // 2. 正規化後完全相等
+    const normExact = categories.find(c => norm(c.name) === normPred);
+    if (normExact) return normExact;
+
+    // 3. 雙向子字串包含 (長度 >= 2)
+    const containing = categories.filter(c => {
+        const nc = norm(c.name);
+        return nc.length >= 2 && normPred.length >= 2 && (nc.includes(normPred) || normPred.includes(nc));
+    });
+    if (containing.length === 1) {
+        return containing[0];
+    } else if (containing.length > 1) {
+        return containing.sort((a, b) => Math.abs(norm(a.name).length - normPred.length) - Math.abs(norm(b.name).length - normPred.length))[0];
+    }
+
+    // 4. 常見生活領域同義詞映射
+    const categorySynonyms = [
+        { regex: /(?:餐飲|飲食|早午餐|早餐|午餐|晚餐|便當|火鍋|飲料|咖啡|手搖|下午茶|小吃|食品|吃飯)/, target: /(?:飲食|餐飲|食物|食品)/ },
+        { regex: /(?:交通|通勤|搭車|車資|公車|捷運|高鐵|火車|計程車|uber|加油|油錢|停車|過路費)/, target: /(?:交通|車資|通勤)/ },
+        { regex: /(?:日常|日用|生活|生活用品|家用品|雜物|雜支|超商|超市|賣場)/, target: /(?:日常|生活|雜支)/ },
+        { regex: /(?:娛樂|玩樂|休閒|電影|遊戲|看展|演唱會|旅遊|度假)/, target: /(?:娛樂|休閒|玩樂)/ },
+        { regex: /(?:醫療|看病|診所|醫院|掛號|藥品|藥局|感冒|牙醫)/, target: /(?:醫療|保健|健康)/ },
+        { regex: /(?:薪水|薪資|工資|月薪|發薪|領薪)/, target: /(?:薪水|薪資|工資)/ },
+        { regex: /(?:獎金|紅利|年終|分紅|外快|績效)/, target: /(?:獎金|紅利)/ },
+        { regex: /(?:投資|股票|基金|股利|利息|理財)/, target: /(?:投資|理財|利息)/ }
+    ];
+
+    for (const syn of categorySynonyms) {
+        if (syn.regex.test(cleanPredicted)) {
+            const matched = categories.find(c => syn.target.test(c.name));
+            if (matched) return matched;
+        }
+    }
+
+    // 5. 編輯距離 Levenshtein <= 1 容錯
+    const levDist = (a, b) => {
+        if (a === b) return 0;
+        if (!a) return b.length;
+        if (!b) return a.length;
+        let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+        for (let i = 1; i <= a.length; i++) {
+            let curr = [i];
+            for (let j = 1; j <= b.length; j++) {
+                curr.push(Math.min(
+                    prev[j] + 1,
+                    curr[j - 1] + 1,
+                    prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+                ));
+            }
+            prev = curr;
+        }
+        return prev[b.length];
+    };
+
+    let bestCat = null;
+    let bestDist = 2;
+    for (const c of categories) {
+        const d = levDist(normPred, norm(c.name));
+        if (d < bestDist) {
+            bestDist = d;
+            bestCat = c;
+        }
+    }
+    if (bestDist <= 1) return bestCat;
+
+    return null;
 }

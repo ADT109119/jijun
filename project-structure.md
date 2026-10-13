@@ -8,16 +8,16 @@
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon, 初始化與喚醒自動執行 deduplicateAccounts / deduplicateContacts，支援 reloadAppData 重新載入記憶體中各模組快取)
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
-├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 transfer 轉帳且不計入日常生活支出 + 群組分帳與單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊)
+├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 tools.schema.json 與 build_prompt.py 規範、平衡括號 _extractBalancedJson 抽取巢狀 JSON、stop token 容錯、OPFS 實體快取清除與遠端 HEAD ETag/SHA-256 即時版本比對、智慧模糊匹配與同義詞/別名映射 fuzzyMatchAccount / fuzzyMatchCategory)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 debt_repayment 還款且防重複扣款 + 信用卡消費延遲請款遞延至下一期與移回原期 deferRecordToNextStatement/undeferRecord/recalculateStatement + 嚴格過濾還款紀錄防明細污染與未出帳/帳單金額誤減歸零 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳與單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── groupManager.js      # 群組分帳管理商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
-├── categories.js        # 分類常數與工具函數
+├── categories.js        # 分類常數與工具函數 (getCategoryById 支援雙向相容降級查找，避免收入端之還款紀錄顯示未知問號圖示)
 ├── categoryManager.js   # 分類管理 UI 邏輯 (支援自訂分類、排序、隱藏，init 自動清空舊狀態防跨帳本殘留，與 IndexedDB/localStorage 雙向同步)
 ├── statistics.js        # 統計分析頁面 (包含跨月比較報表等功能)
 ├── comparisonReport.js   # 跨月比較報表與 CSV 匯出 (包含結構比例、日均支出、儲蓄率，過濾 transfer 轉帳與卡費扣繳紀錄防支出虛增)
 ├── calendarCashFlow.js   # 行事曆金流檢視 (月曆網格、Top 3 支出標籤、每日明細 Modal，過濾 transfer/扣繳卡費避免干擾當月實質收支)
-├── recordsList.js       # 記帳紀錄列表
+├── recordsList.js       # 記帳紀錄列表 (summary 統計與轉帳對沖邏輯全面排除 [卡費扣繳] 與 [自動扣款]，徹底解決單一帳戶篩選或單向扣款時的生活支出重複計算)
 ├── budgetManager.js     # 預算管理 (支援多帳本 per-ledger 預算設定、第一主帳本相容 fallback 與 IndexedDB/localStorage 雙向快照同步)
 ├── quickSelectManager.js# 快速選擇管理
 ├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，群組詳情彈窗與個別還款彈窗完整顯示各筆明細之關聯欠款人/代墊人標籤與群組成員總覽，金額統計卡片與聯絡人總表完整納入群組欠款，進入頁面自動去重與新增聯絡人同名防呆)
@@ -35,11 +35,11 @@ src/js/
 
 src/js/pages/
 ├── homePage.js          # 首頁：收支摘要、小工具、快速記帳
-├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提 (建立與編輯欠款時自動同步保存 record.contactId，快速新增聯絡人同名自動選用現有聯絡人防重複)
+├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提 (建立與編輯欠款時自動同步保存 record.contactId，快速新增聯絡人同名自動選用現有聯絡人防重複，AI 語意記帳動態即時載入帳本全數真實帳戶與分類，自動對沖去重並藉由 fuzzyMatchAccount / fuzzyMatchCategory 智慧選中現存實體帳戶與類別)
 ├── recordsPage.js       # 明細列表：篩選、搜尋、日期範圍、分頁
 ├── statsPage.js         # 統計報表：圖表、類別分析、趨勢
 ├── settingsPage.js      # 設定：主題、進階模式、匯入匯出 (整合 showProgressModal 與 reloadAppData 即時套用)、通知
-├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶 (信用卡雙列分開顯示「即時未出帳」與「準備繳納」金額，支援獨立「信用卡帳務明細」彈窗 showCreditDetailModal 檢視即時消費與歷史/各期帳單折疊明細，進入頁面主動觸發到期帳單扣繳平帳，到期/逾期醒目標籤與單筆「扣繳平帳」快速處理，全面修復編輯彈窗橫向滾動與溢位問題；支援信用卡欠款已歸零時的「僅扣款帳戶平帳」防溢繳款、一鍵帶入最近一期帳單金額、已繳清帳單「扣款平帳」與一般帳戶餘額矯正差額扣繳卡費)
+├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶 (信用卡雙列分開顯示「即時未出帳」與「準備繳納」金額，卡片欠款 cardDebt 同步採用 billingInfo.totalDebt，支援獨立「信用卡帳務明細」彈窗 showCreditDetailModal 檢視即時消費與歷史/各期帳單折疊明細，未繳帳單消費支援「遞延下期」與「移回原期」，未出帳明細清楚標示遞延來源並支援移回，進入頁面主動觸發到期帳單扣繳平帳與歷史被誤減金額之主動矯正，到期/逾期醒目標籤與單筆「扣繳平帳」快速處理，全面修復編輯彈窗橫向滾動與溢位問題；支援信用卡欠款已歸零時的「僅扣款帳戶平帳」防溢繳款、一鍵帶入最近一期帳單金額、已繳清帳單「扣款平帳」與一般帳戶餘額矯正差額扣繳卡費)
 ├── debtsPage.js         # 欠款管理頁面（極簡直觀顯示個人欠款與待結清群組，前端路由）
 ├── groupsPage.js        # 獨立群組與專案管理頁面（建立/重命名/刪除/檢視專案與分帳群組）
 ├── contactsPage.js      # 聯絡人管理
@@ -93,7 +93,7 @@ public/                  # 靜態資源目錄
 ├── manifest.json        # PWA 設定檔 (包含唯一 id、主題顏色與應用資訊)
 ├── serviceWorker.js     # 離線快取 Service Worker (支援 precachemanifest.json 自動注入與導覽 network-first)
 ├── vendor/wllama/       # wllama v3.5.1 本地端側 LLM 引擎檔 (esm/index.js + esm/wasm/wllama.wasm)
-├── icon/                # 圖示目錄 (包含 icon.png 192px 與 icon-512.png 512px)
+├── icon/                # 圖示目錄 (包含 jijun_logo_fix_v1_01.png 高畫質去背圖示、icon.png 192px、icon-512.png 512px、play_store_icon.png 與 favicon.ico)
 ├── screenshots/         # PWA 螢幕截圖目錄 (用於應用商店預覽)
 └── widgets/             # PWA 桌面小工具定義檔 (包含 template.json 與 data.json)
 
@@ -264,7 +264,7 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
 - `categoryManager.test.js` # 測試分類管理邏輯 (含無參數調用與雙向合併)
 - `changelog.test.js` # 測試更新日誌解析與渲染
 - `themeManager.test.js` # 測試主題管理 (含深淺色多模式切換、舊設定遷移、prefers-color-scheme 監聽、HTML/SVG 消毒解析、SVGToString 轉義與 CSS 變數消毒)
-- `aiService.test.js` # 測試 AI 端側記帳 (含語意守門校正 applySemanticGuardrail、口語支出解析與降級規則推論)
+- `aiService.test.js` # 測試 AI 端側記帳 (含語意守門校正 applySemanticGuardrail、對齊訓練 Protocol、巢狀 JSON 平衡括號抽取 _extractBalancedJson、stop token 容錯、ETag/Hash 比對與強制檢查)
 - `widgetHelper.test.js` # 測試 Android Widget 資料計算與貨幣格式化 (含行事曆資料提取)
 - `calendarCashFlow.test.js` # 測試行事曆金流元件 (群組、繪製、跨月與 XSS 消毒)
 - `comparisonReport.test.js` # 測試跨月比較報表計算與 CSV 匯出

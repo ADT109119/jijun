@@ -10,6 +10,7 @@ import {
     customAlert,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
+import { fuzzyMatchAccount, fuzzyMatchCategory } from '../aiService.js'
 
 export class AddPage {
     constructor(app) {
@@ -1472,8 +1473,9 @@ export class AddPage {
             }
         }
 
+        // 不論是否開啟進階多帳戶模式，均載入當前帳本的所有帳戶供 AI 辨識與狀態同步
+        accounts = await this.app.dataService.getAccounts()
         if (advancedModeEnabled) {
-            accounts = await this.app.dataService.getAccounts()
             if (accounts.length > 0) {
                 selectedAccountId = accounts[0].id // Default to first account
             } else {
@@ -2789,17 +2791,27 @@ export class AddPage {
 
             try {
                 const categoryManager = this.app.categoryManager
+                // 每次點擊分析時動態取得當前帳本最新且完整的真實帳戶列表（防止背景狀態過期）
+                const currentAccounts = await this.app.dataService.getAccounts()
+                if (currentAccounts && currentAccounts.length > 0) {
+                    accounts = currentAccounts
+                }
                 const accountNames = accounts.map(a => a.name)
-                const allCatNames = [...categoryManager.getAllCategories('expense'), ...categoryManager.getAllCategories('income')].map(c => c.name)
+
+                // 收集全部分類並透過 Set 去除重複項目（如「其他」）
+                const allCatNames = Array.from(new Set([
+                    ...categoryManager.getAllCategories('expense'),
+                    ...categoryManager.getAllCategories('income')
+                ].map(c => c.name)))
 
                 // 首次推論：提供全部分類供模型參考 (含流式輸出)
                 let parsed = await aiService.parseRecord(text, allCatNames, accountNames, new Date(), onTokenCallback)
 
                 // 防呆機制：驗證收支類型與分類相符度
                 const recognizedType = parsed.type === 'income' ? 'income' : 'expense'
-                const targetCatNames = categoryManager.getAllCategories(recognizedType).map(c => c.name)
+                const targetCatNames = Array.from(new Set(categoryManager.getAllCategories(recognizedType).map(c => c.name)))
                 const oppositeType = recognizedType === 'income' ? 'expense' : 'income'
-                const oppositeCatNames = categoryManager.getAllCategories(oppositeType).map(c => c.name)
+                const oppositeCatNames = Array.from(new Set(categoryManager.getAllCategories(oppositeType).map(c => c.name)))
 
                 // 若生成的類別在目標收支類型中不存在，且明確屬於相反收支類型（排除兩邊皆有的分類如「其他」）或兩邊皆不存在：
                 const isOnlyInOpposite = oppositeCatNames.includes(parsed.category) && !targetCatNames.includes(parsed.category)
@@ -2843,27 +2855,27 @@ export class AddPage {
                     }
                 }
 
-                // 5. 分類防呆：若重試後依然找不到匹配分類，留預設選定分類
+                // 5. 分類匹配：透過智慧模糊與生活同義詞匹配選定目標分類
                 if (parsed.category) {
                     const currentTypeCats = categoryManager.getAllCategories(currentType)
-                    const matchedCat = currentTypeCats.find(c => c.name === parsed.category)
+                    const matchedCat = fuzzyMatchCategory(parsed.category, currentTypeCats)
                     if (matchedCat) {
                         setSelectedCategory(matchedCat.id)
                         updateSelectedCategoryUI(matchedCat)
                         renderCategories()
                     } else {
-                        console.warn(`[AI 防呆驗證] 重新解析後分類 "${parsed.category}" 仍無法與系統分類匹配，保留預設分類`)
+                        console.warn(`[AI 防呆驗證] 分類 "${parsed.category}" 無法與現有分類匹配，保留預設分類`)
                     }
                 }
 
-                // 6. 帳戶防呆：若辨識出來的帳戶不存在，留預設選定帳戶
-                if (parsed.account && advancedModeEnabled) {
-                    const matchedAcc = accounts.find(a => a.name === parsed.account)
+                // 6. 帳戶匹配：透過智慧模糊與別名匹配選定已存在的帳戶 (支援大小寫/空白忽略、子字串包含、信用卡/銀行別名)
+                if (parsed.account && accounts.length > 0) {
+                    const matchedAcc = fuzzyMatchAccount(parsed.account, accounts)
                     if (matchedAcc) {
                         setSelectedAccount(matchedAcc.id)
                         updateAccountSelectorUI()
                     } else {
-                        console.warn(`[AI 防呆驗證] AI 解析之帳戶 "${parsed.account}" 不存在於帳戶清單，保留預設帳戶`)
+                        console.warn(`[AI 防呆驗證] AI 解析之帳戶 "${parsed.account}" 無法在現有帳戶清單中匹配，保留預設帳戶`)
                     }
                 }
 

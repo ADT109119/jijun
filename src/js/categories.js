@@ -102,6 +102,12 @@ export function getCategoryById(type, id) {
     // 先檢查預設分類
     let category = CATEGORIES[type].find(cat => cat.id === id)
 
+    // 如果沒找到，檢查相反類別預設分類（例如 income 下的還款）
+    if (!category && (type === 'income' || type === 'expense')) {
+        const oppositeType = type === 'income' ? 'expense' : 'income'
+        category = CATEGORIES[oppositeType]?.find(cat => cat.id === id)
+    }
+
     // 如果沒找到，檢查自定義分類
     if (!category && window.app && window.app.categoryManager) {
         const customCategories =

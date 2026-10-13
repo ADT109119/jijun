@@ -1518,9 +1518,45 @@ export class SettingsPage {
 
         updateBtnState(activeQuant)
 
+        // 開啟彈窗時即時連線比對 Hash，若 Hugging Face 有新版本立即提示
+        if (isCurrentDownloaded) {
+            aiService.checkForModelUpdate(activeQuant, { force: true }).then(res => {
+                if (res && res.hasUpdate) {
+                    const currentSelected = modal.querySelector('input[name="quant-choice"]:checked')?.value || activeQuant
+                    updateBtnState(currentSelected)
+                    const headerTitle = modal.querySelector('h3')
+                    if (headerTitle) headerTitle.textContent = '更新 AI 離線記帳模型'
+                    let updateNotice = modal.querySelector('#ai-update-notice-banner')
+                    if (!updateNotice) {
+                        updateNotice = document.createElement('div')
+                        updateNotice.id = 'ai-update-notice-banner'
+                        updateNotice.className = 'p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2'
+                        updateNotice.innerHTML = `
+                            <i class="fa-solid fa-cloud-arrow-down text-amber-500 text-sm shrink-0"></i>
+                            <div>發現新版本模型！比對伺服器版本有更新，點擊下方按鈕即可重新下載並更新至最新版。</div>
+                        `
+                        const quantDesc = modal.querySelector('.text-sm.text-wabi-text-primary')
+                        if (quantDesc && quantDesc.parentNode) {
+                            quantDesc.parentNode.insertBefore(updateNotice, quantDesc)
+                        }
+                    }
+                    const updateTagEl = document.getElementById('ai-model-update-tag')
+                    if (updateTagEl) updateTagEl.classList.remove('hidden')
+                }
+            }).catch(() => {})
+        }
+
         quantOptions.querySelectorAll('input[name="quant-choice"]').forEach(radio => {
             radio.addEventListener('change', e => {
-                updateBtnState(e.target.value)
+                const selected = e.target.value
+                updateBtnState(selected)
+                if (aiService.isModelDownloaded(selected)) {
+                    aiService.checkForModelUpdate(selected, { force: true }).then(res => {
+                        if (res && res.hasUpdate) {
+                            updateBtnState(selected)
+                        }
+                    }).catch(() => {})
+                }
             })
         })
 

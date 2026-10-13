@@ -232,7 +232,7 @@ describe('RewardService', () => {
         })
 
         it('formatRemaining 大於 1 天時正確顯示天數與小時', () => {
-            const future = Date.now() + (3 * 24 + 5) * 60 * 60 * 1000 // 3 天 5 小時
+            const future = Date.now() + (3 * 24 + 5) * 60 * 60 * 1000 + 5000 // 3 天 5 小時（加緩衝防微秒邊界）
             localStorage.setItem('adFreeUntil', String(future))
             const formatted = service.formatRemaining()
             expect(formatted).toContain('3 天')

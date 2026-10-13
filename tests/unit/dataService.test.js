@@ -1066,12 +1066,12 @@ describe('DataService — Credit Card (Schema v13)', () => {
                 expect(bankRecords).toHaveLength(1)
                 expect(bankRecords[0].type).toBe('expense')
                 expect(bankRecords[0].amount).toBe(3000)
-                expect(bankRecords[0].category).toBe('transfer')
+                expect(bankRecords[0].category).toBe('debt_repayment')
 
                 expect(cardRecords).toHaveLength(1)
                 expect(cardRecords[0].type).toBe('income')
                 expect(cardRecords[0].amount).toBe(3000)
-                expect(cardRecords[0].category).toBe('transfer')
+                expect(cardRecords[0].category).toBe('debt_repayment')
 
                 // 隨後執行狀態沖銷，驗證帳單是否變為 paid
                 await ds.updateCreditStatementsStatus()
