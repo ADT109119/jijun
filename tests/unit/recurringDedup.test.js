@@ -1005,5 +1005,47 @@ describe('processRecurringTransactions', () => {
                 nextDueDate: '2029-08-01',
             })
         })
+
+        it('monthly 31日週期交易：跨越2月短月自動收斂至2/28，3月可逆復原至3/31，徹底杜絕逐期漂移', async () => {
+            const today = '2026-04-01'
+            vi.mocked(formatDateToString).mockReturnValue(today)
+
+            ds = createMockDataService({
+                recurringTxs: [
+                    {
+                        id: 1,
+                        uuid: 'rt-uuid-rent',
+                        type: 'expense',
+                        amount: 25000,
+                        category: 'Rent',
+                        description: '月底房租',
+                        startDate: '2026-01-31',
+                        nextDueDate: '2026-01-31',
+                        frequency: 'monthly',
+                        interval: 1,
+                        accountId: 1,
+                        ledgerId: 1,
+                    },
+                ],
+                records: [],
+            })
+
+            app = createMockApp(ds)
+            await app.processRecurringTransactions()
+
+            // 應分別在 2026-01-31、2026-02-28、2026-03-31 產生3期紀錄
+            expect(ds.addRecord).toHaveBeenCalledTimes(3)
+            const generatedDates = ds.addRecord.mock.calls.map(call => call[0].date)
+            expect(generatedDates).toEqual([
+                '2026-01-31',
+                '2026-02-28',
+                '2026-03-31',
+            ])
+
+            // nextDueDate 應推進至 2026-04-30
+            expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+                nextDueDate: '2026-04-30',
+            })
+        })
     })
 })

@@ -830,6 +830,72 @@ describe('RecordsListManager - 欠款顯示邏輯', () => {
         )
     })
 
+    it('支出 + 別人欠我 (代墊) 部分還款 → 計自己的份加上剩餘未還金額', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'food',
+                amount: 500,
+                date: '2026-06-15',
+                description: '',
+                debtId: 1,
+                amortizationId: null,
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: false, originalAmount: 200, remainingAmount: 50 },
+        ])
+        await manager.init()
+        // 部分還款：自己份 $300 + 剩餘未還 $50 = $350
+        expect(container.querySelector('#total-expense').textContent).toBe(
+            '$350'
+        )
+    })
+
+    it('類別篩選彈窗中，已結清代墊金額正確歸零，彈窗金額與明細頁頂部支出一致', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'transport',
+                amount: 1460,
+                date: '2026-06-15',
+                description: '高鐵',
+                debtId: 1,
+            },
+            {
+                id: 2,
+                type: 'expense',
+                category: 'transport',
+                amount: 15,
+                date: '2026-06-16',
+                description: '公車',
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        dataService.getDebts.mockResolvedValueOnce([
+            { id: 1, type: 'receivable', settled: true, originalAmount: 1460, remainingAmount: 0 },
+        ])
+        categoryManager.getCategoryById.mockImplementation((type, id) => {
+            if (id === 'transport') return { id: 'transport', name: '交通' }
+            return null
+        })
+        await manager.init()
+
+        // 頂部卡片只計實質支出 $15 (1460 代墊已還清歸零)
+        expect(container.querySelector('#total-expense').textContent).toBe('$15')
+
+        // 開啟類別篩選彈窗
+        manager.showCategoryFilterModal()
+        const modal = container.querySelector('#category-filter-modal')
+        expect(modal).not.toBeNull()
+        // 彈窗中交通類別應顯示 -$15，而非包含代墊的 -$1,475
+        expect(modal.textContent).toContain('$15')
+        expect(modal.textContent).not.toContain('$1,475')
+    })
+
     it('收入 + 別人欠我 (收到款) 未結清 → 不計收入', async () => {
         const records = [
             {
@@ -1129,6 +1195,128 @@ describe('RecordsListManager - 類別與帳戶篩選彈窗滑入動畫', () => {
         // 點擊關閉按鈕，彈窗應被清除
         modal.querySelector('#close-acc-modal').click()
         expect(container.querySelector('#account-filter-modal')).toBeNull()
+    })
+
+    it('類別篩選彈窗：在「全部」檢視下分開呈現支出類別與收入類別，其他收入與其他支出金額不互抵', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'another',
+                amount: 10350,
+                date: '2026-05-10',
+                description: '農會',
+            },
+            {
+                id: 2,
+                type: 'income',
+                category: 'another',
+                amount: 5000,
+                date: '2026-05-15',
+                description: '二手拍賣',
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        categoryManager.getCategoryById.mockImplementation((type, id) => {
+            if (id === 'another') return { id: 'another', name: '其他' }
+            return null
+        })
+        await manager.init()
+
+        // 點擊開啟類別篩選彈窗
+        manager.showCategoryFilterModal()
+        const modal = container.querySelector('#category-filter-modal')
+        expect(modal).not.toBeNull()
+
+        // 應有支出類別與收入類別分組標籤
+        expect(modal.textContent).toContain('支出類別')
+        expect(modal.textContent).toContain('收入類別')
+
+        // 金額應獨立呈現：支出 -$10,350，收入 +$5,000，不可互抵為 -$5,350
+        expect(modal.textContent).toContain('$10,350')
+        expect(modal.textContent).toContain('$5,000')
+        expect(modal.textContent).not.toContain('$5,350')
+
+        // 檢查兩個 checkbox 的 catKey
+        const expenseCheckbox = modal.querySelector('input[data-cat-key="expense:another"]')
+        const incomeCheckbox = modal.querySelector('input[data-cat-key="income:another"]')
+        expect(expenseCheckbox).not.toBeNull()
+        expect(incomeCheckbox).not.toBeNull()
+    })
+
+    it('類別篩選彈窗：單獨勾選「其他 (支出)」僅保留支出記錄，排除「其他收入」', async () => {
+        const records = [
+            {
+                id: 1,
+                type: 'expense',
+                category: 'another',
+                amount: 10350,
+                date: '2026-05-10',
+                description: '農會',
+            },
+            {
+                id: 2,
+                type: 'income',
+                category: 'another',
+                amount: 5000,
+                date: '2026-05-15',
+                description: '二手拍賣',
+            },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        categoryManager.getCategoryById.mockImplementation((type, id) => {
+            if (id === 'another') return { id: 'another', name: '其他' }
+            return null
+        })
+        await manager.init()
+
+        manager.showCategoryFilterModal()
+        const modal = container.querySelector('#category-filter-modal')
+        const expenseCheckbox = modal.querySelector('input[data-cat-key="expense:another"]')
+        const incomeCheckbox = modal.querySelector('input[data-cat-key="income:another"]')
+
+        // 僅勾選支出
+        expenseCheckbox.checked = true
+        incomeCheckbox.checked = false
+
+        modal.querySelector('#apply-cat-filter').click()
+
+        // 驗證 filters.categories 包含 expense:another
+        expect(manager.filters.categories.has('expense:another')).toBe(true)
+        expect(manager.filters.categories.has('income:another')).toBe(false)
+
+        // 驗證頂部卡片：支出 $10,350，收入 $0
+        expect(container.querySelector('#total-expense').textContent).toBe('$10,350')
+        expect(container.querySelector('#total-income').textContent).toBe('$0')
+        expect(container.querySelector('#record-count').textContent).toBe('1')
+    })
+
+    it('類別篩選彈窗：全選/取消全選按鈕可批次切換所有 checkbox', async () => {
+        const records = [
+            { id: 1, type: 'expense', category: 'food', amount: 100, date: '2026-05-01' },
+            { id: 2, type: 'income', category: 'salary', amount: 50000, date: '2026-05-01' },
+        ]
+        dataService.getRecords.mockResolvedValueOnce(records)
+        categoryManager.getCategoryById.mockImplementation((type, id) => {
+            if (id === 'food') return { id: 'food', name: '飲食' }
+            if (id === 'salary') return { id: 'salary', name: '薪水' }
+            return null
+        })
+        await manager.init()
+
+        manager.showCategoryFilterModal()
+        const modal = container.querySelector('#category-filter-modal')
+        const toggleBtn = modal.querySelector('#toggle-all-cat-btn')
+        expect(toggleBtn).not.toBeNull()
+
+        // 初始狀態無核取，點擊全選
+        toggleBtn.click()
+        const checkboxes = modal.querySelectorAll('input[type="checkbox"]')
+        checkboxes.forEach(cb => expect(cb.checked).toBe(true))
+
+        // 再次點擊取消全選
+        toggleBtn.click()
+        checkboxes.forEach(cb => expect(cb.checked).toBe(false))
     })
 })
 

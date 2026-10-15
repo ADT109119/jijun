@@ -5,6 +5,10 @@ import {
     getDateRange,
     escapeHTML,
     closeModalWithAnimation,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
 } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
@@ -22,6 +26,7 @@ export class RecordsListManager {
         this.records = []
         this.accounts = [] // Store accounts for display
         this.debtsMap = {} // Store debts for display
+        this.debtMaps = buildDebtLookupMaps([])
         this.advancedModeEnabled = false
         this.filters = {
             period: 'month',
@@ -458,20 +463,16 @@ export class RecordsListManager {
         })
         this.records = records // Store all records for the period
 
-        // Load debts for records that have debtId
-        const debtIds = [
-            ...new Set(records.filter(r => r.debtId).map(r => r.debtId)),
-        ]
-        // Batch load debts instead of N+1 individual queries
-        this.debtsMap = {}
-        if (debtIds.length > 0) {
-            const allDebts = await this.dataService.getDebts()
-            const debtSet = new Set(debtIds)
-            for (const debt of allDebts) {
-                if (debtSet.has(debt.id)) {
-                    this.debtsMap[debt.id] = debt
-                }
-            }
+        // Batch load all debts unconditionally to populate full lookup maps
+        // (handles record.debtId, debt.recordId, UUIDs across all ledgers)
+        try {
+            const allDebts = (await this.dataService.getDebts({ allLedgers: true })) || []
+            this.debtMaps = buildDebtLookupMaps(allDebts)
+            this.debtsMap = this.debtMaps.byId
+        } catch (e) {
+            console.warn('Failed to load debts for records list:', e)
+            this.debtMaps = buildDebtLookupMaps([])
+            this.debtsMap = {}
         }
 
         // Load contacts to display the counterparty name on debt labels
@@ -495,9 +496,11 @@ export class RecordsListManager {
             const groupIds = [...new Set(records.filter(r => r.groupId).map(r => r.groupId))]
             if (groupIds.length > 0 && typeof this.dataService.getAllGroupMeta === 'function') {
                 const allGroupMeta = await this.dataService.getAllGroupMeta()
+                const groupIdSet = new Set(groupIds.map(id => String(id)))
                 for (const gm of allGroupMeta) {
-                    if (groupIds.includes(gm.id)) {
+                    if (groupIdSet.has(String(gm.id))) {
                         this.groupMetaCache[gm.id] = gm
+                        this.groupMetaCache[String(gm.id)] = gm
                     }
                 }
             }
@@ -513,9 +516,13 @@ export class RecordsListManager {
         let baseFilteredRecords = this.records
 
         if (this.filters.categories.size > 0) {
-            baseFilteredRecords = baseFilteredRecords.filter(r =>
-                this.filters.categories.has(r.category)
-            )
+            baseFilteredRecords = baseFilteredRecords.filter(r => {
+                const scopedKey = `${r.type}:${r.category}`
+                return (
+                    this.filters.categories.has(scopedKey) ||
+                    this.filters.categories.has(r.category)
+                )
+            })
         }
 
         if (this.advancedModeEnabled && this.filters.accounts.size > 0) {
@@ -559,13 +566,8 @@ export class RecordsListManager {
         }
 
         // 2. Perform transfer offsetting on this base list to get records for summary calculation
-        // 排除卡費扣繳/自動扣款平帳紀錄（這些屬於平帳性質，不計入轉帳對沖也不計入日常收支）
-        const isCardPaymentRecord = r =>
-            r.description?.startsWith('[卡費扣繳]') ||
-            r.description?.startsWith('[自動扣款]')
-
         const transferRecords = baseFilteredRecords.filter(
-            r => r.category === 'transfer' && !isCardPaymentRecord(r)
+            r => r.category === 'transfer'
         )
         const normalRecords = baseFilteredRecords.filter(
             r => r.category !== 'transfer'
@@ -605,49 +607,17 @@ export class RecordsListManager {
         const summary = recordsForSummary.reduce(
             (acc, r) => {
                 // Exclude debt collection, repayment, balance adjustment, and card repayments from summary calculation
-                if (
-                    r.category === 'debt_collection' ||
-                    r.category === 'debt_repayment' ||
-                    r.category === 'balance_adjustment' ||
-                    isCardPaymentRecord(r)
-                ) {
+                if (isDebtSettlementRecord(r)) {
                     return acc
                 }
 
-                let effectiveAmount = r.amount
-
-                // Check if record has associated debt and adjust amount
-                if (r.debtId && this.debtsMap[r.debtId]) {
-                    const debt = this.debtsMap[r.debtId]
-                    const isSettled = debt.settled === true
-                    const isReceivable = debt.type === 'receivable' // 別人欠我
-
-                    // Logic:
-                    // - 支出 + 別人欠我 (代墊): 還清後扣除別人欠我的金額 (剩下自己的開銷)
-                    // - 收入 + 別人欠我: 初始 $0，還清後原額 (收到錢了)
-                    // - 支出 + 我欠別人: 還清後原額 (真的花了)
-                    // - 收入 + 我欠別人 (先收): 還清後 $0 (還回去了)
-
-                    if (r.type === 'expense' && isReceivable) {
-                        // 代墊：還清後扣除代墊金額，不計入自己支出
-                        // 因為 r.amount 是總金額 (包含自己的份 + 別人的份)
-                        // debt.originalAmount 則是別人的份
-                        const myExpense = Math.max(
-                            0,
-                            r.amount - (debt.originalAmount || 0)
-                        )
-                        effectiveAmount = isSettled ? myExpense : r.amount
-                    } else if (r.type === 'income' && isReceivable) {
-                        // 別人還我：還清後才計入收入
-                        effectiveAmount = isSettled ? r.amount : 0
-                    } else if (r.type === 'expense' && !isReceivable) {
-                        // 還別人錢：還清後計入支出
-                        effectiveAmount = isSettled ? r.amount : 0
-                    } else if (r.type === 'income' && !isReceivable) {
-                        // 先收別人的錢：還清後不計入收入
-                        effectiveAmount = isSettled ? 0 : r.amount
-                    }
-                }
+                const debt = findDebtForRecord(r, this.debtMaps)
+                const isGroupSettled = r.groupId
+                    ? r.groupStatus === 'settled' ||
+                      this.groupMetaCache?.[r.groupId]?.settled === true ||
+                      this.groupMetaCache?.[String(r.groupId)]?.settled === true
+                    : false
+                const effectiveAmount = calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
 
                 if (r.type === 'income') acc.income += effectiveAmount
                 else acc.expense += effectiveAmount
@@ -840,45 +810,91 @@ export class RecordsListManager {
         const color = isBalanceAdjustment
             ? 'bg-purple-500'
             : category?.color || 'bg-gray-400'
-        const hasDebt = !!record.debtId
+        const debt = findDebtForRecord(record, this.debtMaps)
+        const isGroupSettled = record.groupId
+            ? record.groupStatus === 'settled' ||
+              this.groupMetaCache?.[record.groupId]?.settled === true ||
+              this.groupMetaCache?.[String(record.groupId)]?.settled === true
+            : false
+        const hasDebt = Boolean(debt || record.debtId || isGroupSettled)
         const hasAmortization = !!record.amortizationId
 
         // Check debt status and calculate display
-        const debt = hasDebt
-            ? this.debtsMap?.[record.debtId]
-            : null
-        const isDebtSettled = debt?.settled === true
+        const isDebtSettled = Boolean(
+            debt?.settled === true ||
+            debt?.status === 'settled' ||
+            debt?.isSettled === true ||
+            Boolean(debt?.settledAt) ||
+            isGroupSettled ||
+            (debt?.remainingAmount !== undefined && Number(debt?.remainingAmount) <= 0) ||
+            (debt?.amount !== undefined && Number(debt?.amount) <= 0 && (debt?.remainingAmount === undefined || Number(debt?.remainingAmount) <= 0))
+        )
         const isReceivable = debt?.type === 'receivable' // 別人欠我
+        const isDebtSettlement = isDebtSettlementRecord(record)
 
-        // Determine debt-related categories — repayment/collection records
-        const isDebtRepayment = record.category === 'debt_repayment'
-        const isDebtCollection = record.category === 'debt_collection'
-        const isDebtSettlementRecord = isDebtRepayment || isDebtCollection
+        const effectiveAmount = calculateEffectiveRecordAmount(record, debt, { isGroupSettled })
+
+        const paidFromPayments = Array.isArray(debt?.payments)
+            ? debt.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+            : 0
+        let originalDebt = Number(
+            debt?.originalAmount ??
+            (paidFromPayments > 0 ? (Number(debt?.amount || 0) + paidFromPayments) : null) ??
+            debt?.amount ??
+            0
+        )
+        if (originalDebt <= 0 && record.amount > 0 && debt) {
+            originalDebt = Number(record.amount)
+        }
+        const remainingDebt = isDebtSettled
+            ? 0
+            : Number(debt?.remainingAmount ?? Math.max(0, originalDebt - paidFromPayments))
+        const isPartialRepaid = Boolean(debt && !isDebtSettled && remainingDebt < originalDebt && remainingDebt >= 0)
 
         // Calculate display amount based on debt type and status
-        const displayLogic = {
-            showZero: false,
-            showArrow: false,
-            arrowToZero: false,
-        }
+        let showArrow = false
+        let strikethroughAmount = 0
+        let arrowAmount = 0
+        let arrowColor = 'text-wabi-income'
 
-        if (hasDebt && debt && !isDebtSettlementRecord) {
-            if (isIncome && isReceivable) {
-                displayLogic.showZero = !isDebtSettled
-                displayLogic.showArrow = isDebtSettled
-                displayLogic.arrowToZero = false
+        if (hasDebt && !isDebtSettlement) {
+            if (isGroupSettled && !debt && record.amount > 0) {
+                showArrow = true
+                strikethroughAmount = record.amount
+                arrowAmount = 0
+                arrowColor = 'text-wabi-income'
             } else if (!isIncome && isReceivable) {
-                displayLogic.showZero = isDebtSettled
-                displayLogic.showArrow = isDebtSettled
-                displayLogic.arrowToZero = true
+                // 代墊支出：已還清或部分還款時顯示劃掉原額與箭頭指向實質/剩餘金額
+                if (isDebtSettled || isPartialRepaid) {
+                    showArrow = true
+                    strikethroughAmount = record.amount
+                    arrowAmount = effectiveAmount
+                    arrowColor = effectiveAmount === 0 ? 'text-wabi-income' : 'text-wabi-expense'
+                }
+            } else if (isIncome && isReceivable) {
+                // 別人欠我而產生的收入紀錄
+                if (isDebtSettled || isPartialRepaid) {
+                    showArrow = true
+                    strikethroughAmount = 0
+                    arrowAmount = effectiveAmount
+                    arrowColor = 'text-wabi-income'
+                }
             } else if (!isIncome && !isReceivable) {
-                displayLogic.showZero = !isDebtSettled
-                displayLogic.showArrow = isDebtSettled
-                displayLogic.arrowToZero = false
+                // 還別人錢
+                if (isDebtSettled || isPartialRepaid) {
+                    showArrow = true
+                    strikethroughAmount = 0
+                    arrowAmount = effectiveAmount
+                    arrowColor = 'text-wabi-expense'
+                }
             } else if (isIncome && !isReceivable) {
-                displayLogic.showZero = isDebtSettled
-                displayLogic.showArrow = isDebtSettled
-                displayLogic.arrowToZero = true
+                // 先收別人的錢：還款時減少實質收入
+                if (isDebtSettled || isPartialRepaid) {
+                    showArrow = true
+                    strikethroughAmount = record.amount
+                    arrowAmount = effectiveAmount
+                    arrowColor = 'text-wabi-income'
+                }
             }
         }
 
@@ -901,27 +917,7 @@ export class RecordsListManager {
             }
         }
 
-        let strikethroughAmount = 0
-        let arrowAmount = 0
-        let arrowColor = 'text-wabi-income'
-
-        if (hasDebt && debt && displayLogic.showArrow) {
-            if (displayLogic.arrowToZero) {
-                strikethroughAmount = record.amount
-                arrowAmount = 0
-                arrowColor = 'text-wabi-income'
-            } else {
-                strikethroughAmount = 0
-                arrowAmount = record.amount
-                arrowColor = isIncome
-                    ? 'text-wabi-income'
-                    : 'text-wabi-expense'
-            }
-        }
-
-        const mainAmount = displayLogic.showZero
-            ? 0
-            : record.amount
+        const mainAmount = record.amount
         const contactName =
             hasDebt && debt?.contactId && this.contactsMap
                 ? this.contactsMap[debt.contactId]?.name
@@ -929,14 +925,18 @@ export class RecordsListManager {
         const statusLabel = hasDebt
             ? isDebtSettled
                 ? `已還清${contactName ? '-' + contactName : ''}`
-                : `待還款${contactName ? '-' + contactName : ''}`
+                : isPartialRepaid
+                    ? `部分還款${contactName ? '-' + contactName : ''}`
+                    : `待還款${contactName ? '-' + contactName : ''}`
             : ''
         const statusClass = isDebtSettled
             ? 'bg-wabi-income/20 text-wabi-income'
-            : 'bg-orange-100 text-orange-600'
+            : isPartialRepaid
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'bg-orange-100 text-orange-600'
 
         const shouldDim =
-            hasDebt && isDebtSettled && displayLogic.arrowToZero
+            hasDebt && isDebtSettled && effectiveAmount === 0
 
         // Group badge (若已處於群組展開方框內則隱藏重複標籤)
         let groupBadgeHtml = ''
@@ -971,7 +971,7 @@ export class RecordsListManager {
             </div>
                 <div class="shrink-0 text-right">
                     ${
-                        displayLogic.showArrow
+                        showArrow
                             ? `
                                 <p class="text-wabi-text-secondary text-sm font-medium line-through">
                                     ${isIncome ? '+' : '-'} ${formatCurrency(strikethroughAmount)}
@@ -993,65 +993,160 @@ export class RecordsListManager {
     }
 
     showCategoryFilterModal() {
-        const categoryNetTotals = this.records.reduce((acc, record) => {
-            const { category, type, amount } = record
-            if (!acc[category]) {
-                acc[category] = 0
-            }
-            acc[category] += type === 'income' ? amount : -amount
-            return acc
-        }, {})
+        const validRecords = this.records.filter(
+            r =>
+                r.category !== 'transfer' &&
+                !isDebtSettlementRecord(r)
+        )
 
-        const allCategoryIds = [...new Set(this.records.map(r => r.category))]
+        const expenseCategoryTotals = Object.create(null)
+        const incomeCategoryTotals = Object.create(null)
+
+        validRecords.forEach(record => {
+            const debt = findDebtForRecord(record, this.debtMaps)
+            const isGroupSettled = record.groupId
+                ? record.groupStatus === 'settled' ||
+                  this.groupMetaCache?.[record.groupId]?.settled === true ||
+                  this.groupMetaCache?.[String(record.groupId)]?.settled === true
+                : false
+            const effectiveAmount = calculateEffectiveRecordAmount(record, debt, { isGroupSettled })
+            const cat = record.category
+
+            if (record.type === 'expense') {
+                expenseCategoryTotals[cat] = (expenseCategoryTotals[cat] || 0) + effectiveAmount
+            } else if (record.type === 'income') {
+                incomeCategoryTotals[cat] = (incomeCategoryTotals[cat] || 0) + effectiveAmount
+            }
+        })
+
+        // 收集支出與收入分類 ID
+        const expenseCatIds = new Set(
+            validRecords.filter(r => r.type === 'expense').map(r => r.category)
+        )
+        const incomeCatIds = new Set(
+            validRecords.filter(r => r.type === 'income').map(r => r.category)
+        )
+
+        for (const key of this.filters.categories) {
+            if (key.startsWith('expense:')) {
+                expenseCatIds.add(key.slice('expense:'.length))
+            } else if (key.startsWith('income:')) {
+                incomeCatIds.add(key.slice('income:'.length))
+            } else {
+                if (this.categoryManager.getCategoryById('expense', key)) {
+                    expenseCatIds.add(key)
+                }
+                if (this.categoryManager.getCategoryById('income', key)) {
+                    incomeCatIds.add(key)
+                }
+            }
+        }
+
+        const renderCategoryItem = (type, catId) => {
+            const category =
+                this.categoryManager.getCategoryById(type, catId) ||
+                { id: catId, name: catId }
+            const catKey = `${type}:${catId}`
+            const isChecked =
+                this.filters.categories.has(catKey) ||
+                this.filters.categories.has(catId)
+
+            const total = type === 'expense'
+                ? (expenseCategoryTotals[catId] || 0)
+                : (incomeCategoryTotals[catId] || 0)
+
+            const isZero = total === 0
+            const isIncome = type === 'income'
+            const amountClass = isZero
+                ? 'text-wabi-text-secondary'
+                : isIncome
+                  ? 'text-wabi-income'
+                  : 'text-wabi-expense'
+            const sign = isZero ? '' : (isIncome ? '+' : '-')
+            const formattedAmount = isZero
+                ? formatCurrency(0)
+                : `${sign} ${formatCurrency(Math.abs(total))}`
+
+            // 在「全部」檢視下，若分類為 other/another，特別標示區分
+            let displayName = category.name
+            if (this.filters.type === 'all' && (catId === 'another' || catId === 'other')) {
+                displayName = `${category.name} (${isIncome ? '收入' : '支出'})`
+            }
+
+            return `
+                <label class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border hover:border-wabi-primary/40 cursor-pointer transition-colors">
+                    <div class="flex items-center min-w-0">
+                        <input type="checkbox" data-cat-key="${catKey}" data-cat-id="${catId}" data-cat-type="${type}" class="h-5 w-5 rounded text-wabi-primary focus:ring-wabi-primary/50 shrink-0" ${isChecked ? 'checked' : ''}>
+                        <span class="ml-3 text-wabi-text-primary text-sm font-medium truncate">${escapeHTML(displayName)}</span>
+                    </div>
+                    <span class="text-sm font-semibold shrink-0 ml-2 ${amountClass}">${formattedAmount}</span>
+                </label>
+            `
+        }
+
+        let bodyHtml = ''
+        let modalTitle = '篩選類別'
+
+        if (this.filters.type === 'expense') {
+            modalTitle = '篩選支出類別'
+            const itemsHtml = Array.from(expenseCatIds).map(id => renderCategoryItem('expense', id)).join('')
+            bodyHtml = itemsHtml
+                ? `<div class="space-y-2">${itemsHtml}</div>`
+                : `<div class="py-8 text-center text-sm text-wabi-text-secondary">此期間沒有任何支出紀錄</div>`
+        } else if (this.filters.type === 'income') {
+            modalTitle = '篩選收入類別'
+            const itemsHtml = Array.from(incomeCatIds).map(id => renderCategoryItem('income', id)).join('')
+            bodyHtml = itemsHtml
+                ? `<div class="space-y-2">${itemsHtml}</div>`
+                : `<div class="py-8 text-center text-sm text-wabi-text-secondary">此期間沒有任何收入紀錄</div>`
+        } else {
+            modalTitle = '篩選類別'
+            const expenseItemsHtml = Array.from(expenseCatIds).map(id => renderCategoryItem('expense', id)).join('')
+            const incomeItemsHtml = Array.from(incomeCatIds).map(id => renderCategoryItem('income', id)).join('')
+
+            bodyHtml = `
+                ${expenseItemsHtml ? `
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between pb-1.5 mb-2 border-b border-wabi-border text-xs font-semibold text-wabi-text-secondary uppercase tracking-wider">
+                            <span><i class="fa-solid fa-arrow-trend-down text-wabi-expense mr-1.5"></i>支出類別</span>
+                        </div>
+                        <div class="space-y-2">
+                            ${expenseItemsHtml}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${incomeItemsHtml ? `
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between pb-1.5 mb-2 border-b border-wabi-border text-xs font-semibold text-wabi-text-secondary uppercase tracking-wider">
+                            <span><i class="fa-solid fa-arrow-trend-up text-wabi-income mr-1.5"></i>收入類別</span>
+                        </div>
+                        <div class="space-y-2">
+                            ${incomeItemsHtml}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${!expenseItemsHtml && !incomeItemsHtml ? `
+                    <div class="py-8 text-center text-sm text-wabi-text-secondary">此期間沒有任何類別紀錄</div>
+                ` : ''}
+            `
+        }
 
         const modalHtml = `
             <div id="category-filter-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cat-filter-title">
                 <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh] animate-slide-up">
-                    <h3 id="cat-filter-title" class="text-lg font-bold text-wabi-primary text-center mb-4">篩選類別</h3>
-                    <div class="overflow-y-auto space-y-2 mb-4">
-                        ${allCategoryIds
-                            .map(catId => {
-                                const category =
-                                    this.categoryManager.getCategoryById(
-                                        'expense',
-                                        catId
-                                    ) ||
-                                    this.categoryManager.getCategoryById(
-                                        'income',
-                                        catId
-                                    )
-                                if (!category) return ''
-                                const isChecked =
-                                    this.filters.categories.has(catId)
-
-                                const netTotal = categoryNetTotals[catId] || 0
-                                const isIncome = netTotal > 0
-                                const isZero = netTotal === 0
-                                const amountClass = isZero
-                                    ? 'text-wabi-text-secondary'
-                                    : isIncome
-                                      ? 'text-wabi-income'
-                                      : 'text-wabi-expense'
-                                const sign = isIncome ? '+' : '-'
-                                const formattedAmount = isZero
-                                    ? formatCurrency(0)
-                                    : `${sign} ${formatCurrency(Math.abs(netTotal))}`
-
-                                return `
-                                <label class="flex items-center justify-between p-3 bg-wabi-surface rounded-lg border border-wabi-border">
-                                    <div class="flex items-center">
-                                        <input type="checkbox" data-cat-id="${catId}" class="h-5 w-5 rounded text-wabi-primary focus:ring-wabi-primary/50" ${isChecked ? 'checked' : ''}>
-                                        <span class="ml-3 text-wabi-text-primary">${escapeHTML(category.name)}</span>
-                                    </div>
-                                    <span class="text-sm font-medium ${amountClass}">${formattedAmount}</span>
-                                </label>
-                            `
-                            })
-                            .join('')}
+                    <div class="flex items-center justify-between mb-4">
+                        <button id="toggle-all-cat-btn" class="text-xs font-medium text-wabi-primary hover:underline">全選 / 取消全選</button>
+                        <h3 id="cat-filter-title" class="text-lg font-bold text-wabi-primary text-center">${escapeHTML(modalTitle)}</h3>
+                        <div class="w-16"></div>
+                    </div>
+                    <div class="overflow-y-auto space-y-2 mb-4 pr-1">
+                        ${bodyHtml}
                     </div>
                     <div class="flex gap-2 mt-auto pt-2 border-t border-wabi-border">
-                        <button id="apply-cat-filter" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">套用</button>
-                        <button id="close-cat-modal" class="flex-1 py-3 bg-wabi-border text-wabi-text-primary rounded-lg">關閉</button>
+                        <button id="apply-cat-filter" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg hover:bg-wabi-accent/90 transition-colors">套用</button>
+                        <button id="close-cat-modal" class="flex-1 py-3 bg-wabi-border text-wabi-text-primary rounded-lg hover:bg-wabi-border/80 transition-colors">關閉</button>
                     </div>
                 </div>
             </div>
@@ -1075,13 +1170,27 @@ export class RecordsListManager {
             )
         }
 
+        const toggleBtn = this.modalsContainer.querySelector('#toggle-all-cat-btn')
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                const checkboxes = this.modalsContainer.querySelectorAll('input[type="checkbox"]')
+                const anyUnchecked = Array.from(checkboxes).some(cb => !cb.checked)
+                checkboxes.forEach(cb => {
+                    cb.checked = anyUnchecked
+                })
+            })
+        }
+
         this.modalsContainer
             .querySelector('#apply-cat-filter')
             .addEventListener('click', () => {
                 const selected = new Set()
                 this.modalsContainer
                     .querySelectorAll('input[type="checkbox"]:checked')
-                    .forEach(el => selected.add(el.dataset.catId))
+                    .forEach(el => {
+                        const key = el.dataset.catKey || el.dataset.catId
+                        if (key) selected.add(key)
+                    })
                 this.filters.categories = selected
                 this._saveSessionFilters()
                 this.applyFiltersAndRender()

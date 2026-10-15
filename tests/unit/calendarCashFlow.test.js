@@ -1,17 +1,21 @@
 import { describe, it, expect, vi } from 'vitest'
 
 // Mock utils before importing CalendarCashFlow
-vi.mock('../../src/js/utils.js', () => ({
-    formatCurrency: vi.fn((amount) => `$${amount.toLocaleString()}`),
-    escapeHTML: vi.fn((str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')),
-    formatDateToString: vi.fn((d) => {
-        if (typeof d === 'string') return d
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        const day = String(d.getDate()).padStart(2, '0')
-        return `${y}-${m}-${day}`
-    }),
-}))
+vi.mock('../../src/js/utils.js', async importOriginal => {
+    const actual = await importOriginal()
+    return {
+        ...actual,
+        formatCurrency: vi.fn((amount) => `$${amount.toLocaleString()}`),
+        escapeHTML: vi.fn((str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')),
+        formatDateToString: vi.fn((d) => {
+            if (typeof d === 'string') return d
+            const y = d.getFullYear()
+            const m = String(d.getMonth() + 1).padStart(2, '0')
+            const day = String(d.getDate()).padStart(2, '0')
+            return `${y}-${m}-${day}`
+        }),
+    }
+})
 
 import { CalendarCashFlow } from '../../src/js/calendarCashFlow.js'
 

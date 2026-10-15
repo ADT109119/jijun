@@ -118,16 +118,16 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('monthly + interval=1：加一個月（跨月，月末自動調整）', () => {
-        // JavaScript setMonth: Jan 31 + 1 month → Feb doesn't have 31, rolls to Mar 2/3
+    it('monthly + interval=1：加一個月（月末截斷防溢出）', () => {
+        // 2024-01-31 + 1 month → 2024年2月有29天，截斷至該月最後一日 2024-02-29
         const result = calculateNextDueDate('2024-01-31', 'monthly', 1)
-        expect(result).toMatch(/^2024-0[23]-\d{2}$/) // Feb or Mar (leap year handling)
+        expect(result).toBe('2024-02-29')
     })
 
-    it('yearly + interval=1：加一年（閏年→非閏年自動調整）', () => {
-        // JavaScript setFullYear: 2024-02-29 + 1 year → 2025-03-01 (non-leap year rolls forward)
+    it('yearly + interval=1：加一年（閏年→非閏年截斷防溢出）', () => {
+        // 2024-02-29 + 1 year → 2025年非閏年，截斷至 2025-02-28，不溢出至 3/1
         const result = calculateNextDueDate('2024-02-29', 'yearly', 1)
-        expect(result).toBe('2025-03-01')
+        expect(result).toBe('2025-02-28')
     })
 
     it('monthly + interval=3：加三個月', () => {

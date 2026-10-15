@@ -1,4 +1,13 @@
-import { formatCurrency, escapeHTML, formatDateToString, closeModalWithAnimation } from './utils.js'
+import {
+    formatCurrency,
+    escapeHTML,
+    formatDateToString,
+    closeModalWithAnimation,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
+} from './utils.js'
 
 export class CalendarCashFlow {
     constructor(dataService, categoryManager, container, debtManager) {
@@ -9,6 +18,7 @@ export class CalendarCashFlow {
         this.currentDate = new Date()
         this.records = []
         this.debtsMap = {}
+        this.debtMaps = buildDebtLookupMaps([])
         this._grouped = null
         this._prevHandler = null
         this._nextHandler = null
@@ -43,19 +53,15 @@ export class CalendarCashFlow {
             this.records = []
         }
 
-        // Load debts for display (only if any records are debt-linked)
-        this.debtsMap = {}
-        if (this.records.some(r => r.debtId)) {
-            try {
-                const allDebts = await this.dataService.getDebts() || []
-                for (const d of allDebts) {
-                    if (d && d.id) {
-                        this.debtsMap[d.id] = d
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to load debts for calendar:', e)
-            }
+        // Load debts unconditionally to populate full lookup maps
+        try {
+            const allDebts = (await this.dataService.getDebts({ allLedgers: true })) || []
+            this.debtMaps = buildDebtLookupMaps(allDebts)
+            this.debtsMap = this.debtMaps.byId
+        } catch (e) {
+            console.warn('Failed to load debts for calendar:', e)
+            this.debtMaps = buildDebtLookupMaps([])
+            this.debtsMap = {}
         }
 
         this._grouped = this.groupByDate(this.records)
@@ -65,13 +71,12 @@ export class CalendarCashFlow {
         let totalExpense = 0
         for (const dateRecords of Object.values(grouped)) {
             for (const r of dateRecords) {
-                if (
-                    r.category === 'transfer' ||
-                    r.category === 'balance_adjustment'
-                )
-                    continue
-                if (r.type === 'income') totalIncome += r.amount
-                else if (r.type === 'expense') totalExpense += r.amount
+                if (r.category === 'transfer' || isDebtSettlementRecord(r)) continue
+                const debt = findDebtForRecord(r, this.debtMaps)
+                const isGroupSettled = r.groupStatus === 'settled'
+                const effAmt = calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+                if (r.type === 'income') totalIncome += effAmt
+                else if (r.type === 'expense') totalExpense += effAmt
             }
         }
         const netBalance = totalIncome - totalExpense
@@ -199,23 +204,29 @@ export class CalendarCashFlow {
 
         let incomeSum = 0
         for (const r of dayRecords) {
-            if (
-                r.category === 'transfer' ||
-                r.category === 'balance_adjustment'
-            )
-                continue
-            if (r.type === 'income') incomeSum += r.amount
+            if (r.category === 'transfer' || isDebtSettlementRecord(r)) continue
+            const debt = findDebtForRecord(r, this.debtMaps)
+            const isGroupSettled = r.groupStatus === 'settled'
+            const effAmt = calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+            if (r.type === 'income') incomeSum += effAmt
         }
 
-        // Get top 3 expense records (by amount desc)
+        // Get top 3 expense records (by effective amount desc)
         const expenseRecords = dayRecords
             .filter(
                 r =>
                     r.type === 'expense' &&
                     r.category !== 'transfer' &&
-                    r.category !== 'balance_adjustment'
+                    !isDebtSettlementRecord(r)
             )
-            .sort((a, b) => b.amount - a.amount)
+            .map(r => {
+                const debt = findDebtForRecord(r, this.debtMaps)
+                const isGroupSettled = r.groupStatus === 'settled'
+                const effAmt = calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+                return { ...r, effAmt }
+            })
+            .filter(r => r.effAmt > 0)
+            .sort((a, b) => b.effAmt - a.effAmt)
             .slice(0, 3)
 
         // Get category info for display
@@ -228,7 +239,7 @@ export class CalendarCashFlow {
         if (expenseRecords.length > 0) {
             for (const r of expenseRecords) {
                 const catLabel = label(r.category)
-                const shortAmount = this._formatShort(r.amount)
+                const shortAmount = this._formatShort(r.effAmt)
 
                 // Debt badge for debt-linked records
                 let debtBadge = ''

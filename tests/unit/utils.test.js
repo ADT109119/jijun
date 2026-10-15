@@ -15,6 +15,10 @@ import {
     shouldSkipDate,
     calculateAmortizationDetails,
     showProgressModal,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
 } from '../../src/js/utils.js'
 
 describe('escapeHTML', () => {
@@ -572,11 +576,33 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('monthly 跨月邊界 (1月31日 → JS setMonth 溢出 → 3月2日)', () => {
-        // JS setMonth 不會自動調整到月末：Jan 31 + 1 month → Mar 2
+    it('monthly 跨月邊界防溢出：2024年閏年 (1月31日 → 2月29日，不溢出至3月)', () => {
         expect(calculateNextDueDate('2024-01-31', 'monthly', 1)).toBe(
-            '2024-03-02'
+            '2024-02-29'
         )
+    })
+
+    it('monthly 跨月邊界防溢出：2026年平年 (1月31日 → 2月28日，不溢出至3月3日)', () => {
+        expect(calculateNextDueDate('2026-01-31', 'monthly', 1)).toBe(
+            '2026-02-28'
+        )
+    })
+
+    it('monthly 帶 anchorDay 實現逐期收斂可逆，徹底防止永久漂移 (1/31→2/28→3/31→4/30→5/31)', () => {
+        const anchorDay = 31
+        let cur = '2026-01-31'
+        const expected = [
+            '2026-02-28', // 2月短月，收斂至28日
+            '2026-03-31', // 3月大月，可逆復原至31日
+            '2026-04-30', // 4月小月，收斂至30日
+            '2026-05-31', // 5月大月，復原至31日
+            '2026-06-30', // 6月小月，收斂至30日
+            '2026-07-31', // 7月大月，復原至31日
+        ]
+        for (let i = 0; i < expected.length; i++) {
+            cur = calculateNextDueDate(cur, 'monthly', 1, anchorDay)
+            expect(cur).toBe(expected[i])
+        }
     })
 
     it('yearly + interval=1 加一年', () => {
@@ -585,10 +611,26 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('yearly 閏年 → 非閏年 (2024-02-29 → 2025-03-01)', () => {
+    it('yearly 閏年 → 非閏年截斷防溢出 (2024-02-29 → 2025-02-28，不溢出至3月1日)', () => {
         expect(calculateNextDueDate('2024-02-29', 'yearly', 1)).toBe(
-            '2025-03-01'
+            '2025-02-28'
         )
+    })
+
+    it('yearly 帶 anchorDay=29 逐年推進，遇到閏年可逆復原為 2/29', () => {
+        const anchorDay = 29
+        let cur = '2024-02-29'
+        const expected = [
+            '2025-02-28',
+            '2026-02-28',
+            '2027-02-28',
+            '2028-02-29', // 2028閏年，自動可逆復原至29日
+            '2029-02-28',
+        ]
+        for (let i = 0; i < expected.length; i++) {
+            cur = calculateNextDueDate(cur, 'yearly', 1, anchorDay)
+            expect(cur).toBe(expected[i])
+        }
     })
 
     it('無效頻率拋錯', () => {
@@ -770,3 +812,144 @@ describe('showProgressModal', () => {
         expect(document.querySelector('.progress-modal-message')).toBeNull()
     })
 })
+
+describe('calculateEffectiveRecordAmount', () => {
+    it('非欠款一般紀錄回傳原額', () => {
+        expect(calculateEffectiveRecordAmount({ amount: 500, type: 'expense' }, null)).toBe(500)
+        expect(calculateEffectiveRecordAmount({ amount: 1000, type: 'income' }, null)).toBe(1000)
+    })
+
+    it('代墊支出 (receivable)：未還款時全額計入支出', () => {
+        const record = { type: 'expense', amount: 1460, debtId: 1 }
+        const debt = { id: 1, type: 'receivable', amount: 1460, originalAmount: 1460, remainingAmount: 1460, settled: false }
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(1460)
+    })
+
+    it('代墊支出 (receivable)：全額還清時歸零', () => {
+        const record = { type: 'expense', amount: 1460, debtId: 1 }
+        const debt = { id: 1, type: 'receivable', amount: 1460, originalAmount: 1460, remainingAmount: 0, settled: true }
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(0)
+    })
+
+    it('代墊支出 (receivable)：部分還款時為剩餘代墊金額', () => {
+        const record = { type: 'expense', amount: 1460, debtId: 1 }
+        const debt = { id: 1, type: 'receivable', amount: 1460, originalAmount: 1460, remainingAmount: 460, settled: false }
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(460)
+    })
+
+    it('合資聚餐代墊 (包含自己消費)：全額還清時精確保留自負額', () => {
+        const record = { type: 'expense', amount: 2000, debtId: 2 }
+        const debt = { id: 2, type: 'receivable', amount: 1500, originalAmount: 1500, remainingAmount: 0, settled: true }
+        // 總支出 2000，代墊 1500，自負 500。已還清 -> 實質支出 500
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(500)
+    })
+
+    it('合資聚餐代墊 (包含自己消費)：部分還款時為自負額加剩餘代墊款', () => {
+        const record = { type: 'expense', amount: 2000, debtId: 2 }
+        const debt = { id: 2, type: 'receivable', amount: 1500, originalAmount: 1500, remainingAmount: 500, settled: false }
+        // 總支出 2000，代墊 1500，自負 500。還了 1000 剩 500 -> 實質支出 500 + 500 = 1000
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(1000)
+    })
+
+    it('舊資料相容：缺少 originalAmount 欄位只有 amount 欄位且已還清時歸零', () => {
+        const record = { type: 'expense', amount: 100, debtId: 3 }
+        const debt = { id: 3, type: 'receivable', amount: 100, settled: true }
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(0)
+    })
+
+    it('借入收入 (payable 我欠別人)：全額還清時歸零', () => {
+        const record = { type: 'income', amount: 3000, debtId: 4 }
+        const debt = { id: 4, type: 'payable', amount: 3000, originalAmount: 3000, remainingAmount: 0, settled: true }
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(0)
+    })
+
+    it('借入收入 (payable 我欠別人)：部分還款時相應扣除已還部分', () => {
+        const record = { type: 'income', amount: 3000, debtId: 4 }
+        const debt = { id: 4, type: 'payable', amount: 3000, originalAmount: 3000, remainingAmount: 1000, settled: false }
+        // 還了 2000，剩餘借款收入為 1000
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(1000)
+    })
+
+    it('舊資料相容：缺少 originalAmount 且 debt.amount 已被扣減為 0，已還清時仍能精準歸零', () => {
+        const record = { type: 'expense', amount: 10350, debtId: 5 }
+        const debt = { id: 5, type: 'receivable', amount: 0, settled: true }
+        // 舊系統 amount 已歸零，智慧推算 originalDebt 為 10350，還清歸零
+        expect(calculateEffectiveRecordAmount(record, debt)).toBe(0)
+    })
+
+    it('群組已結清紀錄：groupStatus === "settled" 且無專屬 debt 時代墊支出歸零', () => {
+        const record = { type: 'expense', amount: 2500, groupId: 'grp-1', groupStatus: 'settled' }
+        expect(calculateEffectiveRecordAmount(record, null)).toBe(0)
+    })
+
+    it('平帳類別之紀錄直接計算為 0', () => {
+        const r1 = { type: 'income', amount: 1500, category: 'debt_collection' }
+        const r2 = { type: 'expense', amount: 2000, category: 'debt_repayment' }
+        const r3 = { type: 'expense', amount: 5000, category: 'balance_adjustment' }
+        expect(calculateEffectiveRecordAmount(r1, null)).toBe(0)
+        expect(calculateEffectiveRecordAmount(r2, null)).toBe(0)
+        expect(calculateEffectiveRecordAmount(r3, null)).toBe(0)
+    })
+
+    it('多樣結清旗標相容性：status="settled"、settledAt、amount=0 均能將代墊支出歸零', () => {
+        const rec = { type: 'expense', amount: 10350, debtId: 99 }
+        // 1. status === 'settled'
+        expect(calculateEffectiveRecordAmount(rec, { id: 99, type: 'receivable', amount: 10350, status: 'settled' })).toBe(0)
+        // 2. settledAt 存在
+        expect(calculateEffectiveRecordAmount(rec, { id: 99, type: 'receivable', amount: 10350, settledAt: 1716940800000 })).toBe(0)
+        // 3. isSettled === true
+        expect(calculateEffectiveRecordAmount(rec, { id: 99, type: 'receivable', amount: 10350, isSettled: true })).toBe(0)
+        // 4. amount <= 0 且無 remainingAmount
+        expect(calculateEffectiveRecordAmount(rec, { id: 99, type: 'receivable', amount: 0 })).toBe(0)
+    })
+})
+
+describe('isDebtSettlementRecord', () => {
+    it('類別為 debt_collection, debt_repayment, balance_adjustment 時回傳 true', () => {
+        expect(isDebtSettlementRecord({ category: 'debt_collection' })).toBe(true)
+        expect(isDebtSettlementRecord({ category: 'debt_repayment' })).toBe(true)
+        expect(isDebtSettlementRecord({ category: 'balance_adjustment' })).toBe(true)
+    })
+
+    it('非平帳類別即使備註包含相關關鍵字亦回傳 false (純依類別判斷，不檢索描述)', () => {
+        expect(isDebtSettlementRecord({ category: 'food', description: '午餐牛肉麵' })).toBe(false)
+        expect(isDebtSettlementRecord({ category: 'traffic', description: '高鐵票' })).toBe(false)
+        expect(isDebtSettlementRecord({ category: 'another', description: '[卡費扣繳] 台新' })).toBe(false)
+        expect(isDebtSettlementRecord({ category: 'another', description: '還款：好友' })).toBe(false)
+        expect(isDebtSettlementRecord({ category: 'another', description: '收回欠款：同事' })).toBe(false)
+        expect(isDebtSettlementRecord(null)).toBe(false)
+    })
+})
+
+describe('buildDebtLookupMaps & findDebtForRecord', () => {
+    const debts = [
+        { id: 1, uuid: 'debt-uuid-1', type: 'receivable', amount: 500, recordId: 101, recordUuid: 'rec-uuid-101' },
+        { id: 2, uuid: 'debt-uuid-2', type: 'payable', amount: 800, recordId: 102 },
+    ]
+    const maps = buildDebtLookupMaps(debts)
+
+    it('支援透過 record.debtId (數值或字串) 查找到欠款', () => {
+        expect(findDebtForRecord({ debtId: 1 }, maps)).toBe(debts[0])
+        expect(findDebtForRecord({ debtId: '1' }, maps)).toBe(debts[0])
+    })
+
+    it('支援透過 record.debtUuid 查找到欠款', () => {
+        expect(findDebtForRecord({ debtUuid: 'debt-uuid-1' }, maps)).toBe(debts[0])
+    })
+
+    it('支援反向透過 record.id (數值或字串) 查找到對應欠款', () => {
+        expect(findDebtForRecord({ id: 101 }, maps)).toBe(debts[0])
+        expect(findDebtForRecord({ id: '101' }, maps)).toBe(debts[0])
+        expect(findDebtForRecord({ id: 102 }, maps)).toBe(debts[1])
+    })
+
+    it('支援反向透過 record.uuid 查找到對應欠款', () => {
+        expect(findDebtForRecord({ uuid: 'rec-uuid-101' }, maps)).toBe(debts[0])
+    })
+
+    it('查無對應紀錄時回傳 null', () => {
+        expect(findDebtForRecord({ id: 999 }, maps)).toBeNull()
+        expect(findDebtForRecord(null, maps)).toBeNull()
+    })
+})
+

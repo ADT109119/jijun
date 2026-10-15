@@ -1,4 +1,11 @@
-import { formatDateToString, formatCurrency } from './utils.js'
+import {
+    formatDateToString,
+    formatCurrency,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
+} from './utils.js'
 
 /**
  * 重新整理並更新 Android Widget 上的統計資料
@@ -18,14 +25,18 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
     }
 
     try {
+        // 載入欠款以計算實質生活收支
+        let allDebts = []
+        if (typeof dataService.getDebts === 'function') {
+            allDebts = (await dataService.getDebts({ allLedgers: true })) || []
+        }
+        const debtMaps = buildDebtLookupMaps(allDebts)
+
         // 1. 計算今日支出 (使用本地時區日期)
         const today = formatDateToString(new Date())
         const records = await dataService.getRecords() // 預設已過濾 active ledger
         const isNonLivingExpense = r =>
-            r.category === 'transfer' ||
-            r.category === 'debt_collection' ||
-            r.category === 'debt_repayment' ||
-            r.category === 'balance_adjustment'
+            r.category === 'transfer' || isDebtSettlementRecord(r)
 
         const todayExpense = records
             .filter(
@@ -34,7 +45,11 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
                     r.type === 'expense' &&
                     !isNonLivingExpense(r)
             )
-            .reduce((sum, r) => sum + r.amount, 0)
+            .reduce((sum, r) => {
+                const debt = findDebtForRecord(r, debtMaps)
+                const isGroupSettled = r.groupStatus === 'settled'
+                return sum + calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+            }, 0)
 
         // 2. 計算本月結餘
         const now = new Date()
@@ -49,10 +64,18 @@ export async function updateAndroidWidget(dataService, budgetManager, calendarDa
         
         const income = monthRecords
             .filter(r => r.type === 'income' && !isNonLivingExpense(r))
-            .reduce((sum, r) => sum + r.amount, 0)
+            .reduce((sum, r) => {
+                const debt = findDebtForRecord(r, debtMaps)
+                const isGroupSettled = r.groupStatus === 'settled'
+                return sum + calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+            }, 0)
         const expense = monthRecords
             .filter(r => r.type === 'expense' && !isNonLivingExpense(r))
-            .reduce((sum, r) => sum + r.amount, 0)
+            .reduce((sum, r) => {
+                const debt = findDebtForRecord(r, debtMaps)
+                const isGroupSettled = r.groupStatus === 'settled'
+                return sum + calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+            }, 0)
         const monthBalance = income - expense
 
         // 3. 計算本月預算進度與分類預算狀態

@@ -1,5 +1,12 @@
 import { openDB as idbOpenDB } from 'idb'
-import { customConfirm, formatDateToString } from './utils.js'
+import {
+    customConfirm,
+    formatDateToString,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
+} from './utils.js'
 
 const openDB = idbOpenDB || (() => {
     console.warn('IndexedDB 不可用，將使用 localStorage')
@@ -1520,14 +1527,9 @@ class DataService {
             records = records.filter(r => r.category !== 'transfer')
         }
 
-        // Exclude debt-related categories from statistics
+        // Exclude debt-related categories & settlements from statistics
         // These are just "moving money" not real income/expense
-        records = records.filter(
-            r =>
-                r.category !== 'debt_collection' &&
-                r.category !== 'debt_repayment' &&
-                r.category !== 'balance_adjustment'
-        )
+        records = records.filter(r => !isDebtSettlementRecord(r))
 
         const stats = {
             totalIncome: 0,
@@ -1538,43 +1540,17 @@ class DataService {
             records: records, // Include filtered records in result
         }
 
-        // Pre-fetch debts for effective amount calculation (single batch query
-        // instead of N+1 per-record lookups)
-        const debtRecords = records.filter(r => r.debtId)
-        const debtsMap = {}
-        if (debtRecords.length > 0) {
-            const allDebts = await this.getDebts()
-            for (const d of allDebts) {
-                debtsMap[d.id] = d
-            }
-        }
+        // Pre-fetch debts for effective amount calculation
+        const allDebts = (await this.getDebts({ allLedgers: true })) || []
+        const debtMaps = buildDebtLookupMaps(allDebts)
 
-        // We shouldn't use forEach to modify variables inside and mutate them, but it works
-        // Let's filter out records with effective amount 0 so they don't show up in lists
+        // Filter out records with effective amount 0 so they don't show up in lists
         const adjustedRecords = []
 
         records.forEach(record => {
-            let effectiveAmount = record.amount
-
-            if (record.debtId && debtsMap[record.debtId]) {
-                const debt = debtsMap[record.debtId]
-                const isSettled = debt.settled === true
-                const isReceivable = debt.type === 'receivable'
-
-                if (record.type === 'expense' && isReceivable) {
-                    const myExpense = Math.max(
-                        0,
-                        record.amount - (debt.originalAmount || 0)
-                    )
-                    effectiveAmount = isSettled ? myExpense : record.amount
-                } else if (record.type === 'income' && isReceivable) {
-                    effectiveAmount = isSettled ? record.amount : 0
-                } else if (record.type === 'expense' && !isReceivable) {
-                    effectiveAmount = isSettled ? record.amount : 0
-                } else if (record.type === 'income' && !isReceivable) {
-                    effectiveAmount = isSettled ? 0 : record.amount
-                }
-            }
+            const debt = findDebtForRecord(record, debtMaps)
+            const isGroupSettled = record.groupStatus === 'settled'
+            const effectiveAmount = calculateEffectiveRecordAmount(record, debt, { isGroupSettled })
 
             if (effectiveAmount === 0) return // Skip 0 amounts to prevent them from showing up
 

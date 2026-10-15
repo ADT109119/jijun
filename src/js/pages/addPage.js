@@ -731,10 +731,12 @@ export class AddPage {
                         .getElementById('installment-decimal-strategy')
                         ?.value || 'round'
                 )
+                const anchorDay = currentDate ? parseInt(currentDate.split('-')[2], 10) : null
                 const p1Date = calculateNextDueDate(
                     currentDate,
                     freq,
-                    1
+                    1,
+                    anchorDay
                 )
                 hintText.textContent = `信用卡分期：全額 ${formatCurrency(total)} 立即佔用額度，自 ${p1Date} 起每期扣 ${formatCurrency(amountPerPeriod)}（${
                     upfrontDebitName
@@ -1723,7 +1725,12 @@ export class AddPage {
                 startDate: currentDate,
                 // upfront：首期扣款自下月開始（刷卡當月只入账）；periodic 維持現行「建立即產生首期」
                 nextDueDate: isUpfront
-                    ? calculateNextDueDate(currentDate, instFrequency, 1)
+                    ? calculateNextDueDate(
+                          currentDate,
+                          instFrequency,
+                          1,
+                          currentDate ? parseInt(currentDate.split('-')[2], 10) : null
+                      )
                     : currentDate,
                 status: 'active',
                 description: noteInput.value || '',

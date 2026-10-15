@@ -1,6 +1,6 @@
 // 現代化 Service Worker（v2：precache + opaque cache-first）
 // 使用統一的版本號和 build hash 命名快取
-const APP_VERSION = '2.1.2.3' // build 時自動注入 package.json 的版本號
+const APP_VERSION = '2.1.2.4' // build 時自動注入 package.json 的版本號
 const BUILD_HASH = 'dev' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
 
 // 快取命名帶 BUILD_HASH：新 build 的 SW 用新快取，舊快取在 activate 時清理
@@ -120,6 +120,15 @@ self.addEventListener('fetch', event => {
     // HTML 是入口，cache-first 會讓舊 SW 在更新後仍提供舊 index.html，
     // 載入舊 JS 開新版本 DB → VersionError → 資料「看似消失」的根因鏈之一。
     if (event.request.mode === 'navigate') {
+        event.respondWith(networkFirst(event.request))
+        return
+    }
+
+    // 開發模式（BUILD_HASH === 'dev' 或 localhost/127.0.0.1）下，/src/ 源代碼或 JS 腳本一律網路優先，
+    // 防止熱修復時代碼被 Service Worker 靜態快取截斷
+    const reqUrl = new URL(event.request.url)
+    const isLocalDev = BUILD_HASH === 'dev' || reqUrl.hostname === 'localhost' || reqUrl.hostname === '127.0.0.1'
+    if (isLocalDev && (reqUrl.pathname.startsWith('/src/') || reqUrl.pathname.endsWith('.js'))) {
         event.respondWith(networkFirst(event.request))
         return
     }

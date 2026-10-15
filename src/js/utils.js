@@ -513,27 +513,67 @@ export function getMonthRange(year, monthIndex) {
  * @param {string} currentDueDate - 當前到期日期 (YYYY-MM-DD)
  * @param {string} frequency - 頻率 ('daily', 'weekly', 'monthly', 'yearly')
  * @param {number} interval - 間隔 (例如：每 2 週)
+ * @param {number|null} [anchorDay=null] - 原始基準日 (1~31)，用於防止月底溢出 (如 1/31) 與多期迭代逐期漂移，達成收斂可逆
  * @returns {string} 下一個到期日期 (YYYY-MM-DD)
  */
-export function calculateNextDueDate(currentDueDate, frequency, interval) {
-    const date = new Date(currentDueDate)
+export function calculateNextDueDate(currentDueDate, frequency, interval, anchorDay = null) {
+    let currYear, currMonth, currDay
+    if (typeof currentDueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(currentDueDate)) {
+        const parts = currentDueDate.split('-').map(Number)
+        currYear = parts[0]
+        currMonth = parts[1]
+        currDay = parts[2]
+    } else {
+        const d = new Date(currentDueDate)
+        currYear = d.getFullYear()
+        currMonth = d.getMonth() + 1
+        currDay = d.getDate()
+    }
+
+    const effectiveAnchorDay =
+        anchorDay !== null && anchorDay !== undefined
+            ? Number(anchorDay)
+            : currDay
+
     switch (frequency) {
-        case 'daily':
-            date.setDate(date.getDate() + interval)
-            break
-        case 'weekly':
-            date.setDate(date.getDate() + interval * 7)
-            break
-        case 'monthly':
-            date.setMonth(date.getMonth() + interval)
-            break
-        case 'yearly':
-            date.setFullYear(date.getFullYear() + interval)
-            break
+        case 'daily': {
+            const d = new Date(currYear, currMonth - 1, currDay + interval)
+            return formatDateToString(d)
+        }
+        case 'weekly': {
+            const d = new Date(currYear, currMonth - 1, currDay + interval * 7)
+            return formatDateToString(d)
+        }
+        case 'monthly': {
+            const totalMonths = currYear * 12 + (currMonth - 1) + interval
+            const targetYear = Math.floor(totalMonths / 12)
+            const targetMonth = (totalMonths % 12) + 1
+            const maxDays = new Date(targetYear, targetMonth, 0).getDate()
+            const targetDay = Math.min(effectiveAnchorDay, maxDays)
+            return (
+                String(targetYear).padStart(4, '0') +
+                '-' +
+                String(targetMonth).padStart(2, '0') +
+                '-' +
+                String(targetDay).padStart(2, '0')
+            )
+        }
+        case 'yearly': {
+            const targetYear = currYear + interval
+            const targetMonth = currMonth
+            const maxDays = new Date(targetYear, targetMonth, 0).getDate()
+            const targetDay = Math.min(effectiveAnchorDay, maxDays)
+            return (
+                String(targetYear).padStart(4, '0') +
+                '-' +
+                String(targetMonth).padStart(2, '0') +
+                '-' +
+                String(targetDay).padStart(2, '0')
+            )
+        }
         default:
             throw new Error('Invalid frequency')
     }
-    return formatDateToString(date)
 }
 
 /**
@@ -631,3 +671,186 @@ export function getStoreUrl(path) {
     const separator = path.startsWith('/') ? '' : '/';
     return `${baseUrl}${separator}${path}`;
 }
+
+/**
+ * 判斷是否為還款、收回欠款、卡費平帳或群組結清等「資金移轉/平帳性質」之紀錄
+ * 此類紀錄非實質日常消費或日常收入，在生活收支統計中應排除或計算為 0。
+ * @param {Object} record
+ * @returns {boolean}
+ */
+export function isDebtSettlementRecord(record) {
+    if (!record) return false
+    const cat = record.category
+    return (
+        cat === 'debt_collection' ||
+        cat === 'debt_repayment' ||
+        cat === 'balance_adjustment'
+    )
+}
+
+/**
+ * 建立全向欠款快取表，支援 debt.id、debt.uuid、debt.recordId、debt.recordUuid
+ * @param {Array} allDebts
+ * @returns {Object} { byId, byUuid, byRecordId, byRecordUuid }
+ */
+export function buildDebtLookupMaps(allDebts) {
+    const byId = Object.create(null)
+    const byUuid = Object.create(null)
+    const byRecordId = Object.create(null)
+    const byRecordUuid = Object.create(null)
+
+    if (!Array.isArray(allDebts)) {
+        return { byId, byUuid, byRecordId, byRecordUuid }
+    }
+
+    for (const d of allDebts) {
+        if (!d) continue
+        if (d.id !== undefined && d.id !== null) {
+            byId[d.id] = d
+            byId[String(d.id)] = d
+        }
+        if (d.uuid) {
+            byUuid[d.uuid] = d
+            byId[d.uuid] = d
+        }
+        if (d.recordId !== undefined && d.recordId !== null) {
+            byRecordId[d.recordId] = d
+            byRecordId[String(d.recordId)] = d
+        }
+        if (d.recordUuid) {
+            byRecordUuid[d.recordUuid] = d
+        }
+    }
+
+    return { byId, byUuid, byRecordId, byRecordUuid }
+}
+
+/**
+ * 智慧匹配紀錄對應的欠款物件 (雙向外鍵 + UUID)
+ * @param {Object} record
+ * @param {Object} debtMaps
+ * @returns {Object|null}
+ */
+export function findDebtForRecord(record, debtMaps) {
+    if (!record || !debtMaps) return null
+    const { byId, byUuid, byRecordId, byRecordUuid } = debtMaps
+    return (
+        (record.debtId && (byId[record.debtId] || byId[String(record.debtId)])) ||
+        (record.debtUuid && byUuid[record.debtUuid]) ||
+        (record.id && (byRecordId[record.id] || byRecordId[String(record.id)])) ||
+        (record.uuid && byRecordUuid[record.uuid]) ||
+        null
+    )
+}
+
+/**
+ * 計算一筆紀錄在收支統計 / 報表中的實質生活收支金額 (Effective Amount)
+ *
+ * 核心會計與統計原則：
+ * 1. 還款/收回/平帳紀錄 (isDebtSettlementRecord)：
+ *    非實質生活收支，計算為 0。
+ * 2. 群組結清 (options.isGroupSettled 或 record.groupStatus === 'settled')：
+ *    成員間已結算還款，代墊實質支出歸零 (計算為 0)。
+ * 3. 代墊支出 (record.type === 'expense' 且 debt.type === 'receivable'，別人欠我)：
+ *    - 未還款：全額計入支出 (代墊時資金已流出)。
+ *    - 部分還款：代墊金額扣除已還款部分，實質支出 = 自負消費額 + 剩餘代墊款 (remainingDebt)。
+ *    - 全額還清 (settled)：代墊款全額歸零！實質支出 = 自負消費額 (myExpense = Math.max(0, record.amount - originalDebt))。
+ * 4. 借款與償還 (debt.type === 'payable'，我欠別人)：
+ *    - 借入款項非日常收入，還款非日常生活消費，在生活收支統計中皆計算為 0。
+ * 5. 強健相容性：
+ *    - 全面辨識 settled、status === 'settled'、isSettled、settledAt、remainingAmount <= 0、amount <= 0 等結清狀態。
+ *    - 若缺少 originalAmount 且 debt.amount 已歸零/扣減，智慧依 record.amount 與 payments 推算 originalDebt。
+ *
+ * @param {Object} record - 記帳紀錄
+ * @param {Object|null} debt - 關聯的欠款物件
+ * @param {Object} [options] - 選項，例如 { isGroupSettled: boolean }
+ * @returns {number} 實質收支金額 (>= 0)
+ */
+export function calculateEffectiveRecordAmount(record, debt, options = {}) {
+    if (!record || typeof record.amount !== 'number') {
+        return record?.amount || 0
+    }
+
+    // 1. 還款、收款或平帳紀錄在生活收支中直接歸零
+    if (isDebtSettlementRecord(record)) {
+        return 0
+    }
+
+    // 2. 群組已結清項目：群組成員已個別或全部結清還款，若無專屬 debt 則代墊實質支出歸零
+    const isGroupSettled =
+        record.groupStatus === 'settled' ||
+        options.isGroupSettled === true
+    if (isGroupSettled && !debt) {
+        return 0
+    }
+
+    if (!debt) {
+        return record.amount
+    }
+
+    // 3. 智慧推算已還金額
+    const paidFromPayments = Array.isArray(debt.payments)
+        ? debt.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+        : 0
+
+    // 4. 智慧推算原始欠款額 originalDebt
+    let originalDebt = Number(
+        debt.originalAmount ??
+        (paidFromPayments > 0 ? (Number(debt.amount || 0) + paidFromPayments) : null) ??
+        debt.amount ??
+        0
+    )
+    if (originalDebt <= 0 && record.amount > 0) {
+        originalDebt = Number(record.amount)
+    }
+
+    // 5. 強化結清狀態判斷
+    const isSettled =
+        debt.settled === true ||
+        debt.status === 'settled' ||
+        debt.isSettled === true ||
+        Boolean(debt.settledAt) ||
+        isGroupSettled ||
+        (debt.remainingAmount !== undefined && Number(debt.remainingAmount) <= 0) ||
+        (debt.amount !== undefined && Number(debt.amount) <= 0 && (debt.remainingAmount === undefined || Number(debt.remainingAmount) <= 0)) ||
+        (originalDebt > 0 && paidFromPayments >= originalDebt)
+
+    // 6. 計算剩餘欠款
+    let remainingDebt = isSettled
+        ? 0
+        : Number(
+              debt.remainingAmount ??
+              Math.max(0, originalDebt - paidFromPayments)
+          )
+    if (remainingDebt < 0) remainingDebt = 0
+
+    const isReceivable = debt.type === 'receivable' // 別人欠我 (代墊)
+
+    if (record.type === 'expense') {
+        if (isReceivable) {
+            // 代墊支出：自負額 + 尚未還清之代墊款
+            // 若代墊款已全額還清 (settled)，代墊支出全額歸零；若為合資墊付，精確保留自負額
+            const myExpense = Math.max(0, record.amount - originalDebt)
+            return myExpense + remainingDebt
+        } else {
+            // 我欠別人 (借款支出)：已結清時計全額支出；未結清時計已還金額
+            const paidDebt = Math.max(0, originalDebt - remainingDebt)
+            return isSettled ? record.amount : paidDebt
+        }
+    } else if (record.type === 'income') {
+        if (isReceivable) {
+            // 別人欠我而產生的收入紀錄：已回收金額 (已結清時計全額收入，未結清時計已收金額)
+            const paidDebt = Math.max(0, originalDebt - remainingDebt)
+            return isSettled ? record.amount : paidDebt
+        } else {
+            // 我欠別人 (先收了別人的錢)：還清後不計入收入，部分還款則扣除已還部分
+            const paidDebt = Math.max(0, originalDebt - remainingDebt)
+            const effectiveIncome = Math.max(0, record.amount - paidDebt)
+            return isSettled ? 0 : effectiveIncome
+        }
+    }
+
+    return record.amount
+}
+
+

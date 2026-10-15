@@ -12,7 +12,14 @@
  *   Returns: { periodLabels, periodData, categoryComparisons }
  */
 
-import { formatCurrency, escapeHTML } from './utils.js'
+import {
+    formatCurrency,
+    escapeHTML,
+    calculateEffectiveRecordAmount,
+    buildDebtLookupMaps,
+    findDebtForRecord,
+    isDebtSettlementRecord,
+} from './utils.js'
 
 // Trend indicator threshold: percentage change must exceed this to show ↑/↓
 const TREND_THRESHOLD = 0.5
@@ -96,9 +103,7 @@ export class ComparisonReport {
         const filtered = records.filter(
             r =>
                 r.category !== 'transfer' &&
-                r.category !== 'debt_collection' &&
-                r.category !== 'debt_repayment' &&
-                r.category !== 'balance_adjustment'
+                !isDebtSettlementRecord(r)
         )
 
         const periodData = periods.map(label => ({
@@ -108,6 +113,12 @@ export class ComparisonReport {
             recordCount: 0,
             categories: {}, // categoryKey -> amount (signed: +income, -expense)
         }))
+
+        // Batch load debts for effective amount calculation
+        const allDebts = typeof this.dataService.getDebts === 'function'
+            ? (await this.dataService.getDebts({ allLedgers: true })) || []
+            : []
+        const debtMaps = buildDebtLookupMaps(allDebts)
 
         for (const r of filtered) {
             if (!r.date) continue
@@ -130,9 +141,13 @@ export class ComparisonReport {
 
             if (matchIndex < 0) continue
 
+            const debt = findDebtForRecord(r, debtMaps)
+            const isGroupSettled = r.groupStatus === 'settled'
+            const amount = calculateEffectiveRecordAmount(r, debt, { isGroupSettled })
+            if (amount === 0) continue
+
             periodData[matchIndex].recordCount++
 
-            const amount = r.amount
             const cat = r.category
 
             if (r.type === 'income') {

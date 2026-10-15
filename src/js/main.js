@@ -417,6 +417,9 @@ export class EasyAccountingApp {
         for (const tx of recurringTxs) {
             try {
                 let { nextDueDate } = tx
+                const anchorDay = tx.startDate
+                    ? parseInt(tx.startDate.split('-')[2], 10)
+                    : (nextDueDate ? parseInt(nextDueDate.split('-')[2], 10) : null)
 
                 let iterations = 0
 
@@ -434,7 +437,8 @@ export class EasyAccountingApp {
                         nextDueDate = calculateNextDueDate(
                             nextDueDate,
                             tx.frequency,
-                            tx.interval
+                            tx.interval,
+                            anchorDay
                         )
                         continue
                     }
@@ -462,7 +466,8 @@ export class EasyAccountingApp {
                             nextDueDate = calculateNextDueDate(
                                 nextDueDate,
                                 tx.frequency,
-                                tx.interval
+                                tx.interval,
+                                anchorDay
                             )
                             continue
                         }
@@ -483,7 +488,8 @@ export class EasyAccountingApp {
                         nextDueDate = calculateNextDueDate(
                             nextDueDate,
                             tx.frequency,
-                            tx.interval
+                            tx.interval,
+                            anchorDay
                         )
                         continue
                     }
@@ -505,7 +511,8 @@ export class EasyAccountingApp {
                     nextDueDate = calculateNextDueDate(
                         nextDueDate,
                         tx.frequency,
-                        tx.interval
+                        tx.interval,
+                        anchorDay
                     )
                 }
 
@@ -625,6 +632,9 @@ export class EasyAccountingApp {
                 if (item.status !== 'active') continue
 
                 let { nextDueDate, completedPeriods } = item
+                const anchorDay = item.startDate
+                    ? parseInt(item.startDate.split('-')[2], 10)
+                    : (nextDueDate ? parseInt(nextDueDate.split('-')[2], 10) : null)
                 let iterations = 0
 
                 while (
@@ -745,7 +755,8 @@ export class EasyAccountingApp {
                     nextDueDate = calculateNextDueDate(
                         nextDueDate,
                         item.frequency,
-                        1
+                        1,
+                        anchorDay
                     )
                 }
 
