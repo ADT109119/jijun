@@ -9,9 +9,9 @@ src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processRecurringTransactions 與 processAmortizations 整合 anchorDay 錨定 startDate 徹底防範月底溢出與逐期漂移、updateNavAddIcon, 初始化與喚醒自動執行 deduplicateAccounts / deduplicateContacts，支援 reloadAppData 重新載入記憶體中各模組快取)
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 tools.schema.json 與 build_prompt.py 規範、平衡括號 _extractBalancedJson 抽取巢狀 JSON、stop token 容錯、OPFS 實體快取清除與遠端 HEAD ETag/SHA-256 即時版本比對、智慧模糊匹配與同義詞/別名映射 fuzzyMatchAccount / fuzzyMatchCategory)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 + 整合 calculateEffectiveRecordAmount 統計生活收支實質金額，代墊還清歸零、部分還款扣減已還金額 + 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 debt_repayment 還款且防重複扣款 + 信用卡消費延遲請款遞延至下一期與移回原期 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳與單筆個別還款 + 雲端同步 exportDataForSync 完整打包 + deduplicateAccounts / deduplicateContacts 自動去重)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 + 整合 calculateEffectiveRecordAmount 統計生活收支實質金額，代墊還清歸零、部分還款扣減已還金額 + 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 debt_repayment 還款且防重複扣款 + 信用卡消費延遲請款遞延至下一期與移回原期 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳 partialSettleGroup 支援 direction 單向沖銷與 FIFO 確定性排序 + recalculateDebtState 採 Record-as-Truth 同步修剪 payments 幽靈付款並回寫最新金額/日期 + 單筆個別還款 + 雲端同步 exportDataForSync 完整打包 + deduplicateAccounts / deduplicateContacts 自動去重)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
-├── groupManager.js      # 群組分帳商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
+├── groupManager.js      # 群組分帳商業邏輯 (建立、刪除群組、一鍵結清、部分結清 partialSettleGroup 支援 direction 與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數 (getCategoryById 支援雙向相容降級查找，避免收入端之還款紀錄顯示未知問號圖示)
 ├── categoryManager.js   # 分表管理 UI 邏輯 (支援自訂分類、排序、隱藏，init 自動清空舊狀態防跨帳本殘留，與 IndexedDB/localStorage 雙向同步)
 ├── statistics.js        # 統計分析頁面 (包含跨月比較報表等功能)
@@ -20,7 +20,7 @@ src/js/
 ├── recordsList.js       # 記帳紀錄列表 (整合 calculateEffectiveRecordAmount 計算 summary，排除 transfer 與還款平帳紀錄；類別篩選彈窗依會計學總額原則分開呈現「支出類別」與「收入類別」，支援 type:catId 精準鍵值獨立計算與篩選其他收入與其他支出，提供全選/取消全選切換；成對移轉對沖抵消隱藏，支援代墊部分還款剩餘金額箭頭與標籤顯示)
 ├── budgetManager.js     # 預算管理 (支援多帳本 per-ledger 預算設定、第一主帳本相容 fallback 與 IndexedDB/localStorage 雙向快照同步)
 ├── quickSelectManager.js# 快速選擇管理
-├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，群組詳情彈窗與個別還款彈窗完整顯示各筆明細之關聯欠款人/代墊人標籤與群組成員總覽，金額統計卡片與聯絡人總表完整納入群組欠款，進入頁面自動去重與新增聯絡人同名防呆)
+├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，群組部分收款/付款依淨額顯式傳遞 direction 單向沖銷避免現金流顛倒，群組詳情彈窗與個別還款彈窗完整顯示各筆明細之關聯欠款人/代墊人標籤與群組成員總覽，金額統計卡片與聯絡人總表完整納入群組欠款，進入頁面自動去重與新增聯絡人同名防呆)
 ├── changelog.js         # 更新日誌
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
@@ -45,7 +45,7 @@ src/js/pages/
 ├── contactsPage.js      # 聯絡人管理
 ├── recurringPage.js     # 定期收支管理
 ├── comparisonPage.js    # 跨月比較報表
-├── ledgersPage.js       # 帳本管理頁面 (新增/編輯/刪除/切換帳本，含圖示搜尋與自訂顏色)
+├── ledgersPage.js       # 帳本管理頁面 (新增/編輯/刪除/切換帳本，含圖示搜尋、圖示選中態統一管理防 hover 覆蓋與自訂顏色)
 ├── amortizationsPage.js # 攤提/折舊/分期管理頁面 (新增/編輯/刪除，進度追蹤，首付+利息計算)
 ├── pluginsPage.js       # 外掛管理：安裝、啟用、設定
 ├── themesPage.js        # 主題管理

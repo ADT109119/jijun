@@ -175,6 +175,13 @@ export class LedgersPage {
         const selectedColor = ledger?.color || colors[0]
         const selectedIcon = ledger?.icon || defaultIcons[0]
 
+        const getIconBtnClasses = isSelected =>
+            `icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all ${
+                isSelected
+                    ? 'bg-wabi-primary text-wabi-surface shadow-sm'
+                    : 'bg-wabi-bg text-wabi-text-secondary hover:text-wabi-text-primary'
+            }`
+
         const modal = document.createElement('div')
         modal.className =
             'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]'
@@ -222,8 +229,7 @@ export class LedgersPage {
                         ${defaultIcons
                             .map(
                                 ic => `
-                            <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                                ${ic === selectedIcon ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                            <button class="${getIconBtnClasses(ic === selectedIcon)}"
                                 data-icon="${ic}">
                                 <i class="${ic}"></i>
                             </button>
@@ -328,21 +334,7 @@ export class LedgersPage {
             iconInput.value = iconClass
             // 更新圖示選中狀態
             modal.querySelectorAll('.icon-option').forEach(b => {
-                if (b.dataset.icon === iconClass) {
-                    b.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary')
-                    b.classList.add(
-                        'bg-wabi-primary',
-                        'text-wabi-surface',
-                        'shadow-sm'
-                    )
-                } else {
-                    b.classList.remove(
-                        'bg-wabi-primary',
-                        'text-wabi-surface',
-                        'shadow-sm'
-                    )
-                    b.classList.add('bg-wabi-bg', 'text-wabi-text-secondary')
-                }
+                b.className = getIconBtnClasses(b.dataset.icon === iconClass)
             })
             updatePreview()
         }
@@ -364,8 +356,7 @@ export class LedgersPage {
                     iconPicker.innerHTML = defaultIcons
                         .map(
                             ic => `
-                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                        <button class="${getIconBtnClasses(ic === iconInput.value)}"
                             data-icon="${ic}">
                             <i class="${ic}"></i>
                         </button>
@@ -385,8 +376,7 @@ export class LedgersPage {
                     iconPicker.innerHTML = results
                         .map(
                             ic => `
-                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                        <button class="${getIconBtnClasses(ic === iconInput.value)}"
                             data-icon="${ic}">
                             <i class="${ic}"></i>
                         </button>

@@ -47,7 +47,8 @@ export class GroupManager {
      */
     async createGroup(name, ledgerId = null) {
         const targetLedgerId = ledgerId || this.dataService.activeLedgerId
-        const existingMetas = await this.dataService.getAllGroupMeta(targetLedgerId)
+        const existingMetas =
+            await this.dataService.getAllGroupMeta(targetLedgerId)
         const existingNames = existingMetas.map(g => g.name)
         const uniqueName = getUniqueGroupName(name, existingNames)
 
@@ -88,8 +89,12 @@ export class GroupManager {
         const meta = await this.dataService.getGroupMeta(groupId)
         if (!meta) return false
 
-        const existingMetas = await this.dataService.getAllGroupMeta(meta.ledgerId)
-        const existingNames = existingMetas.filter(g => g.id !== groupId).map(g => g.name)
+        const existingMetas = await this.dataService.getAllGroupMeta(
+            meta.ledgerId
+        )
+        const existingNames = existingMetas
+            .filter(g => g.id !== groupId)
+            .map(g => g.name)
         const uniqueName = getUniqueGroupName(newName, existingNames)
 
         await this.dataService.saveGroupMeta({
@@ -197,7 +202,24 @@ export class GroupManager {
      * @param {string} [note]
      * @returns {Promise<Object>}
      */
-    async partialSettleGroup(groupId, amount, accountId, date, note) {
+    async partialSettleGroup(
+        groupId,
+        amount,
+        accountId,
+        date,
+        note,
+        direction
+    ) {
+        if (direction !== undefined) {
+            return await this.dataService.partialSettleGroup(
+                groupId,
+                amount,
+                accountId,
+                date,
+                note,
+                direction
+            )
+        }
         return await this.dataService.partialSettleGroup(
             groupId,
             amount,

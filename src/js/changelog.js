@@ -1,5 +1,14 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.8.5': {
+        date: '2026-10-19',
+        title: '帳本圖示選取、欠款還款歷程同步與群組分帳沖銷修復',
+        bugfixes: [
+            '修復帳本圖示選取時背景色消失問題：解決在新增或編輯帳本時，點選圖示會導致按鈕背景變白、白色圖示隱形難以辨識的異常，點擊後能正常顯示清晰醒目的選取背景。',
+            '修復欠款還款歷程與明細不同步問題：解決在明細頁刪除或修改還款紀錄後，欠款的「還款歷程」仍殘留舊資料、浮報已還款金額的問題，並避免在編輯欠款存檔時未收款項被意外歸零。',
+            '修復群組分帳部分收款與付款方向記錯問題：解決群組同時存在「應收」與「應付」款項時，點擊「部分收款」卻錯誤沖銷應付款項（導致記成支出）的問題，確保依使用者選擇的收款或付款方向正確沖銷對應帳目。',
+        ],
+    },
     '2.1.8.4': {
         date: '2026-10-14',
         title: '明細類別篩選依會計學總額原則分離收支、代墊還清與資金平帳金額一致性、週期交易/分期到期日月底防溢出修復',
@@ -159,7 +168,7 @@ export const CHANGELOG = {
             '群組明細彈窗手機版介面與排版體驗優化：修正小螢幕裝置上群組明細分類圖示被擠壓扁平、狀態 Badge 與金額換行變形、個別還按鈕文字垂直破版等問題，升級頂部淨額與底部操作列之自適應佈局。',
         ],
         bugfixes: [
-            '修復資料匯入與雲端備份還原時 IndexedDB 連線異常問題：改採本機打包引入 idb 模組，徹底消除對外部 CDN 的依賴，並於 importData 與各資料清空方法中補齊資料庫連線確保與防呆機制，解決在特定行動裝置或離線環境下出現 null is not an object (evaluating \'this.db.transaction\') 導致還原失敗的錯誤。',
+            "修復資料匯入與雲端備份還原時 IndexedDB 連線異常問題：改採本機打包引入 idb 模組，徹底消除對外部 CDN 的依賴，並於 importData 與各資料清空方法中補齊資料庫連線確保與防呆機制，解決在特定行動裝置或離線環境下出現 null is not an object (evaluating 'this.db.transaction') 導致還原失敗的錯誤。",
             '修復群組分帳功能設定未納入資料匯出與同步之問題：補齊 groupManagementEnabled 設定項之匯出、匯入與多裝置同步支援，並新增智慧相容機制（若匯入舊版備份且內含群組資料時自動啟用群組功能）。',
         ],
     },
@@ -239,8 +248,7 @@ export const CHANGELOG = {
     },
     '2.1.6.6': {
         date: '2026-07-27',
-        title:
-            '行事曆金流檢視與跨月報表結構匯出',
+        title: '行事曆金流檢視與跨月報表結構匯出',
         features: [
             '新增行事曆金流檢視：在收支分析頁面增設月曆檢視視圖，以月曆網格展現每日收支分佈，直觀顯示每日 Top 3 支出分類標籤與金額，並支援點擊跳出每日交易詳情 Modal。',
         ],
@@ -256,8 +264,7 @@ export const CHANGELOG = {
     },
     '2.1.6.5': {
         date: '2026-07-18',
-        title:
-            '欠款雙向跳轉、隱藏「帳務差額」類別與聯絡人頭像備份',
+        title: '欠款雙向跳轉、隱藏「帳務差額」類別與聯絡人頭像備份',
         features: [
             '新增欠款與記帳明細雙向跳轉：欠款管理頁可點擊檢視每一筆關聯紀錄（含還款明細）；明細頁的還款 / 欠款回收紀錄亦可一鍵跳轉至對應欠款。',
             '新增隱藏類別「帳務差額」：專供平帳使用，分類選擇器中不可手動選取，不計入收支統計但會影響帳戶餘額（行為類似帳戶間轉帳）。',
@@ -274,8 +281,7 @@ export const CHANGELOG = {
     },
     '2.1.6.4': {
         date: '2026-07-18',
-        title:
-            '安全性與效能強化：修復主題與統計 XSS、共用帳本資料完整性，新增 PWA 骨架畫面',
+        title: '安全性與效能強化：修復主題與統計 XSS、共用帳本資料完整性，新增 PWA 骨架畫面',
         features: [
             '新增 PWA 啟動骨架畫面 (Skeleton Screen)：應用程式載入完成前先顯示骨架佔位，減少白屏以提昇啟動感知效能，並支援深淺色主題。',
         ],
@@ -1136,9 +1142,9 @@ export class ChangelogManager {
     getVersionInfo(version) {
         return CHANGELOG[version]
             ? {
-                version,
-                ...CHANGELOG[version],
-            }
+                  version,
+                  ...CHANGELOG[version],
+              }
             : null
     }
 
@@ -1168,7 +1174,8 @@ export class ChangelogManager {
         
         ${note ? `<div class="mb-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2"><i class="fa-solid fa-circle-info text-amber-500 mt-0.5 shrink-0"></i><div>${note}</div></div>` : ''}
         
-        ${features.length > 0
+        ${
+            features.length > 0
                 ? `
           <div class="mb-3">
             <h6 class="text-xs font-bold text-wabi-income mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> 新功能</h6>
@@ -1178,9 +1185,10 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-            }
+        }
         
-        ${improvements.length > 0
+        ${
+            improvements.length > 0
                 ? `
           <div class="mb-3">
             <h6 class="text-xs font-bold text-wabi-primary mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-wrench"></i> 改進與優化</h6>
@@ -1190,9 +1198,10 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-            }
+        }
 
-        ${bugfixes.length > 0
+        ${
+            bugfixes.length > 0
                 ? `
           <div class="mb-1">
             <h6 class="text-xs font-bold text-wabi-expense mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 錯誤修復</h6>
@@ -1202,7 +1211,7 @@ export class ChangelogManager {
           </div>
         `
                 : ''
-            }
+        }
       </div>
     `
     }
@@ -1220,62 +1229,65 @@ export class ChangelogManager {
       
       <!-- 更新內容 -->
       <div class="space-y-2">
-        ${features.length > 0
+        ${
+            features.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-green-600 mb-1">✨ 新功能</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${features
-                    .slice(0, 3)
-                    .map(
-                        feature =>
-                            `<li class="flex items-start"><span class="text-green-500 mr-1">•</span><span>${feature}</span></li>`
-                    )
-                    .join('')}
+                  .slice(0, 3)
+                  .map(
+                      feature =>
+                          `<li class="flex items-start"><span class="text-green-500 mr-1">•</span><span>${feature}</span></li>`
+                  )
+                  .join('')}
               ${features.length > 3 ? `<li class="text-gray-400">...還有 ${features.length - 3} 項功能</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-            }
+        }
         
-        ${bugfixes.length > 0
+        ${
+            bugfixes.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-red-600 mb-1">🐛 錯誤修復</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${bugfixes
-                    .slice(0, 3)
-                    .map(
-                        fix =>
-                            `<li class="flex items-start"><span class="text-red-500 mr-1">•</span><span>${fix}</span></li>`
-                    )
-                    .join('')}
+                  .slice(0, 3)
+                  .map(
+                      fix =>
+                          `<li class="flex items-start"><span class="text-red-500 mr-1">•</span><span>${fix}</span></li>`
+                  )
+                  .join('')}
               ${bugfixes.length > 3 ? `<li class="text-gray-400">...還有 ${bugfixes.length - 3} 項修復</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-            }
+        }
         
-        ${improvements.length > 0
+        ${
+            improvements.length > 0
                 ? `
           <div>
             <h5 class="text-xs font-semibold text-blue-600 mb-1">🔧 改進優化</h5>
             <ul class="text-xs text-gray-600 space-y-1 ml-2">
               ${improvements
-                    .slice(0, 3)
-                    .map(
-                        improvement =>
-                            `<li class="flex items-start"><span class="text-blue-500 mr-1">•</span><span>${improvement}</span></li>`
-                    )
-                    .join('')}
+                  .slice(0, 3)
+                  .map(
+                      improvement =>
+                          `<li class="flex items-start"><span class="text-blue-500 mr-1">•</span><span>${improvement}</span></li>`
+                  )
+                  .join('')}
               ${improvements.length > 3 ? `<li class="text-gray-400">...還有 ${improvements.length - 3} 項優化</li>` : ''}
             </ul>
           </div>
         `
                 : ''
-            }
+        }
       </div>
     `
     }
@@ -1316,10 +1328,10 @@ export class ChangelogManager {
         <!-- Content -->
         <div class="flex-1 overflow-y-auto p-6 space-y-4 text-left">
           ${allVersions
-                .map((version, index) =>
-                    this.renderVersionInfo(version, index === 0)
-                )
-                .join('')}
+              .map((version, index) =>
+                  this.renderVersionInfo(version, index === 0)
+              )
+              .join('')}
         </div>
         
         <!-- Footer -->
@@ -1333,7 +1345,7 @@ export class ChangelogManager {
 
         document.body.appendChild(modal)
 
-// Escape 鍵關閉 (無障礙支援)
+        // Escape 鍵關閉 (無障礙支援)
         const escapeHandler = e => {
             if (e.key === 'Escape') {
                 closeChangelogModal()
@@ -1357,7 +1369,8 @@ export class ChangelogManager {
         if (closeBtn) closeBtn.addEventListener('click', closeChangelogModal)
 
         const confirmBtn = document.getElementById('confirm-changelog-btn')
-        if (confirmBtn) confirmBtn.addEventListener('click', closeChangelogModal)
+        if (confirmBtn)
+            confirmBtn.addEventListener('click', closeChangelogModal)
 
         // 點擊背景關閉
         modal.addEventListener('click', e => {
@@ -1382,10 +1395,14 @@ export class ChangelogManager {
         // 情況 A：lastSeenVersion 存在且 != currentVersion
         // 情況 B：lastSeenVersion 未曾設定 (新功能引入)，但 previousAppVersion 存在且 != currentVersion
         // 情況 C：已有舊 App 資料 (如 activeLedgerId)，且上一版紀錄未與 currentVersion 對齊
-        const isExistingUser = !!(previousAppVersion || localStorage.getItem('activeLedgerId') || localStorage.getItem('ledgers'))
+        const isExistingUser = !!(
+            previousAppVersion ||
+            localStorage.getItem('activeLedgerId') ||
+            localStorage.getItem('ledgers')
+        )
         const isVersionUpgraded = lastSeenVersion
-            ? (lastSeenVersion !== currentVersion)
-            : (isExistingUser && previousAppVersion !== currentVersion)
+            ? lastSeenVersion !== currentVersion
+            : isExistingUser && previousAppVersion !== currentVersion
 
         // 更新儲存的版本號標記
         this.currentVersion = currentVersion
@@ -1426,7 +1443,8 @@ export class ChangelogManager {
         } = targetVersionInfo
 
         // 查詢該版本是否有專屬未觀看的導覽教學
-        const versionTourId = this.app?.guideManager?.getVersionTourId?.(version)
+        const versionTourId =
+            this.app?.guideManager?.getVersionTourId?.(version)
 
         modal.innerHTML = `
       <div class="bg-wabi-surface border border-wabi-border rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-modal-pop">
@@ -1457,8 +1475,9 @@ export class ChangelogManager {
 
           ${note ? `<div class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2"><i class="fa-solid fa-circle-info text-amber-500 mt-0.5 shrink-0"></i><div>${note}</div></div>` : ''}
           
-          ${features.length > 0
-                ? `
+          ${
+              features.length > 0
+                  ? `
             <div>
               <h5 class="text-sm font-bold text-wabi-income mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles"></i> 新功能</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
@@ -1466,11 +1485,12 @@ export class ChangelogManager {
               </ul>
             </div>
           `
-                : ''
-            }
+                  : ''
+          }
           
-          ${improvements.length > 0
-                ? `
+          ${
+              improvements.length > 0
+                  ? `
             <div>
               <h5 class="text-sm font-bold text-wabi-primary mb-2 flex items-center gap-1.5"><i class="fa-solid fa-wrench"></i> 改進與優化</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
@@ -1478,11 +1498,12 @@ export class ChangelogManager {
               </ul>
             </div>
           `
-                : ''
-            }
+                  : ''
+          }
 
-          ${bugfixes.length > 0
-                ? `
+          ${
+              bugfixes.length > 0
+                  ? `
             <div>
               <h5 class="text-sm font-bold text-wabi-expense mb-2 flex items-center gap-1.5"><i class="fa-solid fa-bug"></i> 錯誤修復</h5>
               <ul class="text-xs text-wabi-text-primary space-y-2 bg-wabi-bg/60 p-3.5 rounded-2xl border border-wabi-border/40">
@@ -1490,26 +1511,30 @@ export class ChangelogManager {
               </ul>
             </div>
           `
-                : ''
-            }
+                  : ''
+          }
         </div>
         
         <!-- Footer -->
         <div class="p-4 bg-wabi-bg/50 border-t border-wabi-border/60 flex items-center justify-between gap-3">
           <button id="view-full-changelog-btn" class="text-xs font-semibold text-wabi-primary hover:underline px-2">查看歷史日誌</button>
           <div class="flex items-center gap-2">
-            ${versionTourId ? `
+            ${
+                versionTourId
+                    ? `
               <button id="confirm-update-changelog-btn" class="px-4 py-2 bg-wabi-surface text-wabi-text-secondary text-sm font-semibold rounded-2xl border border-wabi-border hover:bg-wabi-bg transition-colors">
                 我知道了
               </button>
               <button id="start-version-tour-btn" class="px-4 py-2 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md flex items-center gap-1.5">
                 <i class="fa-solid fa-compass"></i> 查看教學
               </button>
-            ` : `
+            `
+                    : `
               <button id="confirm-update-changelog-btn" class="px-6 py-2.5 bg-wabi-primary text-wabi-surface text-sm font-bold rounded-2xl hover:opacity-90 transition-opacity shadow-md">
                 開始體驗
               </button>
-            `}
+            `
+            }
           </div>
         </div>
       </div>
@@ -1521,12 +1546,19 @@ export class ChangelogManager {
             modal.remove()
             // 通知導覽系統：根據使用者是否點擊「查看教學」決定是否啟動導覽
             if (this.app?.guideManager?.onChangelogClosed) {
-                this.app.guideManager.onChangelogClosed({ startTour, tourId: versionTourId })
+                this.app.guideManager.onChangelogClosed({
+                    startTour,
+                    tourId: versionTourId,
+                })
             }
         }
 
-        document.getElementById('close-update-changelog-btn').addEventListener('click', () => closeModal(false))
-        document.getElementById('confirm-update-changelog-btn').addEventListener('click', () => closeModal(false))
+        document
+            .getElementById('close-update-changelog-btn')
+            .addEventListener('click', () => closeModal(false))
+        document
+            .getElementById('confirm-update-changelog-btn')
+            .addEventListener('click', () => closeModal(false))
         const tourBtn = document.getElementById('start-version-tour-btn')
         if (tourBtn) {
             tourBtn.addEventListener('click', () => closeModal(true))
