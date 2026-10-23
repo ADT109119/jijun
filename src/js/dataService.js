@@ -9,10 +9,12 @@ import {
     isDebtSettlementRecord,
 } from './utils.js'
 
-const openDB = idbOpenDB || (() => {
-    console.warn('IndexedDB 不可用，將使用 localStorage')
-    return null
-})
+const openDB =
+    idbOpenDB ||
+    (() => {
+        console.warn('IndexedDB 不可用，將使用 localStorage')
+        return null
+    })
 
 class DataService {
     constructor() {
@@ -91,10 +93,7 @@ class DataService {
                         ),
                 })
                 try {
-                    this.db = await Promise.race([
-                        openPromise,
-                        blockedPromise,
-                    ])
+                    this.db = await Promise.race([openPromise, blockedPromise])
                 } catch (e) {
                     this.db = null
                     throw e
@@ -108,8 +107,7 @@ class DataService {
             }
         } catch (error) {
             const blockedCase =
-                error &&
-                String(error.message || '').indexOf('db_blocked') === 0
+                error && String(error.message || '').indexOf('db_blocked') === 0
             const notSupported =
                 error && error.message === 'indexeddb_not_supported'
             console.error('Database initialization failed:', error)
@@ -206,13 +204,10 @@ class DataService {
             // Schema version 1
             if (oldVersion < 1) {
                 if (!db.objectStoreNames.contains('records')) {
-                    const recordStore = db.createObjectStore(
-                        'records',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const recordStore = db.createObjectStore('records', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     recordStore.createIndex('date', 'date')
                     recordStore.createIndex('type', 'type')
                     recordStore.createIndex('category', 'category')
@@ -226,33 +221,22 @@ class DataService {
             // Schema version 2
             if (oldVersion < 2) {
                 if (!db.objectStoreNames.contains('accounts')) {
-                    const accountStore = db.createObjectStore(
-                        'accounts',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const accountStore = db.createObjectStore('accounts', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     accountStore.createIndex('name', 'name', {
                         unique: true,
                     })
                 }
-                const recordStore =
-                    transaction.objectStore('records')
+                const recordStore = transaction.objectStore('records')
                 if (!recordStore.indexNames.contains('accountId')) {
-                    recordStore.createIndex(
-                        'accountId',
-                        'accountId'
-                    )
+                    recordStore.createIndex('accountId', 'accountId')
                 }
             }
             // Schema version 3
             if (oldVersion < 3) {
-                if (
-                    !db.objectStoreNames.contains(
-                        'recurring_transactions'
-                    )
-                ) {
+                if (!db.objectStoreNames.contains('recurring_transactions')) {
                     const recurringStore = db.createObjectStore(
                         'recurring_transactions',
                         {
@@ -260,10 +244,7 @@ class DataService {
                             autoIncrement: true,
                         }
                     )
-                    recurringStore.createIndex(
-                        'nextDueDate',
-                        'nextDueDate'
-                    )
+                    recurringStore.createIndex('nextDueDate', 'nextDueDate')
                 }
             }
             // Schema version 4: Debt management system
@@ -277,24 +258,18 @@ class DataService {
                 }
                 // Contacts store for debt management
                 if (!db.objectStoreNames.contains('contacts')) {
-                    const contactStore = db.createObjectStore(
-                        'contacts',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const contactStore = db.createObjectStore('contacts', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     contactStore.createIndex('name', 'name')
                 }
                 // Debts store for tracking receivables and payables
                 if (!db.objectStoreNames.contains('debts')) {
-                    const debtStore = db.createObjectStore(
-                        'debts',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const debtStore = db.createObjectStore('debts', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     debtStore.createIndex('contactId', 'contactId')
                     debtStore.createIndex('type', 'type')
                     debtStore.createIndex('settled', 'settled')
@@ -313,13 +288,10 @@ class DataService {
             // Schema version 6: Sync log for multi-device sync
             if (oldVersion < 6) {
                 if (!db.objectStoreNames.contains('sync_log')) {
-                    const syncStore = db.createObjectStore(
-                        'sync_log',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const syncStore = db.createObjectStore('sync_log', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     syncStore.createIndex('timestamp', 'timestamp')
                 }
             }
@@ -334,8 +306,7 @@ class DataService {
                 ]
                 for (const storeName of stores) {
                     if (db.objectStoreNames.contains(storeName)) {
-                        const store =
-                            transaction.objectStore(storeName)
+                        const store = transaction.objectStore(storeName)
                         if (!store.indexNames.contains('uuid')) {
                             store.createIndex('uuid', 'uuid', {
                                 unique: true,
@@ -348,25 +319,19 @@ class DataService {
                             if (!updateData.uuid) {
                                 // Simple UUID v4 generator
                                 updateData.uuid =
-                                    self.crypto &&
-                                    self.crypto.randomUUID
+                                    self.crypto && self.crypto.randomUUID
                                         ? self.crypto.randomUUID()
                                         : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
                                               /[xy]/g,
                                               function (c) {
                                                   const r =
-                                                          (Math.random() *
-                                                              16) |
+                                                          (Math.random() * 16) |
                                                           0,
                                                       v =
                                                           c === 'x'
                                                               ? r
-                                                              : (r &
-                                                                    0x3) |
-                                                                0x8
-                                                  return v.toString(
-                                                      16
-                                                  )
+                                                              : (r & 0x3) | 0x8
+                                                  return v.toString(16)
                                               }
                                           )
                                 await cursor.update(updateData)
@@ -380,13 +345,10 @@ class DataService {
             if (oldVersion < 8) {
                 // 1. 建立 ledgers object store
                 if (!db.objectStoreNames.contains('ledgers')) {
-                    const ledgerStore = db.createObjectStore(
-                        'ledgers',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                    const ledgerStore = db.createObjectStore('ledgers', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     ledgerStore.createIndex('uuid', 'uuid', {
                         unique: true,
                     })
@@ -402,34 +364,23 @@ class DataService {
                 ]
                 for (const storeName of dataStores) {
                     if (db.objectStoreNames.contains(storeName)) {
-                        const store =
-                            transaction.objectStore(storeName)
-                        if (
-                            !store.indexNames.contains('ledgerId')
-                        ) {
-                            store.createIndex(
-                                'ledgerId',
-                                'ledgerId'
-                            )
+                        const store = transaction.objectStore(storeName)
+                        if (!store.indexNames.contains('ledgerId')) {
+                            store.createIndex('ledgerId', 'ledgerId')
                         }
                     }
                 }
 
                 // 3. 插入預設帳本
-                const ledgerStore =
-                    transaction.objectStore('ledgers')
+                const ledgerStore = transaction.objectStore('ledgers')
                 const defaultUuid =
                     self.crypto && self.crypto.randomUUID
                         ? self.crypto.randomUUID()
                         : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
                               /[xy]/g,
                               function (c) {
-                                  const r =
-                                          (Math.random() * 16) | 0,
-                                      v =
-                                          c === 'x'
-                                              ? r
-                                              : (r & 0x3) | 0x8
+                                  const r = (Math.random() * 16) | 0,
+                                      v = c === 'x' ? r : (r & 0x3) | 0x8
                                   return v.toString(16)
                               }
                           )
@@ -446,8 +397,7 @@ class DataService {
                 // 4. 為所有現有資料打上 ledgerId = 1
                 for (const storeName of dataStores) {
                     if (db.objectStoreNames.contains(storeName)) {
-                        const store =
-                            transaction.objectStore(storeName)
+                        const store = transaction.objectStore(storeName)
                         let cursor = await store.openCursor()
                         while (cursor) {
                             const data = cursor.value
@@ -466,8 +416,7 @@ class DataService {
             // Schema version 9: Remove unique constraint on account name
             if (oldVersion < 9) {
                 if (db.objectStoreNames.contains('accounts')) {
-                    const accountStore =
-                        transaction.objectStore('accounts')
+                    const accountStore = transaction.objectStore('accounts')
                     if (accountStore.indexNames.contains('name')) {
                         accountStore.deleteIndex('name')
                     }
@@ -486,16 +435,11 @@ class DataService {
             }
             // Schema version 11: Amortizations (攤提/折舊/分期)
             if (oldVersion < 11) {
-                if (
-                    !db.objectStoreNames.contains('amortizations')
-                ) {
-                    const aStore = db.createObjectStore(
-                        'amortizations',
-                        {
-                            keyPath: 'id',
-                            autoIncrement: true,
-                        }
-                    )
+                if (!db.objectStoreNames.contains('amortizations')) {
+                    const aStore = db.createObjectStore('amortizations', {
+                        keyPath: 'id',
+                        autoIncrement: true,
+                    })
                     aStore.createIndex('uuid', 'uuid', {
                         unique: true,
                     })
@@ -506,13 +450,8 @@ class DataService {
             // Schema version 12: Add amortizationId index to records
             if (oldVersion < 12) {
                 if (db.objectStoreNames.contains('records')) {
-                    const recordStore =
-                        transaction.objectStore('records')
-                    if (
-                        !recordStore.indexNames.contains(
-                            'amortizationId'
-                        )
-                    ) {
+                    const recordStore = transaction.objectStore('records')
+                    if (!recordStore.indexNames.contains('amortizationId')) {
                         recordStore.createIndex(
                             'amortizationId',
                             'amortizationId',
@@ -524,8 +463,7 @@ class DataService {
             // Schema version 13: Credit card support
             if (oldVersion < 13) {
                 if (db.objectStoreNames.contains('accounts')) {
-                    const store =
-                        transaction.objectStore('accounts')
+                    const store = transaction.objectStore('accounts')
                     // 為舊資料補上 type = 'wallet'
                     let cursor = await store.openCursor()
                     while (cursor) {
@@ -547,11 +485,7 @@ class DataService {
                     }
                 }
                 // 新增信用卡帳單 store
-                if (
-                    !db.objectStoreNames.contains(
-                        'credit_statements'
-                    )
-                ) {
+                if (!db.objectStoreNames.contains('credit_statements')) {
                     const stmtStore = db.createObjectStore(
                         'credit_statements',
                         {
@@ -591,7 +525,9 @@ class DataService {
                         // 獲取聯絡人名稱
                         let contactName = '未知聯絡人'
                         if (debt.contactId) {
-                            const contact = await contactsStore.get(debt.contactId)
+                            const contact = await contactsStore.get(
+                                debt.contactId
+                            )
                             if (contact) {
                                 contactName = contact.name || '未知聯絡人'
                             }
@@ -600,7 +536,9 @@ class DataService {
                         // 獲取原始記帳紀錄的帳戶 ID
                         let originalAccountId = null
                         if (debt.recordId) {
-                            const originalRecord = await recordsStore.get(debt.recordId)
+                            const originalRecord = await recordsStore.get(
+                                debt.recordId
+                            )
                             if (originalRecord) {
                                 originalAccountId = originalRecord.accountId
                             }
@@ -609,21 +547,33 @@ class DataService {
                         const updatedPayments = []
                         for (const payment of debt.payments) {
                             if (!payment.recordId && !payment.recordUuid) {
-                                const paymentDate = payment.date || formatDateToString(new Date())
-                                const recordAccountId = originalAccountId || defaultAccountId
+                                const paymentDate =
+                                    payment.date ||
+                                    formatDateToString(new Date())
+                                const recordAccountId =
+                                    originalAccountId || defaultAccountId
 
                                 // 建立記帳紀錄
                                 const record = {
-                                    type: debt.type === 'receivable' ? 'income' : 'expense',
-                                    category: debt.type === 'receivable' ? 'debt_collection' : 'debt_repayment',
+                                    type:
+                                        debt.type === 'receivable'
+                                            ? 'income'
+                                            : 'expense',
+                                    category:
+                                        debt.type === 'receivable'
+                                            ? 'debt_collection'
+                                            : 'debt_repayment',
                                     amount: payment.amount,
                                     date: paymentDate,
-                                    description: debt.type === 'receivable'
-                                        ? `收回欠款：${contactName} - ${debt.description || ''}`
-                                        : `還款：${contactName} - ${debt.description || ''}`,
+                                    description:
+                                        debt.type === 'receivable'
+                                            ? `收回欠款：${contactName} - ${debt.description || ''}`
+                                            : `還款：${contactName} - ${debt.description || ''}`,
                                     ledgerId: debt.ledgerId || 1,
                                     debtId: debt.id,
-                                    ...(recordAccountId ? { accountId: recordAccountId } : {}),
+                                    ...(recordAccountId
+                                        ? { accountId: recordAccountId }
+                                        : {}),
                                 }
 
                                 // 生成 uuid (因為從 version 7 起需要 uuid)
@@ -633,14 +583,20 @@ class DataService {
                                         : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
                                               /[xy]/g,
                                               function (c) {
-                                                  const r = (Math.random() * 16) | 0,
-                                                      v = c === 'x' ? r : (r & 0x3) | 0x8
+                                                  const r =
+                                                          (Math.random() * 16) |
+                                                          0,
+                                                      v =
+                                                          c === 'x'
+                                                              ? r
+                                                              : (r & 0x3) | 0x8
                                                   return v.toString(16)
                                               }
                                           )
 
                                 // 寫入 records
-                                const newRecordId = await recordsStore.add(record)
+                                const newRecordId =
+                                    await recordsStore.add(record)
                                 payment.recordId = newRecordId
                                 payment.recordUuid = record.uuid
                                 updated = true
@@ -659,10 +615,9 @@ class DataService {
             // Schema version 15: Record Groups (groupMeta store)
             if (oldVersion < 15) {
                 if (!db.objectStoreNames.contains('groupMeta')) {
-                    const groupStore = db.createObjectStore(
-                        'groupMeta',
-                        { keyPath: 'id' }
-                    )
+                    const groupStore = db.createObjectStore('groupMeta', {
+                        keyPath: 'id',
+                    })
                     groupStore.createIndex('uuid', 'uuid', {
                         unique: true,
                     })
@@ -722,10 +677,7 @@ class DataService {
                     )
                     // 備份後清除（與 AllTheData 同策略）
                     try {
-                        localStorage.setItem(
-                            'records_backup',
-                            lsRecordsRaw
-                        )
+                        localStorage.setItem('records_backup', lsRecordsRaw)
                     } catch (e) {
                         console.warn('localStorage 空間不足，無法留備份:', e)
                     }
@@ -1045,7 +997,8 @@ class DataService {
             // Multi-level sort: date desc → timestamp desc → id desc
             return records.sort((a, b) => {
                 // Primary: date descending
-                if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+                if (a.date !== b.date)
+                    return (b.date || '').localeCompare(a.date || '')
                 // Secondary: timestamp descending (missing timestamps sort to bottom)
                 const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
                 if (tsDiff !== 0) return tsDiff
@@ -1431,8 +1384,7 @@ class DataService {
                 const finalUpdates = { ...updates, ...extraUpdates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (transaction.uuid)
-                        finalUpdates.uuid = transaction.uuid
+                    if (transaction.uuid) finalUpdates.uuid = transaction.uuid
                 }
                 const updatedTransaction = { ...transaction, ...finalUpdates }
                 await tx.store.put(updatedTransaction)
@@ -1523,7 +1475,8 @@ class DataService {
 
         // Multi-level sort: date desc → timestamp desc → id desc
         return records.sort((a, b) => {
-            if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '')
+            if (a.date !== b.date)
+                return (b.date || '').localeCompare(a.date || '')
             const tsDiff = (b.timestamp || 0) - (a.timestamp || 0)
             if (tsDiff !== 0) return tsDiff
             return (b.id || 0) - (a.id || 0)
@@ -1607,7 +1560,11 @@ class DataService {
         records.forEach(record => {
             const debt = findDebtForRecord(record, debtMaps)
             const isGroupSettled = record.groupStatus === 'settled'
-            const effectiveAmount = calculateEffectiveRecordAmount(record, debt, { isGroupSettled })
+            const effectiveAmount = calculateEffectiveRecordAmount(
+                record,
+                debt,
+                { isGroupSettled }
+            )
 
             if (effectiveAmount === 0) return // Skip 0 amounts to prevent them from showing up
 
@@ -1750,15 +1707,12 @@ class DataService {
                         const fileData = cursor.value
                         let dataUrl = ''
                         try {
-                            dataUrl = await new Promise(
-                                (resolve, reject) => {
-                                    const reader = new FileReader()
-                                    reader.onload = () =>
-                                        resolve(reader.result)
-                                    reader.onerror = reject
-                                    reader.readAsDataURL(fileData.data)
-                                }
-                            )
+                            dataUrl = await new Promise((resolve, reject) => {
+                                const reader = new FileReader()
+                                reader.onload = () => resolve(reader.result)
+                                reader.onerror = reject
+                                reader.readAsDataURL(fileData.data)
+                            })
                         } catch (e) {
                             console.warn(
                                 'Failed to convert file to data URL:',
@@ -1975,7 +1929,9 @@ class DataService {
                         data.settings?.debtManagementEnabled || false
                     const groupManagementEnabled =
                         data.settings?.groupManagementEnabled ??
-                        (data.groupMeta && data.groupMeta.length > 0 ? true : false)
+                        (data.groupMeta && data.groupMeta.length > 0
+                            ? true
+                            : false)
                     await this.saveSetting({
                         key: 'advancedAccountModeEnabled',
                         value: advancedModeEnabled,
@@ -2059,12 +2015,21 @@ class DataService {
                             dataVal.income !== undefined
                         if (isLegacyFormat) {
                             await this.saveCategorySetting(settingKey, dataVal)
-                            await this.saveSetting({ key: settingKey, value: dataVal })
+                            await this.saveSetting({
+                                key: settingKey,
+                                value: dataVal,
+                            })
                             if (settingKey === 'custom_categories') {
                                 try {
-                                    localStorage.setItem('customCategories', JSON.stringify(dataVal))
+                                    localStorage.setItem(
+                                        'customCategories',
+                                        JSON.stringify(dataVal)
+                                    )
                                 } catch (e) {
-                                    console.warn('LocalStorage customCategories sync failed:', e)
+                                    console.warn(
+                                        'LocalStorage customCategories sync failed:',
+                                        e
+                                    )
                                 }
                             }
                         } else {
@@ -2083,12 +2048,21 @@ class DataService {
                                 )
                                 if (newLid === this.activeLedgerId) {
                                     matchedActive = true
-                                    await this.saveSetting({ key: settingKey, value: val })
+                                    await this.saveSetting({
+                                        key: settingKey,
+                                        value: val,
+                                    })
                                     if (settingKey === 'custom_categories') {
                                         try {
-                                            localStorage.setItem('customCategories', JSON.stringify(val))
+                                            localStorage.setItem(
+                                                'customCategories',
+                                                JSON.stringify(val)
+                                            )
                                         } catch (e) {
-                                            console.warn('LocalStorage customCategories sync failed:', e)
+                                            console.warn(
+                                                'LocalStorage customCategories sync failed:',
+                                                e
+                                            )
                                         }
                                     }
                                 }
@@ -2096,12 +2070,21 @@ class DataService {
                             if (!matchedActive) {
                                 const firstVal = Object.values(dataVal)[0]
                                 if (firstVal) {
-                                    await this.saveSetting({ key: settingKey, value: firstVal })
+                                    await this.saveSetting({
+                                        key: settingKey,
+                                        value: firstVal,
+                                    })
                                     if (settingKey === 'custom_categories') {
                                         try {
-                                            localStorage.setItem('customCategories', JSON.stringify(firstVal))
+                                            localStorage.setItem(
+                                                'customCategories',
+                                                JSON.stringify(firstVal)
+                                            )
                                         } catch (e) {
-                                            console.warn('LocalStorage customCategories sync failed:', e)
+                                            console.warn(
+                                                'LocalStorage customCategories sync failed:',
+                                                e
+                                            )
                                         }
                                     }
                                 }
@@ -2140,7 +2123,8 @@ class DataService {
                                     !isNaN(lId) &&
                                     oldLedgerIdToNewIdMap.has(lId)
                                 ) {
-                                    const mappedId = oldLedgerIdToNewIdMap.get(lId)
+                                    const mappedId =
+                                        oldLedgerIdToNewIdMap.get(lId)
                                     newKey = `budget_settings_${mappedId}`
                                     suffix = `_${mappedId}`
                                 } else {
@@ -2163,19 +2147,28 @@ class DataService {
                                     )
                                     localStorage.setItem(
                                         `categoryBudgets${suffix}`,
-                                        JSON.stringify(val.categoryBudgets || {})
+                                        JSON.stringify(
+                                            val.categoryBudgets || {}
+                                        )
                                     )
                                     localStorage.setItem(
                                         `categoryBudgetOrder${suffix}`,
-                                        JSON.stringify(val.categoryBudgetOrder || [])
+                                        JSON.stringify(
+                                            val.categoryBudgetOrder || []
+                                        )
                                     )
                                     localStorage.setItem(
                                         `excludedBudgetCategories${suffix}`,
-                                        JSON.stringify(val.excludedBudgetCategories || [])
+                                        JSON.stringify(
+                                            val.excludedBudgetCategories || []
+                                        )
                                     )
                                 }
                             } catch (e) {
-                                console.warn('LocalStorage budget sync failed during import:', e)
+                                console.warn(
+                                    'LocalStorage budget sync failed during import:',
+                                    e
+                                )
                             }
                         }
                     } else if (data.budgetSettings) {
@@ -2191,21 +2184,60 @@ class DataService {
                         }
                         try {
                             const val = data.budgetSettings
-                            const suffix = this.activeLedgerId ? `_${this.activeLedgerId}` : ''
+                            const suffix = this.activeLedgerId
+                                ? `_${this.activeLedgerId}`
+                                : ''
                             if (val && typeof val === 'object') {
-                                localStorage.setItem('monthlyBudget', (val.monthlyBudget || 0).toString())
-                                localStorage.setItem('categoryBudgets', JSON.stringify(val.categoryBudgets || {}))
-                                localStorage.setItem('categoryBudgetOrder', JSON.stringify(val.categoryBudgetOrder || []))
-                                localStorage.setItem('excludedBudgetCategories', JSON.stringify(val.excludedBudgetCategories || []))
+                                localStorage.setItem(
+                                    'monthlyBudget',
+                                    (val.monthlyBudget || 0).toString()
+                                )
+                                localStorage.setItem(
+                                    'categoryBudgets',
+                                    JSON.stringify(val.categoryBudgets || {})
+                                )
+                                localStorage.setItem(
+                                    'categoryBudgetOrder',
+                                    JSON.stringify(
+                                        val.categoryBudgetOrder || []
+                                    )
+                                )
+                                localStorage.setItem(
+                                    'excludedBudgetCategories',
+                                    JSON.stringify(
+                                        val.excludedBudgetCategories || []
+                                    )
+                                )
                                 if (suffix) {
-                                    localStorage.setItem(`monthlyBudget${suffix}`, (val.monthlyBudget || 0).toString())
-                                    localStorage.setItem(`categoryBudgets${suffix}`, JSON.stringify(val.categoryBudgets || {}))
-                                    localStorage.setItem(`categoryBudgetOrder${suffix}`, JSON.stringify(val.categoryBudgetOrder || []))
-                                    localStorage.setItem(`excludedBudgetCategories${suffix}`, JSON.stringify(val.excludedBudgetCategories || []))
+                                    localStorage.setItem(
+                                        `monthlyBudget${suffix}`,
+                                        (val.monthlyBudget || 0).toString()
+                                    )
+                                    localStorage.setItem(
+                                        `categoryBudgets${suffix}`,
+                                        JSON.stringify(
+                                            val.categoryBudgets || {}
+                                        )
+                                    )
+                                    localStorage.setItem(
+                                        `categoryBudgetOrder${suffix}`,
+                                        JSON.stringify(
+                                            val.categoryBudgetOrder || []
+                                        )
+                                    )
+                                    localStorage.setItem(
+                                        `excludedBudgetCategories${suffix}`,
+                                        JSON.stringify(
+                                            val.excludedBudgetCategories || []
+                                        )
+                                    )
                                 }
                             }
                         } catch (e) {
-                            console.warn('LocalStorage budget sync failed during legacy import:', e)
+                            console.warn(
+                                'LocalStorage budget sync failed during legacy import:',
+                                e
+                            )
                         }
                     }
 
@@ -2221,22 +2253,32 @@ class DataService {
                         if (Array.isArray(data.records)) {
                             for (const r of data.records) {
                                 if (r.accountId != null) {
-                                    refCounts.set(r.accountId, (refCounts.get(r.accountId) || 0) + 1)
+                                    refCounts.set(
+                                        r.accountId,
+                                        (refCounts.get(r.accountId) || 0) + 1
+                                    )
                                 }
                             }
                         }
                         if (Array.isArray(data.debts)) {
                             for (const d of data.debts) {
                                 if (d.accountId != null) {
-                                    refCounts.set(d.accountId, (refCounts.get(d.accountId) || 0) + 1)
+                                    refCounts.set(
+                                        d.accountId,
+                                        (refCounts.get(d.accountId) || 0) + 1
+                                    )
                                 }
                             }
                         }
 
                         const accountGroups = new Map()
                         for (const account of data.accounts) {
-                            const mappedLid = getMappedLedgerId(account.ledgerId)
-                            const normName = (account.name || '').trim().toLowerCase()
+                            const mappedLid = getMappedLedgerId(
+                                account.ledgerId
+                            )
+                            const normName = (account.name || '')
+                                .trim()
+                                .toLowerCase()
                             const key = `${mappedLid}:::${normName}`
                             if (!accountGroups.has(key)) {
                                 accountGroups.set(key, [])
@@ -2259,14 +2301,26 @@ class DataService {
                             })
 
                             const primaryAccount = group[0]
-                            const { id: _oldPrimaryId, ...primaryData } = primaryAccount
-                            primaryData.ledgerId = getMappedLedgerId(primaryData.ledgerId)
+                            const { id: _oldPrimaryId, ...primaryData } =
+                                primaryAccount
+                            primaryData.ledgerId = getMappedLedgerId(
+                                primaryData.ledgerId
+                            )
 
-                            if ((!primaryData.balance || primaryData.balance === 0) && group.some(a => a.balance)) {
-                                primaryData.balance = group.find(a => a.balance)?.balance || primaryData.balance
+                            if (
+                                (!primaryData.balance ||
+                                    primaryData.balance === 0) &&
+                                group.some(a => a.balance)
+                            ) {
+                                primaryData.balance =
+                                    group.find(a => a.balance)?.balance ||
+                                    primaryData.balance
                             }
 
-                            const newId = await this.addAccount(primaryData, true)
+                            const newId = await this.addAccount(
+                                primaryData,
+                                true
+                            )
 
                             for (const acc of group) {
                                 oldAccountIdToNewIdMap.set(acc.id, newId)
@@ -2309,8 +2363,7 @@ class DataService {
                             let blob
                             try {
                                 const parts = file.dataUrl.split(',')
-                                const mimeMatch =
-                                    parts[0].match(/:(.*?);/)
+                                const mimeMatch = parts[0].match(/:(.*?);/)
                                 if (!mimeMatch)
                                     throw new Error('Invalid data URL')
                                 const mime = mimeMatch[1]
@@ -2332,17 +2385,13 @@ class DataService {
                                 name: file.name,
                                 type: file.type,
                                 data: blob,
-                                createdAt:
-                                    file.createdAt || Date.now(),
+                                createdAt: file.createdAt || Date.now(),
                             }
                             let newId
                             try {
                                 newId = await txF.store.add(dbFile)
                             } catch (e) {
-                                console.warn(
-                                    'Failed to import file:',
-                                    e
-                                )
+                                console.warn('Failed to import file:', e)
                                 continue
                             }
                             oldFileIdToNewIdMap.set(oldId, newId)
@@ -2358,15 +2407,23 @@ class DataService {
                         if (Array.isArray(data.debts)) {
                             for (const d of data.debts) {
                                 if (d.contactId != null) {
-                                    contactRefCounts.set(d.contactId, (contactRefCounts.get(d.contactId) || 0) + 1)
+                                    contactRefCounts.set(
+                                        d.contactId,
+                                        (contactRefCounts.get(d.contactId) ||
+                                            0) + 1
+                                    )
                                 }
                             }
                         }
 
                         const contactGroups = new Map()
                         for (const contact of data.contacts) {
-                            const mappedLid = getMappedLedgerId(contact.ledgerId)
-                            const normName = (contact.name || '').trim().toLowerCase()
+                            const mappedLid = getMappedLedgerId(
+                                contact.ledgerId
+                            )
+                            const normName = (contact.name || '')
+                                .trim()
+                                .toLowerCase()
                             const key = `${mappedLid}:::${normName}`
                             if (!contactGroups.has(key)) {
                                 contactGroups.set(key, [])
@@ -2386,15 +2443,21 @@ class DataService {
                             })
 
                             const primaryContact = group[0]
-                            const { id: _oldPrimaryId, ...contactData } = primaryContact
-                            contactData.ledgerId = getMappedLedgerId(contactData.ledgerId)
+                            const { id: _oldPrimaryId, ...contactData } =
+                                primaryContact
+                            contactData.ledgerId = getMappedLedgerId(
+                                contactData.ledgerId
+                            )
                             if (contactData.avatarFileId) {
                                 contactData.avatarFileId =
                                     oldFileIdToNewIdMap.get(
                                         contactData.avatarFileId
                                     ) || null
                             }
-                            const newId = await this.addContact(contactData, true)
+                            const newId = await this.addContact(
+                                contactData,
+                                true
+                            )
                             for (const c of group) {
                                 oldContactIdToNewIdMap.set(c.id, newId)
                             }
@@ -2407,7 +2470,10 @@ class DataService {
 
                     // 5.5 匯入 Group Meta (在 debt 之前，因為 groupId 不需要 remap)
                     if (data.groupMeta && Array.isArray(data.groupMeta)) {
-                        const txGM = this.db.transaction('groupMeta', 'readwrite')
+                        const txGM = this.db.transaction(
+                            'groupMeta',
+                            'readwrite'
+                        )
                         for (const gm of data.groupMeta) {
                             const { id, ...gmData } = gm
                             gmData.ledgerId = getMappedLedgerId(gmData.ledgerId)
@@ -2714,7 +2780,10 @@ class DataService {
                         await this.deduplicateAccounts()
                         await this.deduplicateContacts()
                     } catch (e) {
-                        console.warn('[DataService] post-import deduplicate warning:', e)
+                        console.warn(
+                            '[DataService] post-import deduplicate warning:',
+                            e
+                        )
                     }
 
                     // 匯入成功：清除緊急快照（失敗時保留供手動救援）
@@ -3120,8 +3189,16 @@ class DataService {
      * @returns {Promise<boolean>}
      */
     async deleteSyncLogsByIds(ids) {
-        if (this.useLocalStorage || !this.db || !Array.isArray(ids) || ids.length === 0) return true
-        const validIds = ids.filter(id => typeof id === 'number' && Number.isInteger(id))
+        if (
+            this.useLocalStorage ||
+            !this.db ||
+            !Array.isArray(ids) ||
+            ids.length === 0
+        )
+            return true
+        const validIds = ids.filter(
+            id => typeof id === 'number' && Number.isInteger(id)
+        )
         if (validIds.length === 0) return true
         try {
             const tx = this.db.transaction('sync_log', 'readwrite')
@@ -3178,9 +3255,9 @@ class DataService {
         const credit_statements = (
             await this.getCreditStatements({ allLedgers: true })
         ).filter(s => validLedgerIds.has(s.ledgerId))
-        const groupMetaList = (
-            await this.getAllGroupMeta()
-        ).filter(g => validLedgerIds.has(g.ledgerId))
+        const groupMetaList = (await this.getAllGroupMeta()).filter(g =>
+            validLedgerIds.has(g.ledgerId)
+        )
 
         // 建立帳戶/聯絡人/欠款/群組 UUID 查找表
         const accountUuidMap = new Map(rawAccounts.map(a => [a.id, a.uuid]))
@@ -3221,8 +3298,7 @@ class DataService {
         if (!isSharedSync) {
             customCategories =
                 await this.getCategorySettingsMap('custom_categories')
-            categoryOrder =
-                await this.getCategorySettingsMap('category_order')
+            categoryOrder = await this.getCategorySettingsMap('category_order')
             hiddenCategories =
                 await this.getCategorySettingsMap('hidden_categories')
 
@@ -3245,7 +3321,8 @@ class DataService {
                             const val = JSON.parse(localStorage.getItem(k))
                             allSettings.push({
                                 key: k,
-                                value: val?.value !== undefined ? val.value : val,
+                                value:
+                                    val?.value !== undefined ? val.value : val,
                             })
                         } catch (_) {}
                     }
@@ -3505,8 +3582,7 @@ class DataService {
                 const finalUpdates = { ...updates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (account.uuid)
-                        finalUpdates.uuid = account.uuid
+                    if (account.uuid) finalUpdates.uuid = account.uuid
                 }
                 const updatedAccount = { ...account, ...finalUpdates }
                 await tx.store.put(updatedAccount)
@@ -3619,28 +3695,42 @@ class DataService {
                 groups.get(key).push(acc)
             }
 
-            const duplicateGroups = [...groups.values()].filter(g => g.length > 1)
+            const duplicateGroups = [...groups.values()].filter(
+                g => g.length > 1
+            )
             if (duplicateGroups.length === 0) {
                 return { mergedCount: 0, groupsProcessed: 0 }
             }
 
             const allRecords = await this.getRecords({ allLedgers: true })
             const allDebts = await this.getDebts({ allLedgers: true })
-            const allRecurring = await this.getRecurringTransactions({ allLedgers: true })
-            const allAmortizations = await this.getAmortizations({ allLedgers: true })
-            const allStatements = await this.getCreditStatements({ allLedgers: true })
+            const allRecurring = await this.getRecurringTransactions({
+                allLedgers: true,
+            })
+            const allAmortizations = await this.getAmortizations({
+                allLedgers: true,
+            })
+            const allStatements = await this.getCreditStatements({
+                allLedgers: true,
+            })
 
             // 統計各 accountId 的關聯紀錄數量
             const recordCountMap = new Map()
             for (const r of allRecords) {
                 if (r.accountId != null) {
-                    recordCountMap.set(r.accountId, (recordCountMap.get(r.accountId) || 0) + 1)
+                    recordCountMap.set(
+                        r.accountId,
+                        (recordCountMap.get(r.accountId) || 0) + 1
+                    )
                 }
             }
             const debtCountMap = new Map()
             for (const d of allDebts) {
                 if (d.accountId != null) {
-                    debtCountMap.set(d.accountId, (debtCountMap.get(d.accountId) || 0) + 1)
+                    debtCountMap.set(
+                        d.accountId,
+                        (debtCountMap.get(d.accountId) || 0) + 1
+                    )
                 }
             }
 
@@ -3649,8 +3739,12 @@ class DataService {
             for (const group of duplicateGroups) {
                 // 評分排序：record 權重 10，debt 權重 5
                 group.sort((a, b) => {
-                    const scoreA = (recordCountMap.get(a.id) || 0) * 10 + (debtCountMap.get(a.id) || 0) * 5
-                    const scoreB = (recordCountMap.get(b.id) || 0) * 10 + (debtCountMap.get(b.id) || 0) * 5
+                    const scoreA =
+                        (recordCountMap.get(a.id) || 0) * 10 +
+                        (debtCountMap.get(a.id) || 0) * 5
+                    const scoreB =
+                        (recordCountMap.get(b.id) || 0) * 10 +
+                        (debtCountMap.get(b.id) || 0) * 5
                     if (scoreB !== scoreA) return scoreB - scoreA
                     const uuidA = a.uuid ? 1 : 0
                     const uuidB = b.uuid ? 1 : 0
@@ -3665,10 +3759,17 @@ class DataService {
                 const redundants = group.slice(1)
 
                 // 若主帳戶初始餘額為 0，而冗餘帳戶有非零餘額，繼承之
-                if ((!primary.balance || primary.balance === 0) && redundants.some(r => r.balance)) {
+                if (
+                    (!primary.balance || primary.balance === 0) &&
+                    redundants.some(r => r.balance)
+                ) {
                     const foundBal = redundants.find(r => r.balance)?.balance
                     if (foundBal !== undefined) {
-                        await this.updateAccount(primary.id, { balance: foundBal }, true)
+                        await this.updateAccount(
+                            primary.id,
+                            { balance: foundBal },
+                            true
+                        )
                         primary.balance = foundBal
                     }
                 }
@@ -3678,62 +3779,96 @@ class DataService {
                     const redId = redundant.id
 
                     // 1. 轉移 records
-                    const recordsToUpdate = allRecords.filter(r => r.accountId === redId)
+                    const recordsToUpdate = allRecords.filter(
+                        r => r.accountId === redId
+                    )
                     for (const rec of recordsToUpdate) {
-                        await this.updateRecord(rec.id, {
-                            accountId: primary.id,
-                            accountUuid: primary.uuid || null
-                        }, true)
+                        await this.updateRecord(
+                            rec.id,
+                            {
+                                accountId: primary.id,
+                                accountUuid: primary.uuid || null,
+                            },
+                            true
+                        )
                         rec.accountId = primary.id
                         rec.accountUuid = primary.uuid || null
                     }
 
                     // 2. 轉移 debts
-                    const debtsToUpdate = allDebts.filter(d => d.accountId === redId)
+                    const debtsToUpdate = allDebts.filter(
+                        d => d.accountId === redId
+                    )
                     for (const debt of debtsToUpdate) {
-                        await this.updateDebt(debt.id, {
-                            accountId: primary.id
-                        }, true)
+                        await this.updateDebt(
+                            debt.id,
+                            {
+                                accountId: primary.id,
+                            },
+                            true
+                        )
                         debt.accountId = primary.id
                     }
 
                     // 3. 轉移 recurring_transactions
-                    const recurringsToUpdate = allRecurring.filter(rt => rt.accountId === redId)
+                    const recurringsToUpdate = allRecurring.filter(
+                        rt => rt.accountId === redId
+                    )
                     for (const rt of recurringsToUpdate) {
-                        await this.updateRecurringTransaction(rt.id, {
-                            accountId: primary.id,
-                            accountUuid: primary.uuid || null
-                        }, true)
+                        await this.updateRecurringTransaction(
+                            rt.id,
+                            {
+                                accountId: primary.id,
+                                accountUuid: primary.uuid || null,
+                            },
+                            true
+                        )
                         rt.accountId = primary.id
                         rt.accountUuid = primary.uuid || null
                     }
 
                     // 4. 轉移 amortizations
-                    const amortizationsToUpdate = allAmortizations.filter(am => am.accountId === redId)
+                    const amortizationsToUpdate = allAmortizations.filter(
+                        am => am.accountId === redId
+                    )
                     for (const am of amortizationsToUpdate) {
-                        await this.updateAmortization(am.id, {
-                            accountId: primary.id,
-                            accountUuid: primary.uuid || null
-                        }, true)
+                        await this.updateAmortization(
+                            am.id,
+                            {
+                                accountId: primary.id,
+                                accountUuid: primary.uuid || null,
+                            },
+                            true
+                        )
                         am.accountId = primary.id
                         am.accountUuid = primary.uuid || null
                     }
 
                     // 5. 轉移 credit_statements
-                    const stmtsToUpdate = allStatements.filter(s => s.accountId === redId)
+                    const stmtsToUpdate = allStatements.filter(
+                        s => s.accountId === redId
+                    )
                     for (const stmt of stmtsToUpdate) {
-                        await this.updateCreditStatement(stmt.id, {
-                            accountId: primary.id
-                        }, true)
+                        await this.updateCreditStatement(
+                            stmt.id,
+                            {
+                                accountId: primary.id,
+                            },
+                            true
+                        )
                         stmt.accountId = primary.id
                     }
 
                     // 6. 轉移 其他帳戶的 autoPayAccountId
                     for (const acc of allAccounts) {
                         if (acc.autoPayAccountId === redId) {
-                            await this.updateAccount(acc.id, {
-                                autoPayAccountId: primary.id
-                            }, true)
+                            await this.updateAccount(
+                                acc.id,
+                                {
+                                    autoPayAccountId: primary.id,
+                                },
+                                true
+                            )
                             acc.autoPayAccountId = primary.id
                         }
                     }
@@ -3744,7 +3879,9 @@ class DataService {
                 }
             }
 
-            console.log(`[DataService] deduplicateAccounts: 合併了 ${mergedCount} 個重複帳戶`)
+            console.log(
+                `[DataService] deduplicateAccounts: 合併了 ${mergedCount} 個重複帳戶`
+            )
             await this.deduplicateCreditCardPayments()
             return { mergedCount, groupsProcessed: duplicateGroups.length }
         } catch (error) {
@@ -3822,7 +3959,9 @@ class DataService {
                 groups.get(key).push(contact)
             }
 
-            const duplicateGroups = [...groups.values()].filter(g => g.length > 1)
+            const duplicateGroups = [...groups.values()].filter(
+                g => g.length > 1
+            )
             if (duplicateGroups.length === 0) {
                 return { mergedCount: 0, groupsProcessed: 0 }
             }
@@ -3834,13 +3973,19 @@ class DataService {
             const debtCountMap = new Map()
             for (const d of allDebts) {
                 if (d.contactId != null) {
-                    debtCountMap.set(d.contactId, (debtCountMap.get(d.contactId) || 0) + 1)
+                    debtCountMap.set(
+                        d.contactId,
+                        (debtCountMap.get(d.contactId) || 0) + 1
+                    )
                 }
             }
             const recordCountMap = new Map()
             for (const r of allRecords) {
                 if (r.contactId != null) {
-                    recordCountMap.set(r.contactId, (recordCountMap.get(r.contactId) || 0) + 1)
+                    recordCountMap.set(
+                        r.contactId,
+                        (recordCountMap.get(r.contactId) || 0) + 1
+                    )
                 }
             }
 
@@ -3849,8 +3994,12 @@ class DataService {
             for (const group of duplicateGroups) {
                 // 評分排序：debt 權重 10，record 權重 5，有頭像優先，有 UUID 優先，建立時間早（ID小）優先
                 group.sort((a, b) => {
-                    const scoreA = (debtCountMap.get(a.id) || 0) * 10 + (recordCountMap.get(a.id) || 0) * 5
-                    const scoreB = (debtCountMap.get(b.id) || 0) * 10 + (recordCountMap.get(b.id) || 0) * 5
+                    const scoreA =
+                        (debtCountMap.get(a.id) || 0) * 10 +
+                        (recordCountMap.get(a.id) || 0) * 5
+                    const scoreB =
+                        (debtCountMap.get(b.id) || 0) * 10 +
+                        (recordCountMap.get(b.id) || 0) * 5
                     if (scoreB !== scoreA) return scoreB - scoreA
                     const avatarA = a.avatarFileId ? 1 : 0
                     const avatarB = b.avatarFileId ? 1 : 0
@@ -3865,10 +4014,19 @@ class DataService {
                 const redundants = group.slice(1)
 
                 // 若主聯絡人無頭像，冗餘聯絡人有頭像，繼承之
-                if (!primary.avatarFileId && redundants.some(r => r.avatarFileId)) {
-                    const foundAvatar = redundants.find(r => r.avatarFileId)?.avatarFileId
+                if (
+                    !primary.avatarFileId &&
+                    redundants.some(r => r.avatarFileId)
+                ) {
+                    const foundAvatar = redundants.find(
+                        r => r.avatarFileId
+                    )?.avatarFileId
                     if (foundAvatar) {
-                        await this.updateContact(primary.id, { avatarFileId: foundAvatar }, true)
+                        await this.updateContact(
+                            primary.id,
+                            { avatarFileId: foundAvatar },
+                            true
+                        )
                         primary.avatarFileId = foundAvatar
                     }
                 }
@@ -3878,22 +4036,34 @@ class DataService {
                     const redId = redundant.id
 
                     // 1. 轉移 debts
-                    const debtsToUpdate = allDebts.filter(d => d.contactId === redId)
+                    const debtsToUpdate = allDebts.filter(
+                        d => d.contactId === redId
+                    )
                     for (const debt of debtsToUpdate) {
-                        await this.updateDebt(debt.id, {
-                            contactId: primary.id,
-                            contactUuid: primary.uuid || null
-                        }, true)
+                        await this.updateDebt(
+                            debt.id,
+                            {
+                                contactId: primary.id,
+                                contactUuid: primary.uuid || null,
+                            },
+                            true
+                        )
                         debt.contactId = primary.id
                         debt.contactUuid = primary.uuid || null
                     }
 
                     // 2. 轉移 records (例如群組分帳或欠款紀錄的 contactId)
-                    const recordsToUpdate = allRecords.filter(r => r.contactId === redId)
+                    const recordsToUpdate = allRecords.filter(
+                        r => r.contactId === redId
+                    )
                     for (const rec of recordsToUpdate) {
-                        await this.updateRecord(rec.id, {
-                            contactId: primary.id
-                        }, true)
+                        await this.updateRecord(
+                            rec.id,
+                            {
+                                contactId: primary.id,
+                            },
+                            true
+                        )
                         rec.contactId = primary.id
                     }
 
@@ -3903,7 +4073,9 @@ class DataService {
                 }
             }
 
-            console.log(`[DataService] deduplicateContacts: 合併了 ${mergedCount} 個重複聯絡人`)
+            console.log(
+                `[DataService] deduplicateContacts: 合併了 ${mergedCount} 個重複聯絡人`
+            )
             return { mergedCount, groupsProcessed: duplicateGroups.length }
         } catch (error) {
             console.error('[DataService] deduplicateContacts error:', error)
@@ -3918,7 +4090,8 @@ class DataService {
      * @param {string|null} [oldUuid=null]
      */
     async alignAccountUuid(accountId, targetUuid, oldUuid = null) {
-        if (!this.db || this.useLocalStorage || !accountId || !targetUuid) return
+        if (!this.db || this.useLocalStorage || !accountId || !targetUuid)
+            return
         try {
             const tx = this.db.transaction('accounts', 'readwrite')
             const store = tx.objectStore('accounts')
@@ -3997,7 +4170,8 @@ class DataService {
      * @param {string|null} [oldUuid=null]
      */
     async alignContactUuid(contactId, targetUuid, oldUuid = null) {
-        if (!this.db || this.useLocalStorage || !contactId || !targetUuid) return
+        if (!this.db || this.useLocalStorage || !contactId || !targetUuid)
+            return
         try {
             const tx = this.db.transaction('contacts', 'readwrite')
             const store = tx.objectStore('contacts')
@@ -4039,7 +4213,10 @@ class DataService {
     async alignRecurringTransactionUuid(rtId, targetUuid) {
         if (!this.db || this.useLocalStorage || !rtId || !targetUuid) return
         try {
-            const tx = this.db.transaction('recurring_transactions', 'readwrite')
+            const tx = this.db.transaction(
+                'recurring_transactions',
+                'readwrite'
+            )
             const store = tx.objectStore('recurring_transactions')
             const rt = await store.get(rtId)
             if (!rt) return
@@ -4230,7 +4407,12 @@ class DataService {
      * @param {string} [targetPeriod] - 指定帳單期別 (如 '2026-09')
      * @returns {Promise<{ totalExpense: number, totalRepayment: number, currentBalance: number, availableCredit: number, creditLimit: number, recordCount: number }>}
      */
-    async calculateCreditCardBalance(accountId, startDate, endDate, targetPeriod = null) {
+    async calculateCreditCardBalance(
+        accountId,
+        startDate,
+        endDate,
+        targetPeriod = null
+    ) {
         const account =
             typeof accountId === 'object' && accountId !== null
                 ? accountId
@@ -4660,7 +4842,7 @@ class DataService {
                     25
                 )
             )
-            unbilledStartDate = new Date(lastStatementEndDate)
+unbilledStartDate = new Date(lastStatementEndDate)
             unbilledStartDate.setDate(unbilledStartDate.getDate() + 1)
             unbilledEndDate = new Date(
                 currentYear,
@@ -5176,7 +5358,7 @@ class DataService {
         if (!debitAccount) throw new Error('找不到扣款帳戶')
 
         const amountToPay =
-            customAmount !== null ? customAmount : (stmt.amount || 0)
+            customAmount !== null ? customAmount : stmt.amount || 0
         if (amountToPay <= 0) throw new Error('扣繳金額必須大於 0')
 
         const now = new Date()
@@ -5424,8 +5606,7 @@ class DataService {
     async saveGroupMeta(groupMeta, skipLog = false) {
         try {
             await this._ensureGroupMetaStore()
-            const uuid =
-                groupMeta.uuid || this.generateUUID()
+            const uuid = groupMeta.uuid || this.generateUUID()
             const data = {
                 id: groupMeta.id || uuid,
                 uuid,
@@ -5433,8 +5614,7 @@ class DataService {
                 createdAt: groupMeta.createdAt || Date.now(),
                 settled: groupMeta.settled || false,
                 settledAt: groupMeta.settledAt || null,
-                ledgerId:
-                    groupMeta.ledgerId || this.activeLedgerId,
+                ledgerId: groupMeta.ledgerId || this.activeLedgerId,
             }
             const tx = this.db.transaction('groupMeta', 'readwrite')
             const id = await tx.store.put(data)
@@ -5533,30 +5713,43 @@ class DataService {
         }
 
         let totalReceivable = 0 // 別人欠我 (代墊支出 + 拖欠收入)
-        let totalPayable = 0    // 我欠別人 (別人代墊支出 + 預領收入)
+        let totalPayable = 0 // 我欠別人 (別人代墊支出 + 預領收入)
 
         nonSettlement.forEach(r => {
             if (r.debtId && debtsMap.has(r.debtId)) {
                 const debt = debtsMap.get(r.debtId)
                 if (!debt.settled) {
-                    const rem = debt.remainingAmount !== undefined ? debt.remainingAmount : debt.amount
+                    const rem =
+                        debt.remainingAmount !== undefined
+                            ? debt.remainingAmount
+                            : debt.amount
                     if (debt.type === 'receivable') {
                         totalReceivable += rem // 被欠款 (被欠支出代墊 或 被欠收入拖欠薪水)
                     } else if (debt.type === 'payable') {
-                        totalPayable += rem    // 欠別人 (別人代墊支出 或 預領收入)
+                        totalPayable += rem // 欠別人 (別人代墊支出 或 預領收入)
                     }
                 }
-            } else if (r.groupStatus === 'active' || r.isDebt || (r.debtId === undefined && r.groupStatus === undefined)) {
+            } else if (
+                r.groupStatus === 'active' ||
+                r.isDebt ||
+                (r.debtId === undefined && r.groupStatus === undefined)
+            ) {
                 if (r.type === 'expense') {
-                    totalReceivable += (r.amount || 0) // 代墊支出 -> 我出的錢，別人欠我
+                    totalReceivable += r.amount || 0 // 代墊支出 -> 我出的錢，別人欠我
                 } else if (r.type === 'income') {
-                    totalPayable += (r.amount || 0)    // 普通群組收入 -> 我收到的錢，抵銷代墊
+                    totalPayable += r.amount || 0 // 普通群組收入 -> 我收到的錢，抵銷代墊
                 }
             }
         })
 
         const netAmount = totalReceivable - totalPayable
-        return { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable }
+        return {
+            totalExpense,
+            totalIncome,
+            netAmount,
+            totalReceivable,
+            totalPayable,
+        }
     }
 
     async _calculateGroupNetAsync(groupRecords) {
@@ -5577,7 +5770,10 @@ class DataService {
             }
             await tx.done
         } catch (error) {
-            console.error(`Failed to unlink records from group ${groupId}:`, error)
+            console.error(
+                `Failed to unlink records from group ${groupId}:`,
+                error
+            )
         }
     }
 
@@ -5605,14 +5801,22 @@ class DataService {
 
             // O(n) Map 預先分群，避免 metas.map() 內層 filter 造成 O(n×m)
             const byGroup = new Map()
-            allRecords.filter(r => r.groupId).forEach(r => {
-                if (!byGroup.has(r.groupId)) byGroup.set(r.groupId, [])
-                byGroup.get(r.groupId).push(r)
-            })
+            allRecords
+                .filter(r => r.groupId)
+                .forEach(r => {
+                    if (!byGroup.has(r.groupId)) byGroup.set(r.groupId, [])
+                    byGroup.get(r.groupId).push(r)
+                })
 
             return metas.map(meta => {
                 const groupRecs = byGroup.get(meta.id) || []
-                const { totalExpense, totalIncome, netAmount, totalReceivable, totalPayable } = this._calculateGroupNet(groupRecs, allDebts)
+                const {
+                    totalExpense,
+                    totalIncome,
+                    netAmount,
+                    totalReceivable,
+                    totalPayable,
+                } = this._calculateGroupNet(groupRecs, allDebts)
                 const dates = groupRecs.map(r => r.date).filter(Boolean)
                 const sorted = [...dates].sort()
                 return {
@@ -5626,9 +5830,7 @@ class DataService {
                     settled: meta.settled,
                     dateFrom: sorted[0] || null,
                     dateTo:
-                        sorted.length > 0
-                            ? sorted[sorted.length - 1]
-                            : null,
+                        sorted.length > 0 ? sorted[sorted.length - 1] : null,
                     recordIds: groupRecs.map(r => r.id),
                 }
             })
@@ -5655,10 +5857,14 @@ class DataService {
                     if (r.debtId) {
                         const debt = debtsMap.get(r.debtId)
                         if (debt && !debt.settled && debt.remainingAmount > 0) {
-                            await this.settleDebt(debt.id, debt.remainingAmount, {
-                                accountId: accountId || null,
-                                forceCreate: true,
-                            })
+                            await this.settleDebt(
+                                debt.id,
+                                debt.remainingAmount,
+                                {
+                                    accountId: accountId || null,
+                                    forceCreate: true,
+                                }
+                            )
                         }
                     }
                     await this.updateRecord(r.id, { groupStatus: 'settled' })
@@ -5682,45 +5888,110 @@ class DataService {
         groupId,
         amount,
         accountId,
-        _date,
-        _note
+date,
+        note,
+        direction = null
     ) {
         try {
             const meta = await this.getGroupMeta(groupId)
             if (!meta) throw new Error('Group not found')
 
             // M01: 金額驗證
-            if (amount === null || amount === undefined || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
+            if (
+                amount === null ||
+                amount === undefined ||
+                typeof amount !== 'number' ||
+                !isFinite(amount) ||
+                amount <= 0
+            ) {
                 throw new Error(`部分退款金額無效: ${amount}`)
             }
 
             const groupRecords = await this.getGroupRecords(groupId)
             const allDebts = await this.getDebts({ allLedgers: true })
-            const debtsMap = new Map(allDebts.map(d => [d.id, d]))
+            const debtsMap = new Map(allDebts.map(d => [String(d.id), d]))
 
-            let remainingPaymentToDistribute = amount
+            // 決定結清方向：顯式指定優先，若無則依群組未結清淨額推斷（向後相容）
+            let targetDirection = direction
+            if (
+                targetDirection !== 'receivable' &&
+                targetDirection !== 'payable'
+            ) {
+                const { netAmount, totalReceivable, totalPayable } =
+                    this._calculateGroupNet(groupRecords, allDebts)
+                if (netAmount > 0) {
+                    targetDirection = 'receivable'
+                } else if (netAmount < 0) {
+                    targetDirection = 'payable'
+                } else {
+                    targetDirection =
+                        totalReceivable > 0
+                            ? 'receivable'
+                            : totalPayable > 0
+                              ? 'payable'
+                              : 'receivable'
+                }
+            }
 
+            // 僅篩選同方向且未結清的欠款紀錄，對向欠款分毫不動
+            const candidates = []
             for (const r of groupRecords) {
-                if (remainingPaymentToDistribute <= 0) break
                 if (r.groupStatus !== 'settled' && r.debtId) {
-                    const debt = debtsMap.get(r.debtId)
-                    if (debt && !debt.settled && debt.remainingAmount > 0) {
-                        const payAmt = Math.min(remainingPaymentToDistribute, debt.remainingAmount)
-                        await this.settleDebt(debt.id, payAmt, {
-                            accountId: accountId || null,
-                            forceCreate: true,
-                        })
-                        remainingPaymentToDistribute -= payAmt
-                        if (payAmt >= debt.remainingAmount) {
-                            await this.updateRecord(r.id, { groupStatus: 'settled' })
+                    const debt = debtsMap.get(String(r.debtId))
+                    if (
+                        debt &&
+                        !debt.settled &&
+                        (debt.remainingAmount > 0 ||
+                            (debt.remainingAmount === undefined &&
+                                debt.amount > 0))
+                    ) {
+                        if (debt.type === targetDirection) {
+                            candidates.push({ record: r, debt })
                         }
                     }
                 }
             }
 
+            // 確定性 FIFO 排序：日期升序 → id 升序，同輸入必得同結果、擺脫 DB 落庫物理順序影響
+            candidates.sort((a, b) => {
+                const dateA = a.record.date || ''
+                const dateB = b.record.date || ''
+                if (dateA !== dateB) return dateA.localeCompare(dateB)
+                return (Number(a.record.id) || 0) - (Number(b.record.id) || 0)
+            })
+
+            let remainingPaymentToDistribute = amount
+            let appliedAmount = 0
+
+            for (const { record: r, debt } of candidates) {
+                if (remainingPaymentToDistribute <= 0) break
+                const currentRemaining =
+                    debt.remainingAmount !== undefined
+                        ? debt.remainingAmount
+                        : debt.amount
+                if (currentRemaining <= 0) continue
+
+                const payAmt = Math.min(
+                    remainingPaymentToDistribute,
+                    currentRemaining
+                )
+                await this.settleDebt(debt.id, payAmt, {
+                    accountId: accountId || null,
+                    forceCreate: true,
+                })
+                remainingPaymentToDistribute -= payAmt
+                appliedAmount += payAmt
+
+                if (payAmt >= currentRemaining) {
+                    await this.updateRecord(r.id, { groupStatus: 'settled' })
+                }
+            }
+
             // 檢查是否全數完成
             const remainingRecords = await this.getGroupRecords(groupId)
-            const activeCount = remainingRecords.filter(r => r.groupStatus !== 'settled').length
+            const activeCount = remainingRecords.filter(
+                r => r.groupStatus !== 'settled'
+            ).length
             if (activeCount === 0) {
                 await this.saveGroupMeta(
                     { ...meta, settled: true, settledAt: Date.now() },
@@ -5728,7 +5999,13 @@ class DataService {
                 )
             }
 
-            return { amount }
+            // 回傳擴充物件：回報實際沖銷與剩餘金額，且多餘剩額絕不退灌對向欠款
+            return {
+                amount,
+                direction: targetDirection,
+                applied: appliedAmount,
+                remaining: remainingPaymentToDistribute,
+            }
         } catch (e) {
             console.error('Failed to partial settle group:', e)
             throw e
@@ -5740,8 +6017,10 @@ class DataService {
             const records = await this.getRecords({ allLedgers: true })
             const targetRecord = records.find(r => r.id === recordId)
             if (!targetRecord) throw new Error('Record not found')
-            if (!targetRecord.groupId) throw new Error('Record does not belong to any group')
-            if (targetRecord.groupStatus === 'settled') throw new Error('Record already settled')
+            if (!targetRecord.groupId)
+                throw new Error('Record does not belong to any group')
+            if (targetRecord.groupStatus === 'settled')
+                throw new Error('Record already settled')
 
             if (targetRecord.debtId) {
                 const debt = await this.getDebt(targetRecord.debtId)
@@ -5755,7 +6034,9 @@ class DataService {
 
             await this.updateRecord(targetRecord.id, { groupStatus: 'settled' })
 
-            const groupRecords = await this.getGroupRecords(targetRecord.groupId)
+            const groupRecords = await this.getGroupRecords(
+                targetRecord.groupId
+            )
             const remainingActive = groupRecords.filter(
                 r => r.groupStatus !== 'settled'
             )
@@ -5787,15 +6068,111 @@ class DataService {
 
             const allRecords = await this.getRecords({ allLedgers: true })
             const repaymentRecords = allRecords.filter(
-                r => String(r.debtId) === String(debtId) && (r.category === 'debt_repayment' || r.category === 'debt_collection')
+                r =>
+                    String(r.debtId) === String(debtId) &&
+                    (r.category === 'debt_repayment' ||
+                        r.category === 'debt_collection')
             )
 
-            const paidAmountFromRecords = repaymentRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+            // ── Record-as-Truth：同步修剪與回寫 payments ──
+            const oldPayments = Array.isArray(debt.payments)
+                ? debt.payments
+                : []
+            const recordByIdMap = new Map()
+            const recordByUuidMap = new Map()
+            for (const r of repaymentRecords) {
+                if (r.id !== undefined && r.id !== null) {
+                    recordByIdMap.set(String(r.id), r)
+                }
+                if (r.uuid) {
+                    recordByUuidMap.set(r.uuid, r)
+                }
+            }
+
+            const matchedRecordIds = new Set()
+            const newPayments = []
+
+            for (const payment of oldPayments) {
+                if (!payment) continue
+
+                // 孤兒付款（無 recordId 且無 recordUuid）或舊形態付款（recordId 指向原始借貸紀錄而非還款明細）：
+                // 此類付款為歷史資料或操作中斷未補建明細者，保留給 repairOrphanedDebtRecords 處理，不得誤刪
+                const isOrphan = !payment.recordId && !payment.recordUuid
+                const isLegacyToOriginalRecord =
+                    debt.recordId &&
+                    String(payment.recordId) === String(debt.recordId)
+                if (isOrphan || isLegacyToOriginalRecord) {
+                    newPayments.push(payment)
+                    continue
+                }
+
+                // 嘗試依 recordId 或 recordUuid 尋找對應的現存記帳明細
+                let matchedRecord = null
+                if (
+                    payment.recordId !== undefined &&
+                    payment.recordId !== null
+                ) {
+                    matchedRecord = recordByIdMap.get(String(payment.recordId))
+                }
+                if (!matchedRecord && payment.recordUuid) {
+                    matchedRecord = recordByUuidMap.get(payment.recordUuid)
+                }
+
+                if (matchedRecord) {
+                    // 命中現存紀錄：保留並回寫最新 amount 與 date（若在明細頁被編輯）
+                    matchedRecordIds.add(String(matchedRecord.id))
+                    const updatedPayment = {
+                        ...payment,
+                        amount:
+                            typeof matchedRecord.amount === 'number'
+                                ? matchedRecord.amount
+                                : payment.amount,
+                        date: matchedRecord.date || payment.date,
+                        recordId:
+                            matchedRecord.id !== undefined
+                                ? matchedRecord.id
+                                : payment.recordId,
+                        ...(matchedRecord.uuid
+                            ? { recordUuid: matchedRecord.uuid }
+                            : {}),
+                    }
+                    newPayments.push(updatedPayment)
+                }
+                // 未命中紀錄者：紀錄已在明細頁被刪除（或被改隸/解除欠款綁定），此為幽靈付款，主動予以修剪剔除
+            }
+
+            // 補齊未被舊 payments 涵蓋的合法還款紀錄（例如手動新增或匯入未登記進 payments 的還款）
+            for (const r of repaymentRecords) {
+                if (r.id !== undefined && !matchedRecordIds.has(String(r.id))) {
+                    newPayments.push({
+                        amount: r.amount || 0,
+                        date: r.date || formatDateToString(new Date()),
+                        recordId: r.id,
+                        ...(r.uuid ? { recordUuid: r.uuid } : {}),
+                    })
+                }
+            }
+
+            // 計算實質已還款總額（以現存還款明細為準；若有保留之孤兒付款亦納入累計）
+            const orphanTotal = newPayments
+                .filter(
+                    p =>
+                        (!p.recordId && !p.recordUuid) ||
+                        (debt.recordId &&
+                            String(p.recordId) === String(debt.recordId))
+                )
+                .reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+            const paidAmountFromRecords = repaymentRecords.reduce(
+                (sum, r) => sum + (Number(r.amount) || 0),
+                0
+            )
+            const totalPaid = paidAmountFromRecords + orphanTotal
+
             const originalAmount = debt.originalAmount || debt.amount || 0
-            // 「既有款項登記」基線（initialPaidAmount）計入已還總額：
+// 「既有款項登記」基線（initialPaidAmount）計入已還總額：
             // 基線無對應記帳明細，重算時若漏計會把基線視為未付（remaining 變大、誤撤結清狀態）
             const baseline = Number(debt.initialPaidAmount) || 0
-            const newRemainingAmount = Math.max(0, originalAmount - paidAmountFromRecords - baseline)
+            const newRemainingAmount = Math.max(0, originalAmount - totalPaid - baseline)
             const isSettled = newRemainingAmount <= 0
 
             const updates = {
@@ -5809,12 +6186,33 @@ class DataService {
                 updates.settledAt = Date.now()
             }
 
+            // 零震盪（No-op if unchanged）：比對 payments 是否有實質差異，有差異才寫入
+            const paymentsChanged =
+                newPayments.length !== oldPayments.length ||
+                newPayments.some((p, i) => {
+                    const oldP = oldPayments[i]
+                    if (!oldP) return true
+                    return (
+                        Number(p.amount) !== Number(oldP.amount) ||
+                        p.date !== oldP.date ||
+                        String(p.recordId ?? '') !==
+                            String(oldP.recordId ?? '') ||
+                        (p.recordUuid || '') !== (oldP.recordUuid || '')
+                    )
+                })
+
+            if (paymentsChanged) {
+                updates.payments = newPayments
+            }
+
             const updatedDebt = await this.updateDebt(debtId, updates, true)
 
             // 自動尋找綁定該欠款的所有群組，觸發群組狀態重算
             const affectedGroupIds = new Set(
                 allRecords
-                    .filter(r => String(r.debtId) === String(debtId) && r.groupId)
+                    .filter(
+                        r => String(r.debtId) === String(debtId) && r.groupId
+                    )
                     .map(r => r.groupId)
             )
             for (const gId of affectedGroupIds) {
@@ -5823,15 +6221,14 @@ class DataService {
 
             return updatedDebt
         } catch (error) {
-            console.error(`Failed to recalculate debt state for ${debtId}:`, error)
+            console.error(
+                `Failed to recalculate debt state for ${debtId}:`,
+                error
+            )
             return null
         }
     }
 
-    /**
-     * 動態重新計算群組內各筆交易項目與群組標頭 settled 結清狀態
-     * @param {string} groupId
-     */
     async recalculateGroupState(groupId) {
         if (!groupId) return null
         try {
@@ -5851,10 +6248,18 @@ class DataService {
 
                     if (!isDebtSettled && r.groupStatus === 'settled') {
                         r.groupStatus = 'active'
-                        await this.updateRecord(r.id, { groupStatus: 'active' }, true)
+                        await this.updateRecord(
+                            r.id,
+                            { groupStatus: 'active' },
+                            true
+                        )
                     } else if (isDebtSettled && r.groupStatus !== 'settled') {
                         r.groupStatus = 'settled'
-                        await this.updateRecord(r.id, { groupStatus: 'settled' }, true)
+                        await this.updateRecord(
+                            r.id,
+                            { groupStatus: 'settled' },
+                            true
+                        )
                     }
                 }
 
@@ -5877,7 +6282,10 @@ class DataService {
             await this.saveGroupMeta({ ...meta, ...metaUpdates }, true)
             return { ...meta, ...metaUpdates }
         } catch (error) {
-            console.error(`Failed to recalculate group state for ${groupId}:`, error)
+            console.error(
+                `Failed to recalculate group state for ${groupId}:`,
+                error
+            )
             return null
         }
     }
@@ -5988,8 +6396,7 @@ class DataService {
                 const finalUpdates = { ...updates }
                 if (skipLog) {
                     delete finalUpdates.id
-                    if (contact.uuid)
-                        finalUpdates.uuid = contact.uuid
+                    if (contact.uuid) finalUpdates.uuid = contact.uuid
                 }
                 const updatedContact = { ...contact, ...finalUpdates }
                 await tx.store.put(updatedContact)
@@ -6273,11 +6680,7 @@ class DataService {
         if (preferred && !isCard(preferred)) return preferred.id
 
         // 偏好帳戶是信用卡 → 轉導到其自動扣繳帳戶
-        if (
-            preferred &&
-            isCard(preferred) &&
-            preferred.autoPayAccountId
-        ) {
+        if (preferred && isCard(preferred) && preferred.autoPayAccountId) {
             const debit = accounts.find(
                 a => a.id === preferred.autoPayAccountId
             )
@@ -6305,11 +6708,8 @@ class DataService {
             let accountId = null
             let createDetail = true
             let forceCreate = false
-            if (
-                accountIdOrOptions &&
-                typeof accountIdOrOptions === 'object'
-            ) {
-                ({
+            if (accountIdOrOptions && typeof accountIdOrOptions === 'object') {
+                ;({
                     accountId = null,
                     createDetail = true,
                     forceCreate = false,
@@ -6361,12 +6761,14 @@ class DataService {
                 let recordAccountId = accountId
                 if (!recordAccountId && debtRecordAccountId) {
                     // 原始紀錄帳戶若為信用卡，轉導到自動扣繳帳戶/現金（朋友無法還款進信用卡）
-                    recordAccountId = await this.resolveDefaultSettleAccountId(
-                        debtRecordAccountId
-                    )
+                    recordAccountId =
+                        await this.resolveDefaultSettleAccountId(
+                            debtRecordAccountId
+                        )
                 }
                 if (!recordAccountId) {
-                    recordAccountId = await this.resolveDefaultSettleAccountId(null)
+                    recordAccountId =
+                        await this.resolveDefaultSettleAccountId(null)
                 }
 
                 const record = {
@@ -6383,9 +6785,7 @@ class DataService {
                             : `還款：${contactName} - ${debt.description}${!isFullySettled ? ` (部分)` : ''}`,
                     ledgerId: debt.ledgerId,
                     debtId: id,
-                    ...(recordAccountId
-                        ? { accountId: recordAccountId }
-                        : {}),
+                    ...(recordAccountId ? { accountId: recordAccountId } : {}),
                 }
 
                 newRecordId = await this.addRecord(record)
@@ -6464,15 +6864,16 @@ class DataService {
             const allContacts = await this.getContacts()
             const allRecords = await this.getRecords({ allLedgers: true })
             const allAccounts = await this.getAccounts({ allLedgers: true })
-            
+
             const contactMap = new Map(allContacts.map(c => [c.id, c]))
             const recordMap = new Map(allRecords.map(r => [r.id, r]))
             const accountMap = new Map()
-            for(const acc of allAccounts) {
-                if(!accountMap.has(acc.ledgerId)) accountMap.set(acc.ledgerId, [])
+            for (const acc of allAccounts) {
+                if (!accountMap.has(acc.ledgerId))
+                    accountMap.set(acc.ledgerId, [])
                 accountMap.get(acc.ledgerId).push(acc)
             }
-            for(const accounts of accountMap.values()) {
+for (const accounts of accountMap.values()) {
                 accounts.sort((a, b) => a.id - b.id)
             }
 
@@ -6504,7 +6905,7 @@ class DataService {
 
                 let updated = false
                 const updatedPayments = []
-                
+
                 // 聯絡人名稱
                 let contactName = '未知聯絡人'
                 if (debt.contactId) {
@@ -6516,7 +6917,8 @@ class DataService {
                 let originalAccountId = null
                 if (debt.recordId) {
                     const originalRecord = recordMap.get(debt.recordId)
-                    if (originalRecord) originalAccountId = originalRecord.accountId
+                    if (originalRecord)
+                        originalAccountId = originalRecord.accountId
                 }
 
                 // 帳本預設帳戶
@@ -6529,7 +6931,11 @@ class DataService {
                 // 批次預先解析本筆欠款與目標帳戶的 UUID（每 debt 各 1 次查詢，含快取），
                 // 後續補建紀錄時直接帶入 uuid/accountUuid，避免 addRecord 逐筆重查
                 const recordAccountId = originalAccountId || defaultAccountId
-                const preResolvedDebtUuid = await resolveUuid('debts', debtUuidCache, debt.id)
+                const preResolvedDebtUuid = await resolveUuid(
+                    'debts',
+                    debtUuidCache,
+                    debt.id
+                )
                 const preResolvedAccountUuid = await resolveUuid(
                     'accounts',
                     accountUuidCache,
@@ -6542,13 +6948,17 @@ class DataService {
                         (debt.recordId && payment.recordId === debt.recordId)
                     ) {
                         const record = {
-                            type: debt.type === 'receivable' ? 'income' : 'expense',
+                            type:
+                                debt.type === 'receivable'
+                                    ? 'income'
+                                    : 'expense',
                             category:
                                 debt.type === 'receivable'
                                     ? 'debt_collection'
                                     : 'debt_repayment',
                             amount: payment.amount,
-                            date: payment.date || formatDateToString(new Date()),
+                            date:
+                                payment.date || formatDateToString(new Date()),
                             description:
                                 debt.type === 'receivable'
                                     ? `收回欠款：${contactName} - ${debt.description || ''}`
@@ -6587,11 +6997,18 @@ class DataService {
                 }
 
                 if (updated) {
-                    await this.updateDebt(debt.id, { payments: updatedPayments })
+                    await this.updateDebt(debt.id, {
+                        payments: updatedPayments,
+                    })
                 }
 
                 if (onProgress)
-                    onProgress({ current, total, repairedCount, phase: 'repair' })
+                    onProgress({
+                        current,
+                        total,
+                        repairedCount,
+                        phase: 'repair',
+                    })
             }
 
             return { repairedCount, scanned: total }
@@ -6795,12 +7212,27 @@ class DataService {
                 const devLogSetting = await this.getSetting(devLogKey)
                 const devLogId = devLogSetting?.value
                 await this.saveSetting({ key: devLogKey, value: null })
-                await this.saveSetting({ key: `shared_migrated_${uuid}`, value: null })
-                await this.saveSetting({ key: `sync_shared_member_checked_${uuid}`, value: null })
-                await this.saveSetting({ key: `sync_shared_incomplete_${uuid}`, value: null })
-                await this.saveSetting({ key: `sync_shared_granted_${uuid}`, value: null })
+                await this.saveSetting({
+                    key: `shared_migrated_${uuid}`,
+                    value: null,
+                })
+                await this.saveSetting({
+                    key: `sync_shared_member_checked_${uuid}`,
+                    value: null,
+                })
+                await this.saveSetting({
+                    key: `sync_shared_incomplete_${uuid}`,
+                    value: null,
+                })
+                await this.saveSetting({
+                    key: `sync_shared_granted_${uuid}`,
+                    value: null,
+                })
                 if (devLogId) {
-                    await this.saveSetting({ key: `sync_shared_granted_${uuid}_${devLogId}`, value: null })
+                    await this.saveSetting({
+                        key: `sync_shared_granted_${uuid}_${devLogId}`,
+                        value: null,
+                    })
                 }
             }
             if (sharedManifestId) {

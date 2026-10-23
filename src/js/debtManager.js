@@ -2174,7 +2174,8 @@ export class DebtManager {
       const accountSelect = modal.querySelector('#group-partial-account');
       const selectedAccountId = accountSelect ? parseInt(accountSelect.value) : null;
       try {
-        await this.dataService.partialSettleGroup(groupId, amount, selectedAccountId, new Date().toISOString().split('T')[0], `部分${actionLabel}`);
+        const direction = netAmount >= 0 ? 'receivable' : 'payable';
+        await this.dataService.partialSettleGroup(groupId, amount, selectedAccountId, new Date().toISOString().split('T')[0], `部分${actionLabel}`, direction);
         closeModal();
         showToast(`部分${actionLabel}已記錄`, 'success');
         await this.refreshCurrentView();
