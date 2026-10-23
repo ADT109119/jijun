@@ -485,6 +485,128 @@ console.log('== lookup 非成員不回 name/uuid（M-1）==')
     resetLimitersForTests()
 }
 
+console.log('== 偽造標頭無法繞過限速 ==')
+{
+    await req('POST', '/api/selfhost/register', { body: { username: 'hdr_target', pin: 'good-pin-123' } }, regCtx)
+    let lastStatus = 0
+    for (let i = 0; i < 15; i++) {
+        // 嘗試帶不同偽造標頭繞過
+        const res = await req('POST', '/api/selfhost/login', {
+            body: { username: 'hdr_target', pin: 'wrong-pin' },
+            headers: {
+                'x-real-ip-trusted': `192.168.1.${i}`,
+                'x-forwarded-for': `10.0.0.${i}`,
+                'x-real-ip': `172.16.0.${i}`,
+            },
+        })
+        lastStatus = res.status
+    }
+    check('帶隨機偽造標頭依然被限速 (429)', lastStatus === 429, lastStatus)
+    resetLimitersForTests()
+}
+
+console.log('== 註冊 IP 頻率限制 (防批量註冊) ==')
+{
+    let regStatus = 0
+    for (let i = 0; i < 15; i++) {
+        const res = await req('POST', '/api/selfhost/register', {
+            body: { username: `bulk_user_${i}`, pin: 'bulk-pin-123' },
+        }, regCtx)
+        regStatus = res.status
+    }
+    check('同 IP 連續註冊不同帳號觸發限流 (429)', regStatus === 429, regStatus)
+    resetLimitersForTests()
+}
+
+console.log('== 跨帳號 Device ID 衝突防護 (409) ==')
+{
+    const u1 = await req('POST', '/api/selfhost/register', { body: { username: 'dev_owner_a', pin: 'pin-a-1234' } }, regCtx)
+    const u2 = await req('POST', '/api/selfhost/register', { body: { username: 'dev_owner_b', pin: 'pin-b-1234' } }, regCtx)
+    const devId = 'device_conflict_unique_01'
+    
+    // User A 註冊該裝置
+    const regA = await req('POST', '/api/selfhost/devices/register', { body: { deviceId: devId }, token: u1.json.token })
+    check('帳號 A 註冊裝置成功 (200)', regA.status === 200, regA.status)
+
+    // User B 嘗試註冊同一個裝置
+    const regB = await req('POST', '/api/selfhost/devices/register', { body: { deviceId: devId }, token: u2.json.token })
+    check('帳號 B 跨帳號註冊同一裝置回報 409 Conflict', regB.status === 409, regB.status)
+    resetLimitersForTests()
+}
+
+console.log('== 共用帳本空 changes 不抹除既有同步歷史 ==')
+{
+    const u = await req('POST', '/api/selfhost/register', { body: { username: 'shared_hist_user', pin: 'hist-pin-123' } }, regCtx)
+    const t = u.json.token
+    const shUuid = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff'
+    
+    // 建立共用帳本
+    await req('POST', '/api/selfhost/shared', {
+        body: {
+            ledgerUuid: shUuid,
+            name: '歷史保護帳本',
+            content: {
+                deviceId: 'dev_sh_01',
+                timestamp: 100,
+                changes: [
+                    { deviceId: 'dev_sh_01', timestamp: 101, operation: 'add', storeName: 'records', recordId: 'r1', data: { amount: 100 } },
+                    { deviceId: 'dev_sh_01', timestamp: 102, operation: 'add', storeName: 'records', recordId: 'r2', data: { amount: 200 } },
+                ],
+            },
+        },
+        token: t,
+    })
+
+    // 送出空的 changes 陣列
+    const putRes = await req('PUT', `/api/selfhost/shared/${shUuid}`, {
+        body: {
+            content: {
+                deviceId: 'dev_sh_01',
+                timestamp: 200,
+                changes: [],
+            },
+        },
+        token: t,
+    })
+    check('PUT 空 changes 回應 200', putRes.status === 200, putRes.status)
+
+    // 重新取得共用帳本，驗證歷史變更完整保留
+    const getRes = await req('GET', `/api/selfhost/shared/${shUuid}`, { token: t })
+    check('共用帳本變更數量未被抹除 (依舊為 2 筆)', getRes.json?.content?.changes?.length === 2, getRes.json?.content?.changes?.length)
+    resetLimitersForTests()
+}
+
+console.log('== 併發推送變更不丟失 ==')
+{
+    const u = await req('POST', '/api/selfhost/register', { body: { username: 'concurrent_user', pin: 'conc-pin-123' } }, regCtx)
+    const t = u.json.token
+    const devId = 'concurrent_dev_01'
+    await req('POST', '/api/selfhost/devices/register', { body: { deviceId: devId }, token: t })
+
+    // 模擬兩個併發請求同時推送不同變更到同一個 deviceId
+    const batch1 = [
+        { deviceId: devId, timestamp: 1001, operation: 'add', storeName: 'records', recordId: 'c1', data: { amount: 10 } },
+        { deviceId: devId, timestamp: 1002, operation: 'add', storeName: 'records', recordId: 'c2', data: { amount: 20 } },
+    ]
+    const batch2 = [
+        { deviceId: devId, timestamp: 1003, operation: 'add', storeName: 'records', recordId: 'c3', data: { amount: 30 } },
+        { deviceId: devId, timestamp: 1004, operation: 'add', storeName: 'records', recordId: 'c4', data: { amount: 40 } },
+    ]
+
+    const [res1, res2] = await Promise.all([
+        req('POST', '/api/selfhost/push', { body: { deviceId: devId, changes: batch1 }, token: t }),
+        req('POST', '/api/selfhost/push', { body: { deviceId: devId, changes: batch2 }, token: t }),
+    ])
+
+    check('併發請求 1 成功', res1.status === 200, res1.status)
+    check('併發請求 2 成功', res2.status === 200, res2.status)
+
+    const finalLog = await store.getDeviceLog(devId)
+    const parsedLog = JSON.parse(finalLog.content)
+    check('併發推送後 4 筆變更全數保存', parsedLog.changes.length === 4, parsedLog.changes.length)
+    resetLimitersForTests()
+}
+
 store.close()
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

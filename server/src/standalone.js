@@ -213,8 +213,23 @@ if (needGoogle && (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)) {
 // Convert Node.js IncomingMessage → Web Request
 // ──────────────────────────────────────────────
 
-const MAX_REQUEST_BODY_BYTES =
+const MAX_BACKUP_BODY_BYTES =
     (Number(process.env.MAX_BACKUP_MB) || 50) * 1024 * 1024 + 65536
+const MAX_PUSH_BODY_BYTES = 10 * 1024 * 1024 // 10MB 足夠 5000~20000 筆變更
+const MAX_AUTH_BODY_BYTES = 64 * 1024 // 64KB 足夠 login/register/devices/admin 請求
+
+function getMaxBodyBytes(urlPath) {
+    if (urlPath.startsWith('/api/selfhost/backup')) {
+        return MAX_BACKUP_BODY_BYTES
+    }
+    if (
+        urlPath.startsWith('/api/selfhost/push') ||
+        urlPath.startsWith('/api/selfhost/shared')
+    ) {
+        return MAX_PUSH_BODY_BYTES
+    }
+    return MAX_AUTH_BODY_BYTES
+}
 
 /**
  * 將 Node.js HTTP request 轉換為 Web API Request 物件
@@ -236,8 +251,10 @@ async function toWebRequest(req) {
     let body = null
 
     if (hasBody) {
+        const urlPath = req.url ? req.url.split('?')[0] : ''
+        const maxBytes = getMaxBodyBytes(urlPath)
         const cl = Number(req.headers['content-length'] || 0)
-        if (cl > MAX_REQUEST_BODY_BYTES) {
+        if (cl > maxBytes) {
             const err = new Error('Payload Too Large')
             err.status = 413
             throw err
@@ -246,7 +263,7 @@ async function toWebRequest(req) {
         let totalBytes = 0
         for await (const chunk of req) {
             totalBytes += chunk.length
-            if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+            if (totalBytes > maxBytes) {
                 const err = new Error('Payload Too Large')
                 err.status = 413
                 throw err

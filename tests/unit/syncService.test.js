@@ -1518,6 +1518,49 @@ describe('SyncService', () => {
             expect(lastPush.value).toBe(5200)
         })
 
+        it('pushChanges 超過 5000 筆且切在同時間戳邊界時，同時間戳變更完整推送不被 maxTimestamp + 1 漏掉', async () => {
+            // 前 4995 筆 timestamp 為 1..4995，後 200 筆（4996..5195）具有完全相同的 timestamp (5000)
+            const pending = [
+                ...Array.from({ length: 4995 }, (_, i) => ({
+                    deviceId: 'other',
+                    operation: 'add',
+                    storeName: 'records',
+                    recordId: i + 1,
+                    timestamp: i + 1,
+                    data: { uuid: `u-${i + 1}` },
+                })),
+                ...Array.from({ length: 200 }, (_, i) => ({
+                    deviceId: 'other',
+                    operation: 'add',
+                    storeName: 'records',
+                    recordId: 4996 + i,
+                    timestamp: 5000,
+                    data: { uuid: `u-same-${i + 1}` },
+                })),
+            ]
+            const getChangesSince = vi.fn(async since =>
+                pending.filter(c => c.timestamp >= (since || 0))
+            )
+            ds = createMockDataService({ getChangesSince })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            const pushedBatches = []
+            globalThis.fetch = vi.fn(async (url, opts) => {
+                pushedBatches.push(JSON.parse(opts.body).changes)
+                return jsonRes(200, { added: 0, total: 0 })
+            })
+
+            await ss.pushChanges()
+
+            // 總共 5195 筆，分批推送且無任何一筆被跳過
+            const totalPushed = pushedBatches.reduce((n, b) => n + b.length, 0)
+            expect(totalPushed).toBe(5195)
+            // 第一批在交界處切分（4995 筆），第二批處理所有同 timestamp 5000 的變更（200 筆）
+            expect(pushedBatches[0]).toHaveLength(4995)
+            expect(pushedBatches[1]).toHaveLength(200)
+            expect(pushedBatches[1].every(c => c.timestamp === 5000)).toBe(true)
+        })
+
         it('pushChanges 批次失敗時不推進 last_push_timestamp（下輪重推同一批）', async () => {
             const pending = [
                 {

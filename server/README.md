@@ -111,12 +111,28 @@ npm start
 2. 建立專案，啟用 **Google Drive API**
 3. 建立 **OAuth 2.0 Client ID**（Web application 類型）
 4. 設定 **Authorized JavaScript origins**：
-    - `https://jijun.adt109119.com`
+    - `https://jijun.the-walking-fish.com`
     - `http://localhost:3000`（開發用）
 5. 設定 **Authorized redirect URIs**：
-    - `https://jijun.adt109119.com`
+    - `https://jijun.the-walking-fish.com`
     - `http://localhost:3000`
 6. 記下 `Client ID` 和 `Client Secret`
+
+---
+
+## 搭配官方託管前端使用（僅自架後端）
+
+若你希望直接使用官方網頁版前端 [https://jijun.the-walking-fish.com/](https://jijun.the-walking-fish.com/)，但將所有資料保存在自架的同步伺服器中：
+
+1. **CORS 設定**：後端 `.env` 必須將 `ALLOWED_ORIGINS` 設為包含官方前端網址：
+   ```bash
+   ALLOWED_ORIGINS=https://jijun.the-walking-fish.com,http://localhost:3000
+   ```
+2. **⚠️ HTTPS 與瀏覽器 Mixed Content 限制**：
+   官方前端為 **HTTPS**（`https://jijun.the-walking-fish.com/`）。現代瀏覽器會強制封鎖 HTTPS 網頁向不安全的明文 HTTP API 發起請求（Mixed Active Content）。
+   - **公網環境**：自架後端**必須啟用 HTTPS**（透過 Caddy 自動憑證、Nginx 反代、Cloudflare Tunnel 或 Tailscale HTTPS，例如 `https://sync.yourdomain.com`）。
+   - **本機測試**：若後端運行於同一台電腦之 `http://localhost:8787` 或 `http://127.0.0.1:8787`，瀏覽器預設視為可信任來源（Trustworthy Origin），可直接跨來源連線測試。
+3. **App 內連線**：打開官方網頁 →「設定」→「雲端備份&同步」→「伺服器設定」填入你的自架後端網址（如 `https://sync.yourdomain.com`）→ 點選「測試伺服器連線」確認通訊正常即可註冊或登入使用。
 
 ---
 

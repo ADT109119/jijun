@@ -1132,18 +1132,34 @@ export class SyncService {
         )
         let since = lastPush?.value || 0
         let guard = 0
+        const pushedKeys = new Set()
 
         // 批次推送：從最舊的變更開始，逐批（≤5000 筆/批，server 端上限）推完。
-        // 舊實作 slice(-5000) 只取最新一批，超量時早期變更被永久丟棄。
         // 安全前提：
-        // - getChangesSince 用 >= 邊界；每批推完後 since = 批內 maxTs + 1
-        // - server 端以 deviceId|timestamp|operation|storeName[|recordIdentifier] 去重（冪等），
-        //   邊界重送/重試都安全
+        // - getChangesSince 用 >= 邊界；本輪推送以 pushedKeys 記憶體去重防重覆
+        // - 若批次於同時間戳截斷，優先在時間戳交界處切分批次或保持當前時間戳游標，避免 maxTimestamp + 1 漏掉同毫秒變更
+        // - server 端以 5-part key 去重（冪等），邊界重送/重試皆安全
         while (guard++ < 1000) {
-            const changes = await this.dataService.getChangesSince(since)
+            const rawChanges = await this.dataService.getChangesSince(since)
+            const changes = rawChanges.filter(c => !pushedKeys.has(this._changeKey(c)))
             if (changes.length === 0) break
 
-            const batch = changes.slice(0, 5000)
+            let batch
+            if (changes.length > 5000) {
+                if (
+                    changes[4999].timestamp === changes[5000].timestamp &&
+                    changes[0].timestamp < changes[4999].timestamp
+                ) {
+                    const cutoffTs = changes[4999].timestamp
+                    const cutIdx = changes.findIndex(c => c.timestamp === cutoffTs)
+                    batch = changes.slice(0, cutIdx > 0 ? cutIdx : 5000)
+                } else {
+                    batch = changes.slice(0, 5000)
+                }
+            } else {
+                batch = changes
+            }
+
             const res = await this._selfHostFetch('/push', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -1155,6 +1171,10 @@ export class SyncService {
                 const data = await res.json().catch(() => ({}))
                 this._selfHostLastError = data.error || `push 失敗 (${res.status})`
                 throw new Error(this._selfHostLastError)
+            }
+
+            for (const c of batch) {
+                pushedKeys.add(this._changeKey(c))
             }
 
             const ledgers = (await this.dataService.getLedgers?.()) || []
@@ -1183,8 +1203,11 @@ export class SyncService {
                 key: 'sync_last_push_timestamp',
                 value: maxTimestamp,
             })
-            // 本批全部推送成功才推進游標（失敗時 throw，下輪重推同一批）
-            since = maxTimestamp + 1
+
+            const hasMoreSameTs =
+                changes.length > batch.length &&
+                changes[batch.length].timestamp === maxTimestamp
+            since = hasMoreSameTs ? maxTimestamp : maxTimestamp + 1
         }
     }
 

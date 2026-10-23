@@ -38,6 +38,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { verifyPin, hashPin, DUMMY_SCRYPT_HASH } from './auth.js'
 
 export function changeKey(change) {
     const recordIdentifier =
@@ -70,6 +71,7 @@ export class SqliteStore {
         }
         this.db = new DatabaseSync(this.dbPath)
         this.db.exec('PRAGMA journal_mode = WAL')
+        this.db.exec('PRAGMA busy_timeout = 5000')
         // SQLite 預設 foreign_keys=OFF；schema 內的 ON DELETE CASCADE
         // （user_tokens / devices / device_logs / backups → users）不會生效，
         // deleteUser 也需手動清無 FK 的表（shared_ledger_members / sync_changes）。
@@ -88,6 +90,10 @@ export class SqliteStore {
                 token_hash TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_user_tokens_hash
+                ON user_tokens (token_hash);
+            CREATE INDEX IF NOT EXISTS idx_user_tokens_user
+                ON user_tokens (user_id);
 
             CREATE TABLE IF NOT EXISTS devices (
                 device_id TEXT PRIMARY KEY,
@@ -217,11 +223,25 @@ export class SqliteStore {
             'jijun_' +
             cryptoRandomToken(32)
         const tokenHash = sha256Hex(token)
+        const now = Date.now()
         this.db
             .prepare(
                 'INSERT INTO user_tokens (user_id, token_hash, created_at) VALUES (?, ?, ?)'
             )
-            .run(userId, tokenHash, Date.now())
+            .run(userId, tokenHash, now)
+        // 清理單一使用者過多的舊 token（保留最新 20 筆）
+        try {
+            this.db
+                .prepare(
+                    `DELETE FROM user_tokens
+                     WHERE user_id = ? AND id NOT IN (
+                         SELECT id FROM user_tokens WHERE user_id = ? ORDER BY id DESC LIMIT 20
+                     )`
+                )
+                .run(userId, userId)
+        } catch (_) {
+            /* 清理非阻斷 */
+        }
         return { token, tokenHash }
     }
 
@@ -363,47 +383,70 @@ export class SqliteStore {
         )
     }
 
-    /** 更新共用帳本內容（合併既有與新進 changes，以 changeKey 去重防併發覆蓋）。@returns {Promise<number>} modified_at */
+    /** 更新共用帳本內容（合併既有與新進 changes，以 changeKey 去重防併發覆蓋）。始終保留既有歷史。@returns {Promise<number>} modified_at */
     async updateSharedLedgerContent(ledgerUuid, content) {
-        const now = Date.now()
-        let mergedContent = content
-        if (content && Array.isArray(content.changes) && content.changes.length > 0) {
+        this.db.exec('BEGIN IMMEDIATE')
+        try {
+            const now = Date.now()
             const existingRow = this.db
                 .prepare('SELECT content FROM shared_ledgers WHERE ledger_uuid = ?')
                 .get(ledgerUuid)
+            let existingParsed = null
             if (existingRow && existingRow.content) {
                 try {
-                    const existingParsed = JSON.parse(existingRow.content)
-                    if (Array.isArray(existingParsed?.changes) && existingParsed.changes.length > 0) {
-                        const seen = new Set()
-                        const merged = []
-                        for (const c of existingParsed.changes) {
-                            const k = changeKey(c)
-                            if (!seen.has(k)) {
-                                seen.add(k)
-                                merged.push(c)
-                            }
-                        }
-                        for (const c of content.changes) {
-                            const k = changeKey(c)
-                            if (!seen.has(k)) {
-                                seen.add(k)
-                                merged.push(c)
-                            }
-                        }
-                        mergedContent = { ...existingParsed, ...content, changes: merged }
-                    }
+                    existingParsed = JSON.parse(existingRow.content)
                 } catch (_) {
                     /* 忽略既有非 JSON 內容 */
                 }
             }
+
+            const incomingChanges = Array.isArray(content?.changes) ? content.changes : []
+            const existingChanges = Array.isArray(existingParsed?.changes) ? existingParsed.changes : []
+
+            let mergedContent
+            if (existingChanges.length > 0) {
+                const seen = new Set()
+                const merged = []
+                for (const c of existingChanges) {
+                    const k = changeKey(c)
+                    if (!seen.has(k)) {
+                        seen.add(k)
+                        merged.push(c)
+                    }
+                }
+                for (const c of incomingChanges) {
+                    const k = changeKey(c)
+                    if (!seen.has(k)) {
+                        seen.add(k)
+                        merged.push(c)
+                    }
+                }
+                mergedContent = {
+                    ...(existingParsed || {}),
+                    ...(content || {}),
+                    changes: merged,
+                }
+            } else {
+                mergedContent = {
+                    ...(existingParsed || {}),
+                    ...(content || {}),
+                    changes: incomingChanges,
+                }
+            }
+
+            this.db
+                .prepare(
+                    'UPDATE shared_ledgers SET content = ?, modified_at = ? WHERE ledger_uuid = ?'
+                )
+                .run(JSON.stringify(mergedContent), now, ledgerUuid)
+            this.db.exec('COMMIT')
+            return now
+        } catch (err) {
+            try {
+                this.db.exec('ROLLBACK')
+            } catch (_) {}
+            throw err
         }
-        this.db
-            .prepare(
-                'UPDATE shared_ledgers SET content = ?, modified_at = ? WHERE ledger_uuid = ?'
-            )
-            .run(JSON.stringify(mergedContent), now, ledgerUuid)
-        return now
     }
 
     /** 列出使用者參與的所有共用帳本（不含 content） */
@@ -491,7 +534,6 @@ export class SqliteStore {
      */
     async verifyLogin(username, pin) {
         const user = await this.getUserByUsername(username)
-        const { verifyPin, hashPin, DUMMY_SCRYPT_HASH } = await import('./auth.js')
         if (!user) {
             await verifyPin(String(pin ?? ''), DUMMY_SCRYPT_HASH)
             return null
@@ -541,6 +583,11 @@ export class SqliteStore {
             .prepare('SELECT * FROM devices WHERE device_id = ?')
             .get(deviceId)
         if (existing) {
+            if (existing.user_id !== userId) {
+                const err = new Error('Device belongs to another account')
+                err.code = 'DEVICE_CONFLICT'
+                throw err
+            }
             this.db
                 .prepare('UPDATE devices SET last_seen = ? WHERE device_id = ?')
                 .run(now, deviceId)
@@ -621,40 +668,51 @@ export class SqliteStore {
      * @returns {Promise<{added: number, total: number}>}
      */
     async appendDeviceLogChanges(deviceId, changes) {
-        const existing = await this.getDeviceLog(deviceId)
-        let parsed
-        try {
-            parsed = existing ? JSON.parse(existing.content) : null
-        } catch (_) {
-            parsed = null
-        }
-        if (!parsed || !Array.isArray(parsed.changes)) {
-            parsed = { changes: [] }
-        }
-
-        const existingKeys = new Set(parsed.changes.map(c => changeKey(c)))
-        const newlyAdded = []
-        for (const change of changes) {
-            const key = changeKey(change)
-            if (!existingKeys.has(key)) {
-                existingKeys.add(key)
-                parsed.changes.push(change)
-                newlyAdded.push(change)
-            }
-        }
-
-        if (newlyAdded.length === 0) {
-            return { added: 0, total: parsed.changes.length }
-        }
-
-        const now = Date.now()
-        parsed.timestamp = now
-        parsed.deviceId = deviceId
-        const userId = (await this.getDevice(deviceId))?.user_id || 0
-        const serialized = JSON.stringify(parsed)
-
         this.db.exec('BEGIN IMMEDIATE')
         try {
+            const log = this.db
+                .prepare(
+                    'SELECT content, modified_at FROM device_logs WHERE device_id = ?'
+                )
+                .get(deviceId)
+            let parsed = null
+            if (log && log.content) {
+                try {
+                    parsed = JSON.parse(log.content)
+                } catch (_) {
+                    parsed = null
+                }
+            }
+            if (!parsed || !Array.isArray(parsed.changes)) {
+                parsed = { changes: [] }
+            }
+
+            const existingKeys = new Set(parsed.changes.map(c => changeKey(c)))
+            const newlyAdded = []
+            for (const change of changes) {
+                const key = changeKey(change)
+                if (!existingKeys.has(key)) {
+                    existingKeys.add(key)
+                    parsed.changes.push(change)
+                    newlyAdded.push(change)
+                }
+            }
+
+            if (newlyAdded.length === 0) {
+                this.db.exec('COMMIT')
+                return { added: 0, total: parsed.changes.length }
+            }
+
+            const now = Date.now()
+            parsed.timestamp = now
+            parsed.deviceId = deviceId
+
+            const deviceRow = this.db
+                .prepare('SELECT user_id FROM devices WHERE device_id = ?')
+                .get(deviceId)
+            const userId = deviceRow?.user_id || 0
+            const serialized = JSON.stringify(parsed)
+
             this.db
                 .prepare(
                     `INSERT INTO device_logs (device_id, user_id, content, modified_at)
@@ -677,14 +735,13 @@ export class SqliteStore {
                 )
             }
             this.db.exec('COMMIT')
+            return { added: newlyAdded.length, total: parsed.changes.length }
         } catch (err) {
             try {
                 this.db.exec('ROLLBACK')
             } catch (_) {}
             throw err
         }
-
-        return { added: newlyAdded.length, total: parsed.changes.length }
     }
 
     /**

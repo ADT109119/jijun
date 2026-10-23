@@ -31,6 +31,9 @@ import {
     hashPin,
     loginLimiter,
     lookupLimiter,
+    registerLimiter,
+    accountLoginLimiter,
+    ipLoginLimiter,
     clientIp,
 } from './auth.js'
 
@@ -192,9 +195,23 @@ export async function handleRegister(request, ctx, corsHeaders) {
         return jsonResponse({ error: 'Invalid deviceId' }, 400, corsHeaders)
     }
 
+    const ip = clientIp(request)
+    const regBlocked = registerLimiter.check(ip)
+    if (regBlocked) {
+        return jsonResponse(
+            { error: 'Too many registration attempts. Try again later.' },
+            429,
+            corsHeaders,
+            { 'Retry-After': String(regBlocked.retryAfterSec) }
+        )
+    }
+
     // 防暴力：register 兼具 login 語意，同樣受限速保護（H-2）
-    const rlKey = `${clientIp(request)}|${username}`
-    const blocked = loginLimiter.check(rlKey)
+    const rlKey = `${ip}|${username}`
+    const blocked =
+        loginLimiter.check(rlKey) ||
+        accountLoginLimiter.check(username) ||
+        ipLoginLimiter.check(ip)
     if (blocked) {
         return jsonResponse(
             { error: 'Too many attempts. Try again later.' },
@@ -212,6 +229,8 @@ export async function handleRegister(request, ctx, corsHeaders) {
             // L-1 修正：不洩漏帳號存在性——錯 PIN 與 login 端回傳完全相同的
             // 訊息與狀態碼（存在+錯PIN → 401 Invalid username or PIN）。
             loginLimiter.recordFailure(rlKey)
+            accountLoginLimiter.recordFailure(username)
+            ipLoginLimiter.recordFailure(ip)
             return jsonResponse(
                 { error: 'Invalid username or PIN' },
                 401,
@@ -219,6 +238,7 @@ export async function handleRegister(request, ctx, corsHeaders) {
             )
         }
         loginLimiter.recordSuccess(rlKey)
+        accountLoginLimiter.recordSuccess(username)
         const { token } = await ctx.store.createToken(existing.id)
         return jsonResponse(
             { token, username, alreadyRegistered: true },
@@ -227,11 +247,18 @@ export async function handleRegister(request, ctx, corsHeaders) {
         )
     }
 
+    // 新註冊計入 IP 註冊限速器，防止濫用消耗 scrypt 運算
+    registerLimiter.recordFailure(ip)
+
     const user = await ctx.store.createUser(username, await hashPin(pin))
     const { token } = await ctx.store.createToken(user.id)
 
     if (deviceId && isValidDeviceId(deviceId)) {
-        await ctx.store.registerDevice(deviceId, user.id, username)
+        try {
+            await ctx.store.registerDevice(deviceId, user.id, username)
+        } catch (err) {
+            if (err.code !== 'DEVICE_CONFLICT') throw err
+        }
     }
 
     return jsonResponse(
@@ -255,9 +282,13 @@ export async function handleLogin(request, ctx, corsHeaders) {
     if (!isValidUsername(username) || !isValidPin(pin)) {
         return jsonResponse({ error: 'Invalid username or PIN' }, 400, corsHeaders)
     }
-    // 防暴力（紅隊報告 H-2）：每 IP+帳號 10 次失敗/分鐘，超過指數退避鎖定
-    const rlKey = `${clientIp(request)}|${username}`
-    const blocked = loginLimiter.check(rlKey)
+    // 防暴力（紅隊報告 H-2）：每 IP+帳號 10 次失敗/分鐘，且受帳號/IP 全域失敗限速保護
+    const ip = clientIp(request)
+    const rlKey = `${ip}|${username}`
+    const blocked =
+        loginLimiter.check(rlKey) ||
+        accountLoginLimiter.check(username) ||
+        ipLoginLimiter.check(ip)
     if (blocked) {
         return jsonResponse(
             { error: 'Too many attempts. Try again later.' },
@@ -269,9 +300,12 @@ export async function handleLogin(request, ctx, corsHeaders) {
     const user = await ctx.store.verifyLogin(username, pin)
     if (!user) {
         loginLimiter.recordFailure(rlKey)
+        accountLoginLimiter.recordFailure(username)
+        ipLoginLimiter.recordFailure(ip)
         return jsonResponse({ error: 'Invalid username or PIN' }, 401, corsHeaders)
     }
     loginLimiter.recordSuccess(rlKey)
+    accountLoginLimiter.recordSuccess(username)
     const { token } = await ctx.store.createToken(user.id)
     return jsonResponse({ token, username: user.username }, 200, corsHeaders)
 }
@@ -314,8 +348,19 @@ export async function handleDeviceRegister(request, ctx, corsHeaders) {
     if (!body || !isValidDeviceId(body.deviceId)) {
         return jsonResponse({ error: 'Invalid deviceId' }, 400, corsHeaders)
     }
-    await ctx.store.registerDevice(body.deviceId, user.id, user.username)
-    return jsonResponse({ deviceId: body.deviceId }, 200, corsHeaders)
+    try {
+        await ctx.store.registerDevice(body.deviceId, user.id, user.username)
+        return jsonResponse({ deviceId: body.deviceId }, 200, corsHeaders)
+    } catch (err) {
+        if (err.code === 'DEVICE_CONFLICT') {
+            return jsonResponse(
+                { error: 'Device belongs to another account' },
+                409,
+                corsHeaders
+            )
+        }
+        throw err
+    }
 }
 
 /**

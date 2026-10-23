@@ -148,8 +148,18 @@ export class RateLimiter {
             if (!this._m.has(key) && this._m.size >= 10000) {
                 this._gc(now, true)
                 if (this._m.size >= 10000) {
-                    const oldestKey = this._m.keys().next().value
-                    if (oldestKey !== undefined) this._m.delete(oldestKey)
+                    let evicted = false
+                    for (const [k, v] of this._m) {
+                        if (v.lockedUntil <= now) {
+                            this._m.delete(k)
+                            evicted = true
+                            break
+                        }
+                    }
+                    if (!evicted) {
+                        const oldestKey = this._m.keys().next().value
+                        if (oldestKey !== undefined) this._m.delete(oldestKey)
+                    }
                 }
             }
             e = { fails: 0, windowStart: now, lockedUntil: 0 }
@@ -190,6 +200,30 @@ export const loginLimiter = new RateLimiter({
     maxLockMs: 15 * 60_000,
 })
 
+/** 帳號全域登入失敗限速器：每帳號 15 次失敗/分鐘（防分散式 IP 暴力攻擊單一帳號）。 */
+export const accountLoginLimiter = new RateLimiter({
+    windowMs: 60_000,
+    max: 15,
+    lockMs: 60_000,
+    maxLockMs: 15 * 60_000,
+})
+
+/** IP 全域登入失敗限速器：每 IP 30 次失敗/分鐘（防掃描隨機帳號名稱消耗 scrypt 資源）。 */
+export const ipLoginLimiter = new RateLimiter({
+    windowMs: 60_000,
+    max: 30,
+    lockMs: 60_000,
+    maxLockMs: 15 * 60_000,
+})
+
+/** 註冊專用 IP 限速器：每 IP 10 次註冊/15 分鐘（防批量註冊與 scrypt 算力 DoS）。 */
+export const registerLimiter = new RateLimiter({
+    windowMs: 15 * 60_000,
+    max: 10,
+    lockMs: 15 * 60_000,
+    maxLockMs: 60 * 60_000,
+})
+
 /** lookup 限速器：每帳號 30 次/分鐘（防 uuid 前綴空間掃描）。 */
 export const lookupLimiter = new RateLimiter({
     windowMs: 60_000,
@@ -200,12 +234,10 @@ export const lookupLimiter = new RateLimiter({
 
 /**
  * 取客戶端識別 key（限速用）。
- * 僅在明確設定 TRUST_PROXY=1 或提供 x-real-ip-trusted 時才信任反代標頭，
- * 預設回傳 'local'（搭配 `${ip}|${username}` 按帳號限速，防止攻擊者偽造 X-Forwarded-For 繞過限速）。
+ * 僅在明確設定 TRUST_PROXY=1 時才信任反代標頭，
+ * 預設回傳 'local'（絕不信任未驗證之客戶端自訂標頭，防攻擊者偽造標頭繞過限速）。
  */
 export function clientIp(request) {
-    const trusted = request.headers.get('x-real-ip-trusted')
-    if (trusted) return trusted.trim()
     if (process.env.TRUST_PROXY === '1') {
         const cfIp = request.headers.get('cf-connecting-ip')
         if (cfIp) return cfIp.trim()
@@ -221,4 +253,7 @@ export function clientIp(request) {
 export function resetLimitersForTests() {
     loginLimiter._m.clear()
     lookupLimiter._m.clear()
+    registerLimiter._m.clear()
+    accountLoginLimiter._m.clear()
+    ipLoginLimiter._m.clear()
 }
