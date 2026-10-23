@@ -60,7 +60,7 @@ describe('帳戶去重與雲端同步冪等整合測試 (Account Deduplication &
             }, true)
 
             // 建立不同帳本的同名帳戶 (不應被合併)
-            const accOtherLedgerId = await ds.addAccount({
+            await ds.addAccount({
                 name: '中信',
                 balance: 5000,
                 ledgerId: 2,
@@ -70,7 +70,7 @@ describe('帳戶去重與雲端同步冪等整合測試 (Account Deduplication &
 
             // 建立關聯資料
             // 紀錄關聯至 acc1
-            const rec1Id = await ds.addRecord({
+            await ds.addRecord({
                 amount: 5000,
                 type: 'expense',
                 date: '2026-08-01',
@@ -172,7 +172,7 @@ describe('帳戶去重與雲端同步冪等整合測試 (Account Deduplication &
             }, true)
 
             // acc2 餘額 3500
-            const acc2Id = await ds.addAccount({
+            await ds.addAccount({
                 name: '現金',
                 balance: 3500,
                 ledgerId: 1,
@@ -447,7 +447,7 @@ describe('帳戶去重與雲端同步冪等整合測試 (Account Deduplication &
         })
 
         it('遠端 delete 到達時即使 UUID 不一致，依同帳本同名業務鍵精確刪除本地帳戶，防止刪除脫鉤', async () => {
-            const accId = await ds.addAccount({
+            await ds.addAccount({
                 name: '台新',
                 balance: 500,
                 ledgerId: 1,

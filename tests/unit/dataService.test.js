@@ -1,10 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import DataService from '../../src/js/dataService.js'
-
-// 取得 mock DB 的內部狀態
-function getMockStore(name) {
-    return globalThis.indexedDB._storeData?.[name] || []
-}
 
 function clearMockData() {
     if (globalThis.indexedDB && globalThis.indexedDB._storeData) {
@@ -54,8 +49,6 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
         })
 
         it('備份包含 localStorage settings', async () => {
-            const mockDb = ds.db
-
             localStorage.setItem('easy_accounting_setting_a', 'value_a')
             localStorage.setItem(
                 'easy_accounting_setting_b',
@@ -74,8 +67,6 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
         })
 
         it('備份空 store 回傳空陣列', async () => {
-            const mockDb = ds.db
-
             // 確保所有 store 都是空的（beforeEach 已清理）
             clearMockData()
 
@@ -155,8 +146,6 @@ describe('DataService — _exportFullBackup / _restoreFromBackup', () => {
         })
 
         it('還原 localStorage settings', async () => {
-            const mockDb = ds.db
-
             // 修改 localStorage
             localStorage.setItem('easy_accounting_key1', 'new_value')
 
@@ -388,8 +377,6 @@ describe('DataService — addRecord / getRecords filtering', () => {
     })
 
     it('addRecord 新增紀錄並回傳 ID', async () => {
-        const mockDb = ds.db
-
         const id = await ds.addRecord({
             type: 'expense',
             amount: 100,
@@ -727,6 +714,54 @@ describe('DataService — Credit Card (Schema v13)', () => {
             expect(startDate.getFullYear()).toBe(2024)
             expect(endDate.getFullYear()).toBe(2025)
         })
+
+        it('31 日出帳遇平年 2 月：結束日收斂到 2/28 不溢出到 3 月', () => {
+            // 修復前：new Date(2026, 1, 31) → 2026-03-03，整個帳單週期錯開
+            const { startDate, endDate } = ds.getStatementPeriod(
+                { statementDay: 31 },
+                '2026-01'
+            )
+            // '2026-01'：起 = 1 月的 31 日隔天 → 2/1；訖 = 2 月的出帳日收斂 2/28
+            expect(startDate.getFullYear()).toBe(2026)
+            expect(startDate.getMonth()).toBe(1) // 2月
+            expect(startDate.getDate()).toBe(1)
+            expect(endDate.getMonth()).toBe(1) // 仍在 2 月（修復前會溢出到 3 月）
+            expect(endDate.getDate()).toBe(28)
+        })
+
+        it('31 日出帳遇閏年 2 月：結束日收斂到 2/29', () => {
+            const { endDate } = ds.getStatementPeriod(
+                { statementDay: 31 },
+                '2028-01'
+            )
+            expect(endDate.getFullYear()).toBe(2028)
+            expect(endDate.getMonth()).toBe(1)
+            expect(endDate.getDate()).toBe(29)
+        })
+
+        it('31 日出帳遇小月（6 月結帳）：結束日收斂到 6/30', () => {
+            // '2026-05'：訖 = 6 月的 31 日 → 收斂 6/30
+            const { startDate, endDate } = ds.getStatementPeriod(
+                { statementDay: 31 },
+                '2026-05'
+            )
+            // 起 = 5 月 31 日隔天 → 6/1
+            expect(startDate.getMonth()).toBe(5)
+            expect(startDate.getDate()).toBe(1)
+            expect(endDate.getMonth()).toBe(5) // 6月
+            expect(endDate.getDate()).toBe(30)
+        })
+
+        it('月底收斂不影響一般出帳日（25 日）的既有週期', () => {
+            const { startDate, endDate } = ds.getStatementPeriod(
+                { statementDay: 25 },
+                '2026-06'
+            )
+            expect(startDate.getMonth()).toBe(5) // 6/26
+            expect(startDate.getDate()).toBe(26)
+            expect(endDate.getMonth()).toBe(6) // 7/25
+            expect(endDate.getDate()).toBe(25)
+        })
     })
 
     describe('autoGenerateCreditStatements (修正自動產生與截止日邏輯)', () => {
@@ -880,6 +915,163 @@ describe('DataService — Credit Card (Schema v13)', () => {
                 globalThis.Date = originalDate
             }
         })
+
+        it('長時間未開 app 後再啟動，應逐期補生成中間漏掉的已結帳期別', async () => {
+            const cardId = await ds.addAccount({
+                name: '出差補帳卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                creditLimit: 50000,
+                ledgerId: 1,
+            })
+            ds.activeLedgerId = 1
+
+            // 既有帳單只到 2026-04 期（上次開 app 是 5 月底）
+            await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-04',
+                statementDate: new Date('2026-05-25').getTime(),
+                dueDate: new Date('2026-06-15').getTime(),
+                amount: 1000,
+                status: 'paid',
+                ledgerId: 1,
+                createdAt: Date.now(),
+            })
+
+            const originalDate = globalThis.Date
+            // 模擬現在是 2026-08-28（已錯過 05/06/07 三期出帳）
+            globalThis.Date = class extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-08-28T12:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-08-28T12:00:00').getTime()
+                }
+            }
+
+            try {
+                await ds.autoGenerateCreditStatements()
+
+                const periods = (
+                    await ds.getCreditStatements({
+                        accountId: cardId,
+                        allLedgers: true,
+                    })
+                )
+                    .map(s => s.period)
+                    .sort()
+                // 舊版只補最近一期 2026-07，漏掉 05/06；新版逐期補齊 05/06/07
+                expect(periods).toEqual(
+                    expect.arrayContaining([
+                        '2026-04',
+                        '2026-05',
+                        '2026-06',
+                        '2026-07',
+                    ])
+                )
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
+
+        it('全新無帳單的卡只補最近一期，不回填全部歷史', async () => {
+            const cardId = await ds.addAccount({
+                name: '新卡只補一期',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                creditLimit: 50000,
+                ledgerId: 1,
+            })
+            ds.activeLedgerId = 1
+
+            const originalDate = globalThis.Date
+            // 卡是今天建的，但已有三年消費紀錄也不該回填三年帳單
+            globalThis.Date = class extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-08-28T12:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-08-28T12:00:00').getTime()
+                }
+            }
+
+            try {
+                await ds.autoGenerateCreditStatements()
+                const periods = (
+                    await ds.getCreditStatements({
+                        accountId: cardId,
+                        allLedgers: true,
+                    })
+                ).map(s => s.period)
+                // 僅一筆：最近已結帳期 2026-07
+                expect(periods).toEqual(['2026-07'])
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
+
+        it('既有帳單落後超過 24 期時，只補最近 24 期（不無限回填）', async () => {
+            const cardId = await ds.addAccount({
+                name: '舊卡重啟',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                creditLimit: 50000,
+                ledgerId: 1,
+            })
+            ds.activeLedgerId = 1
+
+            // 既有帳單停在 2022-01 期（三年前）
+            await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2022-01',
+                statementDate: new Date('2022-02-25').getTime(),
+                dueDate: new Date('2022-03-15').getTime(),
+                amount: 100,
+                status: 'paid',
+                ledgerId: 1,
+                createdAt: Date.now(),
+            })
+
+            const originalDate = globalThis.Date
+            globalThis.Date = class extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-08-28T12:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-08-28T12:00:00').getTime()
+                }
+            }
+
+            try {
+                await ds.autoGenerateCreditStatements()
+                const periods = (
+                    await ds.getCreditStatements({
+                        accountId: cardId,
+                        allLedgers: true,
+                    })
+                )
+                    .map(s => s.period)
+                    .sort()
+                // 2022-01 之後有 55 個月差距，只補最近 24 期（至 2026-07 為止）
+                expect(periods.length).toBe(1 + 24) // 既有 1 筆 + 補 24 筆
+                expect(periods.at(-1)).toBe('2026-07')
+                expect(periods.at(1)).toBe('2024-08') // 2026-07 往前數第 24 期
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
     })
 
     describe('calculateCreditCardBalance (結帳日邊界與時區防禦)', () => {
@@ -989,12 +1181,108 @@ describe('DataService — Credit Card (Schema v13)', () => {
             // 執行銷帳狀態更新
             await ds.updateCreditStatementsStatus()
 
-            // 驗證第一筆帳單狀態變為 paid，第二筆仍為 unpaid
+            // 驗證第一筆帳單狀態變為 paid，第二筆為 partial（已分配 500/2000）
+            // （舊版第二筆直接留 unpaid——部分繳款痕跡遺失，繳款 UI 重複提示全額、
+            //  自動扣繳再次全額扣款；新語意以 partial + paidAmount 如實反映）
             const stmt1 = await ds.getCreditStatement(stmt1Id)
             const stmt2 = await ds.getCreditStatement(stmt2Id)
 
             expect(stmt1.status).toBe('paid')
-            expect(stmt2.status).toBe('unpaid')
+            expect(stmt1.paidAmount).toBe(1000)
+            expect(stmt2.status).toBe('partial')
+            expect(stmt2.paidAmount).toBe(500)
+        })
+
+        it('冪等性：重複執行銷帳不重複計入、狀態不震盪', async () => {
+            const cardId = await ds.addAccount({
+                name: '冪等銷帳卡',
+                type: 'credit_card',
+                statementDay: 25,
+                ledgerId: 1,
+            })
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2024-05',
+                statementDate: new Date('2024-06-25').getTime(),
+                dueDate: new Date('2024-07-15').getTime(),
+                amount: 2000,
+                status: 'unpaid',
+                ledgerId: 1,
+                createdAt: Date.now(),
+            })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({
+                accountId: cardId,
+                date: '2024-07-01',
+                amount: 500,
+                type: 'income',
+                category: 'transfer',
+                ledgerId: 1,
+            })
+            await tx.done
+
+            await ds.updateCreditStatementsStatus()
+            const first = await ds.getCreditStatement(stmtId)
+            expect(first.status).toBe('partial')
+            expect(first.paidAmount).toBe(500)
+
+            // 再跑三次：partial 狀態與金額必須穩定（不因已轉 partial 而基準漂移）
+            await ds.updateCreditStatementsStatus()
+            await ds.updateCreditStatementsStatus()
+            await ds.updateCreditStatementsStatus()
+            const stable = await ds.getCreditStatement(stmtId)
+            expect(stable.status).toBe('partial')
+            expect(stable.paidAmount).toBe(500)
+        })
+
+        it('partial 帳單後續補足額還款 → 升級為 paid，且 partial 保持沖銷基準', async () => {
+            const cardId = await ds.addAccount({
+                name: '補足銷帳卡',
+                type: 'credit_card',
+                statementDay: 25,
+                ledgerId: 1,
+            })
+            const stmtId = await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2024-05',
+                statementDate: new Date('2024-06-25').getTime(),
+                dueDate: new Date('2024-07-15').getTime(),
+                amount: 2000,
+                status: 'unpaid',
+                ledgerId: 1,
+                createdAt: Date.now(),
+            })
+            const tx = ds.db.transaction('records', 'readwrite')
+            await tx.store.add({
+                accountId: cardId,
+                date: '2024-07-01',
+                amount: 500,
+                type: 'income',
+                category: 'transfer',
+                ledgerId: 1,
+            })
+            await tx.done
+            await ds.updateCreditStatementsStatus()
+            expect((await ds.getCreditStatement(stmtId)).status).toBe(
+                'partial'
+            )
+
+            // 補一筆 1500 還款（視窗視同一張 partial 帳單出帳日，總計 2000 足額）
+            const tx2 = ds.db.transaction('records', 'readwrite')
+            await tx2.store.add({
+                accountId: cardId,
+                date: '2024-07-10',
+                amount: 1500,
+                type: 'income',
+                category: 'transfer',
+                ledgerId: 1,
+            })
+            await tx2.done
+            await ds.updateCreditStatementsStatus()
+
+            const paid = await ds.getCreditStatement(stmtId)
+            expect(paid.status).toBe('paid')
+            expect(paid.paidAmount).toBe(2000)
         })
     })
 
@@ -1081,6 +1369,63 @@ describe('DataService — Credit Card (Schema v13)', () => {
                 globalThis.Date = originalDate
             }
         })
+
+        it('partial 帳單到期只扣剩額（帳單額 − 已繳），不重複全額扣款', async () => {
+            const bankId = await ds.addAccount({
+                name: '剩額扣繳銀行',
+                type: 'bank',
+                balance: 10000,
+                ledgerId: 1,
+            })
+            const cardId = await ds.addAccount({
+                name: '剩額扣繳卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 15,
+                autoPayEnabled: true,
+                autoPayAccountId: bankId,
+                ledgerId: 1,
+            })
+            // 帳單 3000，已手動繳 1000（partial）
+            await ds.addCreditStatement({
+                accountId: cardId,
+                period: '2026-05',
+                statementDate: new Date('2026-06-25').getTime(),
+                dueDate: new Date('2026-07-15').getTime(),
+                amount: 3000,
+                status: 'partial',
+                paidAmount: 1000,
+                ledgerId: 1,
+                createdAt: Date.now(),
+            })
+
+            const originalDate = globalThis.Date
+            globalThis.Date = class extends originalDate {
+                constructor(...args) {
+                    if (args.length === 0) {
+                        return new originalDate('2026-07-16T12:00:00')
+                    }
+                    return new originalDate(...args)
+                }
+                static now() {
+                    return new originalDate('2026-07-16T12:00:00').getTime()
+                }
+            }
+
+            try {
+                await ds.autoPayCreditStatements()
+                const bankRecords = await ds.db.getAllFromIndex(
+                    'records',
+                    'accountId',
+                    bankId
+                )
+                // 舊版按全額 3000 扣款（重複扣繳）；新版只扣剩額 2000
+                expect(bankRecords).toHaveLength(1)
+                expect(bankRecords[0].amount).toBe(2000)
+            } finally {
+                globalThis.Date = originalDate
+            }
+        })
     })
 
     describe('deleteAccount (Cascading Delete)', () => {
@@ -1139,7 +1484,7 @@ describe('DataService — Credit Card (Schema v13)', () => {
 
             // 寫入一些不同日期的紀錄，使用 add() 回傳的動態 ID 斷言
             const tx = mockDb.transaction('records', 'readwrite')
-            const id1 = await tx.store.add({
+            await tx.store.add({
                 date: '2024-06-01',
                 amount: 100,
                 ledgerId: 1,
@@ -1154,7 +1499,7 @@ describe('DataService — Credit Card (Schema v13)', () => {
                 amount: 300,
                 ledgerId: 1,
             })
-            const id4 = await tx.store.add({
+            await tx.store.add({
                 date: '2024-07-01',
                 amount: 400,
                 ledgerId: 1,
@@ -1968,6 +2313,164 @@ describe('DataService — Recurring Transactions CRUD', () => {
     })
 })
 
+describe('DataService — Amortizations accountUuid (#SYNC-AMORT)', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('addAmortization 應自動補上 accountUuid（若提供 accountId）', async () => {
+        ds.db._storeData.accounts.push({
+            id: 70,
+            name: '台新卡',
+            type: 'credit_card',
+            uuid: 'acc-uuid-70',
+            ledgerId: 1,
+        })
+
+        const id = await ds.addAmortization(
+            {
+                name: '手機分期',
+                type: '分期',
+                periods: 12,
+                amount: 1000,
+                accountId: 70,
+                chargeMode: 'upfront',
+            },
+            true
+        )
+
+        const tx = ds.db.transaction('amortizations', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.accountUuid).toBe('acc-uuid-70')
+    })
+
+    it('addAmortization 無 accountId 時不寫入 accountUuid', async () => {
+        const id = await ds.addAmortization(
+            {
+                name: '軟體攤提',
+                type: '攤提',
+                periods: 24,
+                amount: 1200,
+            },
+            true
+        )
+
+        const tx = ds.db.transaction('amortizations', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.accountUuid).toBeUndefined()
+    })
+
+    it('addAmortization accountId 查無帳戶時不寫入 accountUuid', async () => {
+        const id = await ds.addAmortization(
+            {
+                name: '查無帳戶分期',
+                type: '分期',
+                periods: 6,
+                amount: 600,
+                accountId: 999, // 不存在
+            },
+            true
+        )
+
+        const tx = ds.db.transaction('amortizations', 'readonly')
+        const item = await tx.store.get(id)
+        await tx.done
+
+        expect(item.accountId).toBe(999)
+        expect(item.accountUuid).toBeUndefined()
+    })
+
+    it('updateAmortization 應更新 accountUuid 當 accountId 改變', async () => {
+        ds.db._storeData.accounts.push({
+            id: 80,
+            name: '銀行',
+            uuid: 'acc-uuid-80',
+            ledgerId: 1,
+        })
+        const tx = ds.db.transaction('amortizations', 'readwrite')
+        const id = await tx.store.add({
+            name: '既有分期',
+            type: '分期',
+            periods: 12,
+            amount: 1200,
+            accountId: null,
+            accountUuid: null,
+            ledgerId: 1,
+            status: 'active',
+            uuid: 'am-uuid-upd',
+        })
+        await tx.done
+
+        await ds.updateAmortization(id, { accountId: 80 }, true)
+
+        const tx2 = ds.db.transaction('amortizations', 'readonly')
+        const updated = await tx2.store.get(id)
+        await tx2.done
+
+        expect(updated.accountUuid).toBe('acc-uuid-80')
+    })
+
+    it('updateAmortization accountId 改為 null 時 accountUuid 也清為 null', async () => {
+        const tx = ds.db.transaction('amortizations', 'readwrite')
+        const id = await tx.store.add({
+            name: '要移除帳戶的分期',
+            type: '分期',
+            periods: 6,
+            amount: 600,
+            accountId: 5,
+            accountUuid: 'acc-uuid-old',
+            ledgerId: 1,
+            status: 'active',
+            uuid: 'am-uuid-clear',
+        })
+        await tx.done
+
+        await ds.updateAmortization(id, { accountId: null }, true)
+
+        const tx2 = ds.db.transaction('amortizations', 'readonly')
+        const updated = await tx2.store.get(id)
+        await tx2.done
+
+        expect(updated.accountId).toBeNull()
+        expect(updated.accountUuid).toBeNull()
+    })
+
+    it('updateAmortization 未動 accountId 時不影響既有 accountUuid', async () => {
+        const tx = ds.db.transaction('amortizations', 'readwrite')
+        const id = await tx.store.add({
+            name: '只改名稱',
+            type: '分期',
+            periods: 6,
+            amount: 600,
+            accountId: 9,
+            accountUuid: 'acc-uuid-keep',
+            ledgerId: 1,
+            status: 'active',
+            uuid: 'am-uuid-name',
+        })
+        await tx.done
+
+        await ds.updateAmortization(id, { name: '改名後' }, true)
+
+        const tx2 = ds.db.transaction('amortizations', 'readonly')
+        const updated = await tx2.store.get(id)
+        await tx2.done
+
+        expect(updated.name).toBe('改名後')
+        expect(updated.accountUuid).toBe('acc-uuid-keep')
+    })
+})
+
 // 模擬 FileReader 讀取 JSON 內容，用於測試 importData（不依賴真實檔案）
 function stubFileReader(content) {
     const OriginalFileReader = globalThis.FileReader
@@ -2359,6 +2862,30 @@ describe('DataService — 帳本切換與邊界情境', () => {
         expect((await ds.getSetting('sync_manifest_pending_mf_cleanup_test'))?.value).toBeNull()
     })
 
+    it('#BUDGET-KEY-H6 deleteLedger 清除該帳本預算鍵，殭屍預算不被新帳本 id 繼承', async () => {
+        ds.db._storeData.ledgers.push({ id: 2, name: '待刪帳本', uuid: 'l-budget' })
+        // 該帳本的預算（IndexedDB + localStorage 兩層）
+        await ds.saveSetting({ key: 'budget_settings_2', value: { monthlyBudget: 8888 } })
+        // 其他帳本預算與 legacy 全域鍵（應保留不動）
+        await ds.saveSetting({ key: 'budget_settings_1', value: { monthlyBudget: 1111 } })
+        await ds.saveSetting({ key: 'budget_settings', value: { monthlyBudget: 2222 } })
+        localStorage.setItem('monthlyBudget_2', '8888')
+        localStorage.setItem('categoryBudgets_2', '{"food":100}')
+        localStorage.setItem('categoryBudgetOrder_2', '["food"]')
+        localStorage.setItem('excludedBudgetCategories_2', '["transfer"]')
+
+        await ds.deleteLedger(2)
+
+        expect((await ds.getSetting('budget_settings_2'))?.value).toBeNull()
+        expect(localStorage.getItem('monthlyBudget_2')).toBeNull()
+        expect(localStorage.getItem('categoryBudgets_2')).toBeNull()
+        expect(localStorage.getItem('categoryBudgetOrder_2')).toBeNull()
+        expect(localStorage.getItem('excludedBudgetCategories_2')).toBeNull()
+        // 其他帳本與 legacy 全域鍵完全不動
+        expect((await ds.getSetting('budget_settings_1'))?.value).toEqual({ monthlyBudget: 1111 })
+        expect((await ds.getSetting('budget_settings'))?.value).toEqual({ monthlyBudget: 2222 })
+    })
+
     it('N1 防護：addAmortization 與 addRecurringTransaction 在 skipLog=true 時剝離外部傳入的 id，避免主鍵撞擊', async () => {
         const id1 = await ds.addAmortization({ name: '分期 1', periods: 12, totalAmount: 1200 })
         const id2 = await ds.addAmortization({ id: id1, name: '分期 2', periods: 6, totalAmount: 600 }, true)
@@ -2693,6 +3220,51 @@ describe('DataService — groupManagementEnabled 設定項匯出/匯入/同步',
         }
     })
 
+    it('#BUDGET-KEY-M10 importData 跳過未映射帳本的 per-ledger 預算鍵，不污染本機同號帳本與全域快取', async () => {
+        const mappedBudget = {
+            monthlyBudget: 9000,
+            categoryBudgets: { food: 1000 },
+            categoryBudgetOrder: ['food'],
+            excludedBudgetCategories: [],
+        }
+        const orphanBudget = {
+            monthlyBudget: 77777,
+            categoryBudgets: { evil: 1 },
+            categoryBudgetOrder: ['evil'],
+            excludedBudgetCategories: [],
+        }
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {},
+            activeLedgerId: 1,
+            // 只匯入 1 個帳本 → 備份檔中 budget_settings_99 屬未映射孤兒鍵
+            ledgers: [{ id: 1, name: '主帳本', uuid: 'ledger-uuid-m10' }],
+            records: [],
+            budgetSettingsMap: {
+                budget_settings_1: mappedBudget,
+                budget_settings_99: orphanBudget,
+            },
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            const ledgers = await ds.getLedgers()
+            const newLedgerId = ledgers[0].id
+            // 已映射鍵正常寫入重映射後的新 key
+            expect((await ds.getSetting(`budget_settings_${newLedgerId}`))?.value).toEqual(mappedBudget)
+            // 未映射鍵不被寫入（不會蓋到本機同號帳本）
+            expect(await ds.getSetting('budget_settings_99')).toBeFalsy()
+            // 全域 legacy 鍵不被未映射鍵污染（orphanBudget 的 77777 不得出現）
+            expect(localStorage.getItem('monthlyBudget')).toBeNull()
+            expect(localStorage.getItem(`monthlyBudget_${newLedgerId}`)).toBe('9000')
+        } finally {
+            restore()
+        }
+    })
+
     it('importData 應支援只有舊版 budgetSettings 的備份檔並補齊當前帳本 key', async () => {
         const legacyBudget = {
             monthlyBudget: 15000,
@@ -2721,6 +3293,237 @@ describe('DataService — groupManagementEnabled 設定項匯出/匯入/同步',
             const globalSetting = await ds.getSetting('budget_settings')
             expect(globalSetting?.value).toEqual(legacyBudget)
             expect(localStorage.getItem('monthlyBudget')).toBe('15000')
+        } finally {
+            restore()
+        }
+    })
+})
+
+describe('DataService — 多帳本預算設定匯出/匯入/同步備份', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+    })
+
+    it('exportDataForSync 應包含 per-ledger 預算 (budgetSettingsMap)', async () => {
+        // seed 兩筆預算：legacy 全域 key + per-ledger key
+        await ds.saveSetting({
+            key: 'budget_settings',
+            value: {
+                monthlyBudget: 1000,
+                categoryBudgets: {},
+                categoryBudgetOrder: [],
+                excludedBudgetCategories: [],
+            },
+        })
+        await ds.saveSetting({
+            key: 'budget_settings_1',
+            value: {
+                monthlyBudget: 5000,
+                categoryBudgets: { food: 2000 },
+                categoryBudgetOrder: ['food'],
+                excludedBudgetCategories: [],
+            },
+        })
+        await ds.saveSetting({
+            key: 'budget_settings_2',
+            value: {
+                monthlyBudget: 3000,
+                categoryBudgets: {},
+                categoryBudgetOrder: [],
+                excludedBudgetCategories: ['food'],
+            },
+        })
+
+        const syncExport = await ds.exportDataForSync()
+
+        // budgetSettingsMap 應包含三個 key
+        expect(syncExport.budgetSettingsMap).toBeDefined()
+        expect(syncExport.budgetSettingsMap['budget_settings'].monthlyBudget).toBe(
+            1000
+        )
+        expect(syncExport.budgetSettingsMap['budget_settings_1'].monthlyBudget).toBe(
+            5000
+        )
+        expect(syncExport.budgetSettingsMap['budget_settings_1'].categoryBudgets).toEqual({
+            food: 2000,
+        })
+        expect(syncExport.budgetSettingsMap['budget_settings_2'].monthlyBudget).toBe(
+            3000
+        )
+        expect(syncExport.budgetSettingsMap['budget_settings_2'].excludedBudgetCategories).toEqual(
+            ['food']
+        )
+
+        // budgetSettings legacy fallback 應存在
+        expect(syncExport.budgetSettings).toBeDefined()
+        expect(syncExport.budgetSettings.monthlyBudget).toBe(1000)
+    })
+
+    it('exportDataForSync 無預算時 budgetSettingsMap 為空物件、budgetSettings 為 null', async () => {
+        const syncExport = await ds.exportDataForSync()
+        expect(syncExport.budgetSettingsMap).toEqual({})
+        expect(syncExport.budgetSettings).toBeNull()
+    })
+
+    it('exportDataForSync 只有 per-ledger key（無 legacy）時 budgetSettings 為 null 但 map 有值', async () => {
+        await ds.saveSetting({
+            key: 'budget_settings_1',
+            value: {
+                monthlyBudget: 5000,
+                categoryBudgets: { food: 2000 },
+                categoryBudgetOrder: ['food'],
+                excludedBudgetCategories: [],
+            },
+        })
+        const syncExport = await ds.exportDataForSync()
+        expect(syncExport.budgetSettingsMap['budget_settings_1'].monthlyBudget).toBe(
+            5000
+        )
+        // v2.1.8.1（origin）：activeLedgerId 的 per-ledger key 會提升為 budgetSettings
+        // fallback（與上方 activeLedgerId fallback 測試同語意，較 3661ef1 舊版「null」更友善）
+        expect(syncExport.budgetSettings.monthlyBudget).toBe(5000)
+    })
+
+    it('exportData 應包含 budgetSettingsMap（手動匯出）', async () => {
+        await ds.saveSetting({
+            key: 'budget_settings_1',
+            value: {
+                monthlyBudget: 5000,
+                categoryBudgets: { food: 2000 },
+                categoryBudgetOrder: ['food'],
+                excludedBudgetCategories: [],
+            },
+        })
+
+        let exportedPayload = null
+        const originalBlob = globalThis.Blob
+        globalThis.Blob = class extends originalBlob {
+            constructor(parts, options) {
+                super(parts, options)
+                try {
+                    exportedPayload = JSON.parse(parts[0])
+                } catch {
+                    exportedPayload = null
+                }
+            }
+        }
+
+        try {
+            await ds.exportData()
+            expect(exportedPayload).not.toBeNull()
+            expect(exportedPayload.budgetSettingsMap).toBeDefined()
+            expect(
+                exportedPayload.budgetSettingsMap['budget_settings_1'].monthlyBudget
+            ).toBe(5000)
+        } finally {
+            globalThis.Blob = originalBlob
+        }
+    })
+
+    it('importData 應還原 per-ledger 預算並重映射 ledger ID', async () => {
+        // 匯入檔：舊裝置 ledger 1, 2；新裝置會重新分配 id
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+                groupManagementEnabled: false,
+            },
+            activeLedgerId: 1,
+            ledgers: [
+                { id: 1, name: '預設帳本', uuid: 'ledger-uuid-1' },
+                { id: 2, name: '旅行帳本', uuid: 'ledger-uuid-2' },
+            ],
+            records: [],
+            accounts: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [],
+            budgetSettingsMap: {
+                budget_settings_1: {
+                    monthlyBudget: 5000,
+                    categoryBudgets: { food: 2000 },
+                    categoryBudgetOrder: ['food'],
+                    excludedBudgetCategories: [],
+                },
+                budget_settings_2: {
+                    monthlyBudget: 3000,
+                    categoryBudgets: {},
+                    categoryBudgetOrder: [],
+                    excludedBudgetCategories: ['food'],
+                },
+            },
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            // 取得新裝置的 ledger id
+            const ledgers = await ds.getLedgers()
+            const ledger1NewId = ledgers.find(
+                l => l.uuid === 'ledger-uuid-1'
+            )?.id
+            const ledger2NewId = ledgers.find(
+                l => l.uuid === 'ledger-uuid-2'
+            )?.id
+
+            // 驗證預算已重映射到新 ledger id
+            const budget1 = await ds.getSetting(`budget_settings_${ledger1NewId}`)
+            expect(budget1?.value?.monthlyBudget).toBe(5000)
+            expect(budget1?.value?.categoryBudgets).toEqual({ food: 2000 })
+
+            const budget2 = await ds.getSetting(`budget_settings_${ledger2NewId}`)
+            expect(budget2?.value?.monthlyBudget).toBe(3000)
+            expect(budget2?.value?.excludedBudgetCategories).toEqual(['food'])
+        } finally {
+            restore()
+        }
+    })
+
+    it('importData 無 budgetSettingsMap 但有 budgetSettings legacy 時仍可用', async () => {
+        const json = JSON.stringify({
+            version: '2.3.0',
+            settings: {
+                advancedAccountModeEnabled: false,
+                debtManagementEnabled: false,
+                groupManagementEnabled: false,
+            },
+            activeLedgerId: 1,
+            ledgers: [{ id: 1, name: '預設帳本', uuid: 'ledger-uuid-1' }],
+            records: [],
+            accounts: [],
+            contacts: [],
+            debts: [],
+            recurring_transactions: [],
+            amortizations: [],
+            credit_statements: [],
+            groupMeta: [],
+            budgetSettings: {
+                monthlyBudget: 8000,
+                categoryBudgets: { food: 3000 },
+                categoryBudgetOrder: ['food'],
+                excludedBudgetCategories: [],
+            },
+        })
+        const restore = stubFileReader(json)
+
+        try {
+            const result = await ds.importData({ name: 'backup.json' })
+            expect(result.success).toBe(true)
+
+            const budget = await ds.getSetting('budget_settings')
+            expect(budget?.value?.monthlyBudget).toBe(8000)
         } finally {
             restore()
         }
@@ -2760,6 +3563,445 @@ describe('DataService — addAmortization chargeMode', () => {
         })
         const item = await ds.getAmortization(id)
         expect(item.chargeMode).toBe('upfront')
+    })
+})
+
+describe('DataService — calculateAccountCurrentBalance', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        // 直接寫入 mock store（保留明確 id）
+        ds.db._storeData.accounts = []
+        ds.db._storeData.records = []
+        ds.db._storeData.debts = []
+    })
+
+    it('一般帳戶：初始餘額 + 收入 - 支出', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'income', amount: 500, ledgerId: 1 },
+            { id: 2, accountId: 1, type: 'expense', amount: 300, ledgerId: 1 },
+            { id: 3, accountId: 1, type: 'expense', amount: 200, ledgerId: 1 }
+        )
+        // 1000 + 500 - 300 - 200 = 1000
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(1000)
+    })
+
+    it('一般帳戶：支出超過初始餘額時餘額轉負', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 1500, ledgerId: 1 }
+        )
+        // 1000 - 1500 = -500
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(-500)
+    })
+
+    it('一般帳戶：排除 payable 欠款的原始紀錄（debtId + payable + 非 debt_repayment）', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.debts.push({ id: 10, type: 'payable', ledgerId: 1, createdAt: 1 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 200, debtId: 10, category: 'food', ledgerId: 1 }
+        )
+        // 該筆 200 屬 payable 欠款原始紀錄 → 排除 → 餘額維持 1000
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(1000)
+    })
+
+    it('一般帳戶：payable 欠款的 debt_repayment 還款紀錄「不」排除（實際現金流要計入）', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.debts.push({ id: 10, type: 'payable', ledgerId: 1, createdAt: 1 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 200, debtId: 10, category: 'debt_repayment', ledgerId: 1 }
+        )
+        // debt_repayment 不屬排除條件 → 計入 → 1000 - 200 = 800
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(800)
+    })
+
+    it('一般帳戶：receivable 欠款的紀錄「不」排除', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.debts.push({ id: 10, type: 'receivable', ledgerId: 1, createdAt: 1 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 200, debtId: 10, category: 'food', ledgerId: 1 }
+        )
+        // receivable 不排除 → 1000 - 200 = 800
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(800)
+    })
+
+    it('一般帳戶：debtId 為 null 的普通紀錄正常計入', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 200, debtId: null, category: 'food', ledgerId: 1 }
+        )
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(800)
+    })
+
+    it('信用卡：餘額為淨現金流（消費負、繳款正），負值代表欠款', async () => {
+        ds.db._storeData.accounts.push({
+            id: 3, name: '信用卡', type: 'credit_card', balance: 0, creditLimit: 20000,
+        })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 3, type: 'expense', amount: 5000, ledgerId: 1 },
+            { id: 2, accountId: 3, type: 'income', amount: 2000, ledgerId: 1 }
+        )
+        // 0 - 5000 + 2000 = -3000（欠款 3000）
+        expect(await ds.calculateAccountCurrentBalance(3)).toBe(-3000)
+    })
+
+    it('找不到帳戶時回傳 0', async () => {
+        expect(await ds.calculateAccountCurrentBalance(999)).toBe(0)
+    })
+
+    it('帳戶無 balance 欄位時以 0 為起點', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet' })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 300, ledgerId: 1 }
+        )
+        // 0（無初始）- 300 = -300
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(-300)
+    })
+
+    it('其他帳戶的紀錄不計入本帳戶餘額（accountId 隔離）', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 2, type: 'expense', amount: 9999, ledgerId: 1 }
+        )
+        // accountId=2 的紀錄不屬於帳戶 1 → 1000
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(1000)
+    })
+
+    it('其他帳本的紀錄不計入本帳戶餘額（ledgerId 隔離）', async () => {
+        ds.db._storeData.accounts.push({ id: 1, name: '現金', type: 'wallet', balance: 1000 })
+        ds.db._storeData.records.push(
+            { id: 1, accountId: 1, type: 'expense', amount: 9999, ledgerId: 2 }
+        )
+        // 同 accountId 但 ledgerId=2（非 active ledger 1）→ 不計入 → 1000
+        expect(await ds.calculateAccountCurrentBalance(1)).toBe(1000)
+    })
+})
+
+// ==================== getStatistics — 對象（聯絡人）篩選 (#MOZE-TGT) ====================
+
+describe('DataService.getStatistics — 對象（聯絡人）篩選 (#MOZE-TGT)', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+    })
+
+    function seedContactData() {
+        // debt 1 → contact 1（小明）、debt 2 → contact 2（小美）
+        // receivable（應收代墊）未結清的 expense 保留全額 effectiveAmount，會出現在 stats.records
+        ds.db._storeData.debts.push(
+            { id: 1, contactId: 1, type: 'receivable', originalAmount: 300, ledgerId: 1, settled: false, createdAt: 1 },
+            { id: 2, contactId: 2, type: 'receivable', originalAmount: 500, ledgerId: 1, settled: false, createdAt: 2 }
+        )
+        ds.db._storeData.records.push(
+            // 掛 contact 1 欠款的兩筆（代墊支出）
+            { id: 1, type: 'expense', amount: 300, category: 'food', date: '2026-06-05', debtId: 1, ledgerId: 1 },
+            { id: 2, type: 'expense', amount: 200, category: 'transport', date: '2026-06-10', debtId: 1, ledgerId: 1 },
+            // 掛 contact 2 欠款的一筆
+            { id: 3, type: 'expense', amount: 500, category: 'food', date: '2026-06-07', debtId: 2, ledgerId: 1 },
+            // 無 debtId 的一般紀錄（不屬於任何對象）
+            { id: 4, type: 'expense', amount: 999, category: 'shopping', date: '2026-06-08', ledgerId: 1 },
+            // debtId 引用不存在 debt 的紀錄
+            { id: 5, type: 'expense', amount: 777, category: 'shopping', date: '2026-06-09', debtId: 999, ledgerId: 1 }
+        )
+    }
+
+    it('contactId 命中時只保留該對象欠款關聯的紀錄', async () => {
+        seedContactData()
+        const stats = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            1
+        )
+        const ids = stats.records.map(r => r.id).sort()
+        expect(ids).toEqual([1, 2])
+    })
+
+    it('無 debtId 的一般紀錄在任何 contactId 篩選下都被過濾', async () => {
+        seedContactData()
+        const stats = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            2
+        )
+        expect(stats.records.map(r => r.id)).toEqual([3])
+    })
+
+    it('debtId 引用不存在 debt 的紀錄被過濾', async () => {
+        seedContactData()
+        const stats = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            1
+        )
+        expect(stats.records.some(r => r.id === 5)).toBe(false)
+    })
+
+    it('contactId 為 null（不傳）時不過濾，全部紀錄計入', async () => {
+        seedContactData()
+        const stats = await ds.getStatistics('2026-06-01', '2026-06-30')
+        // receivable 未結清的 expense 保留全額 effectiveAmount，全部 5 筆皆計入；
+        // 明確傳 null 與不傳（預設）結果應一致
+        const noFilter = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            null
+        )
+        expect(stats.records.length).toBe(noFilter.records.length)
+        expect(stats.records).toHaveLength(5)
+    })
+
+    it('篩選後 totalExpense 只累計命中紀錄的金額', async () => {
+        // receivable（應收代墊）未結清的 expense 保留全額，可直接驗證金額累計
+        ds.db._storeData.debts.push(
+            { id: 10, contactId: 7, type: 'receivable', originalAmount: 1000, ledgerId: 1, settled: false, createdAt: 1 },
+            { id: 11, contactId: 8, type: 'receivable', originalAmount: 500, ledgerId: 1, settled: false, createdAt: 2 }
+        )
+        ds.db._storeData.records.push(
+            { id: 20, type: 'expense', amount: 1000, category: 'food', date: '2026-06-05', debtId: 10, ledgerId: 1 },
+            { id: 21, type: 'expense', amount: 500, category: 'food', date: '2026-06-06', debtId: 11, ledgerId: 1 }
+        )
+        const stats = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            7
+        )
+        expect(stats.totalExpense).toBe(1000)
+        expect(stats.records.map(r => r.id)).toEqual([20])
+    })
+
+    it('stats.records 回傳欄位同步過濾（income 腿驗證）', async () => {
+        ds.db._storeData.debts.push(
+            { id: 30, contactId: 7, type: 'receivable', originalAmount: 800, ledgerId: 1, settled: true, createdAt: 1 },
+            { id: 31, contactId: 8, type: 'receivable', originalAmount: 600, ledgerId: 1, settled: true, createdAt: 2 }
+        )
+        ds.db._storeData.records.push(
+            { id: 40, type: 'income', amount: 800, category: 'debt_recovery', date: '2026-06-05', debtId: 30, ledgerId: 1 },
+            { id: 41, type: 'income', amount: 600, category: 'debt_recovery', date: '2026-06-06', debtId: 31, ledgerId: 1 }
+        )
+        const stats = await ds.getStatistics(
+            '2026-06-01',
+            '2026-06-30',
+            null,
+            false,
+            8
+        )
+        expect(stats.records.map(r => r.id)).toEqual([41])
+        expect(stats.totalIncome).toBe(600)
+    })
+})
+
+describe('DataService — 既有款項登記基線 (initialPaidAmount)', () => {
+    let ds
+
+    beforeEach(async () => {
+        clearMockData()
+        localStorage.clear()
+        ds = new DataService()
+        ds.db = await globalThis.idb.openDB()
+        ds.activeLedgerId = 1
+        ds.db._storeData.contacts.push({ id: 1, name: '測試聯絡人', uuid: 'c-uuid-1' })
+    })
+
+    it('addDebt 帶基線 → remainingAmount = 總額 − 基線，基線欄位寫入', async () => {
+        const id = await ds.addDebt({
+            type: 'receivable',
+            contactId: 1,
+            amount: 1000,
+            initialPaidAmount: 400,
+            date: '2024-01-01',
+            description: '車款',
+        })
+        const debt = await ds.getDebt(id)
+        expect(debt.originalAmount).toBe(1000)
+        expect(debt.remainingAmount).toBe(600)
+        expect(debt.initialPaidAmount).toBe(400)
+        expect(debt.settled).toBe(false)
+    })
+
+    it('addDebt 基線等於總額 → 建立當下直接結清', async () => {
+        const id = await ds.addDebt({
+            type: 'payable',
+            contactId: 1,
+            amount: 500,
+            initialPaidAmount: 500,
+            date: '2024-01-01',
+        })
+        const debt = await ds.getDebt(id)
+        expect(debt.remainingAmount).toBe(0)
+        expect(debt.settled).toBe(true)
+        expect(debt.settledAt).toBeTruthy()
+    })
+
+    it('addDebt 基線超過總額 → 收斂為總額（remaining 0、不為負）', async () => {
+        const id = await ds.addDebt({
+            type: 'payable',
+            contactId: 1,
+            amount: 300,
+            initialPaidAmount: 999,
+            date: '2024-01-01',
+        })
+        const debt = await ds.getDebt(id)
+        expect(debt.remainingAmount).toBe(0)
+        expect(debt.initialPaidAmount).toBe(300)
+    })
+
+    it('addDebt 非法基線（負數/NaN/字串）→ 歸 0，remaining = 總額且無基線欄位', async () => {
+        for (const bad of [-100, 'abc', NaN, undefined, null]) {
+            await ds.addDebt({
+                type: 'payable',
+                contactId: 1,
+                amount: 200,
+                initialPaidAmount: bad,
+                date: '2024-01-01',
+            })
+        }
+        const debts = await ds.getDebts()
+        expect(debts).toHaveLength(5)
+        for (const d of debts) {
+            expect(d.remainingAmount).toBe(200)
+            expect(d.initialPaidAmount).toBeUndefined()
+        }
+    })
+
+    it('addDebt 不帶基線 → 與舊行為完全一致（零污染）', async () => {
+        const id = await ds.addDebt({
+            type: 'payable',
+            contactId: 1,
+            amount: 800,
+            date: '2024-01-01',
+        })
+        const debt = await ds.getDebt(id)
+        expect(debt.remainingAmount).toBe(800)
+        expect('initialPaidAmount' in debt).toBe(false)
+        expect(debt.settled).toBe(false)
+    })
+
+    it('skipLog（同步接收）路徑保留 initialPaidAmount 欄位', async () => {
+        const id = await ds.addDebt(
+            {
+                type: 'receivable',
+                contactId: 1,
+                originalAmount: 1000,
+                remainingAmount: 600,
+                initialPaidAmount: 400,
+                date: '2024-01-01',
+                settled: false,
+            },
+            true
+        )
+        const debt = await ds.getDebt(id)
+        expect(debt.initialPaidAmount).toBe(400)
+        expect(debt.remainingAmount).toBe(600)
+    })
+
+    it('recalculateDebtState 把基線計入已還總額（漏計會誤還原結清）', async () => {
+        // 總額 1000、基線 400、payments 600 全有對應還款紀錄 → 應維持結清
+        ds.db._storeData.debts.push({
+            id: 77,
+            type: 'receivable',
+            contactId: 1,
+            originalAmount: 1000,
+            remainingAmount: 0,
+            settled: true,
+            settledAt: 1,
+            initialPaidAmount: 400,
+            ledgerId: 1,
+            recordId: null,
+            payments: [
+                { amount: 600, date: '2024-02-01', recordId: 81, recordUuid: 'r-81' },
+            ],
+        })
+        ds.db._storeData.records.push({
+            id: 81,
+            type: 'income',
+            category: 'debt_collection',
+            amount: 600,
+            debtId: 77,
+            ledgerId: 1,
+            date: '2024-02-01',
+        })
+
+        const updated = await ds.recalculateDebtState(77)
+        expect(updated.remainingAmount).toBe(0)
+        expect(updated.settled).toBe(true)
+    })
+
+    it('recalculateDebtState 基線＋部分還款後仍結清', async () => {
+        // 總額 1000、基線 400、僅 300 有還款紀錄（另外 300 付款紀錄被刪）→ 重算應為 300 未結清
+        ds.db._storeData.debts.push({
+            id: 78,
+            type: 'payable',
+            contactId: 1,
+            originalAmount: 1000,
+            remainingAmount: 0,
+            settled: true,
+            settledAt: 1,
+            initialPaidAmount: 400,
+            ledgerId: 1,
+            recordId: null,
+            payments: [
+                { amount: 300, date: '2024-02-01', recordId: 82, recordUuid: 'r-82' },
+            ],
+        })
+        ds.db._storeData.records.push({
+            id: 82,
+            type: 'expense',
+            category: 'debt_repayment',
+            amount: 300,
+            debtId: 78,
+            ledgerId: 1,
+            date: '2024-02-01',
+        })
+
+        const updated = await ds.recalculateDebtState(78)
+        expect(updated.remainingAmount).toBe(300)
+        expect(updated.settled).toBe(false)
+        expect(updated.settledAt).toBeNull()
+    })
+
+    it('recalculateDebtState 無基線舊欠款行為不變', async () => {
+        ds.db._storeData.debts.push({
+            id: 79,
+            type: 'payable',
+            contactId: 1,
+            originalAmount: 500,
+            remainingAmount: 200,
+            settled: false,
+            ledgerId: 1,
+            recordId: null,
+            payments: [{ amount: 300, date: '2024-02-01', recordId: 83, recordUuid: 'r-83' }],
+        })
+        ds.db._storeData.records.push({
+            id: 83,
+            type: 'expense',
+            category: 'debt_repayment',
+            amount: 300,
+            debtId: 79,
+            ledgerId: 1,
+            date: '2024-02-01',
+        })
+        const updated = await ds.recalculateDebtState(79)
+        expect(updated.remainingAmount).toBe(200)
+        expect(updated.settled).toBe(false)
     })
 })
 

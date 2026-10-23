@@ -8,7 +8,8 @@
         "dev": "wrangler dev",
         "deploy": "wrangler deploy",
         "standalone": "node src/standalone.js",
-        "start": "node src/standalone.js"
+        "start": "node src/standalone.js",
+        "test": "node test/selfhost-api.test.mjs && node test/selfhost-http.test.mjs"
     },
     "devDependencies": {
         "wrangler": "^4.147.0"

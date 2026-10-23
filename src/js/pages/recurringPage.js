@@ -5,6 +5,7 @@ import {
     escapeHTML,
     customConfirm,
 } from '../utils.js'
+import Sortable from 'sortablejs'
 
 export class RecurringPage {
     constructor(app) {
@@ -33,7 +34,64 @@ export class RecurringPage {
                 <div id="recurring-list-container" class="space-y-2"></div>
             </div>
         `
-        this.setupRecurringPageListeners()
+        await this.setupRecurringPageListeners()
+    }
+
+    /**
+     * 依自訂拖曳順序排列週期性交易
+     * 未存過自訂順序或順序不含該筆 id 時，退回 nextDueDate 升序（穩定排序，同日期依 id）
+     * @param {Array} txs - 週期性交易陣列
+     * @param {Array<number>} savedOrder - 自訂順序（transaction id 陣列）
+     * @returns {Array} 排序後的週期性交易陣列
+     */
+    static sortOrder(txs, savedOrder) {
+        const ids = Array.isArray(savedOrder)
+            ? savedOrder.filter(id => Number.isFinite(id))
+            : []
+        const pos = new Map(ids.map((id, i) => [id, i]))
+        return [...txs].sort((a, b) => {
+            const pa = pos.has(a.id) ? pos.get(a.id) : Number.MAX_SAFE_INTEGER
+            const pb = pos.has(b.id) ? pos.get(b.id) : Number.MAX_SAFE_INTEGER
+            if (pa !== pb) return pa - pb
+            const da = a.nextDueDate || ''
+            const db = b.nextDueDate || ''
+            if (da !== db) return da.localeCompare(db)
+            return a.id - b.id
+        })
+    }
+
+    /**
+     * 載取自訂排序（per-ledger，無自訂順序時回傳 null）
+     */
+    async _getSavedOrder() {
+        try {
+            let suffix = ''
+            if (this.app.dataService.activeLedgerId) {
+                suffix = `_${this.app.dataService.activeLedgerId}`
+            }
+            const setting = await this.app.dataService.getSetting(
+                `recurringOrder${suffix}`
+            )
+            if (setting && Array.isArray(setting.value)) return setting.value
+            return null
+        } catch (e) {
+            console.error('Failed to load recurring order:', e)
+            return null
+        }
+    }
+
+    /**
+     * 儲存自訂排序（per-ledger）
+     */
+    async _saveOrder(order) {
+        let suffix = ''
+        if (this.app.dataService.activeLedgerId) {
+            suffix = `_${this.app.dataService.activeLedgerId}`
+        }
+        await this.app.dataService.saveSetting({
+            key: `recurringOrder${suffix}`,
+            value: order,
+        })
     }
 
     async setupRecurringPageListeners() {
@@ -42,21 +100,30 @@ export class RecurringPage {
 
         const recurringTxs =
             await this.app.dataService.getRecurringTransactions()
+        const savedOrder = await this._getSavedOrder()
+        const orderedTxs = RecurringPage.sortOrder(recurringTxs, savedOrder)
         const container = pageElement.querySelector('#recurring-list-container')
+        // 先 destroy 舊 Sortable 實例，避免殘留對舊 DOM 的引用（列表清空的 re-render 也涵蓋）
+        this._recurringSortable?.destroy()
+        this._recurringSortable = null
         container.innerHTML = ''
 
         if (recurringTxs.length === 0) {
             container.innerHTML = `<p class="text-center text-wabi-text-secondary py-8">尚未建立任何週期性交易</p>`
             // Still need to set up the add button listener
         } else {
-            for (const tx of recurringTxs) {
+            for (const tx of orderedTxs) {
                 const txEl = document.createElement('div')
                 txEl.className =
                     'flex items-center justify-between bg-wabi-surface p-4 rounded-lg border border-wabi-border'
+                txEl.setAttribute('data-id', tx.id)
                 txEl.innerHTML = `
-                    <div>
-                        <p class="font-medium text-wabi-text-primary">${escapeHTML(tx.description)}</p>
-                        <p class="text-sm text-wabi-text-secondary">金額: ${formatCurrency(tx.amount)} | 下次日期: ${tx.nextDueDate}</p>
+                    <div class="flex items-center gap-3">
+                        <span class="drag-handle cursor-move text-wabi-text-secondary" title="拖曳調整順序"><i class="fa-solid fa-grip-vertical"></i></span>
+                        <div>
+                            <p class="font-medium text-wabi-text-primary">${escapeHTML(tx.description)}</p>
+                            <p class="text-sm text-wabi-text-secondary">金額: ${formatCurrency(tx.amount)} | 下次日期: ${tx.nextDueDate}</p>
+                        </div>
                     </div>
                     <div class="flex gap-2">
                         <button class="edit-recurring-btn" data-id="${tx.id}"><i class="fa-solid fa-pen text-wabi-text-secondary"></i></button>
@@ -65,6 +132,20 @@ export class RecurringPage {
                 `
                 container.appendChild(txEl)
             }
+
+            // 拖曳排序（SortableJS，與預算分類排序一致的 onEnd 回寫模式）
+            this._recurringSortable = new Sortable(container, {
+                animation: 150,
+                handle: '.drag-handle',
+                ghostClass: 'opacity-50',
+                onEnd: async () => {
+                    // 只取容器直接子項（tx 卡片），避免抓到內部按鈕的 data-id
+                    const newOrder = Array.from(container.children).map(
+                        item => parseInt(item.dataset.id, 10)
+                    )
+                    await this._saveOrder(newOrder)
+                },
+            })
         }
 
         const addBtn = pageElement.querySelector('#add-recurring-btn')

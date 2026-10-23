@@ -2,7 +2,23 @@
 import { CATEGORIES } from './categories.js'
 import { FONT_AWESOME_ICONS } from './fontAwesomeIcons.js'
 import Sortable from 'sortablejs'
-import { escapeHTML, customAlert } from './utils.js'
+import {
+    escapeHTML,
+    customAlert,
+    generateId,
+    isSafeIconClass,
+    isSafeHexColor,
+    isSafeBgClass,
+} from './utils.js'
+
+// ── 安全白名單驗證（分類外觀欄位嵌入 DOM 前的防呆）──────────────────────
+// H01: 圖示 class 白名單 — 白名單正則與判斷已提升至 utils.js（#SEC04 全站
+//      渲染面統一真相源），此處 re-export 維持既有 import 路徑相容。
+export { isSafeIconClass }
+
+// M02: 顏色白名單 — hex/bg-class 判斷已提升至 utils.js（#SEC05 全站渲染面
+//      統一真相源），此處 re-export 維持既有 import 路徑相容。
+export { isSafeHexColor }
 
 export class CategoryManager {
     constructor(dataService = null) {
@@ -324,9 +340,11 @@ export class CategoryManager {
         const iconPreview = document.getElementById('icon-preview')
 
         // 圖標預覽功能
+        // H01 修復：白名單外的輸入不寫入 innerHTML，改顯示純文字警示，
+        // 防止 `"><img src=x onerror=...>` 之類的值逃脫 class 屬性注入 DOM。
         const updateIconPreview = () => {
             const iconClass = customIconInput.value.trim()
-            if (iconClass) {
+            if (iconClass && isSafeIconClass(iconClass)) {
                 iconPreview.innerHTML = `<i class="${iconClass}"></i>`
                 selectedIcon = iconClass
                 // 清除預設圖標選擇
@@ -334,6 +352,14 @@ export class CategoryManager {
                     b.classList.remove('border-primary', 'bg-blue-50')
                     b.classList.add('border-gray-300')
                 })
+            } else if (iconClass) {
+                // 非法格式：不渲染、不採用為 selectedIcon，僅提示
+                selectedIcon = ''
+                iconPreview.textContent = '格式不正確'
+                iconPreview.setAttribute(
+                    'title',
+                    '請輸入 FontAwesome class（如 fas fa-heart）'
+                )
             } else {
                 iconPreview.innerHTML = `<i class="fas fa-eye"></i>`
             }
@@ -384,7 +410,10 @@ export class CategoryManager {
                 .join('')
 
             // 反白已選擇的圖標
-            if (selectedIcon) {
+            // 防呆：selectedIcon 編輯模式下來自歷史資料，可能帶有引號等非法
+            // 字元，直接組入 [data-icon="..."] 選擇器會拋 SyntaxError 導致
+            // 整個編輯彈窗初始化中斷；白名單外一律跳過反白。
+            if (selectedIcon && isSafeIconClass(selectedIcon)) {
                 const btn = iconSelector.querySelector(
                     `[data-icon="${selectedIcon}"]`
                 )
@@ -485,7 +514,7 @@ export class CategoryManager {
 
         // 初始狀態
         if (selectedColor) {
-            if (selectedColor.startsWith('#')) {
+            if (isSafeHexColor(selectedColor)) {
                 customColorPickerInput.value = selectedColor
                 customColorPickerLabel.classList.add(
                     'border-wabi-primary',
@@ -498,7 +527,7 @@ export class CategoryManager {
                     'border-wabi-border'
                 )
                 customColorPickerLabel.style.backgroundColor = selectedColor
-            } else {
+            } else if (isSafeBgClass(selectedColor)) {
                 const selectedBtn = document.querySelector(
                     `.color-option[data-color="${selectedColor}"]`
                 )
@@ -509,6 +538,8 @@ export class CategoryManager {
                         'ring-wabi-accent'
                     )
                 }
+            } else {
+                selectedColor = ''
             }
         }
 
@@ -530,22 +561,35 @@ export class CategoryManager {
                     return
                 }
 
-                if (!selectedColor) {
-                    customAlert('請選擇顏色')
+                // H01 防禦深度：編輯模式下 selectedIcon 初始值取自歷史資料，
+                // 可能帶有白名單外的舊值；存檔前統一驗證，拒絕非法圖示入庫。
+                if (!isSafeIconClass(selectedIcon)) {
+                    customAlert('圖示格式不正確，請重新選擇圖示')
+                    return
+                }
+
+                if (
+                    !selectedColor ||
+                    (!isSafeHexColor(selectedColor) &&
+                        !isSafeBgClass(selectedColor))
+                ) {
+                    customAlert('請選擇有效的顏色')
                     return
                 }
 
                 const category = {
                     id: categoryToEdit
                         ? categoryToEdit.id
-                        : 'custom_' + Date.now(),
+                        : // M03 修復：Date.now() 毫秒級可能碰撞，改用全域
+                          // generateId()（UUID，含舊瀏覽器 fallback）
+                          'custom_' + generateId(),
                     name: name,
                     icon: selectedIcon,
                     color: selectedColor,
                     isCustom: true,
                 }
 
-                let success = false
+                let success
                 if (categoryToEdit) {
                     success = await this.updateCustomCategory(type, category)
                 } else {
@@ -576,9 +620,10 @@ export class CategoryManager {
             }
         })
 
-        // 自動聚焦
+        // 自動聚焦（可選鏈防呆：100ms 內彈窗已被關閉時元素為 null，直接
+        // .focus() 會拋 TypeError 成為未捕獲異常）
         setTimeout(() => {
-            document.getElementById('category-name').focus()
+            document.getElementById('category-name')?.focus()
         }, 100)
     }
 
@@ -761,12 +806,24 @@ export class CategoryManager {
             .map(category => {
                 const isHidden = hiddenSet.has(category.id)
                 const isCustom = category.isCustom
-                const colorStyle = category.color.startsWith('#')
-                    ? `style="background-color: ${category.color}"`
-                    : ''
-                const colorClass = !category.color.startsWith('#')
+                // M02 修復：顏色欄位白名單驗證——hex 才進 inline style（且必須
+                // 是合法 hex，防止 `#fff; background-image:url(...)` 之類逃脫），
+                // 非 hex 值只接受 bg-* Tailwind class；其餘一律不套用顏色。
+                const safeColor = isSafeHexColor(category.color)
                     ? category.color
+                    : null
+                const safeColorClass =
+                    !safeColor && isSafeBgClass(category.color)
+                        ? category.color
+                        : ''
+                const colorStyle = safeColor
+                    ? `style="background-color: ${safeColor}"`
                     : ''
+                // H01 修復（清單渲染面）：歷史資料的 icon 不一定經過表單驗證，
+                // 白名單外一律退回中性眼睛圖示，不直接嵌入 class 屬性。
+                const safeIcon = isSafeIconClass(category.icon)
+                    ? category.icon.trim()
+                    : 'fas fa-eye'
 
                 return `
             <div class="sortable-item flex items-center justify-between p-2 bg-wabi-surface rounded-lg border border-wabi-border shadow-sm transition-opacity duration-200 ${isHidden ? 'opacity-40' : ''}" data-id="${category.id}">
@@ -774,8 +831,8 @@ export class CategoryManager {
                 <div class="drag-handle cursor-grab text-wabi-text-secondary px-1 touch-none shrink-0">
                     <i class="fa-solid fa-grip-vertical text-sm"></i>
                 </div>
-                <div class="size-9 shrink-0 flex items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
-                    <i class="${category.icon} text-base"></i>
+                <div class="size-9 shrink-0 flex items-center justify-center rounded-full ${safeColorClass} text-white" ${colorStyle}>
+                    <i class="${safeIcon} text-base"></i>
                 </div>
                 <span class="font-medium text-wabi-text-primary truncate text-sm">${escapeHTML(category.name)}</span>
               </div>
@@ -816,12 +873,18 @@ export class CategoryManager {
         document.body.appendChild(modal)
 
         // Init SortableJS
+        // M01 修復：實例存於 this，關閉彈窗時統一 destroy()，避免頻繁開關
+        // 管理彈窗時 Sortable 在元素上註冊的事件監聽器累積洩漏。
         const listEl = document.getElementById('category-sortable-list')
-        const sortableInstance = new Sortable(listEl, {
+        if (this._manageSortable) {
+            this._manageSortable.destroy()
+            this._manageSortable = null
+        }
+        this._manageSortable = new Sortable(listEl, {
             animation: 150,
             handle: '.drag-handle',
             ghostClass: 'opacity-50',
-            onEnd: async evt => {
+            onEnd: async _evt => {
                 const items = listEl.querySelectorAll('.sortable-item')
                 const newOrder = Array.from(items).map(item => item.dataset.id)
                 this.categoryOrder[type] = newOrder
@@ -913,9 +976,22 @@ export class CategoryManager {
     }
 
     closeManageCategoriesModal() {
+        // M01 修復：先銷毀 Sortable 實例再移除 DOM，防止監聽器洩漏殘留
+        if (this._manageSortable) {
+            this._manageSortable.destroy()
+            this._manageSortable = null
+        }
         const modal = document.getElementById('manage-categories-modal')
         if (modal) {
             modal.remove()
         }
+    }
+
+    /**
+     * 釋放資源：清理長生命週期狀態（目前為管理彈窗的 Sortable 實例）。
+     * 與專案其他管理類別（themeManager.destroy 等）生命週期慣例一致。
+     */
+    destroy() {
+        this.closeManageCategoriesModal()
     }
 }

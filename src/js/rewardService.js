@@ -5,13 +5,15 @@
 // 獎勵：觀看獎勵廣告後，停止顯示橫幅廣告 7 天
 // 設計原則：Adblocker 友善 — 所有廣告載入失敗時靜默降級，不影響主程式
 
-import { showToast } from './utils.js'
+import { showToast, getSafeIconClass, escapeHTML } from './utils.js'
 
 // ── 常數設定 ──────────────────────────────────────────
 const AD_FREE_KEY = 'adFreeUntil'
 const AD_FREE_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 天
 
 // Web 廣告設定值（來源：package.json → adConfig，由 Vite 編譯時注入）
+// AD_ENABLED: 廣告總開關（build 時 AD_FREE=1 可關閉；純自架部署用）
+const AD_ENABLED = __AD_ENABLED__
 const ADSENSE_CLIENT_ID = __AD_ADSENSE_CLIENT_ID__
 const ADSENSE_AD_SLOT = __AD_ADSENSE_AD_SLOT__
 const REWARDED_AD_UNIT_PATH = __AD_GPT_REWARDED_PATH__
@@ -98,6 +100,33 @@ async function loadInternalAds() {
     }
     _internalAdsCache = FALLBACK_INTERNAL_ADS
     return _internalAdsCache
+}
+
+// ── #SEC04 內建推廣廣告欄位防呆（供應鏈防禦深度）────────────────
+// internal-ads.json 雖為第一方資產，但與 #SEC01-03 同處理原則：任何嵌入
+// innerHTML / 屬性 / style 的欄位一律先過白名單或 escapeHTML，防托管/CDN
+// 或檔案遭竄改時成為 XSS 注入面。
+const SAFE_AD_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/
+const SAFE_AD_URL_RE = /^https:\/\/[^\s"']+$/
+
+function safeAdColor(value, fallback = '#334A52') {
+    return typeof value === 'string' && SAFE_AD_COLOR_RE.test(value.trim())
+        ? value.trim()
+        : fallback
+}
+
+function safeAdUrl(value) {
+    // 僅允許 https，杜絕 javascript: / data: 協議注入 href
+    return typeof value === 'string' && SAFE_AD_URL_RE.test(value.trim())
+        ? value.trim()
+        : '#'
+}
+
+function safeAdImageUrl(value) {
+    // 廣告圖允許 https 或站內相對路徑；其餘（含 data:）一律不渲染
+    const v = typeof value === 'string' ? value.trim() : ''
+    if (/^https:\/\/[^\s"']+$/.test(v) || /^\/[^\s"']*$/.test(v)) return v
+    return ''
 }
 
 // ── Web 模組層級狀態 ────────────────────────────────
@@ -217,8 +246,8 @@ export class RewardService {
         this._admobModule = null // 延遲載入的 AdMob 模組
         this._admobListeners = [] // 原生事件監聽 handle，供清理
 
-        // 原生環境：初始化 AdMob SDK
-        if (this.isNative) {
+        // 原生環境：初始化 AdMob SDK（build 時關閉廣告則不初始化）
+        if (this.isNative && AD_ENABLED) {
             this._initAdMob()
         }
     }
@@ -248,6 +277,11 @@ export class RewardService {
     }
 
     // ── 7 天無廣告狀態 ────────────────────────────
+
+    /** build 時廣告是否啟用（AD_FREE=1 / 純自架部署 = false） */
+    isAdsEnabled() {
+        return AD_ENABLED
+    }
 
     /** 檢查是否處於無廣告期間 */
     isAdFree() {
@@ -315,6 +349,9 @@ export class RewardService {
      */
     async renderBannerAd(container) {
         if (!container) return
+
+        // build 時關閉廣告（AD_FREE=1，純自架部署）：完全不載入廣告腳本
+        if (!AD_ENABLED) return
 
         // 若處於無廣告期間，顯示感謝訊息
         if (this.isAdFree()) {
@@ -407,6 +444,12 @@ export class RewardService {
      * @returns {Promise<boolean>} 是否成功獲得獎勵
      */
     async showRewardedAd() {
+        // build 時關閉廣告（AD_FREE=1）：沒有獎勵廣告可看
+        if (!AD_ENABLED) {
+            showToast('此版本無廣告', 'info')
+            return false
+        }
+
         // 若已在無廣告期間，直接提示
         if (this.isAdFree()) {
             const remaining = this.formatRemaining()
@@ -694,10 +737,12 @@ export class RewardService {
 
         return new Promise(resolve => {
             // 圖片區塊：有圖顯示圖片，沒圖顯示 icon
-            const heroHtml = ad.image
-                ? `<img src="${ad.image}" alt="${ad.title}" class="w-full rounded-xl mb-4 max-h-48 object-cover" />`
-                : `<div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: ${ad.color}15">
-                       <i class="${ad.icon} text-3xl" style="color: ${ad.color}"></i>
+            // #SEC04：全部欄位過白名單/escapeHTML 再入 innerHTML
+            const adColor = safeAdColor(ad.color)
+            const heroHtml = safeAdImageUrl(ad.image)
+                ? `<img src="${escapeHTML(safeAdImageUrl(ad.image))}" alt="${escapeHTML(ad.title || '')}" class="w-full rounded-xl mb-4 max-h-48 object-cover" />`
+                : `<div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style="background: ${adColor}15">
+                       <i class="${getSafeIconClass(ad.icon, 'fa-solid fa-gift')} text-3xl" style="color: ${adColor}"></i>
                    </div>`
 
             const modal = document.createElement('div')
@@ -706,12 +751,12 @@ export class RewardService {
             modal.innerHTML = `
                 <div class="bg-wabi-surface rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center animate-modal-pop">
                     ${heroHtml}
-                    <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${ad.title}</h3>
-                    <p class="text-wabi-text-secondary text-sm mb-4">${ad.description}</p>
-                    <a href="${ad.url}" target="_blank" rel="noopener noreferrer"
+                    <h3 class="text-xl font-bold text-wabi-text-primary mb-2">${escapeHTML(ad.title || '')}</h3>
+                    <p class="text-wabi-text-secondary text-sm mb-4">${escapeHTML(ad.description || '')}</p>
+                    <a href="${escapeHTML(safeAdUrl(ad.url))}" target="_blank" rel="noopener noreferrer"
                        class="inline-flex items-center gap-1.5 text-sm font-medium mb-6 px-4 py-2 rounded-lg transition-colors hover:opacity-80"
-                       style="color: ${ad.color}; background: ${ad.color}10">
-                        ${ad.buttonText}
+                       style="color: ${adColor}; background: ${adColor}10">
+                        ${escapeHTML(ad.buttonText || '前往')}
                         <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
                     </a>
                     <div class="flex gap-3">
@@ -720,7 +765,7 @@ export class RewardService {
                         </button>
                         <button data-action="claim" disabled
                                 class="flex-1 py-2.5 rounded-lg text-white font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                                style="background: ${ad.color}">
+                                style="background: ${adColor}">
                             <span data-countdown>等待 ${COUNTDOWN_SECONDS} 秒</span>
                         </button>
                     </div>

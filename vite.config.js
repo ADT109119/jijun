@@ -92,6 +92,13 @@ export default defineConfig({
         // 編譯時常數：所有 src/ 下的 JS 都可直接使用
         __APP_VERSION__: JSON.stringify(APP_VERSION),
         // 廣告設定 (來源：package.json → adConfig)
+        // __AD_ENABLED__: 總開關。build 時設 AD_FREE=1 可關閉全部廣告
+        // （純自架部署用，見 SELF_HOST.md）
+        __AD_ENABLED__: JSON.stringify(
+            process.env.AD_FREE === '1'
+                ? false
+                : adConfig.enabled ?? true
+        ),
         __AD_IS_TESTING__: JSON.stringify(adConfig.isTesting ?? true),
         __AD_ADSENSE_CLIENT_ID__: JSON.stringify(
             adConfig.adsenseClientId ?? ''
@@ -107,6 +114,12 @@ export default defineConfig({
         __WEB_STORE_URL__: JSON.stringify(
             adConfig.webStoreUrl ?? 'https://jijun.the-walking-fish.com'
         ),
+        // __ACCESS_CODE__: 前端存取驗證碼（純自架部署的 UX 門檻）。
+        // 設定 ACCESS_CODE=xxx 後，每個瀏覽器 session 首次訪問需輸入驗證碼
+        // 才能使用 app（見 src/js/accessGate.js）。
+        // 空字串（預設）= 無 gate，一般版完全不受影響。
+        // 注意：這是 UX 門檻非安全機制（code 會編入 bundle，詳見 SELF_HOST.md）
+        __ACCESS_CODE__: JSON.stringify(process.env.ACCESS_CODE || ''),
     },
     build: {
         outDir: 'dist',

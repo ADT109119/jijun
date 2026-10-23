@@ -1,7 +1,7 @@
 import { Chart, registerables } from 'chart.js'
 import 'chartjs-adapter-date-fns'
 import { zhTW } from 'date-fns/locale'
-import { formatCurrency, getDateRange, escapeHTML } from './utils.js'
+import { formatCurrency, getDateRange, escapeHTML, getSafeIconClass, isSafeHexColor } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
 
 Chart.register(...registerables)
@@ -15,11 +15,14 @@ export class StatisticsManager {
         this.charts = {}
         this.accounts = []
         this.advancedModeEnabled = false
+        this.contacts = []
+        this.debtModeEnabled = false
         this.filters = {
             period: 'month',
             customStartDate: null,
             customEndDate: null,
             selectedAccountId: null, // null means all accounts
+            selectedContactId: null, // null means all contacts (#MOZE-TGT)
         }
     }
 
@@ -33,6 +36,30 @@ export class StatisticsManager {
 
         if (this.advancedModeEnabled) {
             this.accounts = await this.dataService.getAccounts()
+        }
+
+        // 對象（聯絡人）篩選（#MOZE-TGT）：依附欠款管理功能開關，
+        // 紀錄只透過 debtId → debt.contactId 取得對象歸屬
+        const debtMode = await this.dataService.getSetting(
+            'debtManagementEnabled'
+        )
+        this.debtModeEnabled = !!debtMode?.value
+        if (this.debtModeEnabled && this.dataService.getContacts) {
+            try {
+                this.contacts = await this.dataService.getContacts()
+            } catch (e) {
+                console.warn('Failed to load contacts for stats:', e)
+                this.contacts = []
+            }
+        } else {
+            this.contacts = []
+        }
+        // 既選的聯絡人已不存在（被刪除）時重置篩選，避免幽靈篩選
+        if (
+            this.filters.selectedContactId !== null &&
+            !this.contacts.some(c => c.id === this.filters.selectedContactId)
+        ) {
+            this.filters.selectedContactId = null
         }
 
         const accountFilterOptions = this.accounts
@@ -62,11 +89,34 @@ export class StatisticsManager {
                 `
             : ''
 
+        const contactFilterOptions = this.contacts
+            .map(
+                c =>
+                    `<option value="${c.id}">${escapeHTML(c.name)}</option>`
+            )
+            .join('')
+
+        const contactFilterHTML =
+            this.debtModeEnabled && this.contacts.length > 0
+                ? `
+                    <div class="mb-4">
+                        <label for="stats-contact-filter" class="text-sm text-wabi-text-secondary">對象</label>
+                        <select id="stats-contact-filter" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                            <option value="all">所有對象</option>
+                            ${contactFilterOptions}
+                        </select>
+                        <p class="text-xs text-wabi-text-secondary mt-1">僅統計與該對象欠款相關的紀錄</p>
+                    </div>
+                `
+                : ''
+
         this.container.innerHTML = `
 
         
 
                             ${accountFilterHTML}
+
+                            ${contactFilterHTML}
 
         
 
@@ -192,6 +242,25 @@ export class StatisticsManager {
                 })
             }
         }
+
+        if (this.debtModeEnabled && this.contacts.length > 0) {
+            const contactFilter = this.container.querySelector(
+                '#stats-contact-filter'
+            )
+            if (contactFilter) {
+                // 還原已選定的聯絡人（render 後 DOM 重建）
+                if (this.filters.selectedContactId !== null) {
+                    contactFilter.value = String(this.filters.selectedContactId)
+                }
+                contactFilter.addEventListener('change', e => {
+                    this.filters.selectedContactId =
+                        e.target.value === 'all'
+                            ? null
+                            : parseInt(e.target.value, 10)
+                    this.loadStatisticsData()
+                })
+            }
+        }
     }
 
     updatePeriodButtons() {
@@ -228,7 +297,8 @@ export class StatisticsManager {
             dateRange.startDate,
             dateRange.endDate,
             this.filters.selectedAccountId,
-            offsetTransfers
+            offsetTransfers,
+            this.filters.selectedContactId ?? null
         )
 
         // Handle Account Balance display
@@ -313,7 +383,7 @@ export class StatisticsManager {
                     : r.category === 'others'
                       ? '其他'
                       : r.category
-                const icon = category ? category.icon : 'fa-solid fa-question'
+                const icon = getSafeIconClass(category ? category.icon : null, 'fa-solid fa-question')
 
                 return `
                 <div class="flex items-center justify-between p-3 rounded-lg bg-wabi-bg border border-wabi-border">
@@ -470,7 +540,8 @@ export class StatisticsManager {
         // The color is a tailwind class like `bg-red-500`. We need the hex code for Chart.js.
         // This is a temporary solution. A better solution would be to have a mapping from tailwind classes to hex codes.
         const colors = categoryData.map(c => {
-            if (c.color.startsWith('#')) {
+            // #SEC05：歷史髒 color 直接嵌入圖例 style/Chart.js 前過白名單，非法退回灰
+            if (isSafeHexColor(c.color)) {
                 return c.color // Already a hex code
             }
             const colorClass = c.color
@@ -590,7 +661,8 @@ export class StatisticsManager {
         const labels = categoryData.map(c => c.name)
         const values = categoryData.map(c => c.value)
         const colors = categoryData.map(c => {
-            if (c.color.startsWith('#')) {
+            // #SEC05：歷史髒 color 直接嵌入圖例 style/Chart.js 前過白名單，非法退回灰
+            if (isSafeHexColor(c.color)) {
                 return c.color // Already a hex code
             }
             const colorClass = c.color

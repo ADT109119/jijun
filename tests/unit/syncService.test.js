@@ -274,6 +274,7 @@ describe('SyncService', () => {
                     refresh_token: 'refresh_token_456',
                     expires_at: expect.any(Number),
                     user_info: { email: 'test@example.com' },
+                    updated_at: expect.any(Number),
                 },
             })
         })
@@ -585,6 +586,253 @@ describe('SyncService', () => {
                 'rt-uuid-nonexistent'
             )
             expect(ds.deleteRecurringTransaction).not.toHaveBeenCalled()
+        })
+    })
+
+    // ── #SYNC-AMORT: amortizations 套用分支（分期計畫跨裝置/共用帳本同步）──
+    describe('#SYNC-AMORT: _applyAdd amortizations', () => {
+        let ds, ss
+
+        beforeEach(() => {
+            vi.clearAllMocks()
+            ds = createMockDataService({
+                addAmortization: vi.fn(async () => 88),
+                getByUUID: vi.fn(async () => null),
+                getLedgers: vi.fn(async () => [
+                    { id: 5, uuid: 'ledger-uu-5', name: '工作帳本' },
+                ]),
+                getAccounts: vi.fn(async () => [
+                    { id: 20, uuid: 'acc-uu-20', name: '台新卡' },
+                ]),
+            })
+            ss = createSyncService(ds)
+        })
+
+        it('_applyAdd("amortizations", data) 應以 skipLog=true 呼叫 addAmortization', async () => {
+            await ss._applyAdd('amortizations', {
+                name: '手機分期',
+                type: '分期',
+                periods: 12,
+                amount: 1000,
+                uuid: 'am-uuid-add-1',
+            })
+
+            expect(ds.addAmortization).toHaveBeenCalledTimes(1)
+            const [payload, skipLog] =
+                ds.addAmortization.mock.calls[0]
+            expect(skipLog).toBe(true)
+            expect(payload).toEqual(
+                expect.objectContaining({
+                    name: '手機分期',
+                    periods: 12,
+                    uuid: 'am-uuid-add-1',
+                })
+            )
+        })
+
+        it('應移除遠端整數 id（本機 autoIncrement 產生，防撞名 ConstraintError）', async () => {
+            await ss._applyAdd('amortizations', {
+                id: 999, // 來源裝置整數 id
+                name: '遠端分期',
+                periods: 6,
+                uuid: 'am-uuid-add-id',
+            })
+
+            const [payload] = ds.addAmortization.mock.calls[0]
+            expect(payload.id).toBeUndefined()
+            expect(payload.uuid).toBe('am-uuid-add-id')
+        })
+
+        it('應解析 ledgerUuid→ledgerId 與 accountUuid→accountId', async () => {
+            await ss._applyAdd('amortizations', {
+                name: '分期-with外鍵',
+                periods: 3,
+                ledgerUuid: 'ledger-uu-5',
+                accountUuid: 'acc-uu-20',
+                uuid: 'am-uuid-add-2',
+            })
+
+            const [payload] = ds.addAmortization.mock.calls[0]
+            expect(payload.ledgerId).toBe(5)
+            expect(payload.accountId).toBe(20)
+        })
+
+        it('_resolveAmortizationAccountId：uuid 比對不到應清為 null（防掛錯帳戶）', async () => {
+            const resolved = await ss._resolveAmortizationAccountId({
+                accountId: 777,
+                accountUuid: 'acc-uu-not-exist',
+            })
+            expect(resolved.accountId).toBeNull()
+        })
+
+        it('_resolveAmortizationAccountId：無 accountUuid 舊資料保持不動', async () => {
+            const resolved = await ss._resolveAmortizationAccountId({
+                accountId: 42,
+            })
+            expect(resolved.accountId).toBe(42)
+        })
+
+        it('credit_statements 應被刻意跳過（本機計算產物，不落 dataService 寫入）', async () => {
+            ds.addAmortization = vi.fn()
+            ds.addRecord = vi.fn()
+            const warnSpy = vi
+                .spyOn(console, 'warn')
+                .mockImplementation(() => {})
+
+            await ss._applyAdd('credit_statements', {
+                id: 7,
+                accountId: 3,
+                amount: 5000,
+                uuid: 'cs-uuid-1',
+            })
+
+            expect(ds.addAmortization).not.toHaveBeenCalled()
+            expect(ds.addRecord).not.toHaveBeenCalled()
+            // 不應再走 default 的 Unknown store warn
+            expect(
+                warnSpy.mock.calls.some(c =>
+                    String(c[0]).includes('Unknown store')
+                )
+            ).toBe(false)
+        })
+    })
+
+    describe('#SYNC-AMORT: _applyUpdate amortizations', () => {
+        let ds, ss
+        const amortUuid = 'am-uuid-001'
+
+        beforeEach(() => {
+            vi.clearAllMocks()
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) => {
+                    if (storeName === 'amortizations' && uuid === amortUuid) {
+                        return { id: 42, uuid: amortUuid }
+                    }
+                    return null
+                }),
+                updateAmortization: vi.fn(async () => ({})),
+                addAmortization: vi.fn(async () => 1),
+                getAccounts: vi.fn(async () => []),
+                getLedgers: vi.fn(async () => []),
+            })
+            ss = createSyncService(ds)
+        })
+
+        it('當 UUID 存在時，套用端套用本地 ID 而非遠端整數 id', async () => {
+            await ss._applyUpdate(
+                'amortizations',
+                999, // 遠端 ID
+                { uuid: amortUuid, completedPeriods: 3 }
+            )
+
+            expect(ds.updateAmortization).toHaveBeenCalledWith(
+                42,
+                expect.objectContaining({ completedPeriods: 3 }),
+                true
+            )
+            expect(ds.addAmortization).not.toHaveBeenCalled()
+        })
+
+        it('_applyUpdateWithId 本地找不到 UUID 時應跳過更新', async () => {
+            await ss._applyUpdateWithId(
+                'amortizations',
+                999,
+                { uuid: 'am-uuid-not-local', completedPeriods: 2 }
+            )
+
+            expect(ds.updateAmortization).not.toHaveBeenCalled()
+        })
+
+        it('credit_statements update 應被刻意跳過', async () => {
+            await ss._applyUpdateWithId(
+                'credit_statements',
+                7,
+                { uuid: 'cs-uuid-1', status: 'paid' }
+            )
+            expect(ds.updateAmortization).not.toHaveBeenCalled()
+        })
+    })
+
+    describe('#SYNC-AMORT: _applyDelete amortizations', () => {
+        beforeEach(() => {
+            vi.clearAllMocks()
+        })
+
+        it('_applyDelete("amortizations", id, {uuid}) 應透過 UUID 查找後以本地 ID 刪除', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async (storeName, uuid) => {
+                    if (
+                        storeName === 'amortizations' &&
+                        uuid === 'am-uuid-del-1'
+                    ) {
+                        return { id: 77, uuid: 'am-uuid-del-1' }
+                    }
+                    return null
+                }),
+                deleteAmortization: vi.fn(async () => true),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyDelete('amortizations', 999, {
+                uuid: 'am-uuid-del-1',
+            })
+
+            expect(ds.getByUUID).toHaveBeenCalledWith(
+                'amortizations',
+                'am-uuid-del-1'
+            )
+            expect(ds.deleteAmortization).toHaveBeenCalledWith(77, true)
+        })
+
+        it('UUID 不存在時應靜默跳過', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async () => null),
+                deleteAmortization: vi.fn(async () => true),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyDelete('amortizations', 999, {
+                uuid: 'am-uuid-nonexistent',
+            })
+
+            expect(ds.deleteAmortization).not.toHaveBeenCalled()
+        })
+
+        it('credit_statements delete 應被刻意跳過', async () => {
+            ds = createMockDataService({
+                getByUUID: vi.fn(async () => ({ id: 9 })),
+                deleteAmortization: vi.fn(async () => true),
+            })
+            ss = createSyncService(ds)
+
+            await ss._applyDeleteWithId('credit_statements', 9)
+            expect(ds.deleteAmortization).not.toHaveBeenCalled()
+        })
+    })
+
+    describe('#SYNC-AMORT: applyRemoteChanges 拓撲排序', () => {
+        it('相同 timestamp 與操作時 accounts 先於 amortizations（外鍵先就位）', async () => {
+            const order = []
+            ss._applyAdd = vi.fn(async storeName => order.push(storeName))
+
+            await ss.applyRemoteChanges([
+                {
+                    operation: 'add',
+                    storeName: 'amortizations',
+                    recordId: 2,
+                    data: { id: 2 },
+                    timestamp: 100,
+                },
+                {
+                    operation: 'add',
+                    storeName: 'accounts',
+                    recordId: 1,
+                    data: { id: 1 },
+                    timestamp: 100,
+                },
+            ])
+
+            expect(order).toEqual(['accounts', 'amortizations'])
         })
     })
 
@@ -1095,6 +1343,922 @@ describe('SyncService', () => {
             expect(resolved.groupId).toBe('local-g-100')
         })
     })
+
+    // ── Self-Hosted Sync（純自架 transport）──
+    describe('self-host sync', () => {
+        const originalFetch = globalThis.fetch
+
+        afterEach(() => {
+            globalThis.fetch = originalFetch
+        })
+
+        function jsonRes(status, body, extra = {}) {
+            return {
+                ok: status >= 200 && status < 300,
+                status,
+                json: async () => body,
+                text: async () => JSON.stringify(body),
+                ...extra,
+            }
+        }
+
+        it('selfHostToken 存在時 isSignedIn() = true 且 isSelfHostMode() = true', () => {
+            ss = createSyncService(createMockDataService())
+            expect(ss.isSignedIn()).toBe(false)
+            ss.selfHostToken = 'jijun_test_token'
+            expect(ss.isSignedIn()).toBe(true)
+            expect(ss.isSelfHostMode()).toBe(true)
+        })
+
+        it('selfHostLogin 成功：存入 token 與 username、清除 Google tokens、持久化到 settings', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'old_google_access'
+            ss.refreshToken = 'old_google_refresh'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(
+                    jsonRes(200, { token: 'sh-token-1', username: 'alice' })
+                )
+            const performSyncSpy = vi
+                .spyOn(ss, 'performSync')
+                .mockResolvedValue()
+
+            await ss.selfHostLogin('alice', '1234')
+
+            expect(ss.selfHostToken).toBe('sh-token-1')
+            expect(ss.selfHostUsername).toBe('alice')
+            expect(ss.accessToken).toBeNull()
+            expect(ss.refreshToken).toBeNull()
+            const url = globalThis.fetch.mock.calls[0][0]
+            expect(url).toContain('/api/selfhost/login')
+            expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual(
+                expect.objectContaining({ username: 'alice', pin: '1234' })
+            )
+            // 憑證已持久化（含互斥防禦用的 updated_at 時間戳）
+            const saved = await ds.getSetting('sync_selfhost')
+            expect(saved.value).toEqual(
+                expect.objectContaining({
+                    token: 'sh-token-1',
+                    username: 'alice',
+                })
+            )
+            expect(typeof saved.value.updated_at).toBe('number')
+            expect(performSyncSpy).toHaveBeenCalledWith(true)
+        })
+
+        it('selfHostLogin 401：拋錯且不存 token', async () => {
+            ss = createSyncService(createMockDataService())
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(401, { error: 'Invalid username or PIN' }))
+            await expect(ss.selfHostLogin('alice', 'wrong')).rejects.toThrow(
+                'Invalid username or PIN'
+            )
+            expect(ss.selfHostToken).toBeNull()
+        })
+
+        it('selfHostRegister 201：同樣存入憑證', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(201, {
+                    token: 'sh-token-new',
+                    username: 'bob',
+                    deviceId: ss.deviceId,
+                })
+            )
+            vi.spyOn(ss, 'performSync').mockResolvedValue()
+
+            await ss.selfHostRegister('bob', 'pin1234')
+
+            expect(ss.selfHostToken).toBe('sh-token-new')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/register'
+            )
+            const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body)
+            expect(body.deviceId).toBe(ss.deviceId)
+        })
+
+        it('pushChanges 在 self-host 模式走 /push 並更新 last_push_timestamp', async () => {
+            const pending = [
+                {
+                    deviceId: 'other',
+                    operation: 'add',
+                    storeName: 'records',
+                    recordId: 9,
+                    timestamp: 1700000000000,
+                    data: { uuid: 'u-1' },
+                },
+            ]
+            // 模擬真實 getChangesSince：since 推進後回空（>= 邊界）
+            const getChangesSince = vi.fn(async since =>
+                pending.filter(c => c.timestamp >= (since || 0))
+            )
+            ds = createMockDataService({ getChangesSince })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(200, { added: 1, total: 1 }))
+            const ensureSpy = vi.spyOn(ss, 'ensureValidToken')
+
+            await ss.pushChanges()
+
+            expect(ensureSpy).not.toHaveBeenCalled()
+            // 只推一次（推完 since 推進後無變更）
+            expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+            const call = globalThis.fetch.mock.calls[0]
+            expect(call[0]).toContain('/api/selfhost/push')
+            expect(call[1].headers.Authorization).toBe('Bearer sh-token-1')
+            const body = JSON.parse(call[1].body)
+            expect(body.deviceId).toBe(ss.deviceId)
+            expect(body.changes).toHaveLength(1)
+            const lastPush = await ds.getSetting('sync_last_push_timestamp')
+            expect(lastPush.value).toBe(1700000000000)
+        })
+
+        it('pushChanges 超過 5000 筆時從最舊分批推完（早期變更不遺失）', async () => {
+            // 5200 筆變更（timestamp 1..5200），跨 2 批
+            const pending = Array.from({ length: 5200 }, (_, i) => ({
+                deviceId: 'other',
+                operation: 'add',
+                storeName: 'records',
+                recordId: i + 1,
+                timestamp: i + 1,
+                data: { uuid: `u-${i + 1}` },
+            }))
+            const getChangesSince = vi.fn(async since =>
+                pending.filter(c => c.timestamp >= (since || 0))
+            )
+            ds = createMockDataService({ getChangesSince })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            const pushedBatches = []
+            globalThis.fetch = vi.fn(async (url, opts) => {
+                pushedBatches.push(JSON.parse(opts.body).changes)
+                return jsonRes(200, { added: 0, total: 0 })
+            })
+
+            await ss.pushChanges()
+
+            // 兩批：5000 + 200，第一批是最舊 5000 筆（timestamp 1..5000）
+            expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+            expect(pushedBatches[0]).toHaveLength(5000)
+            expect(pushedBatches[0][0].timestamp).toBe(1)
+            expect(pushedBatches[0][4999].timestamp).toBe(5000)
+            expect(pushedBatches[1]).toHaveLength(200)
+            expect(pushedBatches[1][0].timestamp).toBe(5001)
+            expect(pushedBatches[1][199].timestamp).toBe(5200)
+            // 5200 筆全部推送成功（早期變更不再被 slice(-5000) 丟棄）
+            expect(
+                pushedBatches.reduce((n, b) => n + b.length, 0)
+            ).toBe(5200)
+            const lastPush = await ds.getSetting('sync_last_push_timestamp')
+            expect(lastPush.value).toBe(5200)
+        })
+
+        it('pushChanges 批次失敗時不推進 last_push_timestamp（下輪重推同一批）', async () => {
+            const pending = [
+                {
+                    deviceId: 'other',
+                    operation: 'add',
+                    storeName: 'records',
+                    recordId: 9,
+                    timestamp: 1700000000000,
+                    data: { uuid: 'u-1' },
+                },
+            ]
+            const getChangesSince = vi.fn(async since =>
+                pending.filter(c => c.timestamp >= (since || 0))
+            )
+            ds = createMockDataService({ getChangesSince })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(500, { error: 'boom' }))
+
+            await expect(ss.pushChanges()).rejects.toThrow()
+            // 失敗時 cursor 未推進 → 下次同步會重推
+            const lastPush = await ds.getSetting('sync_last_push_timestamp')
+            expect(lastPush).toBeNull()
+        })
+
+        it('pushChanges 無變更時不打 fetch', async () => {
+            ds = createMockDataService({
+                getChangesSince: vi.fn(async () => []),
+            })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn()
+
+            await ss.pushChanges()
+
+            expect(globalThis.fetch).not.toHaveBeenCalled()
+        })
+
+        it('pullChanges 在 self-host 模式走 /pull 並套用遠端變更', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            const recentTs = Date.now() - 1000
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    devices: [
+                        {
+                            deviceId: 'dev_other',
+                            changes: [
+                                {
+                                    deviceId: 'dev_other',
+                                    operation: 'update',
+                                    storeName: 'accounts',
+                                    recordId: 2,
+                                    timestamp: recentTs,
+                                    data: { name: '新帳戶名' },
+                                },
+                            ],
+                        },
+                    ],
+                })
+            )
+            const applySpy = vi
+                .spyOn(ss, 'applyRemoteChanges')
+                .mockResolvedValue()
+
+            await ss.pullChanges()
+
+            const url = globalThis.fetch.mock.calls[0][0]
+            expect(url).toContain('/api/selfhost/pull')
+            expect(url).toContain(`deviceId=${encodeURIComponent(ss.deviceId)}`)
+            // 不再帶 since=本機時間（舊實作會用 Date.now() 過濾遠端變更時間戳，
+            // 離線裝置的變更會被永久漏失）
+            expect(url).not.toContain('since=')
+            expect(applySpy).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ storeName: 'accounts', recordId: 2 }),
+                ])
+            )
+            // 已套用鍵持久化（appliedKeys 去重，與共用帳本相同模式）
+            const applied = await ds.getSetting('sync_selfhost_applied_keys')
+            expect(applied.value).toContain(
+                `dev_other|${recentTs}|update|accounts|2`
+            )
+        })
+
+        it('pullChanges 已套用過的遠端變更不重複套用（appliedKeys 去重）', async () => {
+            ds = createMockDataService({
+                getSetting: vi.fn(async key => {
+                    if (key === 'sync_selfhost_applied_keys')
+                        return {
+                            key,
+                            value: [`dev_other|1700000000001|update|accounts`],
+                        }
+                    return null
+                }),
+            })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    devices: [
+                        {
+                            deviceId: 'dev_other',
+                            changes: [
+                                {
+                                    deviceId: 'dev_other',
+                                    operation: 'update',
+                                    storeName: 'accounts',
+                                    recordId: 2,
+                                    timestamp: 1700000000001,
+                                    data: { name: '新帳戶名' },
+                                },
+                            ],
+                        },
+                    ],
+                })
+            )
+            const applySpy = vi
+                .spyOn(ss, 'applyRemoteChanges')
+                .mockResolvedValue()
+
+            await ss.pullChanges()
+
+            // 該變更 key 已在 appliedKeys → 不再套用
+            expect(applySpy).not.toHaveBeenCalled()
+        })
+
+        it('Drive pullChanges：離線裝置的舊 timestamp 變更不被本機時間過濾掉（D1 / agy 發現）', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'drive-token'
+            ss.refreshToken = 'r'
+            ss.tokenExpiresAt = Date.now() + 3600000
+            const recentTs = Date.now() - 1000
+            // 離線變更：5 天前（遠早於 lastPullTime=1 天前，舊過濾法會漏失；
+            // 大於 30 天前，能通過 trim）
+            const offlineTs = Date.now() - 5 * 24 * 60 * 60 * 1000
+            const offlineChange = {
+                operation: 'add',
+                storeName: 'records',
+                recordId: 5,
+                timestamp: offlineTs, // 遠早於上次拉取時間（離線期間產生）
+                data: { uuid: 'u-offline' },
+            }
+            // 檔案層：modifiedTime 較新（需下載）；舊過濾法下
+            // c.timestamp(offlineTs) < lastPullTime(1 天前) 會被永久漏失
+            const lastPullTime = Date.now() - 24 * 60 * 60 * 1000
+            const pullTimestamps = { 'sync_log_dev_B.json': lastPullTime }
+            const files = [
+                {
+                    id: 'file-B',
+                    name: 'sync_log_dev_B.json',
+                    modifiedTime: new Date(recentTs).toISOString(),
+                },
+            ]
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(
+                    jsonRes(200, { files, __marker: 'list' })
+                )
+            ss._downloadFile = vi.fn(async () => ({
+                data: { deviceId: 'dev_B', timestamp: recentTs, changes: [offlineChange] },
+            }))
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_personal_applied_keys')
+                    return { key, value: [] }
+                return null
+            })
+            const applySpy = vi
+                .spyOn(ss, 'applyRemoteChanges')
+                .mockResolvedValue()
+
+            await ss.pullChanges()
+
+            // 離線變更被套用（舊實作會因 timestamp 過濾而漏掉）
+            expect(applySpy).toHaveBeenCalledTimes(1)
+            expect(applySpy.mock.calls[0][0]).toEqual([offlineChange])
+            // 去重鍵持久化（新架構：sync_personal_applied_keys，
+            // _changeKey 含 uuid 後綴；來源裝置缺 change.deviceId 時為 unknown）
+            const keysSave = ds.saveSetting.mock.calls.find(
+                c => c[0].key === 'sync_personal_applied_keys'
+            )
+            expect(keysSave, 'saveSetting 應寫入 sync_personal_applied_keys').toBeTruthy()
+            expect(keysSave[0].value).toContain(
+                `unknown|${offlineTs}|add|records|u-offline`
+            )
+        })
+
+        it('Drive pullChanges：appliedKeys 已含的變更不重複套用（冪等重放）', async () => {
+            const recentTs = Date.now() - 1000
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'drive-token'
+            ss.refreshToken = 'r'
+            ss.tokenExpiresAt = Date.now() + 3600000
+            const knownChange = {
+                operation: 'update',
+                storeName: 'accounts',
+                recordId: 2,
+                timestamp: recentTs,
+                data: { name: '舊' },
+            }
+            const newChange = {
+                operation: 'add',
+                storeName: 'records',
+                recordId: 9,
+                timestamp: recentTs + 1,
+                data: { uuid: 'u-new' },
+            }
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    files: [
+                        {
+                            id: 'file-B',
+                            name: 'sync_log_dev_B.json',
+                            modifiedTime: new Date(recentTs + 5).toISOString(),
+                        },
+                    ],
+                })
+            )
+            ss._downloadFile = vi.fn(async () => ({
+                data: {
+                    deviceId: 'dev_B',
+                    timestamp: recentTs + 5,
+                    changes: [knownChange, newChange],
+                },
+            }))
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_personal_applied_keys')
+                    return { key, value: [`unknown|${recentTs}|update|accounts|2`] }
+                return null
+            })
+            const applySpy = vi
+                .spyOn(ss, 'applyRemoteChanges')
+                .mockResolvedValue()
+
+            await ss.pullChanges()
+
+            // 只套用新變更，已知的跳過
+            expect(applySpy).toHaveBeenCalledTimes(1)
+            expect(applySpy.mock.calls[0][0]).toEqual([newChange])
+        })
+
+        it('401 回應時自動清除 self-host token（自動登出）', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(401, { error: 'Unauthorized' }))
+
+            await expect(ss.listBackups()).rejects.toThrow()
+            expect(ss.selfHostToken).toBeNull()
+            const saved = await ds.getSetting('sync_selfhost')
+            expect(saved?.value).toBeNull()
+        })
+
+        it('backupToDrive 在 self-host 模式走 /backup 端點', async () => {
+            ds = createMockDataService({
+                exportDataForSync: vi.fn(async () => ({ records: [{ a: 1 }] })),
+            })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(
+                    jsonRes(201, { id: 1, fileName: 'x.json', size: 10 })
+                )
+            const ensureSpy = vi.spyOn(ss, 'ensureValidToken')
+
+            await ss.backupToDrive()
+
+            expect(ensureSpy).not.toHaveBeenCalled()
+            const call = globalThis.fetch.mock.calls[0]
+            expect(call[0]).toContain('/api/selfhost/backup')
+            const body = JSON.parse(call[1].body)
+            expect(body.fileName).toMatch(/^backup_/)
+            const content = JSON.parse(body.content)
+            expect(content.records).toEqual([{ a: 1 }])
+            expect(content.backup_device).toBe(ss.deviceId)
+            expect(body.deviceId).toBe(ss.deviceId)
+        })
+
+        it('listBackups 在 self-host 模式回傳 Drive 相容欄位', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    backups: [
+                        {
+                            id: '5',
+                            name: 'backup_x.json',
+                            size: '123',
+                            createdTime: '2026-01-01T00:00:00.000Z',
+                        },
+                    ],
+                })
+            )
+
+            const backups = await ss.listBackups()
+
+            expect(backups[0].id).toBe('5')
+            expect(backups[0].name).toBe('backup_x.json')
+        })
+
+        it('restoreFromDrive 在 self-host 模式走 GET /backups/:id', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            const backupPayload = { records: [] }
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(
+                    jsonRes(200, backupPayload, {
+                        json: async () => backupPayload,
+                    })
+                )
+
+            const data = await ss.restoreFromDrive('5')
+
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/backups/5'
+            )
+            expect(data).toEqual(backupPayload)
+        })
+
+        it('deleteBackup 在 self-host 模式走 DELETE /backups/:id', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(200, { deleted: true }))
+
+            await ss.deleteBackup('5')
+
+            const call = globalThis.fetch.mock.calls[0]
+            expect(call[0]).toContain('/api/selfhost/backups/5')
+            expect(call[1].method).toBe('DELETE')
+        })
+
+        it('selfHostCheckServer：health.selfHosted=true → true；false → false', async () => {
+            ss = createSyncService(createMockDataService())
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(200, { selfHosted: true }))
+            expect(await ss.selfHostCheckServer()).toBe(true)
+
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(200, { selfHosted: false }))
+            expect(await ss.selfHostCheckServer()).toBe(false)
+        })
+
+        it('init() 還原 self-host 憑證', async () => {
+            // getLedgers 回傳空避免 startAutoSync 副作用
+            ds = createMockDataService({
+                getLedgers: vi.fn(async () => []),
+            })
+            const stored = {
+                key: 'sync_selfhost',
+                value: { token: 'sh-restored', username: 'carol' },
+            }
+            ds.getSetting.mockImplementation(async key =>
+                key === 'sync_selfhost' ? stored : null
+            )
+            ss = createSyncService(ds)
+            await ss.init()
+
+            expect(ss.selfHostToken).toBe('sh-restored')
+            expect(ss.selfHostUsername).toBe('carol')
+        })
+
+        it('signOut() 清除 self-host 憑證與 settings', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            ss.selfHostUsername = 'dave'
+
+            await ss.signOut()
+
+            expect(ss.selfHostToken).toBeNull()
+            expect(ss.selfHostUsername).toBeNull()
+            const saved = await ds.getSetting('sync_selfhost')
+            expect(saved?.value).toBeNull()
+        })
+
+        // ── Shared Ledgers（跨帳號共用帳本）──
+
+        it('_selfHostSharedFetch：200 回傳 {uuid,name,content}；404 → null', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    uuid: 'u-1',
+                    name: '家庭支出',
+                    content: { deviceId: 'd1', timestamp: 1, changes: [] },
+                })
+            )
+            const res = await ss._selfHostSharedFetch('u-1')
+            expect(res.uuid).toBe('u-1')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/shared/u-1'
+            )
+
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonRes(404, {}))
+            expect(await ss._selfHostSharedFetch('nope')).toBeNull()
+        })
+
+        it('_selfHostSharedPut：PUT content；失敗拋 server error', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValueOnce(jsonRes(200, { modifiedAt: 123 }))
+            const content = { deviceId: 'd1', timestamp: 1, changes: [] }
+            await ss._selfHostSharedPut('u-1', content)
+            const call = globalThis.fetch.mock.calls[0]
+            expect(call[1].method).toBe('PUT')
+            expect(JSON.parse(call[1].body)).toEqual({ content })
+
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(403, { error: 'Not a member' }))
+            await expect(ss._selfHostSharedPut('u-1', content)).rejects.toThrow(
+                'Not a member'
+            )
+        })
+
+        it('_selfHostSharedCreate：POST 帶 ledgerUuid/name/content', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(201, { uuid: 'u-1' }))
+            await ss._selfHostSharedCreate('u-1', '家庭支出', { changes: [] })
+            const call = globalThis.fetch.mock.calls[0]
+            expect(call[0]).toContain('/api/selfhost/shared')
+            expect(call[1].method).toBe('POST')
+            expect(JSON.parse(call[1].body)).toEqual({
+                ledgerUuid: 'u-1',
+                name: '家庭支出',
+                content: { changes: [] },
+            })
+        })
+
+        it('_selfHostSharedLookup：回傳 {found, uuid}', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, { found: true, uuid: 'u-1', name: 'x' })
+            )
+            const res = await ss._selfHostSharedLookup('u-1-abc')
+            expect(res.found).toBe(true)
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/shared/lookup?code=u-1-abc'
+            )
+        })
+
+        it('_selfHostSharedAddMember / ListMembers / RemoveMember / Delete', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'sh-token-1'
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonRes(200, {}))
+
+            await ss._selfHostSharedAddMember('u-1', 'bob')
+            expect(globalThis.fetch.mock.calls[0][1].method).toBe('POST')
+            expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+                username: 'bob',
+            })
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    members: [{ username: 'alice', isOwner: true }],
+                    isOwner: true,
+                })
+            )
+            const list = await ss._selfHostSharedListMembers('u-1')
+            expect(list.members.length).toBe(1)
+            expect(list.isOwner).toBe(true)
+
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonRes(200, {}))
+            await ss._selfHostSharedRemoveMember('u-1', 'bob')
+            expect(globalThis.fetch.mock.calls[0][1].method).toBe('DELETE')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/members/bob'
+            )
+
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonRes(200, {}))
+            await ss._selfHostSharedDelete('u-1')
+            expect(globalThis.fetch.mock.calls[0][1].method).toBe('DELETE')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/shared/u-1'
+            )
+        })
+
+        it('pushSharedLedgerChanges 在 self-host 模式走完整比對式 PUT', async () => {
+            ds = createMockDataService({
+                getChangesSince: vi
+                    .fn()
+                    .mockResolvedValue([
+                        {
+                            deviceId: 'dev_me',
+                            operation: 'add',
+                            storeName: 'records',
+                            timestamp: 100,
+                            data: { uuid: 'r1' },
+                        },
+                    ]),
+            })
+            ds.getLedgers.mockResolvedValue([
+                {
+                    id: 1,
+                    name: '家庭支出',
+                    uuid: 'ledger-uuid-1',
+                    isShared: true,
+                    sharedFileId: 'ledger-uuid-1',
+                    type: 'shared',
+                },
+            ])
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            ss.deviceId = 'dev_me'
+
+            // fetch: 先 GET shared（空 log），再 PUT merged
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValueOnce(
+                    jsonRes(200, {
+                        uuid: 'ledger-uuid-1',
+                        content: { deviceId: 'x', timestamp: 0, changes: [] },
+                    })
+                )
+                .mockResolvedValueOnce(jsonRes(200, { modifiedAt: 1 }))
+
+            await ss.pushSharedLedgerChanges()
+
+            const calls = globalThis.fetch.mock.calls
+            expect(calls[0][0]).toContain('/api/selfhost/shared/ledger-uuid-1')
+            expect(calls[1][1].method).toBe('PUT')
+            const putBody = JSON.parse(calls[1][1].body).content
+            expect(putBody.changes.length).toBe(1)
+            expect(putBody.changes[0].deviceId).toBe('dev_me')
+        })
+
+        it('pullSharedLedgerChanges 在 self-host 模式套用他裝置變更並記錄 appliedKeys', async () => {
+            ds = createMockDataService()
+            ds.getLedgers.mockResolvedValue([
+                {
+                    id: 1,
+                    name: '家庭支出',
+                    uuid: 'ledger-uuid-1',
+                    isShared: true,
+                    sharedFileId: 'ledger-uuid-1',
+                    type: 'shared',
+                },
+            ])
+            ds.getSetting.mockResolvedValue({ value: [] })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            ss.deviceId = 'dev_me'
+            const applySpy = vi.spyOn(ss, 'applyRemoteChanges').mockResolvedValue()
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    uuid: 'ledger-uuid-1',
+                    content: {
+                        deviceId: 'x',
+                        timestamp: 0,
+                        changes: [
+                            {
+                                deviceId: 'dev_other',
+                                operation: 'add',
+                                storeName: 'records',
+                                timestamp: 200,
+                                data: { uuid: 'r2' },
+                            },
+                            {
+                                deviceId: 'dev_me',
+                                operation: 'add',
+                                storeName: 'records',
+                                timestamp: 100,
+                                data: { uuid: 'r1' },
+                            },
+                        ],
+                    },
+                })
+            )
+
+            await ss.pullSharedLedgerChanges()
+
+            // 只套用其他裝置的 1 筆（自己的略過）
+            expect(applySpy).toHaveBeenCalledTimes(1)
+            expect(applySpy.mock.calls[0][0].length).toBe(1)
+            expect(applySpy.mock.calls[0][0][0].deviceId).toBe('dev_other')
+            // appliedKeys 已持久化
+            expect(ds.saveSetting).toHaveBeenCalledWith(
+                expect.objectContaining({ key: 'sync_shared_applied_keys' })
+            )
+        })
+
+        // ── Admin（帳號管理）──
+
+        it('adminCreateUser：POST /admin/users 回傳 pin', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'admin-token'
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(201, { id: 2, username: 'bob', pin: 'bob-pin-1' })
+            )
+            const res = await ss.adminCreateUser('bob', 'bob-pin-1')
+            expect(res.username).toBe('bob')
+            expect(res.pin).toBe('bob-pin-1')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/api/selfhost/admin/users'
+            )
+        })
+
+        it('adminListUsers：403 → 需要管理員權限', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'user-token'
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(403, { error: 'Admin access required' }))
+            await expect(ss.adminListUsers()).rejects.toThrow('需要管理員權限')
+        })
+
+        it('adminResetPin / adminDeleteUser / adminSetRegister', async () => {
+            ss = createSyncService(createMockDataService())
+            ss.selfHostToken = 'admin-token'
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, { username: 'bob', pin: 'new-pin' })
+            )
+            await ss.adminResetPin('bob', 'new-pin')
+            expect(globalThis.fetch.mock.calls[0][0]).toContain(
+                '/admin/users/bob/reset-pin'
+            )
+            expect(globalThis.fetch.mock.calls[0][1].method).toBe('POST')
+
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonRes(200, {}))
+            await ss.adminDeleteUser('bob')
+            expect(globalThis.fetch.mock.calls[0][1].method).toBe('DELETE')
+
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(jsonRes(200, { registerEnabled: true }))
+            const res = await ss.adminSetRegister(true)
+            expect(res.registerEnabled).toBe(true)
+            expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+                enabled: true,
+            })
+        })
+    })
+
+    // ── 雙通道互斥：Google 登入必須清除自架憑證（2026-09-04 修復單向互斥）──
+    describe('handleAuthCallback 清除自架憑證（雙通道互斥）', () => {
+        const originalFetch = globalThis.fetch
+
+        afterEach(() => {
+            globalThis.fetch = originalFetch
+        })
+
+        function jsonRes(status, body) {
+            return {
+                ok: status >= 200 && status < 300,
+                status,
+                json: async () => body,
+                text: async () => JSON.stringify(body),
+            }
+        }
+
+        it('Google 登入成功時清除 selfHostToken / selfHostUsername 並持久化 sync_selfhost=null', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            // 模擬已登入自架帳號（殘留狀態）
+            ss.selfHostToken = 'sh-zombie-token'
+            ss.selfHostUsername = 'alice'
+            // fetchUserInfo 走 googleapis，mock 掉（fetchUserInfo 失敗只 warn，不影響）
+            vi.spyOn(ss, 'fetchUserInfo').mockResolvedValue()
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    access_token: 'g-access',
+                    refresh_token: 'g-refresh',
+                    expires_in: 3600,
+                })
+            )
+
+            await ss.handleAuthCallback('auth-code-123')
+
+            // Google token 已設定
+            expect(ss.accessToken).toBe('g-access')
+            expect(ss.refreshToken).toBe('g-refresh')
+            // 自架憑證已清除（核心修復驗證）
+            expect(ss.selfHostToken).toBeNull()
+            expect(ss.selfHostUsername).toBeNull()
+            expect(ss.isSelfHostMode()).toBe(false)
+            // 持久化：sync_selfhost 已清空
+            const saved = await ds.getSetting('sync_selfhost')
+            expect(saved?.value ?? null).toBeNull()
+        })
+
+        it('token exchange 失敗時不會清除自架憑證（維持原值）', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-zombie-token'
+            ss.selfHostUsername = 'alice'
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(500, { error: 'Token exchange failed' })
+            )
+
+            await expect(ss.handleAuthCallback('bad-code')).rejects.toThrow(
+                'Token exchange failed'
+            )
+            // 失敗時不觸發清除（避免登入失敗卻把自架憑證清掉）
+            expect(ss.selfHostToken).toBe('sh-zombie-token')
+            expect(ss.selfHostUsername).toBe('alice')
+            expect(ss.accessToken).toBeNull()
+        })
+
+        it('對稱性驗證：自架登入清除 Google token（既有行為回歸）', async () => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'g-access'
+            ss.refreshToken = 'g-refresh'
+
+            globalThis.fetch = vi
+                .fn()
+                .mockResolvedValue(
+                    jsonRes(200, { token: 'sh-token-x', username: 'bob' })
+                )
+            vi.spyOn(ss, 'performSync').mockResolvedValue()
+
+            await ss.selfHostLogin('bob', '1234')
+
+            expect(ss.selfHostToken).toBe('sh-token-x')
+            expect(ss.accessToken).toBeNull()
+            expect(ss.refreshToken).toBeNull()
+        })
+    })
 })
 
 describe('SyncService per-device helpers', () => {
@@ -1480,7 +2644,7 @@ describe('SyncService _ensureSharedInfra', () => {
         const legacyChanges = [
             { deviceId: 'old', timestamp: 111, operation: 'add', storeName: 'records', data: {} },
         ]
-        let createdFiles = []
+        const createdFiles = []
         globalThis.fetch = vi.fn(async url => {
             if (url.includes('/files?q=')) {
                 return { ok: true, json: async () => ({ files: [] }) }

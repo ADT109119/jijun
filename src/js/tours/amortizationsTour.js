@@ -41,6 +41,13 @@ export const amortizationsTour = {
             body: '展開面板後選擇類型（分期/折舊/攤提），填入期數與利率，下方會即時試算每期金額。儲存時立即建立計畫，邊記帳邊完成長期規劃！',
             position: 'bottom',
         },
+        {
+            target: '#installment-panel',
+            expand: '#toggle-installment-btn',
+            title: '信用卡分期全額入帳',
+            body: '選擇信用卡帳戶時自動切換全額入帳模式：全額立即入帳佔用額度，其後每期由設定的扣款帳戶自動記帳扣款（需在帳戶設定裡設定自動扣繳帳戶）。此類計畫完成入帳後不支援編輯，避免帳務錯亂。',
+            position: 'bottom',
+        },
     ],
 }
 

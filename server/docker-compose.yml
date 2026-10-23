@@ -1,12 +1,65 @@
+# 輕鬆記帳同步伺服器 — Docker Compose（前後端一體）
+#
+# 兩種部署模式（可同時啟用）：
+#   1. Google OAuth Proxy：提供 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+#   2. 純自架同步（Self-Hosted Sync）：提供 SELF_HOST_ADMIN_TOKEN（不綁 Google）
+#
+# 前端已 build 進 image（預設 AD_FREE=1 無廣告）。啟動後同一 port 即提供
+# 「前端 + API」，直接瀏覽 http://your-host:8787 就是完整記帳應用。
+#
+# 使用方式（從本資料夾 server/ 執行）：
+#   cp .env.example .env   # 修改成你的設定
+#   docker compose up -d --build
+#
+# 要注入前端存取驗證碼（ACCESS_CODE）或自架預設伺服器位址（VITE_SYNC_SERVER_URL）→ 改 build.args：
+#   build:
+#     context: ..
+#     dockerfile: server/Dockerfile
+#     args:
+#       AD_FREE: "1"
+#       ACCESS_CODE: "your-code"
+#       VITE_SYNC_SERVER_URL: "https://sync.yourdomain.com"  # 前端「伺服器地址」預設值
+#
+# 詳細部署說明：見 repo 根目錄 SELF_HOST.md
+
 services:
     sync-server:
-        build: .
+        build:
+            context: ..              # repo 根目錄（Dockerfile 在 server/ 下）
+            dockerfile: server/Dockerfile
+            args:
+                AD_FREE: "${AD_FREE:-1}"          # 1 = 無廣告（自架預設）
+                ACCESS_CODE: "${ACCESS_CODE:-}"   # 可留空
+                # 前端「伺服器地址」預設值 = 你的自架網址（build 期注入；見 SELF_HOST.md）
+                VITE_SYNC_SERVER_URL: "${VITE_SYNC_SERVER_URL:-}"
         container_name: easy-accounting-sync
         ports:
-            - '8787:8787'
+            - '${PORT:-8787}:8787'
         environment:
-            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-            - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            # ── Google OAuth Proxy（純自架模式可留空 + DISABLE_GOOGLE_OAUTH=1）──
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+            - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+            - DISABLE_GOOGLE_OAUTH=${DISABLE_GOOGLE_OAUTH:-1}
+            # ── CORS ──
             - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
-            - PORT=8787
+            # ── 純自架同步（設定 SELF_HOST_ADMIN_TOKEN 即啟用 SQLite 同步）──
+            - SELF_HOST_ADMIN_TOKEN=${SELF_HOST_ADMIN_TOKEN:?請於 .env 設定 SELF_HOST_ADMIN_TOKEN}
+            - SELF_HOST_DB_PATH=/app/data/selfhost.db
+            # 公開註冊開關：1 = 允許任何人註冊（預設 0 關閉；admin 可 runtime 切換）
+            - SELF_HOST_ALLOW_REGISTER=${SELF_HOST_ALLOW_REGISTER:-0}
+            # 前端靜態目錄（image 已 build 進 /app/static；要手動掛 dist 可改回 volume）
+            - SELF_HOST_STATIC_DIR=/app/static
+            # 每個使用者的備份保留筆數
+            - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-100}
+        volumes:
+            # SQLite DB 持久化
+            - sync-data:/app/data
         restart: unless-stopped
+        healthcheck:
+            interval: 30s
+            timeout: 5s
+            start_period: 5s
+            retries: 3
+
+volumes:
+    sync-data:

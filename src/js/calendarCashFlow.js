@@ -3,6 +3,7 @@ import {
     escapeHTML,
     formatDateToString,
     closeModalWithAnimation,
+    getSafeIconClass,
     calculateEffectiveRecordAmount,
     buildDebtLookupMaps,
     findDebtForRecord,
@@ -18,6 +19,8 @@ export class CalendarCashFlow {
         this.currentDate = new Date()
         this.records = []
         this.debtsMap = {}
+        // 繳款/出帳日標記：{ 'YYYY-MM-DD': { due: [卡名...], statement: [卡名...] } }
+        this._dueDateMap = {}
         this.debtMaps = buildDebtLookupMaps([])
         this._grouped = null
         this._prevHandler = null
@@ -67,6 +70,9 @@ export class CalendarCashFlow {
         this._grouped = this.groupByDate(this.records)
         const grouped = this._grouped
 
+        // 載入本月信用卡出帳日/繳款日標記（圓點）
+        await this.loadBillMarkers(year, month)
+
         let totalIncome = 0
         let totalExpense = 0
         for (const dateRecords of Object.values(grouped)) {
@@ -101,6 +107,17 @@ export class CalendarCashFlow {
             gridHTML += this.renderCell(year, month, day, dayRecords, todayStr)
         }
 
+        // 圓點圖例：僅在本月存在出帳/繳款日標記時顯示
+        let legendHTML = ''
+        const hasDue = Object.values(this._dueDateMap).some(e => e.due.length > 0)
+        const hasStatement = Object.values(this._dueDateMap).some(e => e.statement.length > 0)
+        if (hasDue || hasStatement) {
+            legendHTML = `<div class="flex items-center gap-3 px-3 py-1.5 border-t border-wabi-border/40 text-[10px] text-wabi-text-secondary bg-wabi-bg/30">
+                ${hasDue ? '<span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-red-500 inline-block"></span>繳款日</span>' : ''}
+                ${hasStatement ? '<span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-sky-500 inline-block"></span>出帳日</span>' : ''}
+            </div>`
+        }
+
         this.container.innerHTML = `
             <div class="bg-wabi-surface rounded-xl border border-wabi-border overflow-hidden">
                 <!-- Month Nav -->
@@ -120,6 +137,8 @@ export class CalendarCashFlow {
                 <div class="grid grid-cols-7 divide-x divide-y divide-wabi-border/30">
                     ${gridHTML}
                 </div>
+
+                ${legendHTML}
 
                 <!-- Month Summary Bar -->
                 <div class="flex items-center gap-3 px-3 py-2 border-t border-wabi-border text-xs text-wabi-text-secondary bg-wabi-bg/50">
@@ -184,6 +203,52 @@ export class CalendarCashFlow {
 
     getDaysInMonth(year, month) {
         return new Date(year, month, 0).getDate()
+    }
+
+    /**
+     * 載入本月信用卡出帳日/繳款日圓點標記 (參考 MOZE 首頁月曆繳款圓點)
+     * 僅在多帳戶模式啟用時顯示（信用卡帳戶依附該模式）；
+     * calendarBillDotsEnabled 可單獨關閉（預設啟用）。
+     * 結果存於 this._dueDateMap: { 'YYYY-MM-DD': { due: [卡名...], statement: [卡名...] } }
+     */
+    async loadBillMarkers(year, month) {
+        this._dueDateMap = {}
+        try {
+            const advanced = await this.dataService.getSetting('advancedAccountModeEnabled')
+            if (!advanced?.value) return
+            const dotsSetting = await this.dataService.getSetting('calendarBillDotsEnabled')
+            if (dotsSetting && dotsSetting.value === false) return
+
+            const accounts = (await this.dataService.getAccounts()) || []
+            const cards = accounts.filter(a => a && a.type === 'credit_card')
+            if (cards.length === 0) return
+
+            const lastDay = this.getDaysInMonth(year, month)
+            const monthStr = `${year}-${String(month).padStart(2, '0')}`
+            for (const card of cards) {
+                const name = card.name || '信用卡'
+                // statementDay/dueDay 為 1-31；超過本月天數（如 2 月遇 31 日）以月底日顯示
+                const dueDay = Number(card.dueDay)
+                if (Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31) {
+                    const day = Math.min(dueDay, lastDay)
+                    const key = `${monthStr}-${String(day).padStart(2, '0')}`
+                    const entry = this._dueDateMap[key] || { due: [], statement: [] }
+                    entry.due.push(name)
+                    this._dueDateMap[key] = entry
+                }
+                const stDay = Number(card.statementDay)
+                if (Number.isInteger(stDay) && stDay >= 1 && stDay <= 31) {
+                    const day = Math.min(stDay, lastDay)
+                    const key = `${monthStr}-${String(day).padStart(2, '0')}`
+                    const entry = this._dueDateMap[key] || { due: [], statement: [] }
+                    entry.statement.push(name)
+                    this._dueDateMap[key] = entry
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load bill day markers for calendar:', e)
+            this._dueDateMap = {}
+        }
     }
 
     groupByDate(records) {
@@ -274,8 +339,24 @@ export class CalendarCashFlow {
             ? 'bg-wabi-accent/5 border-l-[3px] border-wabi-accent'
             : 'hover:bg-wabi-bg/60'
 
+        // 繳款日/出帳日圓點標記（左上角，與右上角日期數字並列）
+        const billEntry = this._dueDateMap?.[dayStr]
+        let billDotsHTML = ''
+        if (billEntry) {
+            if (billEntry.due.length > 0) {
+                billDotsHTML += `<span class="size-1.5 rounded-full bg-red-500 inline-block shrink-0" title="繳款日：${escapeHTML(billEntry.due.join('、'))}"></span>`
+            }
+            if (billEntry.statement.length > 0) {
+                billDotsHTML += `<span class="size-1.5 rounded-full bg-sky-500 inline-block shrink-0" title="出帳日：${escapeHTML(billEntry.statement.join('、'))}"></span>`
+            }
+            if (billDotsHTML) {
+                billDotsHTML = `<div class="flex items-center gap-1 absolute top-1 left-1.5">${billDotsHTML}</div>`
+            }
+        }
+
         return `
-            <div data-date="${dayStr}" class="calendar-cell min-h-[68px] sm:min-h-[80px] px-1.5 py-1 flex flex-col cursor-pointer transition-colors ${todayClass}">
+            <div data-date="${dayStr}" class="calendar-cell relative min-h-[68px] sm:min-h-[80px] px-1.5 py-1 flex flex-col cursor-pointer transition-colors ${todayClass}">
+                ${billDotsHTML}
                 <div class="flex justify-end">
                     <span class="text-[11px] font-medium ${isToday ? 'text-wabi-accent font-bold' : 'text-wabi-text-secondary'}">${day}</span>
                 </div>
@@ -315,8 +396,8 @@ export class CalendarCashFlow {
             // Sanitize color and icon to prevent XSS from custom categories
             // Color: allow only safe CSS class patterns (letters, digits, hyphens, underscores)
             const catColor = (category.color || 'bg-gray-400').replace(/[^a-zA-Z0-9_-]/g, '')
-            // Icon: allow only safe CSS class patterns
-            const catIcon = (category.icon || 'fa-solid fa-question').replace(/[^a-zA-Z0-9_ -]/g, '')
+            // Icon: #SEC04 統一白名單（原寬鬆字元過濾一律改走全站真相源）
+            const catIcon = getSafeIconClass(category.icon, 'fa-solid fa-question')
             iconHTML = `<span class="size-8 flex items-center justify-center rounded-lg shrink-0 ${catColor} bg-opacity-20"><i class="${catIcon} text-sm"></i></span>`
         } else {
             // Fallback: no category found
@@ -357,7 +438,7 @@ export class CalendarCashFlow {
         let totalIncome = 0
         let totalExpense = 0
 
-        let recordsHTML = ''
+        let recordsHTML
         if (records.length === 0) {
             recordsHTML = `
                 <div class="text-center py-8 text-wabi-text-secondary text-sm">
@@ -448,6 +529,7 @@ export class CalendarCashFlow {
         this._cellHandler = null
         this._todayHandler = null
         this.debtsMap = {}
+        this._dueDateMap = {}
     }
 
     _formatAmount(amount) {

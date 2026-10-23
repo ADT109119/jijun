@@ -1,0 +1,29 @@
+# Docker build context 瘦身（Dockerfile 只 COPY 必要路徑，其餘全部排除以縮小 context）
+.git
+.github
+.hermes
+.dockerignore
+.gitignore
+
+# 前端依賴（stage1 內 npm ci 重裝，不需要傳進 context）
+node_modules
+**/node_modules
+
+# build 產物（stage1 於容器內重新 build）
+dist
+test-results
+
+# Android/Capacitor 原生專案（web image 不需要）
+android
+
+# 訓練工具 submodule（體積大、與部署無關）
+tools
+
+# 機密與本機環境檔（嚴禁進入 build context）
+.env
+server/.env
+**/.env
+
+# 雜項
+*.log
+.DS_Store

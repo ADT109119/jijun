@@ -1,0 +1,490 @@
+// Self-host server 端到端測試（直接呼叫 router，不佔用 port）
+// 需要 Node.js >= 22.5（node:sqlite）
+import { handleRequest } from '../src/index.js'
+import { SqliteStore } from '../src/db.js'
+
+const store = new SqliteStore(':memory:')
+await store.init()
+const env = { GOOGLE_CLIENT_ID: 'x', GOOGLE_CLIENT_SECRET: 'y', ALLOWED_ORIGINS: '*' }
+// SELF_HOST_ALLOW_REGISTER: 模擬「已開放註冊」的 server（註冊開關測試另用獨立 store）
+const ctx = { store, env: { ...env, BACKUP_RETENTION_COUNT: 5, SELF_HOST_ALLOW_REGISTER: true } }
+
+let passed = 0
+let failed = 0
+function check(name, cond, extra) {
+    if (cond) {
+        passed++
+        console.log(`  PASS  ${name}`)
+    } else {
+        failed++
+        console.log(`  FAIL  ${name}`, extra ?? '')
+    }
+}
+
+async function req(method, path, { body, token, headers = {} } = {}, testCtx = ctx) {
+    const url = `http://localhost:8787${path}`
+    const h = { ...headers }
+    if (body !== undefined) h['Content-Type'] = 'application/json'
+    if (token) h['Authorization'] = `Bearer ${token}`
+    const r = await handleRequest(
+        new Request(url, {
+            method,
+            headers: h,
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+        }),
+        env,
+        testCtx
+    )
+    let json = null
+    const ct = r.headers.get('Content-Type') || ''
+    const text = await r.text()
+    if (ct.includes('json')) {
+        try { json = JSON.parse(text) } catch (_) {}
+    }
+    // headers 轉 plain object（小寫 key）供安全標頭斷言
+    const resHeaders = {}
+    r.headers.forEach((v, k) => { resHeaders[k] = v })
+    return { status: r.status, json, text, headers: resHeaders }
+}
+
+console.log('== OAuth proxy 不受影響 ==')
+let r = await req('GET', '/api/health')
+check('health ok + selfHosted=true', r.status === 200 && r.json.selfHosted === true, r.json)
+
+console.log('== register ==')
+r = await req('POST', '/api/selfhost/register', {
+    body: { username: 'alice', pin: 'secret-pin', deviceId: 'dev_phone_001' },
+})
+check('register 201 + token', r.status === 201 && typeof r.json.token === 'string', r.json)
+const aliceToken = r.json.token
+
+r = await req('POST', '/api/selfhost/register', {
+    body: { username: 'alice', pin: 'wrong-pin' },
+})
+check('重複帳號 + 錯 PIN → 401', r.status === 401, r.status)
+
+r = await req('POST', '/api/selfhost/register', {
+    body: { username: 'alice', pin: 'secret-pin' },
+})
+check('重複帳號 + 對 PIN → 200 (login 語意)', r.status === 200 && r.json.alreadyRegistered === true, r.json)
+
+r = await req('POST', '/api/selfhost/register', { body: { username: 'x', pin: '1234' } })
+check('非法 username → 400', r.status === 400, r.json)
+
+r = await req('POST', '/api/selfhost/register', { body: { username: 'alice', pin: '12' } })
+check('PIN 太短 → 400', r.status === 400, r.json)
+
+console.log('== login ==')
+r = await req('POST', '/api/selfhost/login', { body: { username: 'alice', pin: 'secret-pin' } })
+check('login 200 + token', r.status === 200 && r.json.token, r.json)
+const aliceToken2 = r.json.token
+
+r = await req('POST', '/api/selfhost/login', { body: { username: 'alice', pin: 'nope-nope' } })
+check('login 錯 PIN → 401', r.status === 401, r.status)
+
+console.log('== me / devices ==')
+r = await req('GET', '/api/selfhost/me', { token: aliceToken2 })
+check('me 回 username + 裝置', r.status === 200 && r.json.username === 'alice' && r.json.devices.some(d => d.deviceId === 'dev_phone_001'), r.json)
+
+r = await req('GET', '/api/selfhost/me', { token: 'jijun_bad' })
+check('壞 token → 401', r.status === 401, r.status)
+
+r = await req('POST', '/api/selfhost/devices/register', {
+    body: { deviceId: 'dev_laptop_002' },
+    token: aliceToken2,
+})
+check('註冊第二裝置', r.status === 200 && r.json.deviceId === 'dev_laptop_002', r.json)
+
+console.log('== push / pull ==')
+const change1 = {
+    operation: 'add',
+    storeName: 'records',
+    recordId: 1,
+    data: { uuid: 'rec-uuid-1', amount: 100, ledgerUuid: 'led-1' },
+    timestamp: 1000,
+}
+const change2 = {
+    operation: 'update',
+    storeName: 'records',
+    recordId: 1,
+    data: { uuid: 'rec-uuid-1', amount: 200, ledgerUuid: 'led-1' },
+    timestamp: 2000,
+}
+r = await req('POST', '/api/selfhost/push', {
+    body: { deviceId: 'dev_phone_001', changes: [change1, change2] },
+    token: aliceToken2,
+})
+check('push 2 筆 → added=2 total=2', r.status === 200 && r.json.added === 2 && r.json.total === 2, r.json)
+
+r = await req('POST', '/api/selfhost/push', {
+    body: { deviceId: 'dev_phone_001', changes: [change1] },
+    token: aliceToken2,
+})
+check('重複 push → added=0 total=2 (去重)', r.json.added === 0 && r.json.total === 2, r.json)
+
+r = await req('POST', '/api/selfhost/push', {
+    body: { deviceId: 'dev_phone_001', changes: [] },
+    token: aliceToken2,
+})
+check('空 changes → 400', r.status === 400, r.status)
+
+r = await req('POST', '/api/selfhost/push', {
+    body: { deviceId: 'dev_other_user', changes: [change1] },
+    token: aliceToken2,
+})
+check('push 未註冊裝置 → 自動註冊同帳號裝置（容忍順序）', r.status === 200, r.json)
+// 修正：dev_other_user 應屬於 alice（自動註冊）
+r = await req('GET', '/api/selfhost/me', { token: aliceToken2 })
+check('自動註冊的裝置在 me 列表中', r.json.devices.some(d => d.deviceId === 'dev_other_user'), r.json.devices)
+
+r = await req('GET', '/api/selfhost/pull?since=0&deviceId=dev_phone_001', { token: aliceToken2 })
+check(
+    'pull 排除自己裝置，回 laptop + other 之外… (phone 排除)',
+    r.status === 200 && Array.isArray(r.json.devices),
+    r.json
+)
+// phone 有 2 筆；排除 phone 後應剩 laptop(0) + other(1)
+const pullNames = r.json.devices.map(d => d.deviceId)
+check('pull 排除 dev_phone_001', !pullNames.includes('dev_phone_001'), pullNames)
+
+r = await req('GET', '/api/selfhost/pull?since=1500&deviceId=dev_phone_001', { token: aliceToken2 })
+// other 裝置只有 ts=1000 的變更 → since=1500 後全被過濾 → 不該回傳
+check('pull since=1500 → 無變更裝置不迴傳 (過濾正確)', r.json.devices.length === 0, r.json.devices)
+
+r = await req('GET', '/api/selfhost/pull?since=1500', { token: aliceToken2 })
+const phoneEntry = r.json.devices.find(d => d.deviceId === 'dev_phone_001')
+check('pull 含自己裝置時 phone 只剩 1 筆 (ts=2000)', phoneEntry && phoneEntry.changes.length === 1 && phoneEntry.changes[0].timestamp === 2000, phoneEntry)
+
+console.log('== backup ==')
+const backupContent = JSON.stringify({ records: [{ id: 1, amount: 100 }], accounts: [] })
+r = await req('POST', '/api/selfhost/backup', {
+    body: { fileName: 'backup_2026-08-26.json', content: backupContent, deviceId: 'dev_phone_001' },
+    token: aliceToken2,
+})
+check('backup 201 + id', r.status === 201 && r.json.id, r.json)
+const backupId = r.json.id
+
+r = await req('POST', '/api/selfhost/backup', {
+    body: { fileName: 'bad/../name.json', content: backupContent },
+    token: aliceToken2,
+})
+check('非法 fileName → 400', r.status === 400, r.json)
+
+r = await req('POST', '/api/selfhost/backup', {
+    body: { fileName: 'ok.json', content: 'not-json' },
+    token: aliceToken2,
+})
+check('非 JSON content → 400', r.status === 400, r.json)
+
+r = await req('GET', '/api/selfhost/backups', { token: aliceToken2 })
+check('backups list 1 筆 + Drive 相容欄位 (name/size/createdTime)', r.json.backups.length === 1 && r.json.backups[0].name === 'backup_2026-08-26.json' && r.json.backups[0].createdTime, r.json.backups)
+
+r = await req('GET', `/api/selfhost/backups/${backupId}`, { token: aliceToken2 })
+check('backup get 回傳原始 content', r.status === 200 && JSON.parse(r.text).records.length === 1, r.text.slice(0, 80))
+
+r = await req('GET', '/api/selfhost/backups/99999', { token: aliceToken2 })
+check('不存在的 backup → 404', r.status === 404, r.status)
+
+console.log('== 跨帳號隔離 ==')
+const bobReg = await req('POST', '/api/selfhost/register', { body: { username: 'bob', pin: 'bob-pin-1' } })
+const bobToken = bobReg.json.token
+r = await req('GET', '/api/selfhost/pull', { token: bobToken })
+check('bob pull 看不到 alice 的裝置', r.json.devices.length === 0, r.json)
+r = await req('GET', `/api/selfhost/backups/${backupId}`, { token: bobToken })
+check('bob 取不到 alice 的 backup → 404', r.status === 404, r.status)
+r = await req('POST', '/api/selfhost/push', {
+    body: { deviceId: 'dev_phone_001', changes: [change2] },
+    token: bobToken,
+})
+check('bob push 到 alice 的裝置 → 403', r.status === 403, r.json)
+
+console.log('== retention ==')
+// 再存 6 筆備份（retention=5）
+for (let i = 0; i < 6; i++) {
+    await req('POST', '/api/selfhost/backup', {
+        body: { fileName: `backup_${i}.json`, content: JSON.stringify({ i }) },
+        token: aliceToken2,
+    })
+}
+r = await req('GET', '/api/selfhost/backups', { token: aliceToken2 })
+check('retention=5 → 只留 5 筆', r.json.backups.length === 5, r.json.backups.length)
+
+console.log('== delete backup ==')
+// 注意：最早那筆（backupId）已被 retention 刪掉；改用列表裡還存在的一筆
+r = await req('GET', '/api/selfhost/backups', { token: aliceToken2 })
+const delId = r.json.backups[r.json.backups.length - 1].id
+r = await req('DELETE', `/api/selfhost/backups/${delId}`, { token: aliceToken2 })
+check('delete backup ok', r.status === 200 && r.json.deleted === true, r.json)
+r = await req('GET', `/api/selfhost/backups/${delId}`, { token: aliceToken2 })
+check('刪除後 get → 404', r.status === 404, r.status)
+
+// ──────────────────────────────────────────────
+// 註冊開關（獨立 store：預設關閉）
+// ──────────────────────────────────────────────
+console.log('== 註冊開關 ==')
+const store2 = new SqliteStore(':memory:')
+await store2.init()
+await store2.setMeta('allow_register', '0')
+const ctx2 = { store: store2, env: { ...env, BACKUP_RETENTION_COUNT: 5, SELF_HOST_ALLOW_REGISTER: false } }
+r = await req('POST', '/api/selfhost/register', { body: { username: 'eve', pin: 'eve-pin-1' } }, ctx2)
+check('註冊關閉 → 403', r.status === 403, r.json)
+r = await req('GET', '/api/health', {}, ctx2)
+check('health registerEnabled=false', r.json.registerEnabled === false, r.json)
+store2.close()
+
+// ──────────────────────────────────────────────
+// Admin（帳號管理）
+// ──────────────────────────────────────────────
+console.log('== admin ==')
+// 建立 admin 帳號（模擬 bootstrap）+ 發 token
+const { createHash } = await import('node:crypto')
+const adminUser = await ctx.store.createUserAsAdmin('admin', createHash('sha256').update('admin-pin-1').digest('hex'), true)
+const { token: adminToken } = await ctx.store.createToken(adminUser.id)
+
+r = await req('GET', '/api/selfhost/admin/users', { token: aliceToken2 })
+check('非 admin 存取 admin API → 403', r.status === 403, r.status)
+
+r = await req('POST', '/api/selfhost/admin/users', { body: { username: 'carol', pin: 'carol-pin-1' }, token: adminToken })
+check('admin 建帳號 201', r.status === 201 && r.json.username === 'carol', r.json)
+
+r = await req('POST', '/api/selfhost/admin/users', { body: { username: 'carol', pin: 'carol-pin-x' }, token: adminToken })
+check('重複 username → 409', r.status === 409, r.status)
+
+r = await req('GET', '/api/selfhost/admin/users', { token: adminToken })
+check('admin 列表含 carol/admin', r.json.users.some(u => u.username === 'carol') && r.json.users.some(u => u.username === 'admin' && u.isAdmin), r.json.users?.length)
+
+// carol 用新 PIN 登入成功
+r = await req('POST', '/api/selfhost/login', { body: { username: 'carol', pin: 'carol-pin-1' } })
+check('carol 新帳號可登入', r.status === 200 && typeof r.json.token === 'string', r.json)
+const carolToken = r.json.token
+
+r = await req('POST', '/api/selfhost/admin/users/carol/reset-pin', { body: { pin: 'new-pin-99' }, token: adminToken })
+check('admin 重置 PIN', r.status === 200, r.json)
+r = await req('POST', '/api/selfhost/login', { body: { username: 'carol', pin: 'new-pin-99' } })
+check('重置後新 PIN 可登入', r.status === 200, r.status)
+r = await req('POST', '/api/selfhost/login', { body: { username: 'carol', pin: 'carol-pin-1' } })
+check('舊 PIN 失效 → 401', r.status === 401, r.status)
+
+r = await req('DELETE', '/api/selfhost/admin/users/carol', { token: adminToken })
+check('admin 刪帳號', r.status === 200 && r.json.deleted === true, r.json)
+r = await req('POST', '/api/selfhost/login', { body: { username: 'carol', pin: 'new-pin-99' } })
+check('已刪帳號無法登入 → 401', r.status === 401, r.status)
+// regression: deleteUser 必須連帶清 sync_changes（無 FK cascade 的表需手動清）
+const tempUser = await store.createUserAsAdmin('tempdel', createHash('sha256').update('pin-1').digest('hex'), false)
+await store.registerDevice('dev-tempdel', tempUser.id, 'tempdel')
+await store.appendDeviceLogChange('dev-tempdel', {
+    deviceId: 'dev-tempdel', operation: 'add', storeName: 'records',
+    recordId: '1', data: null, timestamp: Date.now(),
+})
+const scBefore = store.db.prepare('SELECT COUNT(*) AS c FROM sync_changes WHERE user_id = ?').get(tempUser.id).c
+check('deleteUser 前 sync_changes 有殘留', scBefore >= 1, scBefore)
+await store.deleteUser(tempUser.id)
+const scAfter = store.db.prepare('SELECT COUNT(*) AS c FROM sync_changes WHERE user_id = ?').get(tempUser.id).c
+const devAfter = store.db.prepare('SELECT COUNT(*) AS c FROM devices WHERE user_id = ?').get(tempUser.id).c
+check('deleteUser 後 sync_changes 清空', scAfter === 0, scAfter)
+check('deleteUser 後 devices 清空 (FK cascade)', devAfter === 0, devAfter)
+
+r = await req('DELETE', '/api/selfhost/admin/users/admin', { token: adminToken })
+check('不能刪 bootstrap admin → 400', r.status === 400, r.json)
+
+// runtime 註冊開關
+r = await req('PUT', '/api/selfhost/admin/settings/register', { body: { enabled: true }, token: adminToken })
+check('admin 開註冊 200', r.status === 200 && r.json.registerEnabled === true, r.json)
+check('ctx env 已同步', ctx.env.SELF_HOST_ALLOW_REGISTER === true)
+r = await req('POST', '/api/selfhost/register', { body: { username: 'dave', pin: 'dave-pin-1' } })
+check('runtime 開放後可註冊', r.status === 201, r.status)
+r = await req('PUT', '/api/selfhost/admin/settings/register', { body: { enabled: false }, token: adminToken })
+check('admin 關註冊 200', r.json.registerEnabled === false, r.json)
+r = await req('POST', '/api/selfhost/register', { body: { username: 'frank', pin: 'frank-pin-1' } })
+check('關閉後再註冊 → 403', r.status === 403, r.status)
+
+// ──────────────────────────────────────────────
+// Shared Ledgers（跨帳號共用帳本）
+// ──────────────────────────────────────────────
+console.log('== shared ledgers ==')
+const SHARED_UUID = '11111111-2222-3333-4444-555555555555'
+const sharedChange = {
+    deviceId: 'dev_phone_001',
+    operation: 'add',
+    storeName: 'accounts',
+    timestamp: 1700000001000,
+    data: { uuid: 'acct-shared-1', name: '家庭公共帳戶' },
+}
+
+r = await req('POST', '/api/selfhost/shared', {
+    body: {
+        ledgerUuid: SHARED_UUID,
+        name: '家庭支出',
+        content: { deviceId: 'dev_phone_001', timestamp: 1700000001000, changes: [sharedChange] },
+    },
+    token: aliceToken2,
+})
+check('alice 建立共用帳本 201', r.status === 201 && r.json.uuid === SHARED_UUID, r.json)
+
+r = await req('POST', '/api/selfhost/shared', {
+    body: { ledgerUuid: SHARED_UUID },
+    token: aliceToken2,
+})
+check('重複建立 → 409', r.status === 409, r.status)
+
+r = await req('GET', '/api/selfhost/shared', { token: aliceToken2 })
+check('alice 的 shared 列表 = 1', r.json.ledgers.length === 1 && r.json.ledgers[0].owner === true, r.json)
+
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: aliceToken2 })
+check('alice 讀 content（成員）', r.status === 200 && r.json.content.changes.length === 1, r.json.content?.changes?.length)
+
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: bobToken })
+check('bob 非成員 → 403', r.status === 403, r.status)
+
+// alice 邀請 bob 加入
+r = await req('POST', `/api/selfhost/shared/${SHARED_UUID}/members`, { body: { username: 'bob' }, token: aliceToken2 })
+check('owner 加成員 bob', r.status === 200 && r.json.added === true, r.json)
+r = await req('POST', `/api/selfhost/shared/${SHARED_UUID}/members`, { body: { username: 'bob' }, token: bobToken })
+check('非 owner 加成員 → 403', r.status === 403, r.status)
+r = await req('POST', `/api/selfhost/shared/${SHARED_UUID}/members`, { body: { username: 'nobody' }, token: aliceToken2 })
+check('加不存在的 user → 404', r.status === 404, r.json)
+
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: bobToken })
+check('bob 加入後可讀', r.status === 200 && r.json.content.changes.length === 1, r.status)
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}/members`, { token: bobToken })
+check('成員列表 2 人 + isOwner 對 bob=false', r.json.members.length === 2 && r.json.isOwner === false, r.json)
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}/members`, { token: aliceToken2 })
+check('isOwner 對 alice=true', r.json.isOwner === true, r.json)
+
+// bob 寫入（完整比對式覆寫）
+const mergedContent = {
+    deviceId: 'dev_bob_001',
+    timestamp: 1700000002000,
+    changes: [
+        sharedChange,
+        { deviceId: 'dev_bob_001', operation: 'update', storeName: 'accounts', timestamp: 1700000002000, data: { uuid: 'acct-shared-1', name: '家庭公共帳戶(更新)' } },
+    ],
+}
+r = await req('PUT', `/api/selfhost/shared/${SHARED_UUID}`, { body: { content: mergedContent }, token: bobToken })
+check('bob PUT content（成員）', r.status === 200 && typeof r.json.modifiedAt === 'number', r.json)
+r = await req('PUT', `/api/selfhost/shared/${SHARED_UUID}`, { body: { content: { changes: null } }, token: bobToken })
+check('content.changes 非陣列 → 400', r.status === 400, r.status)
+
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: aliceToken2 })
+check('alice 讀到合併後 2 筆 changes', r.json.content.changes.length === 2, r.json.content?.changes?.length)
+
+// lookup（code = 完整 uuid 或前 8 字）
+r = await req('GET', `/api/selfhost/shared/lookup?code=${SHARED_UUID}`, { token: bobToken })
+check('lookup 完整 uuid', r.json.found === true && r.json.uuid === SHARED_UUID, r.json)
+r = await req('GET', '/api/selfhost/shared/lookup?code=11111111', { token: bobToken })
+check('lookup 前 8 字', r.json.found === true, r.json)
+r = await req('GET', '/api/selfhost/shared/lookup?code=deadbeef', { token: bobToken })
+check('lookup 不存在 → found=false', r.json.found === false, r.json)
+
+// 移除成員
+r = await req('DELETE', `/api/selfhost/shared/${SHARED_UUID}/members/bob`, { token: aliceToken2 })
+check('owner 移除 bob', r.status === 200 && r.json.removed === true, r.json)
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: bobToken })
+check('移除後 bob → 403', r.status === 403, r.status)
+
+// 刪除共用帳本（owner）
+r = await req('DELETE', `/api/selfhost/shared/${SHARED_UUID}`, { token: bobToken })
+check('非 owner 刪 → 403', r.status === 403, r.status)
+r = await req('DELETE', `/api/selfhost/shared/${SHARED_UUID}`, { token: aliceToken2 })
+check('owner 刪 200', r.status === 200 && r.json.deleted === true, r.json)
+r = await req('GET', `/api/selfhost/shared/${SHARED_UUID}`, { token: aliceToken2 })
+check('刪除後 → 404', r.status === 404, r.status)
+
+// ══════════════════════════════════════════════
+// 安全修復回歸測試（2026-10 紅隊報告 H-1/H-2/M-1/M-3/L-1/L-2）
+// ══════════════════════════════════════════════
+const { resetLimitersForTests, hashPin, verifyPin, isLegacyPinHash } = await import('../src/auth.js')
+resetLimitersForTests()
+// 前段 admin settings 測試已把 ctx.env 註冊開關關掉 → 安全段明確開註冊的 ctx
+const regCtx = { store, env: { ...ctx.env, SELF_HOST_ALLOW_REGISTER: true } }
+
+console.log('== 安全標頭（M-3）==')
+r = await req('GET', '/api/health')
+check('health 帶 CSP', (r.headers?.['content-security-policy'] || '').includes("frame-ancestors 'none'"))
+check('health 帶 X-Frame-Options=DENY', r.headers?.['x-frame-options'] === 'DENY')
+check('health 帶 nosniff', r.headers?.['x-content-type-options'] === 'nosniff')
+check('health 帶 Referrer-Policy', (r.headers?.['referrer-policy'] || '').includes('strict-origin'))
+
+console.log('== CORS 不反射任意 Origin（H-1）==')
+// 走 /api/selfhost/me（其 corsHeaders 取自 ctx.env.ALLOWED_ORIGINS）
+// 白名單 * → 一律回字面 *，不反射 evil origin
+r = await req('GET', '/api/selfhost/me', { headers: { Origin: 'https://evil.example.com' } })
+check('* 時不反射任意 origin → *', r.headers?.['access-control-allow-origin'] === '*', r.headers?.['access-control-allow-origin'])
+// 白名單明確 → 命中回 origin + Vary，未命中不回 ACAO
+const strictCtx = { store, env: { ...env, BACKUP_RETENTION_COUNT: 5, SELF_HOST_ALLOW_REGISTER: true, ALLOWED_ORIGINS: 'https://app.example.com' } }
+r = await req('GET', '/api/selfhost/me', { headers: { Origin: 'https://evil.example.com' } }, strictCtx)
+check('白名單未命中 → 無 ACAO', !r.headers?.['access-control-allow-origin'], r.headers?.['access-control-allow-origin'])
+r = await req('GET', '/api/selfhost/me', { headers: { Origin: 'https://app.example.com' } }, strictCtx)
+check('白名單命中 → 回該 origin + Vary', r.headers?.['access-control-allow-origin'] === 'https://app.example.com' && (r.headers?.['vary'] || '').includes('Origin'), r.headers)
+
+console.log('== PIN scrypt + 舊 hash 升級（H-2）==')
+{
+    const legacy = (await import('node:crypto')).createHash('sha256').update('legacy-pin-1').digest('hex')
+    check('舊 sha256 hash 辨識', isLegacyPinHash(legacy))
+    const u = await store.createUser('legacyuser', legacy)
+    const before = (await store.getUserByUsername('legacyuser')).pin_hash
+    check('舊格式入庫', isLegacyPinHash(before))
+    const { ok, needsUpgrade } = await verifyPin('legacy-pin-1', before)
+    check('舊 hash 驗證 ok + 標記升級', ok === true && needsUpgrade === true)
+    // 經 verifyLogin 觸發自動升級
+    const u2 = await store.verifyLogin('legacyuser', 'legacy-pin-1')
+    check('verifyLogin 舊 PIN 成功', !!u2)
+    const after = (await store.getUserByUsername('legacyuser')).pin_hash
+    check('登入後 hash 已升級為 scrypt', after.startsWith('scrypt$'), after.slice(0, 20))
+    const u3 = await store.verifyLogin('legacyuser', 'legacy-pin-1')
+    check('升級後仍可登入', !!u3)
+    const u4 = await store.verifyLogin('legacyuser', 'wrong-pin')
+    check('升級後錯 PIN → null', !u4)
+    const h = await hashPin('fresh-pin')
+    check('hashPin 含隨機鹽（scrypt$ 格式）', /^scrypt\$\d+\$\d+\$\d+\$[^$]+\$[^$]+$/.test(h))
+    void u
+}
+
+console.log('== login 限速（H-2）==')
+{
+    await req('POST', '/api/selfhost/register', { body: { username: 'bruteforce', pin: 'bf-good-pin', deviceId: 'dev_bf_001' } }, regCtx)
+    let last = null
+    for (let i = 0; i < 12; i++) {
+        last = await req('POST', '/api/selfhost/login', { body: { username: 'bruteforce', pin: 'bad-pin-xx' } })
+    }
+    check('連續失敗後 → 429', last.status === 429, last.status)
+    check('429 帶 Retry-After', Number(last.headers?.['retry-after']) > 0, last.headers?.['retry-after'])
+    // 不同帳號不受影響
+    r = await req('POST', '/api/selfhost/login', { body: { username: 'alice', pin: 'secret-pin' } })
+    check('限速按帳號隔離（alice 可登入）', r.status === 200, r.status)
+    resetLimitersForTests()
+}
+
+console.log('== 註冊錯 PIN 統一訊息（L-1）==')
+r = await req('POST', '/api/selfhost/register', { body: { username: 'alice', pin: 'definitely-wrong' } }, regCtx)
+check('已存在+錯 PIN → 401 且訊息與 login 相同', r.status === 401 && r.json.error === 'Invalid username or PIN', r.json)
+resetLimitersForTests()
+
+console.log('== lookup 非成員不回 name/uuid（M-1）==')
+{
+    // carol 建立帳本，dave 非成員
+    r = await req('POST', '/api/selfhost/register', { body: { username: 'carol2', pin: 'carol2-pin-1' } }, regCtx)
+    const carolT = r.json.token
+    r = await req('POST', '/api/selfhost/register', { body: { username: 'dave2', pin: 'dave2-pin-1' } }, regCtx)
+    const daveT = r.json.token
+    const LUUID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    r = await req('POST', '/api/selfhost/shared', { body: { ledgerUuid: LUUID, name: '老王房貸分期', content: { deviceId: 'd_c', timestamp: 1, changes: [] } }, token: carolT })
+    check('建立測試共用帳本', r.status === 201, r.status)
+    r = await req('GET', `/api/selfhost/shared/lookup?code=${LUUID}`, { token: daveT })
+    check('非成員 lookup → found=true 但無 uuid/name', r.json.found === true && r.json.uuid === undefined && r.json.name === undefined, r.json)
+    r = await req('GET', `/api/selfhost/shared/lookup?code=${LUUID}`, { token: carolT })
+    check('成員 lookup → 附 uuid+name', r.json.uuid === LUUID && r.json.name === '老王房貸分期', r.json)
+    r = await req('GET', '/api/selfhost/shared/lookup?code=ffffffff', { token: daveT })
+    check('不存在 → found=false', r.json.found === false)
+    // lookup 限速
+    let lr = null
+    for (let i = 0; i < 35; i++) {
+        lr = await req('GET', '/api/selfhost/shared/lookup?code=deadbeef', { token: daveT })
+    }
+    check('lookup 30 次/分鐘限速 → 429', lr.status === 429, lr.status)
+    resetLimitersForTests()
+}
+
+store.close()
+console.log(`\n===== ${passed} passed, ${failed} failed =====`)
+process.exit(failed > 0 ? 1 : 0)

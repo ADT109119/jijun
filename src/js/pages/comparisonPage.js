@@ -4,7 +4,7 @@
  */
 
 import { ComparisonReport } from '../comparisonReport.js'
-import { formatCurrency } from '../utils.js'
+import { formatCurrency, escapeHTML } from '../utils.js'
 import { Chart } from 'chart.js'
 
 export class ComparisonPage {
@@ -46,8 +46,46 @@ export class ComparisonPage {
         const months = await comp.getAvailablePeriods('month')
         const years = await comp.getAvailablePeriods('year')
 
+        // 對象（聯絡人）篩選（#MOZE-TGT）：依附欠款管理開關且有聯絡人才顯示
+        let contacts = []
+        try {
+            const debtMode = await this.app.dataService.getSetting(
+                'debtManagementEnabled'
+            )
+            if (
+                !!debtMode?.value &&
+                typeof this.app.dataService.getContacts === 'function'
+            ) {
+                contacts = await this.app.dataService.getContacts()
+            }
+        } catch (e) {
+            console.warn('Failed to load contacts for comparison:', e)
+            contacts = []
+        }
+
         // Default: last 2 available months
         const defaultMonths = months.length >= 2 ? months.slice(-2) : months
+
+        const contactFilterOptions = contacts
+            .map(
+                c =>
+                    `<option value="${c.id}">${escapeHTML(c.name)}</option>`
+            )
+            .join('')
+        const contactFilterHTML =
+            contacts.length > 0
+                ? `
+            <!-- Contact (對象) filter -->
+            <div class="mb-4">
+                <label for="comp-contact-filter" class="text-sm text-wabi-text-secondary">對象</label>
+                <select id="comp-contact-filter" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                    <option value="all">所有對象</option>
+                    ${contactFilterOptions}
+                </select>
+                <p class="text-xs text-wabi-text-secondary mt-1">僅比較與該對象欠款相關的紀錄</p>
+            </div>
+                `
+                : ''
 
         container.innerHTML = `
             <!-- 使用說明 -->
@@ -81,6 +119,8 @@ export class ComparisonPage {
                 <button id="comp-filter-expense" class="type-filter-btn flex-1 h-full rounded-md px-2 text-sm font-medium text-wabi-text-secondary">僅支出</button>
             </div>
 
+            ${contactFilterHTML}
+
             <!-- Compare button -->
             <button id="comp-run-btn" class="w-full py-3 rounded-xl bg-wabi-accent text-white font-bold mb-6 disabled:opacity-50 disabled:cursor-not-allowed">
                 <i class="fa-solid fa-code-compare mr-1"></i> 開始比較
@@ -94,6 +134,26 @@ export class ComparisonPage {
         const typeFilterBtns = container.querySelectorAll('.type-filter-btn')
         let currentPeriodType = 'month'
         let currentTypeFilter = 'all'
+        // 對象篩選狀態（#MOZE-TGT）：null = 全部對象
+        let currentContactId = null
+        let currentContactName = null
+        const contactFilterEl = container.querySelector(
+            '#comp-contact-filter'
+        )
+        if (contactFilterEl) {
+            contactFilterEl.addEventListener('change', e => {
+                if (e.target.value === 'all') {
+                    currentContactId = null
+                    currentContactName = null
+                } else {
+                    currentContactId = parseInt(e.target.value, 10)
+                    const contact = contacts.find(
+                        c => c.id === currentContactId
+                    )
+                    currentContactName = contact ? contact.name : null
+                }
+            })
+        }
         let selectedPeriods = new Set(defaultMonths)
 
         const updateSelectedCount = () => {
@@ -250,6 +310,8 @@ export class ComparisonPage {
                         selectedArr,
                         {
                             typeFilter: currentTypeFilter,
+                            contactId: currentContactId,
+                            contactName: currentContactName,
                         }
                     )
                     this.renderResults(container, comp, data)

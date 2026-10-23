@@ -25,12 +25,18 @@ const DEMO_TEST_DESC = '導覽測試記錄'
 
 /**
  * 版本 → 專屬導覽 映射表（Phase 5 版本導覽）。
- * 當用戶升級到這些版本時，於 Changelog Modal 關閉後觸發對應導覽。
+ * 當用戶升級到這些版本時，於 Changelog 更新彈窗顯示「查看教學」按鈕，
+ * 使用者選擇後觸發對應導覽；選擇「我知道了」則標記已略過。
  * 格式: { '版本號': '導覽 ID' }，導覽 ID 必須在 TOURS 註冊表中存在。
- * 例: 若 2.2.0 發版時想引導用戶體驗新功能，添加 '2.2.0': 'xxxTour'。
- * ⚠️ 當前版本無專屬導覽，映射表保持為空（預留框架）。
+ * ⚠️ 2.1.7.9 起：newFeatures 導覽介紹自架同步/餘額不足提醒/明細欄位管理器/
+ *    帳戶釘選等未隨 v2.1.7.8 遠端發布的新功能（版本號於發新版時由 2.1.7.8 遞增）。
+ * ⚠️ 2.1.8.0 起：newFeaturesV2 導覽介紹繳款圓點/聯絡人欠款匯出/自架說明連結；
+ *    newFeatures 保留給停留在 2.1.7.9 的使用者（見 tourSeen 記錄各自獨立）。
  */
-const TOUR_VERSION_MAP = {}
+const TOUR_VERSION_MAP = {
+    '2.1.7.9': 'newFeatures',
+    '2.1.8.0': 'newFeaturesV2',
+}
 
 function getStored(key) {
     try {
@@ -575,9 +581,14 @@ export class GuideManager {
             this.markTourSeen(tourId)
             this._tourActive = false
             this.destroyBubble()
-            // Bug 4 修復：導覽結束後補發積壓的版本導覽（之前若互斥被跳過）
+            // Bug 4 修復：導覽結束後補發積壓的版本導覽（之前若互斥被跳過）。
+            // ⚠️ 必須以 startTour: true 補發——無參的 onChangelogClosed() 預設
+            // startTour=false，會把版本導覽直接標記「已略過」，使用者永遠看不到。
             if (this._pendingVersionTour) {
-                setTimeout(() => this.onChangelogClosed(), 100)
+                setTimeout(
+                    () => this.onChangelogClosed({ startTour: true }),
+                    100
+                )
             }
             return
         }
@@ -810,9 +821,12 @@ export class GuideManager {
             }
             this._currentStepReject = null
         }
-        // 導覽取消後補發積壓的版本導覽（Bug 4）
+        // 導覽取消後補發積壓的版本導覽（Bug 4；startTour: true 避免被標記略過）
         if (this._pendingVersionTour) {
-            setTimeout(() => this.onChangelogClosed(), 100)
+            setTimeout(
+                () => this.onChangelogClosed({ startTour: true }),
+                100
+            )
         }
     }
 

@@ -1,7 +1,7 @@
 // ==================== 帳本管理器 ====================
 // 負責帳本的商業邏輯：建立、切換、刪除
 
-import { showToast } from './utils.js'
+import { showToast, isSafeIconClass, isSafeHexColor } from './utils.js'
 
 // 預設帳本顏色選項
 const LEDGER_COLORS = [
@@ -146,6 +146,16 @@ export class LedgerManager {
         const existing = this.ledgers.find(l => l.name === data.name)
         if (existing) throw new Error('已存在同名帳本')
 
+        // #SEC04：入庫端防呆——白名單外的圖示直接拒絕，杜絕髒資料再入庫
+        // （呼叫端 ledgersPage 已擋，此處為防禦深度，涵蓋插件/API 等其他路徑）
+        if (data.icon && !isSafeIconClass(data.icon)) {
+            throw new Error('圖示格式不正確，請選擇合法的 FontAwesome 圖示')
+        }
+        // #SEC05：顏色入庫端防呆——白名單外（非 hex）直接拒絕，同圖示防禦深度
+        if (data.color && !isSafeHexColor(data.color)) {
+            throw new Error('顏色格式不正確，請選擇合法的主題色')
+        }
+
         const id = await this.dataService.addLedger({
             name: data.name,
             icon: data.icon || 'fa-solid fa-book',
@@ -175,6 +185,14 @@ export class LedgerManager {
      * @param {object} updates
      */
     async updateLedger(id, updates) {
+        // #SEC04：入庫端防禦深度——拒絕白名單外的圖示寫入
+        if (updates.icon && !isSafeIconClass(updates.icon)) {
+            throw new Error('圖示格式不正確，請選擇合法的 FontAwesome 圖示')
+        }
+        // #SEC05：顏色入庫端防禦深度——白名單外（非 hex）拒絕寫入
+        if (updates.color && !isSafeHexColor(updates.color)) {
+            throw new Error('顏色格式不正確，請選擇合法的主題色')
+        }
         await this.dataService.updateLedger(id, updates)
         await this.init()
     }
@@ -220,14 +238,17 @@ export class LedgerManager {
     }
 
     /**
-     * 將指定的帳本轉為共用，並邀請外部 Email
+     * 將指定的帳本轉為共用，並邀請外部使用者
      * @param {number} ledgerId
-     * @param {string} email
-     * @returns {Promise<string>}
+     * @param {string} invitee  Drive 模式 = Google Email；self-host 模式 = 帳號名稱 (username)
+     * @returns {Promise<string>} 共用代碼（Drive = fileId；self-host = ledger uuid）
      */
-    async shareLedger(ledgerId, email) {
+    async shareLedger(ledgerId, invitee) {
         if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
-            throw new Error('請先在設定中登入 Google 同步功能')
+            throw new Error('請先登入同步功能')
+        }
+        if (this.app.syncService.isSelfHostMode()) {
+            return this._shareLedgerSelfHost(ledgerId, invitee)
         }
 
         const ledger = await this.dataService.getLedger(ledgerId)
@@ -242,17 +263,17 @@ export class LedgerManager {
             }
             // 已共用帳本：對舊檔、manifest 與自己的日誌檔補授權
             if (fileId) {
-                await this.app.syncService.grantFilePermission(fileId, email)
+                await this.app.syncService.grantFilePermission(fileId, invitee)
             }
             if (ledger.sharedManifestId) {
                 await this.app.syncService.grantFilePermission(
                     ledger.sharedManifestId,
-                    email
+                    invitee
                 )
                 try {
                     await this.app.syncService.unblockManifestMember(
                         ledger.sharedManifestId,
-                        email
+                        invitee
                     )
                 } catch (_) {}
             }
@@ -264,7 +285,7 @@ export class LedgerManager {
             if (devLogId) {
                 await this.app.syncService.grantFilePermission(
                     devLogId,
-                    email,
+                    invitee,
                     'reader'
                 )
                 try {
@@ -276,12 +297,12 @@ export class LedgerManager {
                         : []
                     if (
                         !grantedList.some(
-                            e => e?.toLowerCase() === email.toLowerCase()
+                            e => e?.toLowerCase() === invitee.toLowerCase()
                         )
                     ) {
                         await this.dataService.saveSetting({
                             key: grantedKey,
-                            value: [...grantedList, email.toLowerCase()],
+                            value: [...grantedList, invitee.toLowerCase()],
                         })
                     }
                 } catch (_) {}
@@ -295,7 +316,7 @@ export class LedgerManager {
         fileId = res.id
 
         // 2. 授權 Google Drive 檔案
-        await this.app.syncService.grantFilePermission(fileId, email)
+        await this.app.syncService.grantFilePermission(fileId, invitee)
 
         // 3. 先更新本地帳本狀態為共用（這樣 export 出來的資料才會戴上正確的 isShared 和 sharedFileId）
         await this.dataService.updateLedger(ledgerId, {
@@ -365,19 +386,19 @@ export class LedgerManager {
         if (infra?.manifestId) {
             await this.app.syncService.grantFilePermission(
                 infra.manifestId,
-                email
+                invitee
             )
             try {
                 await this.app.syncService.unblockManifestMember(
                     infra.manifestId,
-                    email
+                    invitee
                 )
             } catch (_) {}
         }
         if (infra?.devLogId) {
             await this.app.syncService.grantFilePermission(
                 infra.devLogId,
-                email,
+                invitee,
                 'reader'
             )
         }
@@ -389,14 +410,175 @@ export class LedgerManager {
     }
 
     /**
-     * 加入共用帳本
-     * @param {string} fileId
+     * self-host 版：將帳本轉為共用（server 端 shared ledger）。
+     * 語意與 Drive 版 shareLedger 一致（完整比對式 log），
+     * 差異在 transport：Drive file → server /api/selfhost/shared/*。
+     * 共用代碼 = ledger.uuid（= sharedFileId）。
+     *
+     * @param {number} ledgerId
+     * @param {string} invitee  被邀請者的 self-host 帳號名稱（可空 = 先建共用、稍後再加人）
+     * @returns {Promise<string>} 共用代碼（ledger uuid）
      */
-    async joinSharedLedger(fileId) {
-        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
-            throw new Error('請先在設定中登入 Google 同步功能')
+    async _shareLedgerSelfHost(ledgerId, invitee) {
+        const sync = this.app.syncService
+        const ledger = await this.dataService.getLedger(ledgerId)
+        if (!ledger) throw new Error('帳本不存在')
+
+        const uuid = ledger.uuid
+
+        if (ledger.isShared && ledger.sharedFileId) {
+            // 已共用：只加成員（invitee 為 username）
+            if (invitee) {
+                await sync._selfHostSharedAddMember(ledger.sharedFileId, invitee)
+            }
+            return ledger.sharedFileId
         }
 
+        // 1. 先更新本地帳本為共用（sharedFileId = uuid，讓 export 帶正確標記）
+        await this.dataService.updateLedger(ledgerId, {
+            isShared: true,
+            sharedFileId: uuid,
+            type: 'shared',
+        })
+        await this.init()
+
+        // 2. 匯出完整帳本資料作為初始 content（與 Drive 版相同拓撲順序）
+        const exported = await this.dataService.exportDataForSync({
+            sharedLedgerUuid: uuid,
+        })
+        const deviceId = sync.deviceId
+        const now = Date.now()
+        const storeOrder = [
+            'ledgers',
+            'groupMeta',
+            'accounts',
+            'contacts',
+            'debts',
+            'recurring_transactions',
+            'amortizations',
+            'credit_statements',
+            'records',
+        ]
+        const changes = []
+        for (const storeName of storeOrder) {
+            const items = exported[storeName]
+            if (!Array.isArray(items)) continue
+            items.forEach(item =>
+                changes.push({
+                    deviceId,
+                    operation: 'add',
+                    storeName,
+                    data: item,
+                    timestamp: now,
+                })
+            )
+        }
+        const content = { deviceId, timestamp: now, changes }
+
+        // 3. 建立 server 端 shared ledger（附初始快照）
+        await sync._selfHostSharedCreate(uuid, ledger.name, content)
+
+        // 4. 邀請成員（username）
+        if (invitee) {
+            await sync._selfHostSharedAddMember(uuid, invitee)
+        }
+
+        // 5. 確保共用同步已啟動
+        await sync.ensureSharedSync()
+
+        return uuid
+    }
+
+    /**
+     * self-host 版：加入共用帳本（輸入 code = ledger uuid 或前 8 字）。
+     * @param {string} code  共用代碼
+     * @returns {Promise<number>} 本機 ledger id
+     */
+    async _joinSharedLedgerSelfHost(code) {
+        const sync = this.app.syncService
+
+        // code 可能是完整 uuid 或前 8 字 → lookup
+        const found = await sync._selfHostSharedLookup(code)
+        if (!found?.found) {
+            throw new Error('找不到該共用帳本（code 不正確或您未被邀請）')
+        }
+        const uuid = found.uuid
+
+        // 讀取 content
+        const shared = await sync._selfHostSharedFetch(uuid)
+        const fileData = shared?.content
+        if (!fileData || !fileData.changes) {
+            throw new Error('無效的共用帳本或無讀取權限')
+        }
+
+        // Apply shared data changes
+        await sync.applyRemoteChanges(fileData.changes)
+
+        // 種入 appliedKeys：本次 join 已套用過的變更要標記為已套用，
+        // 否則下次週期共用同步（_selfHostPullSharedLedgerChanges）會重跑整包
+        // 快照——加入後本地的新修改（更新 timestamp）會被快照中的舊值覆蓋。
+        const appliedKeysSetting = await this.dataService.getSetting(
+            'sync_shared_applied_keys'
+        )
+        const appliedKeys = new Set(appliedKeysSetting?.value || [])
+        for (const change of fileData.changes) {
+            appliedKeys.add(
+                `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
+            )
+        }
+        await this.dataService.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [...appliedKeys],
+        })
+
+        // 找出新增的 ledger
+        const ledgerChanges = fileData.changes.filter(
+            c =>
+                c.storeName === 'ledgers' &&
+                (c.operation === 'add' || c.operation === 'update')
+        )
+        if (ledgerChanges.length > 0) {
+            const targetUuid = ledgerChanges[0].data.uuid
+            await this.init()
+            const ledger = this.ledgers.find(l => l.uuid === targetUuid)
+            if (ledger) {
+                await this.dataService.updateLedger(ledger.id, {
+                    isShared: true,
+                    sharedFileId: uuid,
+                    type: 'shared',
+                })
+                await this.init()
+
+                const lastPull =
+                    (await this.dataService.getSetting(
+                        'sync_last_pull_timestamps'
+                    )) || { value: {} }
+                lastPull.value[`shared_${uuid}`] = Date.now()
+                await this.dataService.saveSetting({
+                    key: 'sync_last_pull_timestamps',
+                    value: lastPull.value,
+                })
+
+                await sync.ensureSharedSync()
+                return ledger.id
+            }
+        }
+        throw new Error('無法從共用帳本解析帳本資訊')
+    }
+
+    /**
+     * 加入共用帳本
+     * @param {string} code  Drive 模式 = fileId；self-host 模式 = 共用代碼 (uuid 或前 8 字)
+     */
+    async joinSharedLedger(code) {
+        if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
+            throw new Error('請先登入同步功能')
+        }
+        if (this.app.syncService.isSelfHostMode()) {
+            return this._joinSharedLedgerSelfHost(code)
+        }
+
+        const fileId = code
         const res = await this.app.syncService._downloadFile(fileId)
         const fileData = res?.data
 
@@ -465,6 +647,17 @@ export class LedgerManager {
         const ledger = await this.dataService.getLedger(ledgerId)
         if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
             throw new Error('此帳本尚未共用')
+        }
+        if (this.app.syncService.isSelfHostMode()) {
+            const res = await this.app.syncService._selfHostSharedListMembers(
+                ledger.sharedFileId
+            )
+            return (res.members || []).map(u => ({
+                id: u.username,
+                displayName: u.username,
+                emailAddress: u.username,
+                role: u.isOwner ? 'owner' : 'reader',
+            }))
         }
         if (ledger?.sharedManifestId) {
             let drivePerms = []
@@ -543,6 +736,14 @@ export class LedgerManager {
         const ledger = await this.dataService.getLedger(ledgerId)
         if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) {
             throw new Error('此帳本尚未共用')
+        }
+        if (this.app.syncService.isSelfHostMode()) {
+            // permissionId = username
+            await this.app.syncService._selfHostSharedRemoveMember(
+                ledger.sharedFileId,
+                memberId
+            )
+            return
         }
         const isOwner = await this.isLedgerOwner(ledgerId)
         if (!isOwner) {
@@ -683,12 +884,21 @@ export class LedgerManager {
      * @returns {Promise<boolean>}
      */
     async isLedgerOwner(ledgerId) {
+        const ledger = await this.dataService.getLedger(ledgerId)
+        if (!ledger || (!ledger.sharedFileId && !ledger.sharedManifestId)) return false
+        if (this.app.syncService.isSelfHostMode()) {
+            try {
+                const res = await this.app.syncService._selfHostSharedListMembers(
+                    ledger.sharedFileId
+                )
+                return res.isOwner === true
+            } catch {
+                return false
+            }
+        }
         try {
             const myEmail = this.app.syncService.userInfo?.email
             if (!myEmail) return false
-
-            const ledger = await this.dataService.getLedger(ledgerId)
-            if (!ledger) return false
 
             const targetFileId =
                 ledger.sharedManifestId || ledger.sharedFileId
@@ -741,40 +951,45 @@ export class LedgerManager {
         const isOwner = await this.isLedgerOwner(ledgerId)
         if (!isOwner) throw new Error('只有擁有者才能取消共用')
 
-        // 清理新架構檔案：自己的日誌檔 + manifest（擁有者才有 manifest 刪除權）
-        try {
-            const devLogKey = `sync_shared_devlog_${ledger.uuid}`
-            const devLogId = (
-                await this.dataService.getSetting(devLogKey)
-            )?.value
-            if (devLogId) {
-                await this.app.syncService.deleteFile(devLogId)
-                await this.dataService.saveSetting({
-                    key: devLogKey,
-                    value: null,
-                })
-            }
-            if (ledger.sharedManifestId) {
-                await this.app.syncService.deleteFile(ledger.sharedManifestId)
-                await this.dataService.saveSetting({
-                    key: `sync_manifest_pending_${ledger.sharedManifestId}`,
-                    value: null,
-                })
-            }
-            await this.dataService.saveSetting({
-                key: `shared_migrated_${ledger.uuid}`,
-                value: null,
-            })
-        } catch (e) {
-            console.warn('[LedgerManager] 清理共用基礎設施失敗:', e)
-        }
-
-        // 刪除雲端檔案（若有）
-        if (ledger.sharedFileId) {
+        // 刪除雲端資源
+        if (this.app.syncService.isSelfHostMode()) {
+            await this.app.syncService._selfHostSharedDelete(ledger.sharedFileId)
+        } else {
+            // 清理新架構檔案：自己的日誌檔 + manifest（擁有者才有 manifest 刪除權）
             try {
-                await this.app.syncService.deleteFile(ledger.sharedFileId)
+                const devLogKey = `sync_shared_devlog_${ledger.uuid}`
+                const devLogId = (
+                    await this.dataService.getSetting(devLogKey)
+                )?.value
+                if (devLogId) {
+                    await this.app.syncService.deleteFile(devLogId)
+                    await this.dataService.saveSetting({
+                        key: devLogKey,
+                        value: null,
+                    })
+                }
+                if (ledger.sharedManifestId) {
+                    await this.app.syncService.deleteFile(ledger.sharedManifestId)
+                    await this.dataService.saveSetting({
+                        key: `sync_manifest_pending_${ledger.sharedManifestId}`,
+                        value: null,
+                    })
+                }
+                await this.dataService.saveSetting({
+                    key: `shared_migrated_${ledger.uuid}`,
+                    value: null,
+                })
             } catch (e) {
-                console.warn('[LedgerManager] 刪除共用舊檔失敗:', e)
+                console.warn('[LedgerManager] 清理共用基礎設施失敗:', e)
+            }
+
+            // 刪除雲端檔案（若有）
+            if (ledger.sharedFileId) {
+                try {
+                    await this.app.syncService.deleteFile(ledger.sharedFileId)
+                } catch (e) {
+                    console.warn('[LedgerManager] 刪除共用舊檔失敗:', e)
+                }
             }
         }
 

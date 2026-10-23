@@ -19,14 +19,33 @@ vi.mock('sortablejs', () => ({
 // Mock utils.js 的函數
 vi.mock('../../src/js/utils.js', () => ({
     formatCurrency: vi.fn(v => `NT$${Math.round(v)}`),
-    getDateRange: vi.fn(period => {
-        if (period === 'month') {
+    getDateRange: vi.fn((period, offsetMonths = 0) => {
+        // #AB4：monthOffset 以 2024-01 為基準月（offset=0），與 'month' 一致
+        if (period === 'month' || (period === 'monthOffset' && offsetMonths === 0)) {
             return { startDate: '2024-01-01', endDate: '2024-01-31' }
+        }
+        if (period === 'monthOffset') {
+            const baseYear = 2024
+            const baseMonthIndex = 0 // 2024-01
+            const targetMonthIndex = baseMonthIndex + offsetMonths
+            const y = baseYear + Math.floor(targetMonthIndex / 12)
+            const m = ((targetMonthIndex % 12) + 12) % 12
+            const lastDay = new Date(y, m + 1, 0).getDate()
+            return {
+                startDate: `${y}-${String(m + 1).padStart(2, '0')}-01`,
+                endDate: `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+            }
         }
         return { startDate: '2024-01-01', endDate: '2024-01-31' }
     }),
     showToast: vi.fn(),
     escapeHTML: vi.fn(s => s),
+    // #SEC04：getSafeIconClass 以真實語意提供（白名單外一律 fallback）
+    getSafeIconClass: (icon, fallback = 'fa-solid fa-circle-question') =>
+        typeof icon === 'string' &&
+        /^(fas|far|fab|fa-solid|fa-regular|fa-brands)\s+fa-[a-zA-Z0-9-]+$/.test(icon.trim())
+            ? icon.trim()
+            : fallback,
 }))
 
 import { BudgetManager } from '../../src/js/budgetManager.js'
@@ -190,6 +209,61 @@ describe('BudgetManager', () => {
             await bm.loadBudget()
             expect(bm.currentBudget).toBe(0)
             expect(bm.categoryBudgets).toEqual({ food: 0 })
+        })
+
+        // ==================== #BUDGET-KEY-H5：localStorage fallback 主帳本守門 ====================
+
+        it('#BUDGET-KEY-H5 非主帳本不得撿全域 legacy 預算（未設預算的新帳本保持 0）', async () => {
+            ds.activeLedgerId = 2
+            ds.getLedgers = vi
+                .fn()
+                .mockResolvedValue([{ id: 1, name: '主帳本' }, { id: 2, name: '新帳本' }])
+            // 只有 legacy 全域鍵（無後綴）存在預算——屬主帳本時代遺留
+            localStorage.setItem('monthlyBudget', '5000')
+            localStorage.setItem('categoryBudgets', JSON.stringify({ food: 3000 }))
+
+            await bm.loadBudget()
+
+            expect(bm.currentBudget).toBe(0)
+            expect(bm.categoryBudgets).toEqual({})
+            // 未被污染固化：不會把全域預算存成新帳本的正式預算
+            expect(ds.saveSetting).not.toHaveBeenCalled()
+        })
+
+        it('#BUDGET-KEY-H5 主帳本保留全域 legacy 預算遷移退回（id=1）', async () => {
+            // activeLedgerId=1（預設 mock）→ 主帳本
+            localStorage.setItem('monthlyBudget', '5000')
+
+            await bm.loadBudget()
+
+            expect(bm.currentBudget).toBe(5000)
+        })
+
+        it('#BUDGET-KEY-H5 非主帳本讀自己後綴鍵的正常路徑不受影響', async () => {
+            ds.activeLedgerId = 2
+            ds.getLedgers = vi
+                .fn()
+                .mockResolvedValue([{ id: 1, name: '主帳本' }, { id: 2, name: '新帳本' }])
+            localStorage.setItem('monthlyBudget_2', '3000')
+            localStorage.setItem(
+                'categoryBudgets_2',
+                JSON.stringify({ transport: 1000 })
+            )
+
+            await bm.loadBudget()
+
+            expect(bm.currentBudget).toBe(3000)
+            expect(bm.categoryBudgets).toEqual({ transport: 1000 })
+        })
+
+        it('#BUDGET-KEY-H5 getLedgers 拋錯時保守視為非主帳本，不 fallback 全域', async () => {
+            ds.activeLedgerId = 2
+            ds.getLedgers = vi.fn().mockRejectedValue(new Error('DB down'))
+            localStorage.setItem('monthlyBudget', '5000')
+
+            await bm.loadBudget()
+
+            expect(bm.currentBudget).toBe(0)
         })
     })
 
@@ -577,6 +651,189 @@ describe('BudgetManager', () => {
 
         it('無彈窗時不報錯', () => {
             expect(() => bm.closeBudgetModal()).not.toThrow()
+        })
+    })
+
+    // ==================== #AB4：月份偏移（未來月份預覽） ====================
+
+    describe('getBudgetStatus 月份偏移 (#AB4)', () => {
+        it('offset=0 時與原行為一致（2024-01 範圍、本月標籤）', async () => {
+            bm.currentBudget = 10000
+            const status = await bm.getBudgetStatus(0)
+
+            expect(ds.getStatistics).toHaveBeenCalledWith(
+                '2024-01-01',
+                '2024-01-31',
+                null,
+                true
+            )
+            expect(status.offsetMonths).toBe(0)
+            expect(status.isPreview).toBe(false)
+            expect(status.monthLabel).toBe('本月')
+        })
+
+        it('offset=1 時查詢下月範圍（2024-02，含閏年 29 天）', async () => {
+            bm.currentBudget = 10000
+            const status = await bm.getBudgetStatus(1)
+
+            expect(ds.getStatistics).toHaveBeenCalledWith(
+                '2024-02-01',
+                '2024-02-29',
+                null,
+                true
+            )
+            expect(status.offsetMonths).toBe(1)
+            expect(status.isPreview).toBe(true)
+            // monthLabel 用系統真實日期計算（與 mock 的 2024-01 基準不同月），只驗格式
+            expect(status.monthLabel).toMatch(/\d{4}年\d{1,2}月/)
+        })
+
+        it('offset=12 跨年（mock 基準 2024-01 + 12 = 2025-01）', async () => {
+            bm.currentBudget = 5000
+            const status = await bm.getBudgetStatus(12)
+
+            expect(ds.getStatistics).toHaveBeenCalledWith(
+                '2025-01-01',
+                '2025-01-31',
+                null,
+                true
+            )
+            expect(status.offsetMonths).toBe(12)
+            expect(status.isPreview).toBe(true)
+            expect(status.monthLabel).toMatch(/\d{4}年\d{1,2}月/)
+        })
+
+        it('未來月份支出為 0 時 remaining=budget、percentage=0', async () => {
+            bm.currentBudget = 8000
+            ds.getStatistics.mockResolvedValue({
+                totalExpense: 0,
+                totalIncome: 0,
+                expenseByCategory: {},
+            })
+            const status = await bm.getBudgetStatus(3)
+
+            expect(status.spent).toBe(0)
+            expect(status.remaining).toBe(8000)
+            expect(status.percentage).toBe(0)
+            expect(status.isOverBudget).toBe(false)
+        })
+
+        it('不傳參時等同 offset=0（欄位齊全）', async () => {
+            bm.currentBudget = 10000
+            const status = await bm.getBudgetStatus()
+
+            expect(status.offsetMonths).toBe(0)
+            expect(status.isPreview).toBe(false)
+            expect(status.monthLabel).toBe('本月')
+            expect(ds.getStatistics).toHaveBeenCalledWith(
+                '2024-01-01',
+                '2024-01-31',
+                null,
+                true
+            )
+        })
+    })
+
+    describe('renderBudgetWidget 月份選擇器 (#AB4)', () => {
+        beforeEach(() => {
+            ds.getStatistics.mockResolvedValue({
+                totalExpense: 5000,
+                totalIncome: 0,
+                expenseByCategory: {},
+            })
+        })
+
+        afterEach(() => {
+            bm.closeBudgetMonthPickerModal()
+        })
+
+        it('budget>0 時 HTML 包含月份選擇按鈕', async () => {
+            bm.currentBudget = 10000
+            const html = await bm.renderBudgetWidget()
+
+            expect(html).toContain('id="budget-month-btn"')
+            expect(html).toContain('fa-calendar')
+            expect(html).toContain('id="edit-budget-btn"')
+            // 月份選擇 Modal 未開啟時不在 widget HTML 中
+            expect(html).not.toContain('budget-month-select')
+        })
+
+        it('預覽月份（offset>0）時 HTML 包含提示文字', async () => {
+            bm.currentBudget = 10000
+            bm.budgetMonthOffset = 1
+            const html = await bm.renderBudgetWidget()
+
+            expect(html).toContain('尚未來臨的月份')
+        })
+
+        it('本月（offset=0）時 HTML 不含預覽提示', async () => {
+            bm.currentBudget = 10000
+            bm.budgetMonthOffset = 0
+            const html = await bm.renderBudgetWidget()
+
+            expect(html).not.toContain('尚未來臨的月份')
+        })
+
+        it('renderBudgetWidget 的 RAF 綁定會在下一 frame 後掛上 budget-month-btn.onclick（防死碼回歸）', async () => {
+            bm.currentBudget = 10000
+            const html = await bm.renderBudgetWidget()
+
+            // 模擬 homePage 的 DOM 插入
+            const host = document.createElement('div')
+            host.innerHTML = html
+            document.body.appendChild(host)
+
+            // RAF 回呼在下一 frame 執行，等待其完成
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+            const btn = document.getElementById('budget-month-btn')
+            expect(btn).not.toBeNull()
+            expect(typeof btn.onclick).toBe('function')
+
+            // 觸發 onclick：月份選擇 Modal 應開啟
+            btn.onclick()
+            await new Promise(resolve => setTimeout(resolve, 0))
+            expect(document.getElementById('budget-month-picker-modal')).not.toBeNull()
+
+            // 清理
+            bm.closeBudgetMonthPickerModal()
+            host.remove()
+        })
+
+        it('月份選擇 Modal：確認選定後回呼新 offset', async () => {
+            bm.currentBudget = 10000
+            const onSelect = vi.fn()
+            bm.showBudgetMonthPickerModal(onSelect)
+
+            const modal = document.getElementById('budget-month-picker-modal')
+            expect(modal).not.toBeNull()
+
+            const select = modal.querySelector('#budget-month-select')
+            expect(select).not.toBeNull()
+            // 選項：本月 + 11 個月 = 12 個
+            expect(select.querySelectorAll('option')).toHaveLength(12)
+
+            // 選 offset=2 並確認
+            select.value = '2'
+            modal.querySelector('#confirm-budget-month-btn').click()
+
+            expect(bm.budgetMonthOffset).toBe(2)
+            expect(onSelect).toHaveBeenCalledWith(2)
+            expect(document.getElementById('budget-month-picker-modal')).toBeNull()
+        })
+
+        it('月份選擇 Modal：取消時不變更 offset', () => {
+            bm.currentBudget = 10000
+            bm.budgetMonthOffset = 0
+            const onSelect = vi.fn()
+            bm.showBudgetMonthPickerModal(onSelect)
+
+            const modal = document.getElementById('budget-month-picker-modal')
+            modal.querySelector('#cancel-budget-month-btn').click()
+
+            expect(bm.budgetMonthOffset).toBe(0)
+            expect(onSelect).not.toHaveBeenCalled()
+            expect(document.getElementById('budget-month-picker-modal')).toBeNull()
         })
     })
 })

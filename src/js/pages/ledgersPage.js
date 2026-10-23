@@ -1,5 +1,5 @@
 // ==================== 帳本管理頁面 ====================
-import { showToast, escapeHTML, customConfirm } from '../utils.js'
+import { showToast, escapeHTML, customConfirm, isSafeIconClass, getSafeIconClass, getSafeHexColor } from '../utils.js'
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
 // QRCode.js（davidshimjs, MIT）：純 IIFE 函式庫，ESM import 會因 minifier 重綁 this 而壞
 // （makeImage 讀 this._android 炸）。改用 ?url 讓 Vite 原封輸出為 asset，
@@ -61,8 +61,8 @@ export class LedgersPage {
         return `
             <div class="bg-wabi-surface rounded-xl p-4 border-2 transition-colors ${isActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'}" data-ledger-id="${ledger.id}">
                 <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${ledger.color || '#334A52'}">
-                        <i class="${ledger.icon || 'fa-solid fa-book'} text-2xl"></i>
+                    <div class="flex items-center justify-center rounded-xl text-white shrink-0 size-12" style="background-color: ${getSafeHexColor(ledger.color)}">
+                        <i class="${getSafeIconClass(ledger.icon, 'fa-solid fa-book')} text-2xl"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
@@ -99,7 +99,7 @@ export class LedgersPage {
                     !this.app.syncService ||
                     !this.app.syncService.isSignedIn()
                 ) {
-                    showToast('請登入 Google 帳號', 'error')
+                    showToast('請先登入同步功能', 'error')
                     return
                 }
                 this._showJoinModal()
@@ -172,8 +172,18 @@ export class LedgersPage {
         const isEdit = !!ledger
         const colors = this.app.ledgerManager.getColorOptions()
         const defaultIcons = this.app.ledgerManager.getIconOptions()
-        const selectedColor = ledger?.color || colors[0]
-        const selectedIcon = ledger?.icon || defaultIcons[0]
+        // #SEC05：編輯模式歷史髒 color 建立時即退回調色盤預設色，
+        // 後續 data-color/value/預覽 style 嵌入面全部安全（同 #SEC04 圖示自愈慣例）
+        const selectedColor = getSafeHexColor(ledger?.color, colors[0])
+        // #SEC04：編輯模式歷史髒 icon 一律退回預設圖示，後續預覽/反白/存檔皆安全
+        const selectedIcon = getSafeIconClass(ledger?.icon, defaultIcons[0])
+
+        const getIconBtnClasses = isSelected =>
+            `icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all ${
+                isSelected
+                    ? 'bg-wabi-primary text-wabi-surface shadow-sm'
+                    : 'bg-wabi-bg text-wabi-text-secondary hover:text-wabi-text-primary'
+            }`
 
         const modal = document.createElement('div')
         modal.className =
@@ -222,8 +232,7 @@ export class LedgersPage {
                         ${defaultIcons
                             .map(
                                 ic => `
-                            <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                                ${ic === selectedIcon ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                            <button class="${getIconBtnClasses(ic === selectedIcon)}"
                                 data-icon="${ic}">
                                 <i class="${ic}"></i>
                             </button>
@@ -278,7 +287,8 @@ export class LedgersPage {
         // ==================== 預覽更新 ====================
         const updatePreview = () => {
             previewIcon.style.backgroundColor = colorInput.value
-            previewIcon.innerHTML = `<i class="${iconInput.value} text-xl"></i>`
+            // #SEC04：iconInput.value 可能來自自訂輸入，一律過白名單再入 innerHTML
+            previewIcon.innerHTML = `<i class="${getSafeIconClass(iconInput.value, 'fa-solid fa-book')} text-xl"></i>`
             previewName.textContent = nameInput.value || '新帳本'
         }
 
@@ -328,21 +338,7 @@ export class LedgersPage {
             iconInput.value = iconClass
             // 更新圖示選中狀態
             modal.querySelectorAll('.icon-option').forEach(b => {
-                if (b.dataset.icon === iconClass) {
-                    b.classList.remove('bg-wabi-bg', 'text-wabi-text-secondary')
-                    b.classList.add(
-                        'bg-wabi-primary',
-                        'text-wabi-surface',
-                        'shadow-sm'
-                    )
-                } else {
-                    b.classList.remove(
-                        'bg-wabi-primary',
-                        'text-wabi-surface',
-                        'shadow-sm'
-                    )
-                    b.classList.add('bg-wabi-bg', 'text-wabi-text-secondary')
-                }
+                b.className = getIconBtnClasses(b.dataset.icon === iconClass)
             })
             updatePreview()
         }
@@ -364,8 +360,7 @@ export class LedgersPage {
                     iconPicker.innerHTML = defaultIcons
                         .map(
                             ic => `
-                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                        <button class="${getIconBtnClasses(ic === iconInput.value)}"
                             data-icon="${ic}">
                             <i class="${ic}"></i>
                         </button>
@@ -385,8 +380,7 @@ export class LedgersPage {
                     iconPicker.innerHTML = results
                         .map(
                             ic => `
-                        <button class="icon-option size-10 rounded-lg flex items-center justify-center text-lg transition-all
-                            ${ic === iconInput.value ? 'bg-wabi-primary text-wabi-surface shadow-sm' : 'bg-wabi-bg text-wabi-text-secondary hover:bg-wabi-bg'}"
+                        <button class="${getIconBtnClasses(ic === iconInput.value)}"
                             data-icon="${ic}">
                             <i class="${ic}"></i>
                         </button>
@@ -402,10 +396,14 @@ export class LedgersPage {
             .querySelector('#apply-custom-icon-btn')
             .addEventListener('click', () => {
                 const customClass = customIconInput.value.trim()
-                if (customClass) {
-                    selectIcon(customClass)
-                    customIconInput.value = ''
+                if (!customClass) return
+                // #SEC04：白名單外的自訂圖示拒絕套用（與分類管理 H01 同款防呆）
+                if (!isSafeIconClass(customClass)) {
+                    showToast('圖示格式不正確，請輸入 FontAwesome class（如 fas fa-heart）', 'error')
+                    return
                 }
+                selectIcon(customClass)
+                customIconInput.value = ''
             })
 
         // ==================== 儲存 ====================
@@ -459,9 +457,10 @@ export class LedgersPage {
      */
     async _showShareModal(ledger) {
         if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
-            showToast('請登入 Google 帳號', 'error')
+            showToast('請先登入同步功能（設定 → 雲端備份&同步）', 'error')
             return
         }
+        const isSelfHost = this.app.syncService.isSelfHostMode()
 
         const shareCode = ledger.sharedManifestId || ledger.sharedFileId
 
@@ -490,7 +489,11 @@ export class LedgersPage {
                 <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p class="text-[11px] text-amber-700 leading-relaxed">
                         <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                        <strong>權限提示：</strong>共用功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。
+                        <strong>權限提示：</strong>${
+                            isSelfHost
+                                ? '共用帳本需所有成員都已登入同一台自架同步伺服器。'
+                                : '共用功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。'
+                        }
                     </p>
                 </div>
 
@@ -498,15 +501,21 @@ export class LedgersPage {
                     isOwner
                         ? `
                 <div class="mb-4">
-                    <p class="text-sm text-wabi-text-secondary mb-3">請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。</p>
-                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">受邀人 Email</label>
-                    <input type="email" id="share-email-input" 
+                    <p class="text-sm text-wabi-text-secondary mb-3">${
+                        isSelfHost
+                            ? '請輸入對方的自架帳號名稱進行邀請。只要產生了共用代碼，對方即可透過代碼加入您的帳本。'
+                            : '請輸入對方的 Google Email 進行授權。只要產生了共用代碼，對方即可透過代碼連結您的帳本。'
+                    }</p>
+                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">${
+                        isSelfHost ? '受邀人帳號' : '受邀人 Email'
+                    }</label>
+                    <input type="${isSelfHost ? 'text' : 'email'}" id="share-email-input" 
                         class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
-                        placeholder="例如：friend@gmail.com" />
+                        placeholder="${isSelfHost ? '例如：family_member1' : '例如：friend@gmail.com'}" />
                 </div>
                 <div class="flex space-x-3 mt-6">
                     <button id="share-submit-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm flex justify-center items-center">
-                        產生並授權
+                        產生並${isSelfHost ? '邀請' : '授權'}
                     </button>
                 </div>
                 `
@@ -699,8 +708,12 @@ export class LedgersPage {
             const emailInput = modal.querySelector('#share-email-input')
 
             submitBtn?.addEventListener('click', async () => {
-                const email = emailInput.value.trim()
-                if (!email || !email.includes('@')) {
+                const invitee = emailInput.value.trim()
+                if (!invitee) {
+                    showToast(isSelfHost ? '請輸入帳號名稱' : '請輸入有效的 Email', 'error')
+                    return
+                }
+                if (!isSelfHost && !invitee.includes('@')) {
                     showToast('請輸入有效的 Email', 'error')
                     return
                 }
@@ -711,11 +724,16 @@ export class LedgersPage {
                 submitBtn.disabled = true
 
                 try {
-                    const fileId = await this.app.ledgerManager.shareLedger(
+                    await this.app.ledgerManager.shareLedger(
                         ledger.id,
-                        email
+                        invitee
                     )
-                    showToast('共用授權成功！請將代碼傳給對方', 'success')
+                    showToast(
+                        isSelfHost
+                            ? '共用建立成功！請將代碼傳給對方'
+                            : '共用授權成功！請將代碼傳給對方',
+                        'success'
+                    )
                     modal.remove()
                     this._showShareModal(
                         await this.app.dataService.getLedger(ledger.id)
@@ -734,9 +752,10 @@ export class LedgersPage {
      */
     _showJoinModal() {
         if (!this.app.syncService || !this.app.syncService.isSignedIn()) {
-            showToast('請先登入 Google 帳號才能加入共用帳本', 'error')
+            showToast('請先登入同步功能才能加入共用帳本', 'error')
             return
         }
+        const isSelfHost = this.app.syncService.isSelfHostMode()
 
         const modal = document.createElement('div')
         modal.className =
@@ -753,26 +772,40 @@ export class LedgersPage {
                 <div class="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p class="text-[11px] text-amber-700 leading-relaxed">
                         <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                        <strong>權限提示：</strong>加入功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。
+                        <strong>權限提示：</strong>${
+                            isSelfHost
+                                ? '您需已被帳本擁有者邀請，並登入同一台自架同步伺服器。'
+                                : '加入功能需讀寫檔案權限。若操作失敗或您是從舊版升級，請前往 <a href="#settings" class="underline font-bold">設定</a> 重新登入以授權。'
+                        }
                     </p>
                 </div>
 
                 <div class="mb-4">
                     <p class="text-sm text-wabi-text-secondary mb-3">
-                        為確保雲端讀寫權限，<strong class="text-wabi-primary">極度建議透過 Google 雲端選擇器載入</strong>。
+                        ${
+                            isSelfHost
+                                ? '請輸入擁有者提供的共用代碼（可為完整代碼或前 8 碼）。'
+                                : '為確保雲端讀寫權限，<strong class="text-wabi-primary">極度建議透過 Google 雲端選擇器載入</strong>。'
+                        }
                     </p>
                     
-                    <button id="picker-btn" class="w-full py-2.5 mb-4 bg-blue-50 text-blue-600 font-medium rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors flex justify-center items-center gap-2">
+                    ${
+                        isSelfHost
+                            ? ''
+                            : `<button id="picker-btn" class="w-full py-2.5 mb-4 bg-blue-50 text-blue-600 font-medium rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors flex justify-center items-center gap-2">
                         <i class="fa-brands fa-google-drive"></i> 從「與我共用」選擇檔案
-                    </button>
+                    </button>`
+                    }
 
                     <div class="flex items-center gap-2 mb-4">
                         <div class="h-px bg-wabi-bg flex-1"></div>
-                        <span class="text-xs text-gray-400">或輸入代碼</span>
+                        <span class="text-xs text-gray-400">輸入代碼</span>
                         <div class="h-px bg-wabi-bg flex-1"></div>
                     </div>
 
-                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">共用代碼 (File ID)</label>
+                    <label class="text-sm font-medium text-wabi-text-primary block mb-1">${
+                        isSelfHost ? '共用代碼' : '共用代碼 (File ID)'
+                    }</label>
                     <div class="flex gap-2">
                         <input type="text" id="join-code-input" 
                             class="flex-1 px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary outline-none"
@@ -878,11 +911,11 @@ export class LedgersPage {
                                         showToast('掃描成功！', 'success')
                                         closeScanner()
                                     },
-                                    errorMessage => {
+                                    _errorMessage => {
                                         // ignore background scan errors
                                     }
                                 )
-                                .catch(err => {
+                                .catch(_err => {
                                     showToast(
                                         '無法存取相機，請確認瀏覽器權限設定',
                                         'error'
@@ -894,7 +927,7 @@ export class LedgersPage {
                             closeScanner()
                         }
                     })
-                    .catch(err => {
+                    .catch(_err => {
                         showToast('相機存取失敗或未授權', 'error')
                         closeScanner()
                     })
@@ -905,30 +938,32 @@ export class LedgersPage {
 
         closeScannerBtn.addEventListener('click', closeScanner)
 
-        // ==== Picker 邏輯 ====
-        pickerBtn.addEventListener('click', async () => {
-            const originalHTML = pickerBtn.innerHTML
-            pickerBtn.innerHTML =
-                '<i class="fa-solid fa-spinner fa-spin mr-2"></i>載入視窗...'
-            pickerBtn.disabled = true
+        // ==== Picker 邏輯 ====（self-host 模式無 Drive picker）
+        if (pickerBtn) {
+            pickerBtn.addEventListener('click', async () => {
+                const originalHTML = pickerBtn.innerHTML
+                pickerBtn.innerHTML =
+                    '<i class="fa-solid fa-spinner fa-spin mr-2"></i>載入視窗...'
+                pickerBtn.disabled = true
 
-            try {
-                const selectedFileId =
-                    await this.app.syncService.openSharedLedgerPicker()
-                codeInput.value = selectedFileId
-                authorizedCode = selectedFileId
-                showToast('成功選擇檔案，正在載入...', 'success')
-                // 自動觸發送出
-                submitBtn.click()
-            } catch (err) {
-                if (err.message !== '使用者取消選擇') {
-                    showToast(err.message, 'error')
+                try {
+                    const selectedFileId =
+                        await this.app.syncService.openSharedLedgerPicker()
+                    codeInput.value = selectedFileId
+                    authorizedCode = selectedFileId
+                    showToast('成功選擇檔案，正在載入...', 'success')
+                    // 自動觸發送出
+                    submitBtn.click()
+                } catch (err) {
+                    if (err.message !== '使用者取消選擇') {
+                        showToast(err.message, 'error')
+                    }
+                } finally {
+                    pickerBtn.innerHTML = originalHTML
+                    pickerBtn.disabled = false
                 }
-            } finally {
-                pickerBtn.innerHTML = originalHTML
-                pickerBtn.disabled = false
-            }
-        })
+            })
+        }
 
         // ==== 提交邏輯 ====
         submitBtn.addEventListener('click', async () => {
@@ -944,8 +979,8 @@ export class LedgersPage {
             submitBtn.disabled = true
 
             try {
-                // 如果是手動輸入，強制透過 Picker 確認一次授權
-                if (code !== authorizedCode) {
+                // 如果是手動輸入，強制透過 Picker 確認一次授權（self-host 模式不需 Picker）
+                if (!isSelfHost && code !== authorizedCode) {
                     showToast('請在接下來的視窗中確認授權檔案...', 'info')
                     code =
                         await this.app.syncService.openSharedLedgerPicker(code)

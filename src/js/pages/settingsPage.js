@@ -232,6 +232,46 @@ export class SettingsPage {
                         <div id="calculator-mode-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
                             <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>啟用此選項後，記帳小鍵盤將隱藏 ＋、−、×、÷ 與 ＝ 按鈕，僅作為標準數字輸入鍵盤使用。</p>
                         </div>
+                        <!-- Low Balance Warning Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">餘額不足提醒</p>
+                                    <p class="text-xs text-wabi-text-secondary">支出存入後帳戶透支或信用卡超出額度時警示（需開啟多帳戶模式）</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="low-balance-warning-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="low-balance-warning-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
+                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>記帳時若該筆支出使一般帳戶餘額轉為負值、或信用卡欠款超出額度，會以黃色警示提示（不阻擋記帳）。</p>
+                        </div>
+                        <!-- Calendar Bill Dots Toggle -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-calendar-day"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">行事曆繳款圓點</p>
+                                    <p class="text-xs text-wabi-text-secondary">收支分析月曆標示信用卡繳款日（紅點）與出帳日（藍點）（需開啟多帳戶模式）</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="calendar-bill-dots-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="calendar-bill-dots-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
+                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>停用後，收支分析的行事曆金流檢視將不再標示信用卡繳款日（紅點）與出帳日（藍點）。</p>
+                        </div>
 
                         <!-- Default Records Period -->
                         <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
@@ -290,22 +330,30 @@ export class SettingsPage {
                             </div>
                         </div>
 
-                        ${isAdFree
-                            ? this.createSettingItem(
-                                  'fa-solid fa-shield-heart text-green-600',
-                                  `已啟用無廣告模式 <span class="text-xs text-green-600 dark:text-green-400 font-medium ml-1">(${adFreeRemaining})</span>`,
-                                  'sponsor-reward-ad-btn'
-                              )
-                            : this.createSettingItem(
-                                  'fa-solid fa-rectangle-ad',
-                                  '觀看廣告以移除廣告 7 天',
-                                  'sponsor-reward-ad-btn'
-                              )}
+                        ${
+                            this.app.rewardService?.isAdsEnabled?.()
+                                ? isAdFree
+                                  ? this.createSettingItem(
+                                        'fa-solid fa-shield-heart text-green-600',
+                                        `已啟用無廣告模式 <span class="text-xs text-green-600 dark:text-green-400 font-medium ml-1">(${adFreeRemaining})</span>`,
+                                        'sponsor-reward-ad-btn'
+                                    )
+                                  : this.createSettingItem(
+                                        'fa-solid fa-rectangle-ad',
+                                        '觀看廣告以移除廣告 7 天',
+                                        'sponsor-reward-ad-btn'
+                                    )
+                                : ''
+                        }
 
                     </div>
 
-                    <!-- Banner Ad -->
-                    <div id="settings-banner-ad" class="rounded-xl overflow-hidden"></div>
+                    <!-- Banner Ad（AD_FREE build 不渲染） -->
+                    ${
+                        this.app.rewardService?.isAdsEnabled?.()
+                            ? '<div id="settings-banner-ad" class="rounded-xl overflow-hidden"></div>'
+                            : ''
+                    }
 
                     <div class="pb-24"></div>
                 </div>
@@ -573,13 +621,11 @@ export class SettingsPage {
                 .querySelectorAll('#theme-mode-segmented .theme-mode-btn')
                 .forEach(btn => {
                     const mode = btn.dataset.mode
-                    if (mode === currentMode) {
-                        btn.className =
-                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-wabi-surface text-wabi-primary shadow-sm cursor-pointer'
-                    } else {
-                        btn.className =
-                            'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer'
-                    }
+                    const isActive = mode === currentMode
+                    btn.setAttribute('aria-pressed', String(isActive))
+                    btn.className = isActive
+                        ? 'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all bg-wabi-surface text-wabi-primary shadow-sm cursor-pointer'
+                        : 'theme-mode-btn flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all text-wabi-text-secondary hover:text-wabi-text-primary cursor-pointer'
                 })
 
             // 更新說明文字與圖示
@@ -621,11 +667,15 @@ export class SettingsPage {
                 })
             })
 
-        // 監聽系統或全域主題切換事件同步 UI
-        const themeChangeListener = () => {
+        // 監聽系統或全域主題切換事件同步 UI（先移除舊監聽器，避免重複 render
+        // 累積 window-level listener 與過期 DOM 閉包）
+        if (this._themeChangeListener) {
+            window.removeEventListener('themechange', this._themeChangeListener)
+        }
+        this._themeChangeListener = () => {
             updateThemeModeUI()
         }
-        window.addEventListener('themechange', themeChangeListener)
+        window.addEventListener('themechange', this._themeChangeListener)
 
         const advancedModeToggle = document.getElementById(
             'advanced-account-mode-toggle'
@@ -912,6 +962,81 @@ export class SettingsPage {
                         ?.classList.add('hidden')
                 }
                 showToast(`小鍵盤計算機模式已${isEnabled ? '啟用' : '停用'}`)
+            })
+        }
+
+        // Low Balance Warning Toggle
+        const lowBalanceWarningToggle = document.getElementById(
+            'low-balance-warning-toggle'
+        )
+        if (lowBalanceWarningToggle) {
+            this.app.dataService
+                .getSetting('lowBalanceWarningEnabled')
+                .then(setting => {
+                    const isEnabled = !!setting?.value
+                    lowBalanceWarningToggle.checked = isEnabled
+                    if (isEnabled) {
+                        document
+                            .getElementById('low-balance-warning-info')
+                            ?.classList.remove('hidden')
+                    }
+                })
+
+            lowBalanceWarningToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'lowBalanceWarningEnabled',
+                    value: isEnabled,
+                })
+                if (isEnabled) {
+                    document
+                        .getElementById('low-balance-warning-info')
+                        ?.classList.remove('hidden')
+                    // 導覽系統：開關開啟瞬間在設定頁彈功能介紹氣泡
+                    this.app.guideManager.showToggleTour('lowBalance')
+                } else {
+                    document
+                        .getElementById('low-balance-warning-info')
+                        ?.classList.add('hidden')
+                }
+                showToast(`餘額不足提醒已${isEnabled ? '啟用' : '停用'}`)
+            })
+        }
+
+        // Calendar Bill Dots Toggle (行事曆繳款圓點)
+        const calendarBillDotsToggle = document.getElementById(
+            'calendar-bill-dots-toggle'
+        )
+        if (calendarBillDotsToggle) {
+            this.app.dataService
+                .getSetting('calendarBillDotsEnabled')
+                .then(setting => {
+                    // 預設啟用：只有明確存過 false 才關閉
+                    const isEnabled = !(setting && setting.value === false)
+                    calendarBillDotsToggle.checked = isEnabled
+                    if (!isEnabled) {
+                        document
+                            .getElementById('calendar-bill-dots-info')
+                            ?.classList.remove('hidden')
+                    }
+                })
+
+            calendarBillDotsToggle.addEventListener('change', async e => {
+                const isEnabled = e.target.checked
+                await this.app.dataService.saveSetting({
+                    key: 'calendarBillDotsEnabled',
+                    value: isEnabled,
+                })
+                if (isEnabled) {
+                    document
+                        .getElementById('calendar-bill-dots-info')
+                        ?.classList.add('hidden')
+                } else {
+                    document
+                        .getElementById('calendar-bill-dots-info')
+                        ?.classList.remove('hidden')
+                }
+                showToast(`行事曆繳款圓點已${isEnabled ? '啟用' : '停用'}`)
             })
         }
 

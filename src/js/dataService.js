@@ -2,6 +2,7 @@ import { openDB as idbOpenDB } from 'idb'
 import {
     customConfirm,
     formatDateToString,
+    clampDayToMonth,
     calculateEffectiveRecordAmount,
     buildDebtLookupMaps,
     findDebtForRecord,
@@ -1215,11 +1216,28 @@ class DataService {
     async addAmortization(data, skipLog = false) {
         try {
             if (!data.uuid) data.uuid = this.generateUUID()
+
+            // #SYNC-AMORT: 補充 accountUuid 以便跨裝置同步時正確解析 accountId
+            // （語意同 addRecurringTransaction；upfront 模式 accountId=信用卡）
+            let accountUuid = data.accountUuid || null
+            if (data.accountId && !accountUuid) {
+                try {
+                    const account = await this.db.get(
+                        'accounts',
+                        data.accountId
+                    )
+                    if (account?.uuid) accountUuid = account.uuid
+                } catch (_) {
+                    /* 查不到帳戶不影響儲存 */
+                }
+            }
+
             const dataToSave = {
                 ...data,
                 ledgerId: data.ledgerId ?? this.activeLedgerId,
                 chargeMode: data.chargeMode ?? 'periodic',
                 createdAt: data.createdAt ?? Date.now(),
+                ...(accountUuid ? { accountUuid } : {}),
             }
             if (skipLog) delete dataToSave.id
             const tx = this.db.transaction('amortizations', 'readwrite')
@@ -1262,10 +1280,30 @@ class DataService {
 
     async updateAmortization(id, updates, skipLog = false) {
         try {
+            // #SYNC-AMORT: 若更新包含 accountId，同步更新 accountUuid
+            // （語意同 updateRecurringTransaction，確保跨裝置解析不外掛）
+            const extraUpdates = {}
+            if (updates.accountId !== undefined) {
+                if (updates.accountId) {
+                    try {
+                        const account = await this.db.get(
+                            'accounts',
+                            updates.accountId
+                        )
+                        if (account?.uuid)
+                            extraUpdates.accountUuid = account.uuid
+                    } catch (_) {
+                        /* 查不到帳戶不影響更新 */
+                    }
+                } else {
+                    extraUpdates.accountUuid = null
+                }
+            }
+
             const tx = this.db.transaction('amortizations', 'readwrite')
             const item = await tx.store.get(id)
             if (item) {
-                const finalUpdates = { ...updates }
+                const finalUpdates = { ...updates, ...extraUpdates }
                 if (skipLog) {
                     delete finalUpdates.id
                     if (item.uuid) finalUpdates.uuid = item.uuid
@@ -1515,7 +1553,8 @@ class DataService {
         startDate,
         endDate,
         accountId = null,
-        offsetTransfers = false
+        offsetTransfers = false,
+        contactId = null
     ) {
         const filters = { startDate, endDate }
         if (accountId) {
@@ -1540,11 +1579,29 @@ class DataService {
             records: records, // Include filtered records in result
         }
 
-        // Pre-fetch debts for effective amount calculation
+        // Pre-fetch debts for effective amount calculation（單批查詢，免逐筆 N+1）
+        // debtMaps：全向快取（id/uuid/recordId/recordUuid），供 findDebtForRecord
+        // 精準取得關聯欠款；debtsMap 為其 byId 別名，供下方對象篩選取 debt.contactId。
+        // debts store 為單一 autoIncrement store（id 跨帳本唯一），allLedgers 僅是
+        // 略過帳本過濾，不會造成 id 誤配；與 recordsList / calendarCashFlow /
+        // comparisonReport 的載入作用域保持一致。
         const allDebts = (await this.getDebts({ allLedgers: true })) || []
         const debtMaps = buildDebtLookupMaps(allDebts)
+        const debtsMap = debtMaps.byId
 
-        // Filter out records with effective amount 0 so they don't show up in lists
+        // 依對象（聯絡人）篩選（#MOZE-TGT，借鏡 MOZE v4.2.7 報表支援「對象」條件）：
+        // 紀錄本身不存 contactId，只保留透過 debtId 關聯到該聯絡人欠款（debt.contactId）
+        // 的紀錄；無 debtId 的一般紀錄不屬於任何對象。
+        if (contactId !== null && contactId !== undefined) {
+            const targetContactId = String(contactId)
+            records = records.filter(r => {
+                const debt = findDebtForRecord(r, debtMaps)
+                const cid = debt ? debt.contactId : r.contactId
+                return cid !== null && cid !== undefined && String(cid) === targetContactId
+            })
+        }
+
+        // Let's filter out records with effective amount 0 so they don't show up in lists
         const adjustedRecords = []
 
         records.forEach(record => {
@@ -1584,6 +1641,34 @@ class DataService {
         return stats
     }
 
+    /**
+     * 批次取得所有帳本的預算設定（用於匯出/雲端備份）
+     * 涵蓋 legacy 全域 key 'budget_settings' 與多帳本 per-ledger key
+     * 'budget_settings_<ledgerId>'（預算模組多帳本化後預算主要存在後者，
+     * 若匯出時只讀全域 key，多帳本預算會從備份中遺失）。
+     * @returns {object} { [settingKey]: payload } map（無預算時為空物件）
+     */
+    async _getBudgetSettingsMap() {
+        const map = {}
+        let allSettings = []
+        try {
+            allSettings = await this.db.getAll('settings')
+        } catch (e) {
+            console.warn('Silenced error:', e)
+        }
+        for (const s of allSettings) {
+            if (
+                s &&
+                s.key &&
+                (s.key === 'budget_settings' ||
+                    s.key.startsWith('budget_settings_'))
+            ) {
+                map[s.key] = s.value
+            }
+        }
+        return map
+    }
+
     // 匯出所有資料
     async exportData(options = {}) {
         // Default options - include all data types
@@ -1612,17 +1697,7 @@ class DataService {
             const categoryOrderMap = categoryOrderSetting || {}
             const hiddenCategoriesMap = hiddenCategoriesSetting || {}
 
-            const allSettings = await this.db.getAll('settings')
-            const budgetSettingsMap = {}
-            allSettings.forEach(s => {
-                if (
-                    s.key &&
-                    (s.key === 'budget_settings' ||
-                        s.key.startsWith('budget_settings_'))
-                ) {
-                    budgetSettingsMap[s.key] = s.value
-                }
-            })
+            const budgetSettingsMap = await this._getBudgetSettingsMap()
 
             const accounts = includeAccounts
                 ? await this.getAccounts({ allLedgers: true })
@@ -2050,12 +2125,17 @@ class DataService {
                         for (const [key, val] of Object.entries(
                             data.budgetSettingsMap
                         )) {
+                            // 無效 value（null/undefined）跳過，避免寫入空設定
+                            if (val === null || val === undefined) continue
                             let newKey = key
                             let suffix = ''
                             if (newKey !== 'budget_settings') {
                                 // rewrite ledger id if it has one
+                                // ⚠️ key 格式固定 budget_settings_<ledgerId>，
+                                // 取最後一段（不可用固定 parts[2]，key 名稱
+                                // 含底線，未來格式變動會解析錯位置）
                                 const parts = newKey.split('_')
-                                const lId = parseInt(parts[2])
+                                const lId = parseInt(parts[parts.length - 1])
                                 if (
                                     !isNaN(lId) &&
                                     oldLedgerIdToNewIdMap.has(lId)
@@ -2063,6 +2143,15 @@ class DataService {
                                     const mappedId = oldLedgerIdToNewIdMap.get(lId)
                                     newKey = `budget_settings_${mappedId}`
                                     suffix = `_${mappedId}`
+                                } else {
+                                    // #BUDGET-KEY-M10：帳本 id 解析失敗或未被匯入映射
+                                    // → 該鍵是孤兒／外部帳本遺留。若照原 key 寫入，
+                                    // 會蓋到本機同號帳本的預算（不相干帳本被污染），
+                                    // 且下方 localStorage 同步段會用空 suffix 寫進全域 legacy 鍵。
+                                    console.warn(
+                                        `匯入預算設定時跳過未對應帳本的鍵：${key}`
+                                    )
+                                    continue
                                 }
                             }
                             await this.saveSetting({ key: newKey, value: val })
@@ -3126,7 +3215,7 @@ class DataService {
         let customCategories = null
         let categoryOrder = null
         let hiddenCategories = null
-        let budgetSettingsMap = {}
+        const budgetSettingsMap = {}
         let budgetSettings = null
 
         if (!isSharedSync) {
@@ -3230,8 +3319,8 @@ class DataService {
                       customCategories,
                       categoryOrder,
                       hiddenCategories,
-                      budgetSettings,
                       budgetSettingsMap,
+                      budgetSettings,
                   }),
             metadata: {
                 totalRecords: records.length,
@@ -4061,7 +4150,7 @@ class DataService {
         }
     }
 
-    async deleteCreditStatement(id, skipLog = false) {
+    async deleteCreditStatement(id, _skipLog = false) {
         try {
             const tx = this.db.transaction('credit_statements', 'readwrite')
             await tx.store.delete(id)
@@ -4243,6 +4332,65 @@ class DataService {
     }
 
     /**
+     * 計算帳戶「目前餘額」（單一真相源）。
+     *
+     * 語意與 accountsPage 的顯示一致：
+     *  - currentBalance = 初始餘額 + 該帳戶所有記錄的淨現金流
+     *    （income 記正、其他記負）。
+     *  - 信用卡的「欠款」= max(0, -currentBalance)（負值代表額度佔用），
+     *    此方法回傳原始淨現金流，由呼叫端決定解讀方式。
+     *  - 「我欠別人」(payable) 欠款的原始紀錄不計入餘額（建立欠款當下不扣款，
+     *    還款時才扣），排除規則：debtId 存在、屬 payable 欠款、且
+     *    category 不是 debt_repayment。
+     *
+     * @param {number} accountId - 帳戶 ID
+     * @returns {Promise<number>} 帳戶目前餘額（找不到帳戶時回傳 0）
+     */
+    async calculateAccountCurrentBalance(accountId) {
+        const account = await this.getAccount(accountId)
+        if (!account) return 0
+        // 初始餘額（一般帳戶與信用卡皆以此為起點）
+        let balance =
+            typeof account.balance === 'number' ? account.balance : 0
+        // 該帳戶所有記錄（效能：走 accountId index，避免載入全部 records）
+        // 注意：index 查詢不分帳本，需手動補 activeLedgerId 過濾（與本類別其他方法一致）
+        let records
+        try {
+            const targetLedgerId = this.activeLedgerId
+            const all = await this.db.getAllFromIndex(
+                'records',
+                'accountId',
+                accountId
+            )
+            records = all.filter(r => r.ledgerId === targetLedgerId)
+        } catch (_) {
+            records = []
+        }
+        // 「我欠別人」(payable) 欠款 id 集合，用於排除其原始欠款紀錄
+        let debts
+        try {
+            debts = await this.getDebts()
+        } catch (_) {
+            debts = []
+        }
+        const payableDebtIds = new Set(
+            debts.filter(d => d.type === 'payable').map(d => String(d.id))
+        )
+        for (const r of records) {
+            if (
+                r.debtId !== null &&
+                r.debtId !== undefined &&
+                payableDebtIds.has(String(r.debtId)) &&
+                r.category !== 'debt_repayment'
+            ) {
+                continue // 排除 payable 欠款的原始紀錄
+            }
+            balance += r.type === 'income' ? r.amount || 0 : -(r.amount || 0)
+        }
+        return balance
+    }
+
+    /**
      * 取得信用卡帳單週期的開始和結束日期
      * @param {object} account - 信用卡帳戶物件
      * @param {string} period - 帳單期間 (格式: 'YYYY-MM')
@@ -4250,18 +4398,23 @@ class DataService {
      */
     getStatementPeriod(account, period) {
         const [year, month] = period.split('-').map(Number)
-        const statementDay = account.statementDay || 25
+        const rawStatementDay = account.statementDay || 25
 
-        // 防止月底日（如 28/30 日）溢位
-        const clampDay = (y, mIndex, d) => {
-            const lastDay = new Date(y, mIndex + 1, 0).getDate()
-            return Math.min(d, lastDay)
-        }
-
-        const startDay = clampDay(year, month - 1, statementDay)
-        const startDate = new Date(year, month - 1, startDay + 1)
-        const endDay = clampDay(year, month, statementDay)
-        const endDate = new Date(year, month, endDay)
+        // 月底收斂：statementDay 可設 1-31，但非每月都有該日（如 2 月遇 31 日）。
+        // 直接 new Date() 會溢出到下月（2026-02-31 → 3/3）並讓整期週期錯亂，
+        // 故起訖日各自收斂到該月最後一天（與 calendarCashFlow 繳款圓點同款慣例）。
+        // period 'YYYY-MM' 的約定：起 = period 當月的 (出帳日隔天)，訖 = 下個月的出帳日。
+        const startMonthDay = clampDayToMonth(
+            year,
+            month - 1,
+            rawStatementDay,
+            25
+        )
+        const startDate = new Date(year, month - 1, startMonthDay)
+        startDate.setDate(startDate.getDate() + 1) // 上期結帳日隔天（跨月自動進位）
+        // 到下個月的帳單日
+        const endMonthDay = clampDayToMonth(year, month, rawStatementDay, 25)
+        const endDate = new Date(year, month, endMonthDay)
 
         return { startDate, endDate }
     }
@@ -4277,82 +4430,159 @@ class DataService {
             const now = new Date()
             const statementDay = card.statementDay || 25
             const dueDay = card.dueDay || 15
+            // 比較基準同步收斂：31 日出帳遇小月（如 2 月）時，以該月月底日為準，
+            // 讓「今天是否已過結帳日」的判斷與 getStatementPeriod 的收斂週期一致
+            const effectiveStatementDay = clampDayToMonth(
+                now.getFullYear(),
+                now.getMonth(),
+                statementDay,
+                25
+            )
 
-            // 檢查過去 4 個已過結帳日的週期，確保未補產生的歷史帳單自動補齊
-            // 期別 'YYYY-MM' 的結束日為該期結帳日 (例如 5月期的結束日為 6月25日)
-            for (let offset = 4; offset >= 0; offset--) {
-                let targetYear = now.getFullYear()
-                let targetMonth = now.getMonth() + 1 - offset
+            let targetYear = now.getFullYear()
+            let targetMonth = now.getMonth() + 1 // 1-indexed
 
-                while (targetMonth <= 0) {
-                    targetMonth += 12
-                    targetYear -= 1
+            // 原代碼 getStatementPeriod 的期別約定：
+            // 'YYYY-MM' 的結束日是下個月的 statementDay (例如 '2026-05' 的結束日是 6月25日)
+            // 如果今天是 6月28日，大於 25日，代表最近已結帳的期別是 '2026-05' (5/26 ~ 6/25)
+            // 如果今天是 6月20日，小於 25日，代表最近已結帳的期別是 '2026-04' (4/26 ~ 5/25)
+            if (now.getDate() >= effectiveStatementDay) {
+                targetMonth -= 1
+            } else {
+                targetMonth -= 2
+            }
+
+            if (targetMonth <= 0) {
+                targetMonth += 12
+                targetYear -= 1
+            }
+
+            const targetPeriod = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
+
+            // 漏期補生成：舊版每輪只產生「最近一期已結帳帳單」，用戶若長時間
+            // 未打開 app（例如出差兩個月），中間已結帳的期別會被永久漏掉——
+            // 該期消費不會出帳、不會被自動扣繳，與真實信用卡帳單語意不符。
+            // 修正：自本卡最新既有帳單期的下一期起，逐期補到 targetPeriod；
+            // 完全無帳單的卡（新卡/剛清除）只補最近一期，維持既有「不回填全部
+            // 歷史」語意，避免新卡一次生成一整年虛假帳單。
+            const existingStmts = await this.getCreditStatements({
+                accountId: card.id,
+                allLedgers: true,
+            })
+            // 既有帳單期集合：一次載入取代逐期查 DB（補生成最多 24 期，避免 N 次 getAll）
+            const existingPeriods = new Set(
+                existingStmts.map(s => s.period)
+            )
+            let startPeriod = targetPeriod
+            const validPeriods = existingStmts
+                .map(s => s.period)
+                .filter(p => typeof p === 'string' && /^\d{4}-\d{2}$/.test(p))
+            if (validPeriods.length > 0) {
+                const latestPeriod = validPeriods.sort().at(-1)
+                const [ly, lm] = latestPeriod.split('-').map(Number)
+                // lm 為 1-indexed，Date(year, lm) 恰為該期的下一個月
+                const next = new Date(ly, lm, 1)
+                // 補生成上限 24 期：既有最新期與 targetPeriod 差距過大時
+                // （如多年未用的舊卡重新啟用），只補最近 24 期，避免一次性
+                // 回填大量遠期歷史帳單拖慢啟動與製造垃圾資料。
+                // monthsBehind = next 到 targetPeriod 的月份距離（生成期數 = 距離 + 1，
+                // 含 next 與 targetPeriod 兩端），超過 24 期才截尾。
+                const monthsBehind =
+                    (Number(targetPeriod.slice(0, 4)) - next.getFullYear()) *
+                        12 +
+                    (Number(targetPeriod.slice(5, 7)) -
+                        (next.getMonth() + 1))
+                if (monthsBehind >= 24) {
+                    const floorMonth = new Date(
+                        next.getFullYear(),
+                        next.getMonth() + (monthsBehind - 23),
+                        1
+                    )
+                    startPeriod = `${floorMonth.getFullYear()}-${String(floorMonth.getMonth() + 1).padStart(2, '0')}`
+                } else {
+                    startPeriod = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+                }
+            }
+
+            // 逐期生成：'YYYY-MM' 為定寬零填補格式，字典序比較即時間序。
+            // 既有最新期已等於/晚於 targetPeriod 時迴圈不進入（冪等）。
+            for (let period = startPeriod; period <= targetPeriod; ) {
+                // 該期間已有帳單則跳過（改查預載的既有期集合，免逐期打 DB）
+                if (!existingPeriods.has(period)) {
+                    // 計算本期消費
+                    const { startDate, endDate } = this.getStatementPeriod(
+                        card,
+                        period
+                    )
+
+                    // 防禦：如果今天還沒到該週期的結束日，不要產生帳單
+                    if (now >= endDate) {
+                        // 傳入明確 period：calculateCreditCardBalance 優先採紀錄上的
+                        // statementPeriod（使用者手動「遞延下期」的覆寫欄位），而非只靠
+                        // endDate 反推自然期別，否則遞延過期別的消費會被漏計/錯期。
+                        const balance = await this.calculateCreditCardBalance(
+                            card.id,
+                            startDate,
+                            endDate,
+                            period
+                        )
+
+                        // 繳款日計算：若 dueDay > statementDay，繳款日落在結帳日
+                        // 同月（例如 5日結帳、25日繳款）；否則落在下個月
+                        // （例如 25日結帳、次月10日繳款）。
+                        const dueMonth =
+                            dueDay > statementDay
+                                ? endDate.getMonth()
+                                : endDate.getMonth() + 1
+                        // 先經 Date 正規化（dueMonth 可為 12 → 隔年 1 月），再取
+                        // 該月實際月份索引收斂月底日（dueDay 可設 1-31，如 31 日
+                        // 遇 2 月），避免 new Date() 溢出到再下個月致繳款日錯開。
+                        const dueAnchor = new Date(
+                            endDate.getFullYear(),
+                            dueMonth,
+                            1
+                        )
+                        const clampedDueDay = clampDayToMonth(
+                            dueAnchor.getFullYear(),
+                            dueAnchor.getMonth(),
+                            dueDay,
+                            15
+                        )
+                        const dueDate = new Date(
+                            dueAnchor.getFullYear(),
+                            dueAnchor.getMonth(),
+                            clampedDueDay
+                        )
+                        dueDate.setHours(0, 0, 0, 0)
+
+                        // 結帳日正規化為當天 0 點，與繳款日同一基準比較
+                        const normalizedStatementDate = new Date(
+                            endDate.getFullYear(),
+                            endDate.getMonth(),
+                            endDate.getDate()
+                        ).getTime()
+
+                        await this.addCreditStatement({
+                            accountId: card.id,
+                            period,
+                            statementDate: normalizedStatementDate,
+                            dueDate: dueDate.getTime(),
+                            amount: balance.currentBalance,
+                            status:
+                                balance.currentBalance > 0
+                                    ? 'unpaid'
+                                    : 'zero',
+                            recordCount: balance.recordCount || 0,
+                            ledgerId: card.ledgerId,
+                            createdAt: Date.now(),
+                        })
+                    }
                 }
 
-                const period = `${targetYear}-${String(targetMonth).padStart(2, '0')}`
-
-                // 計算本期消費起訖日
-                const { startDate, endDate } = this.getStatementPeriod(
-                    card,
-                    period
-                )
-
-                // 防禦：如果今天還沒到該週期的結束日，不要產生帳單
-                if (now < endDate) continue
-
-                // 檢查該期間是否已有帳單
-                const existing = await this.getCreditStatements({
-                    accountId: card.id,
-                    period,
-                    allLedgers: true,
-                })
-
-                if (existing.length > 0) continue
-
-                const balance = await this.calculateCreditCardBalance(
-                    card.id,
-                    startDate,
-                    endDate,
-                    period
-                )
-
-                // 繳款日計算：
-                // 若 dueDay > statementDay，繳款日落在同一月 (例如 5日結帳、25日繳款)
-                // 若 dueDay <= statementDay，繳款日落在下個月 (例如 25日結帳、次月10日繳款)
-                const dueMonth =
-                    dueDay > statementDay
-                        ? endDate.getMonth()
-                        : endDate.getMonth() + 1
-                const maxDueDays = new Date(
-                    endDate.getFullYear(),
-                    dueMonth + 1,
-                    0
-                ).getDate()
-                const clampedDueDay = Math.min(dueDay, maxDueDays)
-                const dueDate = new Date(
-                    endDate.getFullYear(),
-                    dueMonth,
-                    clampedDueDay
-                )
-                dueDate.setHours(0, 0, 0, 0)
-
-                const normalizedStatementDate = new Date(
-                    endDate.getFullYear(),
-                    endDate.getMonth(),
-                    endDate.getDate()
-                ).getTime()
-
-                await this.addCreditStatement({
-                    accountId: card.id,
-                    period,
-                    statementDate: normalizedStatementDate,
-                    dueDate: dueDate.getTime(),
-                    amount: balance.currentBalance,
-                    status: balance.currentBalance > 0 ? 'unpaid' : 'zero',
-                    recordCount: balance.recordCount || 0,
-                    ledgerId: card.ledgerId,
-                    createdAt: Date.now(),
-                })
+                // period 前進一個月（經 Date 正規化，12 月自動進位到隔年 1 月）
+                const [py, pm] = period.split('-').map(Number)
+                const nextMonth = new Date(py, pm, 1) // pm 為 1-indexed，+0 即下一月
+                period = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
             }
         }
     }
@@ -4379,41 +4609,63 @@ class DataService {
         const currentMonth = now.getMonth() // 0-indexed
         const currentDate = now.getDate()
 
-        // 判斷最近一次已結帳日與當前未出帳週期
+        // 判斷最近一次已結帳日與當前未出帳週期。
+        // 月底收斂（同 autoGenerateCreditStatements 的 effectiveStatementDay 慣例）：
+        // statementDay 可設 1-31，直接 new Date(y, m, statementDay) 遇小月會溢出到下月
+        // （31 日遇 2 月 → 3/3），使未出帳週期與已生成帳單（getStatementPeriod 已收斂）
+        // 整段錯開——區間內消費會同時出現在「準備繳納」與「即時未出帳」兩個數字裡。
+        // 判斷基準與上／本／下三個錨點月各自收斂到該月實際月底。
+        const effectiveStatementDay = clampDayToMonth(
+            currentYear,
+            currentMonth,
+            statementDay,
+            25
+        )
         let unbilledStartDate, unbilledEndDate, lastStatementEndDate
-        if (currentDate > statementDay) {
-            // 今天已過結帳日：本期未出帳從本月 statementDay + 1 開始，到下月 statementDay 結束
+        // 今天已過（含當天）結帳日 → 本期未出帳從本月結帳日隔天起，到下月結帳日（收斂）結束；
+        // 尚未結帳 → 從上月結帳日隔天起，到本月結帳日（收斂）結束。
+        // 用 >=（含結帳日當天）與 autoGenerateCreditStatements 的 now.getDate() >= 基準一致：
+        // 結帳日當天該期帳單已生成（含當日消費），當日消費不再同時列於即時未出帳。
+        if (currentDate >= effectiveStatementDay) {
             lastStatementEndDate = new Date(
                 currentYear,
                 currentMonth,
-                statementDay
+                effectiveStatementDay
             )
+            // 結帳日隔天：月底結帳時 setDate(+1) 自然進位到下月 1 日
             unbilledStartDate = new Date(
                 currentYear,
                 currentMonth,
-                statementDay + 1
+                effectiveStatementDay
             )
+            unbilledStartDate.setDate(unbilledStartDate.getDate() + 1)
             unbilledEndDate = new Date(
                 currentYear,
                 currentMonth + 1,
-                statementDay
+                clampDayToMonth(
+                    currentYear,
+                    currentMonth + 1,
+                    statementDay,
+                    25
+                )
             )
         } else {
-            // 今天未過結帳日：本期未出帳從上月 statementDay + 1 開始，到本月 statementDay 結束
             lastStatementEndDate = new Date(
                 currentYear,
                 currentMonth - 1,
-                statementDay
+                clampDayToMonth(
+                    currentYear,
+                    currentMonth - 1,
+                    statementDay,
+                    25
+                )
             )
-            unbilledStartDate = new Date(
-                currentYear,
-                currentMonth - 1,
-                statementDay + 1
-            )
+            unbilledStartDate = new Date(lastStatementEndDate)
+            unbilledStartDate.setDate(unbilledStartDate.getDate() + 1)
             unbilledEndDate = new Date(
                 currentYear,
                 currentMonth,
-                statementDay
+                effectiveStatementDay
             )
         }
 
@@ -4450,10 +4702,14 @@ class DataService {
             r.category !== 'debt_repayment'
 
         const validRecords = allRecords.filter(r => !isBalanceExempt(r))
-        const unbilledPeriodName = this.getNaturalStatementPeriod(
-            account,
-            toDateStr(now)
-        )
+        // 未出帳「期別名」以未出帳週期的**結束日**反推，而非以今天反推：
+        // getNaturalStatementPeriod 的約定是「d <= statementDay → 歸前一期」，
+        // 因此在結帳日「當天」以今天反推會得到**剛結帳的那一期**（其帳單已生成），
+        // 使當日消費同時出現在「準備繳納」與「即時未出帳」兩個數字裡
+        // （#CREDIT-UNBILLED 邊界語意）。改由 endStr 反推後，期別名與
+        // unbilledPeriod 起訖區間永恆一致。
+        const unbilledPeriodName =
+            this.getNaturalStatementPeriod(account, endStr)
 
         // 本期未出帳明細 (排除卡費還款/扣繳，且有效所屬期別為未出帳期別)
         const unbilledRecords = validRecords
@@ -4467,11 +4723,15 @@ class DataService {
                 ) {
                     return false
                 }
+                // 所屬期別優先採手動覆寫（遞延下期），否則自然期別。
+                // 日期兜底僅保留給「不早於未出帳期」的紀錄（遞延而來、日期仍落在
+                // 前期者）；早期已結帳期別的紀錄不得因日期 >= 未出帳起日就重複列示
+                // （結帳日當天消費已屬該期帳單，#CREDIT-UNBILLED 邊界語意）。
                 const rPeriod =
                     r.statementPeriod ||
                     this.getNaturalStatementPeriod(account, r.date)
                 if (rPeriod === unbilledPeriodName) return true
-                if (r.date >= startStr && !r.statementPeriod) return true
+                if (rPeriod >= unbilledPeriodName && r.date >= startStr) return true
                 return false
             })
             .sort(
@@ -4502,7 +4762,7 @@ class DataService {
 
         // 重新同步/核算未繳帳單的金額（修復歷史還款被誤扣或遞延明細）
         for (const s of statements) {
-            if (s.status === 'unpaid') {
+            if (s.status === 'unpaid' || s.status === 'partial') {
                 const refreshed = await this.recalculateStatement(s.id)
                 if (refreshed) {
                     s.amount = refreshed.amount
@@ -4512,9 +4772,17 @@ class DataService {
             }
         }
 
-        const unpaidStatements = statements.filter(s => s.status === 'unpaid')
+        const unpaidStatements = statements.filter(
+            s => s.status === 'unpaid' || s.status === 'partial'
+        )
         const billedDueTotal = unpaidStatements.reduce(
-            (sum, s) => sum + (s.amount || 0),
+            (sum, s) =>
+                sum +
+                Math.max(
+                    0,
+                    (s.amount || 0) -
+                        (s.status === 'partial' ? s.paidAmount || 0 : 0)
+                ),
             0
         )
 
@@ -4738,6 +5006,12 @@ class DataService {
         }
         if (stmt.status === 'unpaid' || stmt.status === 'zero') {
             updateData.status = newAmount > 0 ? 'unpaid' : 'zero'
+        } else if (stmt.status === 'partial') {
+            if (newAmount <= 0) {
+                updateData.status = 'zero'
+            } else if (newAmount <= (stmt.paidAmount || 0)) {
+                updateData.status = 'paid'
+            }
         }
 
         await this.updateCreditStatement(stmt.id, updateData)
@@ -4764,12 +5038,17 @@ class DataService {
             )
             if (!debitAccount) continue
 
-            // 找出該信用卡所有 unpaid 的帳單
-            const unpaidStatements = await this.getCreditStatements({
-                accountId: card.id,
-                status: 'unpaid',
-                allLedgers: true,
-            })
+            // 找出該信用卡所有未清帳單（unpaid 全額 + partial 剩額）。
+            // partial 必須納入：其繳款日到期後剩額仍屬應繳金額，且扣繳時
+            // 只能扣「帳單額 − 已繳額」，若按全額扣繳即對同一帳單重複扣款。
+            const openStatements = (
+                await this.getCreditStatements({
+                    accountId: card.id,
+                    allLedgers: true,
+                })
+            ).filter(
+                s => s.status === 'unpaid' || s.status === 'partial'
+            )
 
             const now = new Date()
             // 將時間設定為當天 0 點以便比較
@@ -4779,32 +5058,39 @@ class DataService {
                 now.getDate()
             ).getTime()
 
-            for (const stmt of unpaidStatements) {
+            for (const stmt of openStatements) {
                 // 正規化繳款日時間為 0 點比較
                 const stmtDue = new Date(stmt.dueDate).setHours(0, 0, 0, 0)
 
-                // 如果今天大於或等於繳款截止日，且尚未繳款
+                // 如果今天大於或等於繳款截止日，且尚未繳清
                 if (today >= stmtDue) {
-                    const amountToPay = stmt.amount
-                    if (amountToPay <= 0) {
-                        await this.updateCreditStatement(stmt.id, {
-                            status: 'paid',
-                        })
-                        continue
-                    }
-
                     // 防重複扣款：檢查是否已有此帳單期別的扣款記錄
                     const allCardRecords = await this.db.getAllFromIndex(
                         'records',
                         'accountId',
                         card.id
                     )
-                    const alreadyPaid = allCardRecords.some(
-                        r =>
-                            r.type === 'income' &&
-                            r.description?.includes(`${stmt.period} 期`)
+                    const paidForPeriod = allCardRecords
+                        .filter(
+                            r =>
+                                r.type === 'income' &&
+                                r.description?.includes(`${stmt.period} 期`)
+                        )
+                        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+
+                    // partial 帳單只扣「帳單額 − 已繳額」剩額，防止對同一帳單重複全額扣款
+                    const effectivePaid = Math.max(
+                        stmt.status === 'partial' ? stmt.paidAmount || 0 : 0,
+                        paidForPeriod
                     )
-                    if (alreadyPaid) {
+                    const amountToPay = Math.max(0, stmt.amount - effectivePaid)
+
+                    if (
+                        amountToPay <= 0 ||
+                        (stmt.status === 'unpaid' && paidForPeriod > 0) ||
+                        (stmt.status === 'partial' &&
+                            paidForPeriod >= stmt.amount)
+                    ) {
                         await this.updateCreditStatement(stmt.id, {
                             status: 'paid',
                         })
@@ -4958,19 +5244,24 @@ class DataService {
         const creditCards = accounts.filter(a => a.type === 'credit_card')
 
         for (const card of creditCards) {
-            // 1. 找出該卡片所有 unpaid 的帳單，按 period 排序（從舊到新）
-            const unpaidStatements = (
-                await this.getCreditStatements({
-                    accountId: card.id,
-                    status: 'unpaid',
-                    allLedgers: true,
-                })
-            ).sort((a, b) => a.period.localeCompare(b.period))
+            // 1. 找出該卡片所有未清帳單（unpaid + partial），按 period 排序（從舊到新）。
+            //    注意：partial 也必須納入沖銷掃描——若只抓 unpaid，部分繳款後基準
+            //    statementDate 會跳到後一期，已沖銷的還款紀錄落在掃描視窗外，
+            //    狀態會在 partial/unpaid 間來回震盪（閃爍）。
+            const allStatements = await this.getCreditStatements({
+                accountId: card.id,
+                allLedgers: true,
+            })
+            const openStatements = allStatements
+                .filter(
+                    s => s.status === 'unpaid' || s.status === 'partial'
+                )
+                .sort((a, b) => a.period.localeCompare(b.period))
 
-            if (unpaidStatements.length === 0) continue
+            if (openStatements.length === 0) continue
 
-            // 2. 獲取該卡片最舊的 unpaid 帳單的出帳日
-            const oldestStatementDate = unpaidStatements[0].statementDate
+            // 2. 獲取最舊未清帳單的出帳日
+            const oldestStatementDate = openStatements[0].statementDate
             const toDateStr = d =>
                 `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             const oldestStatementDateStr = toDateStr(
@@ -4984,22 +5275,51 @@ class DataService {
                 card.id
             )
             const repaymentRecords = records.filter(r => {
-                return r.type === 'income' && r.date >= oldestStatementDateStr
+                return (
+                    r.type === 'income' &&
+                    r.date >= oldestStatementDateStr &&
+                    r.category !== 'refund' &&
+                    !r.description?.includes('退款') &&
+                    !r.description?.includes('刷退')
+                )
             })
 
-            // 4. 計算出帳日後所有的累計還款總額
-            let totalRepaid = repaymentRecords.reduce(
+            // 4. 計算出帳日後所有的累計還款總額（沖銷可用池 pool）
+            const totalRepaid = repaymentRecords.reduce(
                 (sum, r) => sum + r.amount,
                 0
             )
+            let pool = totalRepaid
 
-            // 5. 按先進先出 (FIFO) 順序沖銷未繳帳單
-            for (const stmt of unpaidStatements) {
-                if (totalRepaid >= stmt.amount) {
-                    totalRepaid -= stmt.amount
+            // 5. 按先進先出 (FIFO) 順序沖銷未清帳單（狀態只升不降）：
+            //    以視窗內還款總額 pool 依序「足額覆蓋整張帳單」推进：
+            //    ① pool ≥ 帳單額 → paid（paidAmount 對齊帳單額，pool 扣減）
+            //    ② 0 < pool < 帳單額 → partial + paidAmount=pool（只升不降，
+            //       新舊值取大；舊版此情境直接 break 全額留 unpaid，導致繳款 UI
+            //       重複提示全額、自動扣繳對已部分繳款的帳單再次全額扣款）
+            //    ③ pool = 0 → 不動（不降回 unpaid：還款紀錄可能落在視窗外，
+            //       降格會遺忘真實已繳款項；滯留 partial 比誤降 unpaid 安全）
+            //    注意：partial 的既有 paidAmount 本就由同一視窗推導，故以「帳單
+            //    全額」而非「剩額」消耗 pool，否則會把舊分配重複計入下一期。
+            for (const stmt of openStatements) {
+                if (pool >= stmt.amount) {
+                    pool -= stmt.amount
                     await this.updateCreditStatement(stmt.id, {
                         status: 'paid',
+                        paidAmount: stmt.amount,
                     })
+                } else if (pool > 0) {
+                    const already =
+                        stmt.status === 'partial'
+                            ? stmt.paidAmount || 0
+                            : 0
+                    const newPaid = Math.max(already, pool)
+                    await this.updateCreditStatement(stmt.id, {
+                        status: 'partial',
+                        paidAmount: newPaid,
+                    })
+                    // 池已全數分配至本期（不足額），後續期別無款可沖，直接結束
+                    break
                 } else {
                     break
                 }
@@ -5318,7 +5638,7 @@ class DataService {
         }
     }
 
-    async settleGroup(groupId, settleAmount, accountId, date, note) {
+    async settleGroup(groupId, settleAmount, accountId, date, _note) {
         try {
             const meta = await this.getGroupMeta(groupId)
             if (!meta) throw new Error('Group not found')
@@ -5327,7 +5647,7 @@ class DataService {
             const allDebts = await this.getDebts({ allLedgers: true })
             const debtsMap = new Map(allDebts.map(d => [d.id, d]))
 
-            const currentDate = date || formatDateToString(new Date())
+            const _currentDate = date || formatDateToString(new Date())
 
             // 逐筆清查群組內未結清的紀錄與欠款
             for (const r of groupRecords) {
@@ -5362,8 +5682,8 @@ class DataService {
         groupId,
         amount,
         accountId,
-        date,
-        note
+        _date,
+        _note
     ) {
         try {
             const meta = await this.getGroupMeta(groupId)
@@ -5415,7 +5735,7 @@ class DataService {
         }
     }
 
-    async settleGroupRecord(recordId, accountId, date, note) {
+    async settleGroupRecord(recordId, accountId, _date, _note) {
         try {
             const records = await this.getRecords({ allLedgers: true })
             const targetRecord = records.find(r => r.id === recordId)
@@ -5472,7 +5792,10 @@ class DataService {
 
             const paidAmountFromRecords = repaymentRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
             const originalAmount = debt.originalAmount || debt.amount || 0
-            const newRemainingAmount = Math.max(0, originalAmount - paidAmountFromRecords)
+            // 「既有款項登記」基線（initialPaidAmount）計入已還總額：
+            // 基線無對應記帳明細，重算時若漏計會把基線視為未付（remaining 變大、誤撤結清狀態）
+            const baseline = Number(debt.initialPaidAmount) || 0
+            const newRemainingAmount = Math.max(0, originalAmount - paidAmountFromRecords - baseline)
             const isSettled = newRemainingAmount <= 0
 
             const updates = {
@@ -5756,19 +6079,29 @@ class DataService {
             } else {
                 // ── 正規新建路徑：使用明確初始化的欄位結構 ──
                 const amount = debt.amount
+                // 「既有款項登記」基線：建立前已還/已收的金額（借鏡 MOZE 既有款項語意）。
+                // 基線不產生記帳明細、不影響資金帳戶，僅從剩餘金額開始追蹤。
+                // recalculateDebtState 與結清判定都必須把基線計入已還總額。
+                let initialPaid = Number(debt.initialPaidAmount) || 0
+                if (!isFinite(initialPaid) || initialPaid < 0) initialPaid = 0
+                if (initialPaid > amount) initialPaid = amount
+                const newRemaining = Math.max(0, amount - initialPaid)
+                const bornSettled = newRemaining <= 0
                 debtData = {
                     type: debt.type, // 'receivable' | 'payable'
                     contactId: debt.contactId,
                     contactUuid,
                     originalAmount: amount,
-                    remainingAmount: amount,
+                    remainingAmount: newRemaining,
                     recordId: debt.recordId || null,
                     ...(recordUuid ? { recordUuid } : {}),
                     date: debt.date,
                     description: debt.description || '',
-                    settled: false,
-                    settledAt: null,
+                    settled: bornSettled,
+                    settledAt: bornSettled ? Date.now() : null,
                     payments: [],
+                    // 基線欄位僅在 > 0 時寫入，舊資料與一般新建零污染
+                    ...(initialPaid > 0 ? { initialPaidAmount: initialPaid } : {}),
                     createdAt: Date.now(),
                     uuid: debt.uuid || this.generateUUID(),
                 }
@@ -6139,7 +6472,7 @@ class DataService {
                 if(!accountMap.has(acc.ledgerId)) accountMap.set(acc.ledgerId, [])
                 accountMap.get(acc.ledgerId).push(acc)
             }
-            for(const [ledgerId, accounts] of accountMap) {
+            for(const accounts of accountMap.values()) {
                 accounts.sort((a, b) => a.id - b.id)
             }
 
@@ -6475,6 +6808,19 @@ class DataService {
                     key: `sync_manifest_pending_${sharedManifestId}`,
                     value: null,
                 })
+            }
+
+            // #BUDGET-KEY-H6：一併清除該帳本的預算設定（IndexedDB + localStorage 快取）。
+            // ledgers store 為 autoIncrement，若不時時清除，刪除帳本 2 後新建的帳本
+            // 可能再次取得 id 2，直接繼承前朝帳本的預算變成「殭屍預算」。
+            await this.saveSetting({ key: `budget_settings_${id}`, value: null })
+            try {
+                localStorage.removeItem(`monthlyBudget_${id}`)
+                localStorage.removeItem(`categoryBudgets_${id}`)
+                localStorage.removeItem(`categoryBudgetOrder_${id}`)
+                localStorage.removeItem(`excludedBudgetCategories_${id}`)
+            } catch (_) {
+                /* localStorage 不可用時忽略，IndexedDB 已是唯一真相源 */
             }
 
             if (!skipLog)

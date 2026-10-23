@@ -408,6 +408,158 @@ describe('showAmortizationModal', () => {
             showAmortizationModal(app, zeroCompleted)
             expect(document.querySelector('#amort-completed').value).toBe('0')
         })
+
+        // ── 起始已還期數（#MOZE-START）──────────────────────────
+        it('新增模式顯示「起始已還期數」欄位', () => {
+            showAmortizationModal(app)
+            const input = document.querySelector('#amort-start-completed')
+            expect(input).not.toBeNull()
+            expect(input.value).toBe('0')
+        })
+
+        it('編輯模式不顯示起始已還期數欄位（沿用既有已完成期數欄位）', () => {
+            showAmortizationModal(app, editItem)
+            expect(document.querySelector('#amort-start-completed')).toBeNull()
+        })
+
+        it('輸入起始期數 3：顯示提示（從第 4 期開始＋剩餘應還）', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-name').value = '中途分期'
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = 'food'
+            document.querySelector('#amort-start-date').value = '2026-01-15'
+            const startInput = document.querySelector('#amort-start-completed')
+            startInput.value = '3'
+            startInput.dispatchEvent(new Event('input'))
+
+            await vi.waitFor(() => {
+                const hint = document.querySelector(
+                    '#amort-start-completed-hint'
+                )
+                expect(hint.classList.contains('hidden')).toBe(false)
+                expect(hint.textContent).toContain('前 3 期不補記')
+                expect(hint.textContent).toContain('第 4 期')
+                expect(hint.textContent).toContain('2026-04-15')
+                // fmt() 帶千分位逗號
+                expect(hint.textContent).toContain('9,000')
+            })
+        })
+
+        it('起始期數歸 0 時提示重新隱藏', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            const startInput = document.querySelector('#amort-start-completed')
+            startInput.value = '3'
+            startInput.dispatchEvent(new Event('input'))
+            await vi.waitFor(() => {
+                expect(
+                    document
+                        .querySelector('#amort-start-completed-hint')
+                        .classList.contains('hidden')
+                ).toBe(false)
+            })
+            startInput.value = '0'
+            startInput.dispatchEvent(new Event('input'))
+            await vi.waitFor(() => {
+                expect(
+                    document
+                        .querySelector('#amort-start-completed-hint')
+                        .classList.contains('hidden')
+                ).toBe(true)
+            })
+        })
+
+        it('起始期數達總期數：顯示直接結案提示', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            const startInput = document.querySelector('#amort-start-completed')
+            startInput.value = '12'
+            startInput.dispatchEvent(new Event('input'))
+
+            await vi.waitFor(() => {
+                const hint = document.querySelector(
+                    '#amort-start-completed-hint'
+                )
+                expect(hint.textContent).toContain('直接結案')
+            })
+        })
+
+        it('儲存時帶入 completedPeriods/startCompletedPeriods 與推算的 nextDueDate', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-name').value = '中途開始分期'
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = 'food'
+            document.querySelector('#amort-start-date').value = '2026-01-15'
+            document.querySelector('#amort-start-completed').value = '3'
+            document.querySelector('#amort-save-btn').click()
+
+            await vi.waitFor(() => {
+                expect(app.dataService.addAmortization).toHaveBeenCalled()
+            })
+            const saved =
+                app.dataService.addAmortization.mock.calls[0][0]
+            expect(saved.completedPeriods).toBe(3)
+            expect(saved.startCompletedPeriods).toBe(3)
+            // 第 4 期到期日 = 2026-01-15 + 3 個月
+            expect(saved.nextDueDate).toBe('2026-04-15')
+            expect(saved.status).toBe('active')
+        })
+
+        it('起始期數為 0 時行為不變：nextDueDate = startDate、基線 0', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-name').value = '正常分期'
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = 'food'
+            document.querySelector('#amort-start-date').value = '2026-01-15'
+            document.querySelector('#amort-save-btn').click()
+
+            await vi.waitFor(() => {
+                expect(app.dataService.addAmortization).toHaveBeenCalled()
+            })
+            const saved =
+                app.dataService.addAmortization.mock.calls[0][0]
+            expect(saved.completedPeriods).toBe(0)
+            expect(saved.startCompletedPeriods).toBe(0)
+            expect(saved.nextDueDate).toBe('2026-01-15')
+            expect(saved.status).toBe('active')
+        })
+
+        it('起始期數 >= 總期數時建立即結案（status=completed、nextDueDate=null）', async () => {
+            showAmortizationModal(app)
+            document.querySelector('#amort-name').value = '已還完分期'
+            document.querySelector('#amort-total').value = '12000'
+            document.querySelector('#amort-periods').value = '12'
+            document.querySelector('#amort-category').value = 'food'
+            document.querySelector('#amort-start-completed').value = '12'
+            document.querySelector('#amort-save-btn').click()
+
+            await vi.waitFor(() => {
+                expect(app.dataService.addAmortization).toHaveBeenCalled()
+            })
+            const saved =
+                app.dataService.addAmortization.mock.calls[0][0]
+            expect(saved.completedPeriods).toBe(12)
+            expect(saved.status).toBe('completed')
+            expect(saved.nextDueDate).toBeNull()
+        })
+
+        it('編輯模式儲存保留原有 startCompletedPeriods 基線', async () => {
+            const withBaseline = { ...editItem, startCompletedPeriods: 2 }
+            showAmortizationModal(app, withBaseline)
+            document.querySelector('#amort-save-btn').click()
+
+            await vi.waitFor(() => {
+                expect(app.dataService.updateAmortization).toHaveBeenCalled()
+            })
+            const updated =
+                app.dataService.updateAmortization.mock.calls[0][1]
+            expect(updated.startCompletedPeriods).toBe(2)
+        })
     })
 
     // ── 溢繳偵測（編輯模式）──────────────────────────────────────

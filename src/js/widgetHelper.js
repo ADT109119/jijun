@@ -154,7 +154,6 @@ export function extractCalendarWidgetData(calendarInstance) {
     }
 
     const grouped = calendarInstance._grouped
-    const records = calendarInstance.records
     const currentDate = calendarInstance.currentDate
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth() + 1

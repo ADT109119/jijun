@@ -3,6 +3,14 @@ import { LedgerManager } from '../../src/js/ledgerManager.js'
 
 vi.mock('../../src/js/utils.js', () => ({
     showToast: vi.fn(),
+    // #SEC04：圖示白名單以真實語意提供（白名單外一律 fallback）
+    isSafeIconClass: icon =>
+        typeof icon === 'string' &&
+        /^(fas|far|fab|fa-solid|fa-regular|fa-brands)\s+fa-[a-zA-Z0-9-]+$/.test(icon.trim()),
+    // #SEC05：顏色白名單以真實語意提供（白名單外一律拒絕/退回 fallback）
+    isSafeHexColor: value =>
+        typeof value === 'string' &&
+        /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value),
 }))
 
 const { showToast } = await import('../../src/js/utils.js')
@@ -173,6 +181,20 @@ describe('LedgerManager', () => {
                 expect.objectContaining({ icon: 'fa-solid fa-book' })
             )
         })
+
+        it('#SEC04 新增帳本時歷史髒 icon 遭入庫白名單拒絕', async () => {
+            ledgerManager.ledgers = []
+            mockDataService.addLedger.mockResolvedValue(2)
+
+            await expect(
+                ledgerManager.createLedger({
+                    name: '髒帳本',
+                    icon: '"><img src=x onerror=alert(1)>',
+                })
+            ).rejects.toThrow('圖示格式不正確')
+
+            expect(mockDataService.addLedger).not.toHaveBeenCalled()
+        })
     })
 
     describe('updateLedger', () => {
@@ -190,6 +212,16 @@ describe('LedgerManager', () => {
             expect(mockDataService.updateLedger).toHaveBeenCalledWith(1, {
                 icon: 'fa-solid fa-star',
             })
+        })
+
+        it('#SEC04 更新圖示時髒 icon 遭入庫白名單拒絕', async () => {
+            await expect(
+                ledgerManager.updateLedger(1, {
+                    icon: 'fa-solid fa-book" onmouseover="alert(1)',
+                })
+            ).rejects.toThrow('圖示格式不正確')
+
+            expect(mockDataService.updateLedger).not.toHaveBeenCalled()
         })
 
         it('更新顏色時呼叫 dataService.updateLedger', async () => {
@@ -328,6 +360,7 @@ describe('LedgerManager', () => {
         beforeEach(() => {
             mockSyncService = {
                 isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 _createSharedFile: vi
                     .fn()
                     .mockResolvedValue({ id: 'file123' }),
@@ -362,7 +395,7 @@ describe('LedgerManager', () => {
 
             await expect(
                 ledgerManager.shareLedger(1, 'user@test.com')
-            ).rejects.toThrow('請先在設定中登入 Google 同步功能')
+            ).rejects.toThrow('請先登入同步功能')
         })
 
         it('帳本不存在時拋出錯誤', async () => {
@@ -560,6 +593,7 @@ describe('LedgerManager', () => {
         beforeEach(() => {
             mockSyncService = {
                 isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 _downloadFile: vi.fn(),
                 applyRemoteChanges: vi.fn().mockResolvedValue(),
                 ensureSharedSync: vi.fn().mockResolvedValue(),
@@ -574,7 +608,7 @@ describe('LedgerManager', () => {
 
             await expect(
                 ledgerManager.joinSharedLedger('file456')
-            ).rejects.toThrow('請先在設定中登入 Google 同步功能')
+            ).rejects.toThrow('請先登入同步功能')
         })
 
         it('無效的共用檔案拋出錯誤', async () => {
@@ -670,6 +704,8 @@ describe('LedgerManager', () => {
 
         beforeEach(() => {
             mockSyncService = {
+                isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 getFilePermissions: vi.fn(),
             }
             mockApp.syncService = mockSyncService
@@ -738,6 +774,8 @@ describe('LedgerManager', () => {
 
         beforeEach(() => {
             mockSyncService = {
+                isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 removeFilePermission: vi.fn(),
             }
             mockApp.syncService = mockSyncService
@@ -867,11 +905,80 @@ describe('LedgerManager', () => {
         })
     })
 
+    describe('_joinSharedLedgerSelfHost', () => {
+        let mockSyncService
+
+        beforeEach(() => {
+            mockSyncService = {
+                _selfHostSharedLookup: vi
+                    .fn()
+                    .mockResolvedValue({ found: true, uuid: 'shared-uuid-1' }),
+                _selfHostSharedFetch: vi.fn(),
+                applyRemoteChanges: vi.fn().mockResolvedValue(),
+                ensureSharedSync: vi.fn().mockResolvedValue(),
+            }
+            mockApp.syncService = mockSyncService
+            mockDataService.getSetting = vi.fn(async () => null)
+            mockDataService.saveSetting = vi.fn(async () => true)
+        })
+
+        it('加入時把快照 changes 種入 sync_shared_applied_keys（agy M2：避免週期同步重跑快照覆蓋本地修改）', async () => {
+            const snapshot = [
+                { deviceId: 'dev-owner', timestamp: 1700000000000, operation: 'add', storeName: 'ledgers', recordId: null, data: { uuid: 'shared-uuid-1', name: '共用餐' } },
+                { deviceId: 'dev-owner', timestamp: 1700000000001, operation: 'add', storeName: 'accounts', recordId: null, data: { uuid: 'acc-1', name: '共同帳戶' } },
+                { deviceId: 'dev-owner', timestamp: 1700000000002, operation: 'update', storeName: 'accounts', recordId: 1, data: { balance: 100 } },
+            ]
+            mockSyncService._selfHostSharedFetch.mockResolvedValue({ content: { changes: snapshot } })
+            // applyRemoteChanges 套用後，本機 ledger 清單應含新帳本
+            mockDataService.getLedgers.mockResolvedValue([
+                { id: 1, name: '個人帳本' },
+                { id: 7, name: '共用餐', uuid: 'shared-uuid-1' },
+            ])
+
+            await ledgerManager._joinSharedLedgerSelfHost('shared-uuid-1')
+
+            expect(mockSyncService.applyRemoteChanges).toHaveBeenCalledWith(snapshot)
+            const saveCalls = mockDataService.saveSetting.mock.calls
+            const keysCall = saveCalls.find(c => c[0].key === 'sync_shared_applied_keys')
+            expect(keysCall, 'saveSetting 應寫入 sync_shared_applied_keys').toBeTruthy()
+            const saved = keysCall[0].value
+            // 3 筆 snapshot 變更的 key 全被標記為已套用
+            expect(saved).toContain('dev-owner|1700000000000|add|ledgers')
+            expect(saved).toContain('dev-owner|1700000000001|add|accounts')
+            expect(saved).toContain('dev-owner|1700000000002|update|accounts')
+        })
+
+        it('加入時保留既有的 appliedKeys（合併而非覆蓋）', async () => {
+            const snapshot = [
+                { deviceId: 'dev-owner', timestamp: 1700000000000, operation: 'add', storeName: 'ledgers', recordId: null, data: { uuid: 'shared-uuid-1' } },
+            ]
+            mockSyncService._selfHostSharedFetch.mockResolvedValue({ content: { changes: snapshot } })
+            mockDataService.getLedgers.mockResolvedValue([
+                { id: 7, name: '共用餐', uuid: 'shared-uuid-1' },
+            ])
+            // 已有既有的 appliedKeys（來自其他共用帳本）
+            const existing = ['other-ledger|1600000000000|add|accounts']
+            mockDataService.getSetting.mockImplementation(async key => {
+                if (key === 'sync_shared_applied_keys') return { key, value: existing }
+                return null
+            })
+
+            await ledgerManager._joinSharedLedgerSelfHost('shared-uuid-1')
+
+            const saveCalls = mockDataService.saveSetting.mock.calls
+            const keysCall = saveCalls.find(c => c[0].key === 'sync_shared_applied_keys')
+            expect(keysCall[0].value).toContain('other-ledger|1600000000000|add|accounts') // 保留
+            expect(keysCall[0].value).toContain('dev-owner|1700000000000|add|ledgers') // 新增
+        })
+    })
+
     describe('isLedgerOwner', () => {
         let mockSyncService
 
         beforeEach(() => {
             mockSyncService = {
+                isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 getFilePermissions: vi.fn(),
                 userInfo: { email: 'me@test.com' },
             }
@@ -950,6 +1057,8 @@ describe('LedgerManager', () => {
 
         beforeEach(() => {
             mockSyncService = {
+                isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 getFilePermissions: vi.fn().mockResolvedValue([
                     { emailAddress: 'me@test.com', role: 'owner' },
                 ]),
@@ -1155,6 +1264,7 @@ describe('LedgerManager', () => {
                 removeFilePermission: vi.fn(),
                 deleteFile: vi.fn(),
                 isSignedIn: vi.fn().mockReturnValue(true),
+                isSelfHostMode: vi.fn().mockReturnValue(false),
                 userInfo: { email: 'me@example.com' },
             }
             mockApp.syncService = mockSyncService

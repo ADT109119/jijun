@@ -12,8 +12,11 @@ import {
     getDateRange,
     getMonthRange,
     calculateNextDueDate,
+    clampDayToMonth,
     shouldSkipDate,
     calculateAmortizationDetails,
+    isSafeIconClass,
+    getSafeIconClass,
     showProgressModal,
     calculateEffectiveRecordAmount,
     buildDebtLookupMaps,
@@ -517,6 +520,30 @@ describe('getDateRange', () => {
         expect(result.startDate).toBe(expected)
         expect(result.endDate).toBe(expected)
     })
+
+    it('quarter 回傳本季度範圍', () => {
+        vi.setSystemTime(new Date('2026-08-22T12:00:00'))
+        const result = getDateRange('quarter')
+        expect(result.startDate).toBe('2026-07-01')
+        expect(result.endDate).toBe('2026-09-30')
+        vi.useRealTimers()
+    })
+
+    it('lastquarter 回傳上季度範圍', () => {
+        vi.setSystemTime(new Date('2026-08-22T12:00:00'))
+        const result = getDateRange('lastquarter')
+        expect(result.startDate).toBe('2026-04-01')
+        expect(result.endDate).toBe('2026-06-30')
+        vi.useRealTimers()
+    })
+
+    it('lastquarter 跨年回傳去年 Q4 範圍', () => {
+        vi.setSystemTime(new Date('2026-02-10T12:00:00'))
+        const result = getDateRange('lastquarter')
+        expect(result.startDate).toBe('2025-10-01')
+        expect(result.endDate).toBe('2025-12-31')
+        vi.useRealTimers()
+    })
 })
 
 describe('getMonthRange', () => {
@@ -576,9 +603,33 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('monthly 跨月邊界防溢出：2024年閏年 (1月31日 → 2月29日，不溢出至3月)', () => {
+    it('monthly 跨月邊界 #EOM-E2 月底收斂 (1月31日 + 1月 → 2月29日，不再溢出到 3/2)', () => {
+        // 2024 閏年：1/31 + 1 月收斂到 2 月底 2/29
         expect(calculateNextDueDate('2024-01-31', 'monthly', 1)).toBe(
             '2024-02-29'
+        )
+        // 非閏年收斂到 2/28
+        expect(calculateNextDueDate('2026-01-31', 'monthly', 1)).toBe(
+            '2026-02-28'
+        )
+    })
+
+    it('monthly 錨定原始日可逆 #EOM-E2 (1/31 → 2/28 → 3/31，不逐期漂移)', () => {
+        const a = calculateNextDueDate('2026-01-31', 'monthly', 1, 31)
+        expect(a).toBe('2026-02-28')
+        // 未錨定：2/28 再推一月停在 3/28（自身日语意）；錨定 31：回到 3/31
+        expect(calculateNextDueDate(a, 'monthly', 1)).toBe('2026-03-28')
+        expect(calculateNextDueDate(a, 'monthly', 1, 31)).toBe('2026-03-31')
+    })
+
+    it('monthly interval>1 錨定：每月 31 日每 2 月一期', () => {
+        // 1/31 + 2 月 = 3 月有 31 日 → 3/31
+        expect(calculateNextDueDate('2026-01-31', 'monthly', 2, 31)).toBe(
+            '2026-03-31'
+        )
+        // 1/31 + 1 月 = 2 月 → 2/28（錨定 31 收斂）
+        expect(calculateNextDueDate('2026-01-31', 'monthly', 1, 31)).toBe(
+            '2026-02-28'
         )
     })
 
@@ -611,7 +662,7 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('yearly 閏年 → 非閏年截斷防溢出 (2024-02-29 → 2025-02-28，不溢出至3月1日)', () => {
+    it('yearly 閏年 → 非閏年 #EOM-E2 月底收斂 (2024-02-29 → 2025-02-28)', () => {
         expect(calculateNextDueDate('2024-02-29', 'yearly', 1)).toBe(
             '2025-02-28'
         )
@@ -637,6 +688,210 @@ describe('calculateNextDueDate', () => {
         expect(() => calculateNextDueDate('2024-01-15', 'biweekly', 1)).toThrow(
             'Invalid frequency'
         )
+    })
+
+    // #TZ-DUE 配套：間隔 0/缺失/負值/小數會令到期日永不前進或產出畸形日期，
+    // 使 processRecurringTransactions 原地打轉（該筆週期交易永久凍結）。
+    // 一律 fail-fast，交由上層 per-tx try/catch 跳過並留警。
+    it('#TZ-DUE 無效間隔拋錯（0/負值/缺失/小數/非數字）', () => {
+        for (const bad of [0, -1, undefined, null, 1.5, 'x', NaN, '']) {
+            expect(() => calculateNextDueDate('2024-01-15', 'daily', bad)).toThrow(
+                'Invalid interval'
+            )
+            expect(() =>
+                calculateNextDueDate('2024-01-31', 'monthly', bad, 31)
+            ).toThrow('Invalid interval')
+        }
+    })
+
+    it('#TZ-DUE 數字字串間隔仍可用（容忍表單/舊資料字串型別）', () => {
+        expect(calculateNextDueDate('2024-01-15', 'daily', '2')).toBe('2024-01-17')
+        expect(calculateNextDueDate('2026-01-31', 'monthly', '1', 31)).toBe(
+            '2026-02-28'
+        )
+    })
+
+    it('#TZ-DUE 非 YYYY-MM-DD 輸入退回 Date 路徑；完全無法解析則拋錯', () => {
+        // Date 物件與斜線格式仍能工作（既有呼叫端相容性）
+        expect(calculateNextDueDate('2024-01-15T10:30:00', 'daily', 1)).toBe(
+            '2024-01-16'
+        )
+        expect(() => calculateNextDueDate('abc', 'daily', 1)).toThrow(
+            'Invalid currentDueDate'
+        )
+        expect(() => calculateNextDueDate(null, 'daily', 1)).toThrow(
+            'Invalid currentDueDate'
+        )
+    })
+
+    it('#TZ-DUE 每日頻跨月/跨年/閏年邊界連續推進正確', () => {
+        expect(calculateNextDueDate('2024-02-28', 'daily', 1, null)).toBe(
+            '2024-02-29'
+        )
+        expect(calculateNextDueDate('2024-02-29', 'daily', 1, null)).toBe(
+            '2024-03-01'
+        )
+        expect(calculateNextDueDate('2024-12-31', 'daily', 1, null)).toBe(
+            '2025-01-01'
+        )
+        // 每日頻 400 年閏年規則（2100 非閏年）
+        expect(calculateNextDueDate('2100-02-28', 'daily', 1, null)).toBe(
+            '2100-03-01'
+        )
+        expect(calculateNextDueDate('2000-02-28', 'daily', 1, null)).toBe(
+            '2000-02-29'
+        )
+    })
+
+    // ── #TZ-DUE 時區安全 ────────────────────────────────────────────
+    // 舊實作以 `new Date('YYYY-MM-DD')`（ES 規格依 UTC 解析）搭配本地時區取得式，
+    // 於 UTC 負時區整天讀回「前一天」：每日頻到期日原地不動 → processRecurring-
+    // Transactions 卡在同期循環 365 次、該筆週期交易永久凍結不再記帳；週期頻
+    // 每期錯一天；每月頻原始起始日為 1 日時錨定日變成上個月月底（永久漂移）。
+    // 修後為純整數民用日期運算，結果與系統時區完全無關。
+    describe('#TZ-DUE 時區無關性', () => {
+        const TZS = [
+            'UTC',
+            'Asia/Taipei',
+            'America/New_York',
+            'America/Los_Angeles',
+            'Europe/London',
+            'Pacific/Apia',
+        ]
+
+        // 各時區跑同一組輸入，結果必須逐字相同（以 UTC 為基準）
+        const CASES = [
+            ['2024-01-01', 'daily', 1, null],
+            ['2024-01-01', 'daily', 2, null],
+            ['2024-01-01', 'weekly', 1, null],
+            ['2024-12-31', 'daily', 1, null],
+            ['2024-02-28', 'daily', 1, null],
+            ['2024-02-29', 'yearly', 1, null],
+            ['2026-01-31', 'monthly', 1, 31],
+            ['2026-01-01', 'monthly', 1, null],
+            ['2024-03-10', 'monthly', 1, null],
+            ['2024-03-10', 'weekly', 1, null],
+        ]
+
+        for (const tz of TZS) {
+            it(`${tz} 與其他時區結果一致`, () => {
+                const withTz = tz === 'UTC' ? null : tz
+                const run = () =>
+                    CASES.map(c => calculateNextDueDate(...c)).join('|')
+                if (withTz) process.env.TZ = withTz
+                const got = run()
+                if (withTz) process.env.TZ = 'UTC'
+                const baseline = CASES.map(c =>
+                    calculateNextDueDate(...c)
+                ).join('|')
+                expect(got).toBe(baseline)
+            })
+        }
+
+        it('UTC 負時區：每日頻必須逐期前進（不得原地卡死）', () => {
+            const prev = process.env.TZ
+            process.env.TZ = 'America/New_York'
+            try {
+                // 每日 1 期連續推進 5 期，必須嚴格遞增且不重複
+                let d = '2024-01-01'
+                const seq = []
+                for (let i = 0; i < 5; i++) {
+                    d = calculateNextDueDate(d, 'daily', 1, null)
+                    seq.push(d)
+                }
+                expect(seq).toEqual([
+                    '2024-01-02',
+                    '2024-01-03',
+                    '2024-01-04',
+                    '2024-01-05',
+                    '2024-01-06',
+                ])
+            } finally {
+                process.env.TZ = prev
+            }
+        })
+
+        it('UTC 負時區：每週頻不得比基準少一天', () => {
+            const prev = process.env.TZ
+            process.env.TZ = 'America/Los_Angeles'
+            try {
+                expect(calculateNextDueDate('2024-01-15', 'weekly', 1, null)).toBe(
+                    '2024-01-22'
+                )
+                expect(calculateNextDueDate('2024-12-31', 'daily', 1, null)).toBe(
+                    '2025-01-01'
+                )
+            } finally {
+                process.env.TZ = prev
+            }
+        })
+
+        it('UTC 負時區：每月頻錨定日不受解析倒退污染', () => {
+            const prev = process.env.TZ
+            process.env.TZ = 'America/New_York'
+            try {
+                // 1/31 房租：2 月收斂 2/28、3 月回 3/31（錨定可逆）
+                const a = calculateNextDueDate('2026-01-31', 'monthly', 1, 31)
+                expect(a).toBe('2026-02-28')
+                expect(calculateNextDueDate(a, 'monthly', 1, 31)).toBe('2026-03-31')
+                // 未錨定：自身日語意
+                expect(calculateNextDueDate('2026-01-31', 'monthly', 1, null)).toBe(
+                    '2026-02-28'
+                )
+            } finally {
+                process.env.TZ = prev
+            }
+        })
+    })
+})
+
+describe('clampDayToMonth（信用卡出帳/繳款日月底收斂）', () => {
+    it('一般日期原樣保留（不誤收斂）', () => {
+        expect(clampDayToMonth(2026, 0, 15)).toBe(15) // 1月 15日
+        expect(clampDayToMonth(2026, 9, 31)).toBe(31) // 10月有 31 天
+    })
+
+    it('平年 2 月遇 29/30/31 日收斂到 28 日', () => {
+        expect(clampDayToMonth(2026, 1, 28)).toBe(28)
+        expect(clampDayToMonth(2026, 1, 29)).toBe(28)
+        expect(clampDayToMonth(2026, 1, 30)).toBe(28)
+        expect(clampDayToMonth(2026, 1, 31)).toBe(28)
+    })
+
+    it('閏年 2 月遇 30/31 日收斂到 29 日', () => {
+        expect(clampDayToMonth(2028, 1, 29)).toBe(29)
+        expect(clampDayToMonth(2028, 1, 31)).toBe(29)
+    })
+
+    it('小月（4/6/9/11 月）31 日收斂到 30 日', () => {
+        expect(clampDayToMonth(2026, 3, 31)).toBe(30) // 4月
+        expect(clampDayToMonth(2026, 5, 31)).toBe(30) // 6月
+        expect(clampDayToMonth(2026, 8, 31)).toBe(30) // 9月
+        expect(clampDayToMonth(2026, 10, 31)).toBe(30) // 11月
+    })
+
+    it('非 1-31 整數（非法值）退回 fallbackDay', () => {
+        expect(clampDayToMonth(2026, 0, 0, 25)).toBe(25)
+        expect(clampDayToMonth(2026, 0, 32, 25)).toBe(25)
+        expect(clampDayToMonth(2026, 0, 15.5, 25)).toBe(25)
+        expect(clampDayToMonth(2026, 0, NaN, 15)).toBe(15)
+        expect(clampDayToMonth(2026, 0, null, 15)).toBe(15)
+        expect(clampDayToMonth(2026, 0, undefined, 15)).toBe(15)
+        expect(clampDayToMonth(2026, 0, '', 25)).toBe(25)
+        expect(clampDayToMonth(2026, 0, 'abc', 25)).toBe(25)
+    })
+
+    it('數字字串容忍（舊備份匯入 statementDay 可能為字串）', () => {
+        expect(clampDayToMonth(2026, 0, '15', 25)).toBe(15)
+        expect(clampDayToMonth(2026, 1, '31', 25)).toBe(28) // 字串同樣月底收斂
+        expect(clampDayToMonth(2026, 0, '32', 25)).toBe(25) // 越界字串退 fallback
+    })
+
+    it('收斂後建 Date 不再溢出到下月（核心回歸鎖）', () => {
+        // 修復前：new Date(2026, 1, 31) → 2026-03-03（溢出 3 天）
+        const d = new Date(2026, 1, clampDayToMonth(2026, 1, 31, 25))
+        expect(d.getMonth()).toBe(1) // 仍在 2 月
+        expect(d.getDate()).toBe(28)
     })
 })
 
@@ -781,6 +1036,60 @@ describe('calculateAmortizationDetails', () => {
     it('負期數回傳零值', () => {
         const result = calculateAmortizationDetails(10000, -5, 0, 'monthly')
         expect(result.amountPerPeriod).toBe(0)
+    })
+})
+
+describe('isSafeIconClass（#SEC04 全站圖示白名單）', () => {
+    it('接受標準 FontAwesome 新舊寫法', () => {
+        expect(isSafeIconClass('fa-solid fa-book')).toBe(true)
+        expect(isSafeIconClass('fas fa-heart')).toBe(true)
+        expect(isSafeIconClass('far fa-user')).toBe(true)
+        expect(isSafeIconClass('fab fa-github')).toBe(true)
+        expect(isSafeIconClass('fa-regular fa-credit-card')).toBe(true)
+        expect(isSafeIconClass('fa-brands fa-line')).toBe(true)
+    })
+
+    it('接受前後空白（內部會 trim 後比對）', () => {
+        expect(isSafeIconClass('  fa-solid fa-book  ')).toBe(true)
+    })
+
+    it('拒絕 class breakout 注入 payload', () => {
+        expect(isSafeIconClass('"><img src=x onerror=alert(1)>')).toBe(false)
+        expect(isSafeIconClass('fa-solid fa-book" onmouseover="alert(1)')).toBe(false)
+        expect(isSafeIconClass('fa-solid fa-book onerror=alert(1)')).toBe(false)
+        expect(isSafeIconClass("fa-solid fa-book'; alert(1); '")).toBe(false)
+    })
+
+    it('拒絕非 FontAwesome 前綴與空字串', () => {
+        expect(isSafeIconClass('fa-utensils')).toBe(false)
+        expect(isSafeIconClass('emoji 🛒')).toBe(false)
+        expect(isSafeIconClass('')).toBe(false)
+        expect(isSafeIconClass('   ')).toBe(false)
+    })
+
+    it('拒絕 null/undefined/非字串', () => {
+        expect(isSafeIconClass(null)).toBe(false)
+        expect(isSafeIconClass(undefined)).toBe(false)
+        expect(isSafeIconClass(123)).toBe(false)
+        expect(isSafeIconClass({})).toBe(false)
+        expect(isSafeIconClass([])).toBe(false)
+    })
+})
+
+describe('getSafeIconClass（#SEC04 白名單外退回 fallback）', () => {
+    it('合法圖示回傳 trim 後原值', () => {
+        expect(getSafeIconClass('  fa-solid fa-book  ')).toBe('fa-solid fa-book')
+    })
+
+    it('白名單外退回預設 fallback（fa-solid fa-question）', () => {
+        expect(getSafeIconClass('"><img src=x onerror=alert(1)>')).toBe('fa-solid fa-question')
+        expect(getSafeIconClass(null)).toBe('fa-solid fa-question')
+        expect(getSafeIconClass(undefined)).toBe('fa-solid fa-question')
+    })
+
+    it('可指定自訂 fallback', () => {
+        expect(getSafeIconClass('bad"icon', 'fa-solid fa-wallet')).toBe('fa-solid fa-wallet')
+        expect(getSafeIconClass('', 'fa-solid fa-book')).toBe('fa-solid fa-book')
     })
 })
 
