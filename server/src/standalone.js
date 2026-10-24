@@ -13,7 +13,7 @@
  *   GOOGLE_CLIENT_ID     — Google OAuth 2.0 Client ID（僅 OAuth Proxy 需要）
  *   GOOGLE_CLIENT_SECRET — Google OAuth 2.0 Client Secret（僅 OAuth Proxy 需要）
  *   ALLOWED_ORIGINS      — 逗號分隔的允許 CORS origin（預設 *）
- *   PORT                 — 監聽埠號（預設 8787）
+ *   PORT                 — 監聽埠號（預設 8080）
  *   SELF_HOST_ADMIN_TOKEN — 純自架模式 bootstrap token（設定後啟用 SQLite 同步）
  *   SELF_HOST_ALLOW_REGISTER — 開放公開註冊 1/0（預設 0 關閉；admin 可 runtime 切換）
  *   SELF_HOST_DB_PATH    — SQLite 資料庫路徑（預設 ./data/jijun.db）
@@ -31,7 +31,7 @@ import { handleRequest } from './index.js'
 import { SECURITY_HEADERS } from './http.js'
 import { SqliteStore } from './db.js'
 
-const PORT = parseInt(process.env.PORT || '8787', 10)
+const PORT = parseInt(process.env.PORT || '8080', 10)
 
 const env = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',

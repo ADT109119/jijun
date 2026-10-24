@@ -22,7 +22,7 @@ function check(name, cond, extra) {
 }
 
 async function req(method, path, { body, token, headers = {} } = {}, testCtx = ctx) {
-    const url = `http://localhost:8787${path}`
+    const url = `http://localhost:8080${path}`
     const h = { ...headers }
     if (body !== undefined) h['Content-Type'] = 'application/json'
     if (token) h['Authorization'] = `Bearer ${token}`

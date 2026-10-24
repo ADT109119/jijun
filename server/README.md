@@ -131,7 +131,7 @@ npm start
 2. **⚠️ HTTPS 與瀏覽器 Mixed Content 限制**：
    官方前端為 **HTTPS**（`https://jijun.the-walking-fish.com/`）。現代瀏覽器會強制封鎖 HTTPS 網頁向不安全的明文 HTTP API 發起請求（Mixed Active Content）。
    - **公網環境**：自架後端**必須啟用 HTTPS**（透過 Caddy 自動憑證、Nginx 反代、Cloudflare Tunnel 或 Tailscale HTTPS，例如 `https://sync.yourdomain.com`）。
-   - **本機測試**：若後端運行於同一台電腦之 `http://localhost:8787` 或 `http://127.0.0.1:8787`，瀏覽器預設視為可信任來源（Trustworthy Origin），可直接跨來源連線測試。
+   - **本機測試**：若後端運行於同一台電腦之 `http://localhost:8080` 或 `http://127.0.0.1:8080`，瀏覽器預設視為可信任來源（Trustworthy Origin），可直接跨來源連線測試。
 3. **App 內連線**：打開官方網頁 →「設定」→「雲端備份&同步」→「伺服器設定」填入你的自架後端網址（如 `https://sync.yourdomain.com`）→ 點選「測試伺服器連線」確認通訊正常即可註冊或登入使用。
 
 ---
@@ -207,7 +207,7 @@ jobs:
 | `GOOGLE_CLIENT_ID`     |  ✅  | Google OAuth Client ID                   |
 | `GOOGLE_CLIENT_SECRET` |  ✅  | Google OAuth Client Secret               |
 | `ALLOWED_ORIGINS`      |  ❌  | CORS 允許的 Origin（逗號分隔，預設 `*`） |
-| `PORT`                 |  ❌  | Standalone 模式埠號（預設 `8787`）       |
+| `PORT`                 |  ❌  | Standalone 模式埠號（預設 `8080`）       |
 | `SELF_HOST_ADMIN_TOKEN`|  ❌  | 設定了即啟用純自架同步（SQLite）；首次啟動建立 admin 帳號（PIN 即此值）。純自架模式必填 |
 | `DISABLE_GOOGLE_OAUTH` |  ❌  | `1` = 停用 Google OAuth 路由（純自架模式可免 Google 憑證） |
 | `SELF_HOST_DB_PATH`    |  ❌  | SQLite DB 路徑（預設 `./data/jijun.db`） |

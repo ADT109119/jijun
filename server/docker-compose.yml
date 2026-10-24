@@ -5,7 +5,7 @@
 #   2. 純自架同步（Self-Hosted Sync）：提供 SELF_HOST_ADMIN_TOKEN（不綁 Google）
 #
 # 前端已 build 進 image（預設 AD_FREE=1 無廣告）。啟動後同一 port 即提供
-# 「前端 + API」，直接瀏覽 http://your-host:8787 就是完整記帳應用。
+# 「前端 + API」，直接瀏覽 http://your-host:8080 就是完整記帳應用。
 #
 # 使用方式（從本資料夾 server/ 執行）：
 #   cp .env.example .env   # 修改成你的設定
@@ -34,7 +34,7 @@ services:
                 VITE_SYNC_SERVER_URL: "${VITE_SYNC_SERVER_URL:-}"
         container_name: easy-accounting-sync
         ports:
-            - '${PORT:-8787}:8787'
+            - '${PORT:-8080}:8080'
         environment:
             # ── Google OAuth Proxy（純自架模式可留空 + DISABLE_GOOGLE_OAUTH=1）──
             - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}

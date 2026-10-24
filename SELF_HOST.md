@@ -13,7 +13,7 @@
 | Google OAuth Proxy | 代理 Google OAuth token exchange，讓 web 版可以用 Google Drive 同步 | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` |
 
 - **純自架模式下不需要任何 Google 憑證**，資料全部存在你的 SQLite DB。
-- **前後端一體**：Docker image 已內建前端 build（預設 `AD_FREE=1` 無廣告），啟動後直接瀏覽 `http://你的IP:8787/` 就是完整記帳應用。
+- **前後端一體**：Docker image 已內建前端 build（預設 `AD_FREE=1` 無廣告），啟動後直接瀏覽 `http://你的IP:8080/` 就是完整記帳應用。
 - **公開註冊預設關閉**：只有管理員能建立帳號（web 設定頁「管理員：帳號管理」或 CLI），避免外部人士任意註冊。
 - **跨帳號共用帳本**：家人各自帳號、各自隱私，但可共用同一本「家庭支出」帳本（見下方章節）。
 - 預設使用 **SQLite**（`node:sqlite`，Node.js ≥ 22.5）。儲存層已抽象化（`server/src/db.js`），未來可換 PostgreSQL 等，路由層與前端不需更動。
@@ -39,11 +39,11 @@ cp .env.example .env
 docker compose up -d --build
 
 # 4. 健康檢查
-curl http://localhost:8787/api/health
+curl http://localhost:8080/api/health
 # → {"status":"ok","service":"easy-accounting-sync","selfHosted":true,"registerEnabled":false,...}
 ```
 
-訪問 `http://你的IP:8787/` 即可使用（前端 + API 同 port）。
+訪問 `http://你的IP:8080/` 即可使用（前端 + API 同 port）。
 
 **首次登入**：設定頁 →「自架同步（Self-Host）」→ 帳號 `admin`、PIN 碼即 `SELF_HOST_ADMIN_TOKEN` 的值 → 登入。
 （管理員帳號在**首次啟動、DB 完全空白時**建立；公開註冊預設關閉，其他帳號由管理員建立。）
@@ -55,8 +55,8 @@ curl http://localhost:8787/api/health
 本專案支援兩種自架方式，可依個人需求選擇：
 
 ### 模式 A：前後端一體自架（預設，推薦 NAS / 家用伺服器 / 純內網私有雲）
-- **優勢**：Docker 一鍵啟動，前後端完全同源（同一 port），無跨域（CORS）問題，且在純內網（如 `http://192.168.1.100:8787`）也能順暢使用，不受瀏覽器 Mixed Content 限制。
-- **存取方式**：直接在瀏覽器輸入 `http://你的IP:8787/`。
+- **優勢**：Docker 一鍵啟動，前後端完全同源（同一 port），無跨域（CORS）問題，且在純內網（如 `http://192.168.1.100:8080`）也能順暢使用，不受瀏覽器 Mixed Content 限制。
+- **存取方式**：直接在瀏覽器輸入 `http://你的IP:8080/`。
 
 ### 模式 B：僅自架後端 + 搭配官方託管前端（`https://jijun.the-walking-fish.com/`）
 若你不想每次手動 build 前端，希望直接使用官方網頁版隨時獲取最新前端功能與介面，但**記帳資料 100% 儲存在自己的伺服器**：
@@ -69,7 +69,7 @@ curl http://localhost:8787/api/health
    - 官方前端為 **HTTPS**（`https://jijun.the-walking-fish.com/`）。
    - 現代瀏覽器（Chrome, Safari, Edge, Firefox）基於安全性政策，**嚴格封鎖 HTTPS 網頁向不安全的明文 HTTP (`http://...`) API 發出主動請求（Mixed Active Content）**！
    - 因此：若要在官方前端使用自架後端，**你的後端必須配置 HTTPS 網址**（例如透過 Caddy 自動憑證、Nginx 反代、Cloudflare Tunnel、Tailscale HTTPS 等，提供如 `https://sync.yourdomain.com`）。
-   - *（例外：若在同一台電腦開發測試，瀏覽器將 `http://localhost:8787` 視為 Trustworthy Origin，允許從官方 HTTPS 前端直接跨來源連線。）*
+   - *（例外：若在同一台電腦開發測試，瀏覽器將 `http://localhost:8080` 視為 Trustworthy Origin，允許從官方 HTTPS 前端直接跨來源連線。）*
 3. **App 內連線步驟**：
    - 打開 [https://jijun.the-walking-fish.com/](https://jijun.the-walking-fish.com/)
    - 前往「設定」→「雲端備份&同步」
@@ -100,7 +100,7 @@ docker build -f server/Dockerfile \
 | `SELF_HOST_ALLOW_REGISTER` | ❌ | `0` | 公開註冊開關。`1` = 允許任何人註冊。admin 登入後可在 web 設定頁 runtime 切換（會覆寫此 env） |
 | `GOOGLE_CLIENT_ID` | 僅 OAuth 模式 | — | Google OAuth 2.0 Client ID |
 | `GOOGLE_CLIENT_SECRET` | 僅 OAuth 模式 | — | Google OAuth 2.0 Client Secret |
-| `PORT` | ❌ | `8787` | 監聽埠號 |
+| `PORT` | ❌ | `8080` | 監聽埠號 |
 | `SELF_HOST_DB_PATH` | ❌ | `./data/jijun.db` | SQLite 資料庫路徑（Docker 內建議 `/app/data/selfhost.db`，已掛 volume） |
 | `SELF_HOST_STATIC_DIR` | ❌ | `/app/static` | 前端靜態目錄（image 已內建；要改用外部 dist 可改此值 + 掛 volume） |
 | `BACKUP_RETENTION_COUNT` | ❌ | `100` | 每使用者備份保留筆數（超出自動刪最舊） |
@@ -209,7 +209,7 @@ AD_FREE=1 npm run build
 cd server
 export SELF_HOST_ADMIN_TOKEN=$(openssl rand -hex 32)
 export DISABLE_GOOGLE_OAUTH=1
-export PORT=8787
+export PORT=8080
 export SELF_HOST_DB_PATH=./data/jijun.db
 export SELF_HOST_STATIC_DIR=../dist   # 同埠提供前端
 node src/standalone.js
@@ -227,7 +227,7 @@ After=network.target
 WorkingDirectory=/opt/jijun/server
 Environment=SELF_HOST_ADMIN_TOKEN=在此填入隨機token
 Environment=DISABLE_GOOGLE_OAUTH=1
-Environment=PORT=8787
+Environment=PORT=8080
 Environment=SELF_HOST_DB_PATH=/opt/jijun/data/jijun.db
 Environment=SELF_HOST_STATIC_DIR=/opt/jijun/dist
 ExecStart=/usr/bin/node src/standalone.js
@@ -247,7 +247,7 @@ sudo systemctl status jijun-selfhost
 
 ```
 sync.yourdomain.com {
-    reverse_proxy localhost:8787
+    reverse_proxy localhost:8080
 }
 ```
 

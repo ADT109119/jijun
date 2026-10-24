@@ -3,7 +3,7 @@
 注意：不輸出任何 secrets；token 只在記憶體中使用。"""
 import json, re, os, urllib.request, urllib.error, time
 
-BASE = "http://localhost:8787"
+BASE = "http://localhost:8080"
 env = open(os.path.expanduser("~/projects/jijun/server/.env")).read()
 ADMIN_TOKEN = re.search(r'^SELF_HOST_ADMIN_TOKEN=(.+)$', env, re.M).group(1).strip()
 

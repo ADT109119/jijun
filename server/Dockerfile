@@ -61,11 +61,11 @@ VOLUME /app/data
 ENV SELF_HOST_DB_PATH=/app/data/selfhost.db
 
 # Expose default port
-EXPOSE 8787
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8787/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
 
 # 降權執行（紅隊報告 M-2）：
 # entrypoint 進程若為 root（compose 預設），先修一次 data 目錄擁有權
@@ -78,5 +78,5 @@ COPY server/entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Run standalone server（API + 前端靜態檔，同 port 8787）
+# Run standalone server（API + 前端靜態檔，同 port 8080）
 CMD ["node", "src/standalone.js"]
