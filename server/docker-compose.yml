@@ -35,7 +35,8 @@ services:
                 VITE_SYNC_SERVER_URL: "${VITE_SYNC_SERVER_URL:-}"
         container_name: easy-accounting-sync
         ports:
-            - '${PORT:-8080}:8080'
+            # 若使用反向代理（如 Caddy/Nginx），建議在 .env 設定 HOST_BIND=127.0.0.1: 防止外部直連
+            - '${HOST_BIND:-}${PORT:-8080}:8080'
         environment:
             # ── 搜尋引擎爬蟲控制（預設 1 = 阻擋爬蟲 noindex/nofollow；設 0 放行）──
             - NO_INDEX=${NO_INDEX:-1}

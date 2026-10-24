@@ -157,8 +157,8 @@ export class RateLimiter {
                         }
                     }
                     if (!evicted) {
-                        const oldestKey = this._m.keys().next().value
-                        if (oldestKey !== undefined) this._m.delete(oldestKey)
+                        // 所有條目皆處於鎖定期內：絕不強制刪除已鎖定的條目（防攻擊者洗白鎖定狀態）
+                        return this.max + 1
                     }
                 }
             }
@@ -233,24 +233,43 @@ export const lookupLimiter = new RateLimiter({
 })
 
 /**
+ * 檢查 IP 是否為本機迴環或內部私有網路網段（反代伺服器來源）。
+ * @param {string} ip
+ * @returns {boolean}
+ */
+export function isPrivateOrLoopbackIp(ip) {
+    if (!ip) return false
+    const cleanIp = ip.replace(/^::ffff:/, '').trim()
+    if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp === 'localhost') return true
+    if (/^10\./.test(cleanIp)) return true
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp)) return true
+    if (/^192\.168\./.test(cleanIp)) return true
+    if (/^(fc|fd|fe80)/i.test(cleanIp)) return true
+    return false
+}
+
+/**
  * 取客戶端識別 key（限速用）。
- * 僅在明確設定 TRUST_PROXY=1 時才信任反代標頭（防攻擊者偽造標頭繞過限速）。
- * 非反代環境或未設定 TRUST_PROXY 時，優先採用 Node.js Socket 直連 IP（x-socket-remote-address）。
+ * 僅在 TRUST_PROXY=1 且底層 Socket 連線確實來自受信任的反向代理（內部私有網段或 Loopback）時，
+ * 才採信反代轉發標頭（防攻擊者繞過反代直連公開埠偽造標頭繞過限速）。
+ * 若直連公開埠或未啟用反代，直接採用底層真實 TCP Socket 遠端 IP。
  */
 export function clientIp(request) {
+    const directIp = request.headers.get('x-socket-remote-address')?.trim() || ''
     if (process.env.TRUST_PROXY === '1') {
-        const cfIp = request.headers.get('cf-connecting-ip')
-        if (cfIp) return cfIp.trim()
-        const realIp = request.headers.get('x-real-ip')
-        if (realIp) return realIp.trim()
-        const xff = request.headers.get('x-forwarded-for')
-        if (xff) {
-            const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
-            if (parts.length > 0) return parts[parts.length - 1]
+        if (!directIp || isPrivateOrLoopbackIp(directIp)) {
+            const cfIp = request.headers.get('cf-connecting-ip')
+            if (cfIp) return cfIp.trim()
+            const realIp = request.headers.get('x-real-ip')
+            if (realIp) return realIp.trim()
+            const xff = request.headers.get('x-forwarded-for')
+            if (xff) {
+                const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
+                if (parts.length > 0) return parts[parts.length - 1]
+            }
         }
     }
-    const directIp = request.headers.get('x-socket-remote-address')
-    if (directIp) return directIp.trim()
+    if (directIp) return directIp
     return 'local'
 }
 

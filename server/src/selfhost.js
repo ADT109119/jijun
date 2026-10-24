@@ -241,8 +241,25 @@ export async function handleRegister(request, ctx, corsHeaders) {
         loginLimiter.recordSuccess(rlKey)
         accountLoginLimiter.recordSuccess(username)
         const { token } = await ctx.store.createToken(existing.id)
+
+        // 登入分支也處理傳入的 deviceId（支援換新 deviceId 重試或新裝置登入）
+        if (deviceId && isValidDeviceId(deviceId)) {
+            try {
+                await ctx.store.registerDevice(deviceId, existing.id, existing.username)
+            } catch (err) {
+                if (err.code === 'DEVICE_CONFLICT') {
+                    return jsonResponse(
+                        { error: 'Device belongs to another account' },
+                        409,
+                        corsHeaders
+                    )
+                }
+                throw err
+            }
+        }
+
         return jsonResponse(
-            { token, username, alreadyRegistered: true },
+            { token, username, alreadyRegistered: true, deviceId: deviceId || null },
             200,
             corsHeaders
         )
@@ -251,9 +268,14 @@ export async function handleRegister(request, ctx, corsHeaders) {
     // 新註冊計入 IP 註冊限速器，防止濫用消耗 scrypt 運算
     registerLimiter.recordFailure(ip)
 
-    let user
+    const validDevId = deviceId && isValidDeviceId(deviceId) ? deviceId : null
+    let result
     try {
-        user = await ctx.store.createUser(username, await hashPin(pin))
+        result = await ctx.store.registerUserWithDevice(
+            username,
+            await hashPin(pin),
+            validDevId
+        )
     } catch (err) {
         if (err.code === 'USER_CONFLICT') {
             return jsonResponse(
@@ -262,27 +284,18 @@ export async function handleRegister(request, ctx, corsHeaders) {
                 corsHeaders
             )
         }
-        throw err
-    }
-    const { token } = await ctx.store.createToken(user.id)
-
-    if (deviceId && isValidDeviceId(deviceId)) {
-        try {
-            await ctx.store.registerDevice(deviceId, user.id, username)
-        } catch (err) {
-            if (err.code === 'DEVICE_CONFLICT') {
-                return jsonResponse(
-                    { error: 'Device belongs to another account' },
-                    409,
-                    corsHeaders
-                )
-            }
-            throw err
+        if (err.code === 'DEVICE_CONFLICT') {
+            return jsonResponse(
+                { error: 'Device belongs to another account' },
+                409,
+                corsHeaders
+            )
         }
+        throw err
     }
 
     return jsonResponse(
-        { token, username, deviceId: deviceId || null },
+        { token: result.token, username, deviceId: validDevId },
         201,
         corsHeaders
     )

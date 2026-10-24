@@ -139,15 +139,26 @@ const MIME_TYPES = {
  * 允許長期 immutable 快取。
  * @returns {Promise<Response|null>} null 表示非靜態請求
  */
-function injectNoIndexMeta(htmlStr) {
-    if (htmlStr.includes('name="robots"')) return htmlStr
-    const metaTag = '    <meta name="robots" content="noindex, nofollow" />\n'
-    if (htmlStr.includes('</head>')) {
-        return htmlStr.replace('</head>', metaTag + '    </head>')
-    } else if (htmlStr.includes('<head>')) {
-        return htmlStr.replace('<head>', '<head>\n' + metaTag)
+function processRobotsMeta(htmlStr) {
+    const isNoIndex =
+        process.env.NO_INDEX !== '0' &&
+        process.env.SELF_HOST_NO_INDEX !== '0'
+    const metaTagRegex = /<meta\s+name=["']robots["']\s+content=["'][^"']*["']\s*\/?>\s*\n?/gi
+    if (isNoIndex) {
+        if (!htmlStr.includes('name="robots"')) {
+            const metaTag = '    <meta name="robots" content="noindex, nofollow" />\n'
+            if (htmlStr.includes('</head>')) {
+                return htmlStr.replace('</head>', metaTag + '    </head>')
+            } else if (htmlStr.includes('<head>')) {
+                return htmlStr.replace('<head>', '<head>\n' + metaTag)
+            } else {
+                return metaTag + htmlStr
+            }
+        }
+        return htmlStr
     } else {
-        return metaTag + htmlStr
+        // NO_INDEX=0 時動態移除 HTML 內任何寫死的 noindex robots meta 標籤（支援 Docker 執行期切換放行）
+        return htmlStr.replace(metaTagRegex, '')
     }
 }
 
@@ -170,11 +181,8 @@ async function serveStatic(pathname) {
             let content = await readFile(filePath)
             const type = MIME_TYPES[extname(filePath)] || 'application/octet-stream'
             const isHtml = extname(filePath) === '.html'
-            const isNoIndex =
-                process.env.NO_INDEX !== '0' &&
-                process.env.SELF_HOST_NO_INDEX !== '0'
-            if (isHtml && isNoIndex) {
-                const htmlStr = injectNoIndexMeta(content.toString('utf-8'))
+            if (isHtml) {
+                const htmlStr = processRobotsMeta(content.toString('utf-8'))
                 content = Buffer.from(htmlStr, 'utf-8')
             }
             // /assets/*-<hash>.js|css 等 Vite 產物 → 長期快取
@@ -201,13 +209,8 @@ async function serveStatic(pathname) {
     const indexFile = join(STATIC_DIR, 'index.html')
     if (existsSync(indexFile)) {
         let content = await readFile(indexFile)
-        const isNoIndex =
-            process.env.NO_INDEX !== '0' &&
-            process.env.SELF_HOST_NO_INDEX !== '0'
-        if (isNoIndex) {
-            const htmlStr = injectNoIndexMeta(content.toString('utf-8'))
-            content = Buffer.from(htmlStr, 'utf-8')
-        }
+        const htmlStr = processRobotsMeta(content.toString('utf-8'))
+        content = Buffer.from(htmlStr, 'utf-8')
         return new Response(content, {
             status: 200,
             headers: {

@@ -12,7 +12,7 @@ src/js/
 ├── retirementReport.js  # 退休 Monte Carlo 模擬與資產提領推演引擎 (常態分佈抽樣、實質報酬推演、破產機率與年期統計)
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 tools.schema.json 與 build_prompt.py 規範、平衡括號 _extractBalancedJson 抽取巢狀 JSON、stop token 容錯、OPFS 實體快取清除與遠端 HEAD ETag/SHA-256 即時版本比對、智慧模糊匹配與同義詞/別名映射 fuzzyMatchAccount / fuzzyMatchCategory)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + getStatistics 整合 calculateEffectiveRecordAmount 統計生活收支實質金額（代墊還清歸零、部分還款扣減已還金額）+ 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 debt_repayment 還款且防重複扣款 + 信用卡消費延遲請款遞延至下一期與移回原期 deferRecordToNextStatement/undeferRecord/recalculateStatement + 嚴格過濾還款紀錄防明細污染與未出帳/帳單金額誤減歸零 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳 partialSettleGroup 支援 direction 單向沖銷與 FIFO 確定性排序 + recalculateDebtState 採 Record-as-Truth 同步修剪 payments 幽靈付款並回寫最新金額/日期 + 單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + getStatistics 整合 calculateEffectiveRecordAmount 統計生活收支實質金額（代墊還清歸零、部分還款扣減已還金額）+ 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 生成 debt_repayment 還款且防重複扣款 + 信用卡消費延遲請款遞延至下一期與移回原期 deferRecordToNextStatement/undeferRecord/recalculateStatement + 嚴格過濾還款紀錄防明細污染與未出帳/帳單金額誤減歸零 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳 partialSettleGroup 支援 direction 單向沖銷與 FIFO 確定性排序 + recalculateDebtState 採 Record-as-Truth 同步修剪 payments 幽靈付款並回寫最新金額/日期 + 單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊 + seedAllDataToSyncLog 依拓撲順序合成歷史資料變更至 sync_log 支援無縫切換同步通道)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本)
 ├── groupManager.js      # 群組分帳商業邏輯 (建立、刪除群組、一鍵結清、部分結清 partialSettleGroup 支援 direction 與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數 (getCategoryById 支援雙向相容降級查找，避免收入端之還款紀錄顯示未知問號圖示)
@@ -28,7 +28,7 @@ src/js/
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 雲端備份&同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
+├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理、初次推送自動 seedAllDataToSyncLog 完整上傳歷史資料、登出與 409 衝突自動換輪換 deviceId、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
 ├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
@@ -61,10 +61,10 @@ src/js/pages/
 
 server/                  # Docker 自架同步伺服器
 ├── src/
-│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護與裝置衝突 409)
-│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、createSharedLedger 原子新增防競態 DO UPDATE、日誌分段與 5 鍵去重)
-│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 限速、TRUST_PROXY 反代支援與 Socket IP 提取)
-│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt 與 SPA HTML 自動注入 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、500 安全標頭與 SIGTERM/SIGINT 優雅關閉)
+│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護、裝置衝突 409 與 registerUserWithDevice 原子註冊)
+│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、registerUserWithDevice 交易包裹防孤兒使用者、createSharedLedger 原子新增防競態、日誌分段與 5 鍵去重)
+│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 鎖定防穿透淘汰修復、TRUST_PROXY 安全守門 isPrivateOrLoopbackIp 防外網偽造 IP 繞過限速)
+│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt、processRobotsMeta 執行期即時切換 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、500 安全標頭與 SIGTERM/SIGINT 優雅關閉)
 │   ├── http.js          # 核心 HTTP 路由分發與中介層 (統一安全標頭 getSecurityHeaders，預設 X-Robots-Tag: noindex, nofollow 防私有實例被索引)
 │   └── admin-cli.js     # 自架管理員 CLI 工具 (使用者管理、密碼重設、帳本查詢)
 ├── test/                # 自架伺服器單元與整合測試

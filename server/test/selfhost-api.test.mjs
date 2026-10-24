@@ -711,7 +711,46 @@ console.log('== clientIp 與 TRUST_PROXY 標頭解析 ==')
         },
     })
     check('開啟 TRUST_PROXY 時採信最右側真實客戶端 IP', clientIp(reqProxied) === '203.0.113.195')
+
+    const reqDirectExternal = new Request('http://localhost:8080/api/health', {
+        headers: {
+            'x-forwarded-for': '1.1.1.1',
+            'cf-connecting-ip': '2.2.2.2',
+            'x-real-ip': '3.3.3.3',
+            'x-socket-remote-address': '198.51.100.25', // 公網外部直連 IP
+        },
+    })
+    check('公網直連繞過反代時拒絕採信偽造代理標頭', clientIp(reqDirectExternal) === '198.51.100.25')
     delete process.env.TRUST_PROXY
+}
+
+console.log('== RateLimiter 防容量淘汰洗白鎖定狀態 ==')
+{
+    const { RateLimiter } = await import('../src/auth.js')
+    const limiter = new RateLimiter({ max: 2, lockMs: 60000 })
+    limiter.recordFailure('victim_user')
+    limiter.recordFailure('victim_user')
+    limiter.recordFailure('victim_user') // locked
+    check('victim_user 已被鎖定', limiter.check('victim_user') !== null)
+
+    for (let i = 0; i < 10005; i++) {
+        limiter._m.set(`attacker_${i}`, { fails: 5, windowStart: Date.now(), lockedUntil: Date.now() + 60000 })
+    }
+    limiter.recordFailure('attacker_new')
+    check('容量達上限時不淘汰鎖定中目標', limiter.check('victim_user') !== null)
+}
+
+console.log('== 註冊流程原子性（裝置衝突回滾使用者）==')
+{
+    const devOcc = 'dev_occupied_999'
+    await req('POST', '/api/selfhost/register', { body: { username: 'owner_user', pin: 'pin-123', deviceId: devOcc } }, regCtx)
+
+    const rFail = await req('POST', '/api/selfhost/register', { body: { username: 'rollback_user', pin: 'pin-123', deviceId: devOcc } }, regCtx)
+    check('裝置衝突回報 409', rFail.status === 409)
+
+    const checkUser = await store.getUserByUsername('rollback_user')
+    check('使用者未殘留在資料庫（交易已原子回滾）', checkUser === null, checkUser)
+    resetLimitersForTests()
 }
 
 store.close()

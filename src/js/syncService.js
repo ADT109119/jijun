@@ -1146,10 +1146,17 @@ export class SyncService {
     async _selfHostPushChanges() {
         if (!this.selfHostToken) return
 
-        const lastPush = await this.dataService.getSetting(
-            'sync_last_push_timestamp'
-        )
+        const pushKey = `sync_last_push_timestamp_selfhost_${this.selfHostUsername || 'default'}`
+        const lastPush = await this.dataService.getSetting(pushKey)
         let since = lastPush?.value || 0
+
+        // 若為此自架伺服器/帳號之初次推送，且本機已有既有資料，確保本機所有歷史資料皆已編入 sync_log 供完整遷移
+        if (!lastPush || !lastPush.value) {
+            if (typeof this.dataService.seedAllDataToSyncLog === 'function') {
+                await this.dataService.seedAllDataToSyncLog()
+            }
+            since = 0
+        }
         let guard = 0
         const pushedKeys = new Set()
 
@@ -1222,6 +1229,10 @@ export class SyncService {
             }
 
             const maxTimestamp = Math.max(...batch.map(c => c.timestamp))
+            await this.dataService.saveSetting({
+                key: pushKey,
+                value: maxTimestamp,
+            })
             await this.dataService.saveSetting({
                 key: 'sync_last_push_timestamp',
                 value: maxTimestamp,
@@ -1518,10 +1529,18 @@ export class SyncService {
         if (this.selfHostToken) return this._selfHostPushChanges()
         await this.ensureValidToken()
 
-        const lastPush = await this.dataService.getSetting(
+        const drivePushKey = 'sync_last_push_timestamp_drive'
+        const lastPush = await this.dataService.getSetting(drivePushKey)
+        const legacyLastPush = await this.dataService.getSetting(
             'sync_last_push_timestamp'
         )
-        const since = lastPush?.value || 0
+        let since = lastPush?.value ?? legacyLastPush?.value ?? 0
+        if (!lastPush && !legacyLastPush) {
+            if (typeof this.dataService.seedAllDataToSyncLog === 'function') {
+                await this.dataService.seedAllDataToSyncLog()
+            }
+            since = 0
+        }
         const changes = await this.dataService.getChangesSince(since)
 
         // ============================================
@@ -1640,6 +1659,10 @@ export class SyncService {
 
         // 記錄推送的最新時間
         const maxTimestamp = Math.max(...changes.map(c => c.timestamp))
+        await this.dataService.saveSetting({
+            key: 'sync_last_push_timestamp_drive',
+            value: maxTimestamp,
+        })
         await this.dataService.saveSetting({
             key: 'sync_last_push_timestamp',
             value: maxTimestamp,

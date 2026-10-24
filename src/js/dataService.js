@@ -3117,6 +3117,44 @@ class DataService {
     }
 
     /**
+     * 檢查並將既有未同步之歷史資料補齊至 sync_log（用於初次同步或自其他同步通道/Google Drive 遷移至新伺服器時）。
+     * 拓撲順序：ledgers -> accounts -> contacts -> debts -> amortizations -> records -> recurring_transactions -> groupMeta
+     */
+    async seedAllDataToSyncLog() {
+        if (this.useLocalStorage || !this.db) return
+        const stores = [
+            'ledgers',
+            'accounts',
+            'contacts',
+            'debts',
+            'amortizations',
+            'records',
+            'recurring_transactions',
+            'groupMeta',
+        ]
+        try {
+            const existingSyncLogs = await this.db.getAll('sync_log')
+            const loggedSet = new Set(
+                existingSyncLogs.map(l => `${l.storeName}|${l.recordId}`)
+            )
+            for (const storeName of stores) {
+                if (!this.db.objectStoreNames.contains(storeName)) continue
+                const items = await this.db.getAll(storeName)
+                for (const item of items) {
+                    if (!item || item.id === undefined) continue
+                    const key = `${storeName}|${item.id}`
+                    if (!loggedSet.has(key)) {
+                        await this.logChange('add', storeName, item.id, item)
+                        loggedSet.add(key)
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('[DataService] seedAllDataToSyncLog error:', err)
+        }
+    }
+
+    /**
      * 取得指定時間戳之後的所有變更
      * @param {number} sinceTimestamp - 起始時間戳
      * @returns {Promise<Array>}

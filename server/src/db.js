@@ -223,6 +223,64 @@ export class SqliteStore {
     }
 
     /**
+     * 原子註冊使用者與其初始裝置（若裝置衝突則交易整體回滾）。
+     * @returns {Promise<{user: object, token: string}>}
+     */
+    async registerUserWithDevice(username, pinHash, deviceId = null) {
+        const now = Date.now()
+        const token = 'jijun_' + cryptoRandomToken(32)
+        const tokenHash = sha256Hex(token)
+
+        this.db.exec('BEGIN IMMEDIATE')
+        try {
+            if (deviceId) {
+                const existingDev = this.db
+                    .prepare('SELECT user_id FROM devices WHERE device_id = ?')
+                    .get(deviceId)
+                if (existingDev) {
+                    const err = new Error('Device belongs to another account')
+                    err.code = 'DEVICE_CONFLICT'
+                    throw err
+                }
+            }
+
+            const res = this.db
+                .prepare('INSERT INTO users (username, pin_hash, created_at) VALUES (?, ?, ?)')
+                .run(username, pinHash, now)
+            const userId = Number(res.lastInsertRowid)
+
+            this.db
+                .prepare('INSERT INTO user_tokens (user_id, token_hash, created_at) VALUES (?, ?, ?)')
+                .run(userId, tokenHash, now)
+
+            if (deviceId) {
+                this.db
+                    .prepare(
+                        `INSERT INTO devices (device_id, user_id, username, created_at, last_seen)
+                         VALUES (?, ?, ?, ?, ?)`
+                    )
+                    .run(deviceId, userId, username, now, now)
+            }
+
+            this.db.exec('COMMIT')
+            return {
+                user: { id: userId, username, pin_hash: pinHash, created_at: now },
+                token,
+            }
+        } catch (err) {
+            try {
+                this.db.exec('ROLLBACK')
+            } catch (_) {}
+            if (err.message && err.message.includes('UNIQUE constraint failed')) {
+                const conflictErr = new Error('Username already exists')
+                conflictErr.code = 'USER_CONFLICT'
+                throw conflictErr
+            }
+            throw err
+        }
+    }
+
+    /**
      * 產生新 token。
      * @returns {Promise<{token: string, tokenHash: string}>}
      *   token 只回傳一次（給使用者保存），DB 只存 hash。
@@ -362,6 +420,8 @@ export class SqliteStore {
      */
     async createSharedLedger(ledgerUuid, ownerId, name, content) {
         const now = Date.now()
+        const username = await this._usernameOf(ownerId)
+        this.db.exec('BEGIN IMMEDIATE')
         try {
             this.db
                 .prepare(
@@ -369,7 +429,18 @@ export class SqliteStore {
                      VALUES (?, ?, ?, ?, ?, ?)`
                 )
                 .run(ledgerUuid, ownerId, name, JSON.stringify(content), now, now)
+            this.db
+                .prepare(
+                    `INSERT INTO shared_ledger_members (ledger_uuid, user_id, username, joined_at)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(ledger_uuid, user_id) DO NOTHING`
+                )
+                .run(ledgerUuid, ownerId, username, now)
+            this.db.exec('COMMIT')
         } catch (err) {
+            try {
+                this.db.exec('ROLLBACK')
+            } catch (_) {}
             if (err.message && err.message.includes('UNIQUE constraint failed')) {
                 const conflictErr = new Error('Shared ledger already exists')
                 conflictErr.code = 'LEDGER_CONFLICT'
@@ -377,7 +448,6 @@ export class SqliteStore {
             }
             throw err
         }
-        await this.addSharedMember(ledgerUuid, ownerId, await this._usernameOf(ownerId))
         return {
             ledger_uuid: ledgerUuid,
             owner_user_id: ownerId,
