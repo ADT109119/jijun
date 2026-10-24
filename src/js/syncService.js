@@ -536,6 +536,10 @@ export class SyncService {
         this.stopAutoSync()
         this.stopAutoBackup()
 
+        // 登出時輪換裝置 ID，防止同一瀏覽器切換帳號時引發裝置歸屬衝突
+        localStorage.removeItem('sync_device_id')
+        this.deviceId = this.getDeviceId()
+
         await this.dataService.saveSetting({ key: 'sync_tokens', value: null })
         await this.dataService.saveSetting({
             key: 'sync_selfhost',
@@ -684,7 +688,7 @@ export class SyncService {
      * @returns {Promise<{username: string, alreadyRegistered: boolean}>}
      */
     async selfHostRegister(username, pin) {
-        const res = await fetch(`${this.serverUrl}/api/selfhost/register`, {
+        let res = await fetch(`${this.serverUrl}/api/selfhost/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -693,7 +697,22 @@ export class SyncService {
                 deviceId: this.deviceId,
             }),
         })
-        const data = await res.json().catch(() => ({}))
+        let data = await res.json().catch(() => ({}))
+        // 若此裝置已被其他帳號註冊過（切換帳號情境），自動輪換新 deviceId 重試
+        if (res.status === 409 && data.error?.includes('Device belongs to another account')) {
+            localStorage.removeItem('sync_device_id')
+            this.deviceId = this.getDeviceId()
+            res = await fetch(`${this.serverUrl}/api/selfhost/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    pin,
+                    deviceId: this.deviceId,
+                }),
+            })
+            data = await res.json().catch(() => ({}))
+        }
         if (!res.ok) {
             throw new Error(data.error || `註冊失敗 (${res.status})`)
         }
@@ -1169,6 +1188,10 @@ export class SyncService {
             })
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}))
+                if (res.status === 403 && data.error?.includes('Device belongs to another account')) {
+                    localStorage.removeItem('sync_device_id')
+                    this.deviceId = this.getDeviceId()
+                }
                 this._selfHostLastError = data.error || `push 失敗 (${res.status})`
                 throw new Error(this._selfHostLastError)
             }

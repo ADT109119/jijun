@@ -36,7 +36,7 @@ RUN npm ci --no-audit --no-fund
 
 # 前端原始碼 + build 設定（postcss/tailwind config 必須一起 COPY，
 # 否則容器內 build 時 Tailwind 不執行、utility class 全缺（CSS 只剩自訂樣式））
-COPY index.html vite.config.js package-lock.json ./
+COPY index.html vite.config.js ./
 COPY postcss.config.js tailwind.config.js ./
 COPY src/ ./src/
 COPY public/ ./public/

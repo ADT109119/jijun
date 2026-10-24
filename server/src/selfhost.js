@@ -224,13 +224,14 @@ export async function handleRegister(request, ctx, corsHeaders) {
     const existing = await ctx.store.getUserByUsername(username)
     if (existing) {
         // 已存在 → 直接當 login 處理（token 會換發新值，舊 token 仍有效）
+        loginLimiter.recordFailure(rlKey)
+        accountLoginLimiter.recordFailure(username)
+        ipLoginLimiter.recordFailure(ip)
+
         const ok = await ctx.store.verifyLogin(username, pin)
         if (!ok) {
             // L-1 修正：不洩漏帳號存在性——錯 PIN 與 login 端回傳完全相同的
             // 訊息與狀態碼（存在+錯PIN → 401 Invalid username or PIN）。
-            loginLimiter.recordFailure(rlKey)
-            accountLoginLimiter.recordFailure(username)
-            ipLoginLimiter.recordFailure(ip)
             return jsonResponse(
                 { error: 'Invalid username or PIN' },
                 401,
@@ -250,14 +251,33 @@ export async function handleRegister(request, ctx, corsHeaders) {
     // 新註冊計入 IP 註冊限速器，防止濫用消耗 scrypt 運算
     registerLimiter.recordFailure(ip)
 
-    const user = await ctx.store.createUser(username, await hashPin(pin))
+    let user
+    try {
+        user = await ctx.store.createUser(username, await hashPin(pin))
+    } catch (err) {
+        if (err.code === 'USER_CONFLICT') {
+            return jsonResponse(
+                { error: 'Username already exists' },
+                409,
+                corsHeaders
+            )
+        }
+        throw err
+    }
     const { token } = await ctx.store.createToken(user.id)
 
     if (deviceId && isValidDeviceId(deviceId)) {
         try {
             await ctx.store.registerDevice(deviceId, user.id, username)
         } catch (err) {
-            if (err.code !== 'DEVICE_CONFLICT') throw err
+            if (err.code === 'DEVICE_CONFLICT') {
+                return jsonResponse(
+                    { error: 'Device belongs to another account' },
+                    409,
+                    corsHeaders
+                )
+            }
+            throw err
         }
     }
 
@@ -297,11 +317,13 @@ export async function handleLogin(request, ctx, corsHeaders) {
             { 'Retry-After': String(blocked.retryAfterSec) }
         )
     }
+    // 預先登記嘗試（防止高併發並行請求繞過限速）
+    loginLimiter.recordFailure(rlKey)
+    accountLoginLimiter.recordFailure(username)
+    ipLoginLimiter.recordFailure(ip)
+
     const user = await ctx.store.verifyLogin(username, pin)
     if (!user) {
-        loginLimiter.recordFailure(rlKey)
-        accountLoginLimiter.recordFailure(username)
-        ipLoginLimiter.recordFailure(ip)
         return jsonResponse({ error: 'Invalid username or PIN' }, 401, corsHeaders)
     }
     loginLimiter.recordSuccess(rlKey)
@@ -535,8 +557,19 @@ export async function handleBackupPut(request, ctx, corsHeaders) {
         typeof body.deviceId === 'string' && isValidDeviceId(body.deviceId)
             ? body.deviceId
             : 'unknown'
-    if (body.deviceId !== undefined && body.deviceId !== 'unknown') {
-        await ctx.store.registerDevice(deviceId, user.id, user.username)
+    if (deviceId !== 'unknown') {
+        try {
+            await ctx.store.registerDevice(deviceId, user.id, user.username)
+        } catch (err) {
+            if (err.code === 'DEVICE_CONFLICT') {
+                return jsonResponse(
+                    { error: 'Device belongs to another account' },
+                    409,
+                    corsHeaders
+                )
+            }
+            throw err
+        }
     }
 
     const size =
@@ -952,7 +985,18 @@ export async function handleSharedCreate(request, ctx, corsHeaders) {
     const content = body.content && Array.isArray(body.content.changes)
         ? body.content
         : { deviceId: user.username, timestamp: Date.now(), changes: [] }
-    await ctx.store.createSharedLedger(body.ledgerUuid, user.id, name, content)
+    try {
+        await ctx.store.createSharedLedger(body.ledgerUuid, user.id, name, content)
+    } catch (err) {
+        if (err.code === 'LEDGER_CONFLICT') {
+            return jsonResponse(
+                { error: 'Shared ledger already exists (use PUT to update)' },
+                409,
+                corsHeaders
+            )
+        }
+        throw err
+    }
     return jsonResponse({ uuid: body.ledgerUuid, name }, 201, corsHeaders)
 }
 

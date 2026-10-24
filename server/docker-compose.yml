@@ -39,6 +39,8 @@ services:
         environment:
             # ── 搜尋引擎爬蟲控制（預設 1 = 阻擋爬蟲 noindex/nofollow；設 0 放行）──
             - NO_INDEX=${NO_INDEX:-1}
+            # ── 反向代理信任（1 = 信任 XFF / CF-Connecting-IP / X-Real-IP；預設 0 直連）──
+            - TRUST_PROXY=${TRUST_PROXY:-0}
             # ── Google OAuth Proxy（純自架模式可留空 + DISABLE_GOOGLE_OAUTH=1）──
             - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
             - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}

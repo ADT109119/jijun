@@ -612,6 +612,108 @@ console.log('== 併發推送變更不丟失 ==')
     resetLimitersForTests()
 }
 
+console.log('== 並行登入暴力猜解防護 ==')
+{
+    resetLimitersForTests()
+    const targetUser = 'victim_user'
+    await req('POST', '/api/selfhost/register', { body: { username: targetUser, pin: 'real-password-123' } }, regCtx)
+    resetLimitersForTests()
+
+    // 模擬 30 個並行錯誤 PIN 猜解請求
+    const attempts = Array.from({ length: 30 }, (_, i) =>
+        req('POST', '/api/selfhost/login', { body: { username: targetUser, pin: `wrong-pin-${i}` } })
+    )
+    const results = await Promise.all(attempts)
+    const count401 = results.filter(r => r.status === 401).length
+    const count429 = results.filter(r => r.status === 429).length
+
+    check('並行暴力破解中 401 數量受限（<= 11）', count401 <= 11, count401)
+    check('並行暴力破解其餘請求被 429 阻擋（>= 19）', count429 >= 19, count429)
+    resetLimitersForTests()
+}
+
+console.log('== 並行建立共用帳本競態條件防護 ==')
+{
+    const u1 = await req('POST', '/api/selfhost/register', { body: { username: 'creator_a', pin: 'pin-a-123' } }, regCtx)
+    const u2 = await req('POST', '/api/selfhost/register', { body: { username: 'creator_b', pin: 'pin-b-123' } }, regCtx)
+    const raceUuid = 'cccccccc-dddd-4eee-8fff-000000000001'
+
+    const [create1, create2] = await Promise.all([
+        req('POST', '/api/selfhost/shared', {
+            body: { ledgerUuid: raceUuid, name: '帳本 A', content: { changes: [{ id: 'a1' }] } },
+            token: u1.json.token,
+        }),
+        req('POST', '/api/selfhost/shared', {
+            body: { ledgerUuid: raceUuid, name: '帳本 B', content: { changes: [{ id: 'b1' }] } },
+            token: u2.json.token,
+        }),
+    ])
+
+    const statuses = [create1.status, create2.status].sort()
+    check('並行建立共用帳本：一筆 201 成功，另一筆 409 衝突', statuses[0] === 201 && statuses[1] === 409, statuses)
+
+    // 驗證獲勝者的所有權與內容未被覆寫
+    const winnerToken = create1.status === 201 ? u1.json.token : u2.json.token
+    const winnerName = create1.status === 201 ? '帳本 A' : '帳本 B'
+    const ledger = await req('GET', `/api/selfhost/shared/${raceUuid}`, { token: winnerToken })
+    check('獲勝者帳本名稱完整保留', ledger.json.name === winnerName, ledger.json.name)
+    resetLimitersForTests()
+}
+
+console.log('== 註冊時裝置衝突返回 409 ==')
+{
+    const dConfId = 'dev_conflict_001'
+    const r1 = await req('POST', '/api/selfhost/register', {
+        body: { username: 'dev_user_1', pin: 'pin-dev-1', deviceId: dConfId },
+    }, regCtx)
+    check('帳號 1 註冊並綁定裝置成功', r1.status === 201, r1.status)
+
+    const r2 = await req('POST', '/api/selfhost/register', {
+        body: { username: 'dev_user_2', pin: 'pin-dev-2', deviceId: dConfId },
+    }, regCtx)
+    check('帳號 2 註冊相同裝置返回 409 Conflict', r2.status === 409 && r2.json.error.includes('Device belongs to another account'), r2.json)
+    resetLimitersForTests()
+}
+
+console.log('== 並行同名註冊防 500 ==')
+{
+    const sameUsername = 'race_user_same'
+    const [regA, regB] = await Promise.all([
+        req('POST', '/api/selfhost/register', { body: { username: sameUsername, pin: 'pin-same-1' } }, regCtx),
+        req('POST', '/api/selfhost/register', { body: { username: sameUsername, pin: 'pin-same-2' } }, regCtx),
+    ])
+    const regStatuses = [regA.status, regB.status].sort()
+    check('並行同名註冊：一筆 201，另一筆 409（無 500）', regStatuses[0] === 201 && regStatuses[1] === 409, regStatuses)
+    resetLimitersForTests()
+}
+
+console.log('== clientIp 與 TRUST_PROXY 標頭解析 ==')
+{
+    const { clientIp } = await import('../src/auth.js')
+    const reqSocket = new Request('http://localhost:8080/api/health', {
+        headers: { 'x-socket-remote-address': '192.168.1.100' },
+    })
+    check('預設採用 socket remote address', clientIp(reqSocket) === '192.168.1.100')
+
+    const reqSpoofed = new Request('http://localhost:8080/api/health', {
+        headers: {
+            'x-forwarded-for': '1.2.3.4',
+            'x-socket-remote-address': '192.168.1.100',
+        },
+    })
+    check('未開 TRUST_PROXY 時忽略偽造 XFF', clientIp(reqSpoofed) === '192.168.1.100')
+
+    process.env.TRUST_PROXY = '1'
+    const reqProxied = new Request('http://localhost:8080/api/health', {
+        headers: {
+            'x-forwarded-for': '1.2.3.4, 203.0.113.195',
+            'x-socket-remote-address': '127.0.0.1',
+        },
+    })
+    check('開啟 TRUST_PROXY 時採信最右側真實客戶端 IP', clientIp(reqProxied) === '203.0.113.195')
+    delete process.env.TRUST_PROXY
+}
+
 store.close()
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

@@ -105,6 +105,7 @@ docker build -f server/Dockerfile \
 | `SELF_HOST_STATIC_DIR` | ❌ | `/app/static` | 前端靜態目錄（image 已內建；要改用外部 dist 可改此值 + 掛 volume） |
 | `BACKUP_RETENTION_COUNT` | ❌ | `100` | 每使用者備份保留筆數（超出自動刪最舊） |
 | `ALLOWED_ORIGINS` | ❌ | `*` | CORS 允許的 origin，逗號分隔。**公網部署務必設為明確域名白名單**（見下方 HTTPS 反代章節） |
+| `TRUST_PROXY` | ❌ | `0` | 反向代理信任開關。`1` = 信任上游反向代理傳入的 `X-Forwarded-For`、`X-Real-IP`、`CF-Connecting-IP` 標頭以識別使用者真實 IP；`0`（預設）= 直接以 TCP Socket 連線 IP 進行限速（直連環境防偽造標頭繞過限速） |
 | `NO_INDEX` | ❌ | `1` | 搜尋引擎爬蟲控制。預設 `1` = 阻擋爬蟲與搜尋引擎收錄（HTTP `X-Robots-Tag: noindex, nofollow`、`/robots.txt` 與 HTML meta）；設 `0` 放行 |
 
 ### 前端 build 參數（build-arg，非執行期 env）

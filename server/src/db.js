@@ -200,16 +200,25 @@ export class SqliteStore {
     /** @returns {Promise<object>} */
     async createUser(username, pinHash) {
         const now = Date.now()
-        const result = this.db
-            .prepare(
-                'INSERT INTO users (username, pin_hash, created_at) VALUES (?, ?, ?)'
-            )
-            .run(username, pinHash, now)
-        return {
-            id: Number(result.lastInsertRowid),
-            username,
-            pin_hash: pinHash,
-            created_at: now,
+        try {
+            const result = this.db
+                .prepare(
+                    'INSERT INTO users (username, pin_hash, created_at) VALUES (?, ?, ?)'
+                )
+                .run(username, pinHash, now)
+            return {
+                id: Number(result.lastInsertRowid),
+                username,
+                pin_hash: pinHash,
+                created_at: now,
+            }
+        } catch (err) {
+            if (err.message && err.message.includes('UNIQUE constraint failed')) {
+                const conflictErr = new Error('Username already exists')
+                conflictErr.code = 'USER_CONFLICT'
+                throw conflictErr
+            }
+            throw err
         }
     }
 
@@ -353,16 +362,21 @@ export class SqliteStore {
      */
     async createSharedLedger(ledgerUuid, ownerId, name, content) {
         const now = Date.now()
-        this.db
-            .prepare(
-                `INSERT INTO shared_ledgers (ledger_uuid, owner_user_id, name, content, modified_at, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(ledger_uuid) DO UPDATE SET
-                     name = excluded.name,
-                     content = excluded.content,
-                     modified_at = excluded.modified_at`
-            )
-            .run(ledgerUuid, ownerId, name, JSON.stringify(content), now, now)
+        try {
+            this.db
+                .prepare(
+                    `INSERT INTO shared_ledgers (ledger_uuid, owner_user_id, name, content, modified_at, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?)`
+                )
+                .run(ledgerUuid, ownerId, name, JSON.stringify(content), now, now)
+        } catch (err) {
+            if (err.message && err.message.includes('UNIQUE constraint failed')) {
+                const conflictErr = new Error('Shared ledger already exists')
+                conflictErr.code = 'LEDGER_CONFLICT'
+                throw conflictErr
+            }
+            throw err
+        }
         await this.addSharedMember(ledgerUuid, ownerId, await this._usernameOf(ownerId))
         return {
             ledger_uuid: ledgerUuid,

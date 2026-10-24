@@ -154,7 +154,14 @@ function injectNoIndexMeta(htmlStr) {
 async function serveStatic(pathname) {
     if (!STATIC_DIR || !existsSync(STATIC_DIR)) return null
 
-    const filePath = normalize(join(STATIC_DIR, pathname))
+    let decodedPath = pathname
+    try {
+        decodedPath = decodeURIComponent(pathname)
+    } catch (_) {
+        return null
+    }
+
+    const filePath = normalize(join(STATIC_DIR, decodedPath))
     // 防 directory traversal（含同前綴兄弟目錄如 /app/static-secret）
     if (filePath !== STATIC_DIR && !filePath.startsWith(STATIC_DIR + sep)) return null
 
@@ -271,6 +278,10 @@ async function toWebRequest(req) {
     for (const [key, value] of Object.entries(req.headers)) {
         if (value)
             headers.set(key, Array.isArray(value) ? value.join(', ') : value)
+    }
+    // 底層 TCP Socket 遠端 IP（防標頭未啟用反代時限速器全站共用 local）
+    if (req.socket?.remoteAddress) {
+        headers.set('x-socket-remote-address', req.socket.remoteAddress)
     }
 
     const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
@@ -392,10 +403,35 @@ const server = createServer(async (req, res) => {
             return
         }
         console.error('Server error:', err)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(500, {
+            'Content-Type': 'application/json',
+            ...getSecurityHeaders(),
+        })
         res.end(JSON.stringify({ error: 'Internal server error' }))
     }
 })
+
+function gracefulShutdown(signal) {
+    console.log(`\n  [SelfHost] 收到 ${signal}，正在安全關閉伺服器...`)
+    server.close(() => {
+        if (store) {
+            try {
+                store.close()
+                console.log('  [SelfHost] 資料庫連接已安全關閉')
+            } catch (err) {
+                console.error('  [SelfHost] 關閉資料庫時發生錯誤:', err)
+            }
+        }
+        process.exit(0)
+    })
+    setTimeout(() => {
+        console.error('  [SelfHost] 強制退出逾時')
+        process.exit(1)
+    }, 5000).unref()
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 
 server.listen(PORT, () => {
     console.log(`

@@ -234,18 +234,23 @@ export const lookupLimiter = new RateLimiter({
 
 /**
  * 取客戶端識別 key（限速用）。
- * 僅在明確設定 TRUST_PROXY=1 時才信任反代標頭，
- * 預設回傳 'local'（絕不信任未驗證之客戶端自訂標頭，防攻擊者偽造標頭繞過限速）。
+ * 僅在明確設定 TRUST_PROXY=1 時才信任反代標頭（防攻擊者偽造標頭繞過限速）。
+ * 非反代環境或未設定 TRUST_PROXY 時，優先採用 Node.js Socket 直連 IP（x-socket-remote-address）。
  */
 export function clientIp(request) {
     if (process.env.TRUST_PROXY === '1') {
         const cfIp = request.headers.get('cf-connecting-ip')
         if (cfIp) return cfIp.trim()
-        const xff = request.headers.get('x-forwarded-for')
-        if (xff) return xff.split(',')[0].trim()
         const realIp = request.headers.get('x-real-ip')
         if (realIp) return realIp.trim()
+        const xff = request.headers.get('x-forwarded-for')
+        if (xff) {
+            const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
+            if (parts.length > 0) return parts[parts.length - 1]
+        }
     }
+    const directIp = request.headers.get('x-socket-remote-address')
+    if (directIp) return directIp.trim()
     return 'local'
 }
 
