@@ -30,12 +30,15 @@ services:
             args:
                 AD_FREE: "${AD_FREE:-1}"          # 1 = 無廣告（自架預設）
                 ACCESS_CODE: "${ACCESS_CODE:-}"   # 可留空
+                NO_INDEX: "${NO_INDEX:-1}"        # 1 = 注入 no-index 防爬蟲（自架預設）
                 # 前端「伺服器地址」預設值 = 你的自架網址（build 期注入；見 SELF_HOST.md）
                 VITE_SYNC_SERVER_URL: "${VITE_SYNC_SERVER_URL:-}"
         container_name: easy-accounting-sync
         ports:
             - '${PORT:-8080}:8080'
         environment:
+            # ── 搜尋引擎爬蟲控制（預設 1 = 阻擋爬蟲 noindex/nofollow；設 0 放行）──
+            - NO_INDEX=${NO_INDEX:-1}
             # ── Google OAuth Proxy（純自架模式可留空 + DISABLE_GOOGLE_OAUTH=1）──
             - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
             - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}

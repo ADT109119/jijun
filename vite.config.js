@@ -81,12 +81,36 @@ function serviceWorkerVersionPlugin() {
     }
 }
 
+/**
+ * Vite 插件：自架版注入 no-index meta 標籤（防爬蟲索引）
+ * 預設若 process.env.NO_INDEX === '1' 或 process.env.SELF_HOST_NO_INDEX === '1'，
+ * 則在 <head> 內自動注入 <meta name="robots" content="noindex, nofollow" />
+ */
+function noIndexPlugin() {
+    return {
+        name: 'no-index-plugin',
+        transformIndexHtml(html) {
+            const noIndex =
+                process.env.NO_INDEX === '1' ||
+                process.env.SELF_HOST_NO_INDEX === '1'
+            if (noIndex) {
+                return html.replace(
+                    '</head>',
+                    '    <meta name="robots" content="noindex, nofollow" />\n    </head>'
+                )
+            }
+            return html
+        },
+    }
+}
+
 export default defineConfig({
     plugins: [
         legacy({
             targets: ['defaults', 'not IE 11'],
         }),
         serviceWorkerVersionPlugin(),
+        noIndexPlugin(),
     ],
     define: {
         // 編譯時常數：所有 src/ 下的 JS 都可直接使用

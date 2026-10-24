@@ -88,8 +88,18 @@ try {
   // 靜態伺服
   const idx = await get('/')
   check('靜態 index.html', idx.status === 200 && idx.text.includes('JIJUN_STATIC_OK'), idx.text.slice(0, 80))
+  check('靜態 index.html 帶 meta robots noindex', idx.text.includes('<meta name="robots" content="noindex, nofollow" />'))
+  check('靜態 index.html 帶 x-robots-tag', idx.headers['x-robots-tag'] === 'noindex, nofollow')
+
   const spa = await get('/records')
   check('SPA fallback → index.html', spa.status === 200 && spa.text.includes('JIJUN_STATIC_OK'), spa.status)
+  check('SPA fallback 帶 meta robots noindex', spa.text.includes('<meta name="robots" content="noindex, nofollow" />'))
+
+  // 爬蟲控制 (NO_INDEX 預設)
+  const robots = await get('/robots.txt')
+  check('GET /robots.txt 200', robots.status === 200)
+  check('robots.txt 包含 Disallow: /', robots.text.includes('Disallow: /') && robots.text.includes('User-agent: *'))
+  check('robots.txt 帶 x-robots-tag', robots.headers['x-robots-tag'] === 'noindex, nofollow')
 
   // bootstrap admin (admin / bootstrap-pin123)
   const login = await post('/api/selfhost/login', { username: 'admin', pin: 'bootstrap-pin123' })

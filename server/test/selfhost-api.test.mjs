@@ -404,6 +404,11 @@ check('health 帶 CSP', (r.headers?.['content-security-policy'] || '').includes(
 check('health 帶 X-Frame-Options=DENY', r.headers?.['x-frame-options'] === 'DENY')
 check('health 帶 nosniff', r.headers?.['x-content-type-options'] === 'nosniff')
 check('health 帶 Referrer-Policy', (r.headers?.['referrer-policy'] || '').includes('strict-origin'))
+check('health 預設帶 X-Robots-Tag: noindex, nofollow', r.headers?.['x-robots-tag'] === 'noindex, nofollow')
+process.env.NO_INDEX = '0'
+const rAllow = await req('GET', '/api/health')
+check('NO_INDEX=0 時無 X-Robots-Tag', !rAllow.headers?.['x-robots-tag'])
+delete process.env.NO_INDEX
 
 console.log('== CORS 不反射任意 Origin（H-1）==')
 // 走 /api/selfhost/me（其 corsHeaders 取自 ctx.env.ALLOWED_ORIGINS）

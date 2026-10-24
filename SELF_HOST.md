@@ -105,6 +105,7 @@ docker build -f server/Dockerfile \
 | `SELF_HOST_STATIC_DIR` | ❌ | `/app/static` | 前端靜態目錄（image 已內建；要改用外部 dist 可改此值 + 掛 volume） |
 | `BACKUP_RETENTION_COUNT` | ❌ | `100` | 每使用者備份保留筆數（超出自動刪最舊） |
 | `ALLOWED_ORIGINS` | ❌ | `*` | CORS 允許的 origin，逗號分隔。**公網部署務必設為明確域名白名單**（見下方 HTTPS 反代章節） |
+| `NO_INDEX` | ❌ | `1` | 搜尋引擎爬蟲控制。預設 `1` = 阻擋爬蟲與搜尋引擎收錄（HTTP `X-Robots-Tag: noindex, nofollow`、`/robots.txt` 與 HTML meta）；設 `0` 放行 |
 
 ### 前端 build 參數（build-arg，非執行期 env）
 
@@ -112,6 +113,7 @@ docker build -f server/Dockerfile \
 | ---- | ---- | ---- |
 | `AD_FREE` | `1` | `1` = 移除所有廣告（AdSense / GPT / AdMob 完全不出現於 bundle） |
 | `ACCESS_CODE` | 空 | 前端存取驗證碼（見上方「選配」） |
+| `NO_INDEX` | `1` | `1` = 於前端 `index.html` 注入 `<meta name="robots" content="noindex, nofollow" />` 防爬蟲。設為 `0` 不注入 |
 | `VITE_SYNC_SERVER_URL` | 空 | App 內「伺服器地址」輸入框的**預設值**。設為你的自架網址（如 `https://sync.yourdomain.com`）後，新裝置首次使用就預填你的伺服器（含 Google 代理換證目標），不再預設指向官方伺服器；留空 = 沿用官方預設 |
 
 ```bash

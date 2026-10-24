@@ -21,9 +21,12 @@ ARG ACCESS_CODE=
 # 設定後，App「伺服器地址」預設值就是你的自架網址（含 Google 代理換證目標），
 # 不再指向官方伺服器。留空 = 沿用官方預設（一般版行為不變）。
 ARG VITE_SYNC_SERVER_URL=
+# 搜尋引擎索引控制（預設 1 = 注入 noindex, nofollow 防止自架站被爬取）
+ARG NO_INDEX=1
 ENV AD_FREE=${AD_FREE}
 ENV ACCESS_CODE=${ACCESS_CODE}
 ENV VITE_SYNC_SERVER_URL=${VITE_SYNC_SERVER_URL}
+ENV NO_INDEX=${NO_INDEX}
 
 WORKDIR /build
 
@@ -59,6 +62,7 @@ COPY server/src/ ./src/
 # Data volume (SQLite DB 等)
 VOLUME /app/data
 ENV SELF_HOST_DB_PATH=/app/data/selfhost.db
+ENV NO_INDEX=1
 
 # Expose default port
 EXPOSE 8080

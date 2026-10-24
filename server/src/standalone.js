@@ -28,7 +28,7 @@ import { readFile } from 'node:fs/promises'
 import { existsSync, statSync } from 'node:fs'
 import { resolve, normalize, extname, join, sep } from 'node:path'
 import { handleRequest } from './index.js'
-import { SECURITY_HEADERS } from './http.js'
+import { SECURITY_HEADERS, getSecurityHeaders } from './http.js'
 import { SqliteStore } from './db.js'
 
 const PORT = parseInt(process.env.PORT || '8080', 10)
@@ -139,6 +139,18 @@ const MIME_TYPES = {
  * 允許長期 immutable 快取。
  * @returns {Promise<Response|null>} null 表示非靜態請求
  */
+function injectNoIndexMeta(htmlStr) {
+    if (htmlStr.includes('name="robots"')) return htmlStr
+    const metaTag = '    <meta name="robots" content="noindex, nofollow" />\n'
+    if (htmlStr.includes('</head>')) {
+        return htmlStr.replace('</head>', metaTag + '    </head>')
+    } else if (htmlStr.includes('<head>')) {
+        return htmlStr.replace('<head>', '<head>\n' + metaTag)
+    } else {
+        return metaTag + htmlStr
+    }
+}
+
 async function serveStatic(pathname) {
     if (!STATIC_DIR || !existsSync(STATIC_DIR)) return null
 
@@ -148,16 +160,23 @@ async function serveStatic(pathname) {
 
     try {
         if (existsSync(filePath) && statSync(filePath).isFile()) {
-            const content = await readFile(filePath)
+            let content = await readFile(filePath)
             const type = MIME_TYPES[extname(filePath)] || 'application/octet-stream'
             const isHtml = extname(filePath) === '.html'
+            const isNoIndex =
+                process.env.NO_INDEX !== '0' &&
+                process.env.SELF_HOST_NO_INDEX !== '0'
+            if (isHtml && isNoIndex) {
+                const htmlStr = injectNoIndexMeta(content.toString('utf-8'))
+                content = Buffer.from(htmlStr, 'utf-8')
+            }
             // /assets/*-<hash>.js|css 等 Vite 產物 → 長期快取
             const hashed = pathname.startsWith('/assets/') && /-[A-Za-z0-9_]{8,}\.[A-Za-z0-9]+$/.test(pathname)
             return new Response(content, {
                 status: 200,
                 headers: {
                     'Content-Type': type,
-                    ...SECURITY_HEADERS,
+                    ...getSecurityHeaders(),
                     'Cache-Control': isHtml
                         ? 'no-cache'
                         : hashed
@@ -174,12 +193,19 @@ async function serveStatic(pathname) {
     if (pathname.startsWith('/api/')) return null
     const indexFile = join(STATIC_DIR, 'index.html')
     if (existsSync(indexFile)) {
-        const content = await readFile(indexFile)
+        let content = await readFile(indexFile)
+        const isNoIndex =
+            process.env.NO_INDEX !== '0' &&
+            process.env.SELF_HOST_NO_INDEX !== '0'
+        if (isNoIndex) {
+            const htmlStr = injectNoIndexMeta(content.toString('utf-8'))
+            content = Buffer.from(htmlStr, 'utf-8')
+        }
         return new Response(content, {
             status: 200,
             headers: {
                 'Content-Type': 'text/html; charset=utf-8',
-                ...SECURITY_HEADERS,
+                ...getSecurityHeaders(),
                 'Cache-Control': 'no-cache',
             },
         })
@@ -294,13 +320,39 @@ const server = createServer(async (req, res) => {
             res.writeHead(405, {
                 'Content-Type': 'application/json',
                 Allow: 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-                ...SECURITY_HEADERS,
+                ...getSecurityHeaders(),
             })
             res.end(JSON.stringify({ error: 'Method not allowed' }))
             return
         }
-        // 靜態請求直接處理（避免 Request body 讀取）
+
         const rawUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+
+        // 爬蟲控制：/robots.txt（自架版預設拒絕所有爬蟲，NO_INDEX=0 時放行）
+        if (
+            (req.method === 'GET' || req.method === 'HEAD') &&
+            rawUrl.pathname === '/robots.txt'
+        ) {
+            const isNoIndex =
+                process.env.NO_INDEX !== '0' &&
+                process.env.SELF_HOST_NO_INDEX !== '0'
+            const robotsTxt = isNoIndex
+                ? 'User-agent: *\nDisallow: /\n'
+                : 'User-agent: *\nAllow: /\n'
+            res.writeHead(200, {
+                'Content-Type': 'text/plain; charset=utf-8',
+                ...getSecurityHeaders(),
+                'Cache-Control': 'public, max-age=86400',
+            })
+            if (req.method === 'HEAD') {
+                res.end()
+            } else {
+                res.end(robotsTxt)
+            }
+            return
+        }
+
+        // 靜態請求直接處理（避免 Request body 讀取）
         if (
             (req.method === 'GET' || req.method === 'HEAD') &&
             !rawUrl.pathname.startsWith('/api/')
@@ -333,7 +385,7 @@ const server = createServer(async (req, res) => {
         if (err && err.status === 413) {
             res.writeHead(413, {
                 'Content-Type': 'application/json',
-                ...SECURITY_HEADERS,
+                ...getSecurityHeaders(),
             })
             res.end(JSON.stringify({ error: 'Payload Too Large' }))
             req.destroy()

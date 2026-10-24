@@ -64,8 +64,8 @@ server/                  # Docker 自架同步伺服器
 │   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本、備份還原、成員管理)
 │   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、日誌分段與 5 鍵去重)
 │   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 限速)
-│   ├── standalone.js    # 獨立 HTTP 伺服器 (包含靜態網頁託管與 API 轉發)
-│   ├── http.js          # 核心 HTTP 路由分發與中介層
+│   ├── standalone.js    # 獨立 HTTP 伺服器 (包含靜態網頁託管與 API 轉發、動態 /robots.txt 與 SPA HTML 自動注入 noindex 防爬蟲)
+│   ├── http.js          # 核心 HTTP 路由分發與中介層 (統一安全標頭 getSecurityHeaders，預設 X-Robots-Tag: noindex, nofollow 防私有實例被索引)
 │   └── admin-cli.js     # 自架管理員 CLI 工具 (使用者管理、密碼重設、帳本查詢)
 ├── test/                # 自架伺服器單元與整合測試
 ├── Dockerfile           # 輕量化 Docker 容器構建檔 (Node.js Alpine)

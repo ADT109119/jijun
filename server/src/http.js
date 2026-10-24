@@ -6,7 +6,7 @@
  */
 
 /**
- * 統一安全回應標頭（紅隊報告 M-3：ZAP baseline 命中項補齊）。
+ * 統一安全回應標頭（紅隊報告 M-3：ZAP baseline 命中項補齊，預設加入 noindex 防爬蟲）。
  *
  * CSP 說明（本 App 特性）：
  * - script-src 需 'unsafe-inline'：index.html 有首屏內聯 script（主題預載），
@@ -16,30 +16,40 @@
  *   的 mixed-content 規則仍會擋 http，故不降低實際安全。
  * - camera/microphone 不禁：QR 掃描與 AI 語音記帳為正式功能。
  * - frame-ancestors 'none' + X-Frame-Options DENY：防點擊劫持。
+ * - X-Robots-Tag：自架版預設為 'noindex, nofollow'（NO_INDEX=0 時才關閉）。
  */
-export const SECURITY_HEADERS = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy':
-        'geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), accelerometer=(), gyroscope=(), magnetometer=()',
-    'Cross-Origin-Opener-Policy': 'same-origin',
-    'Content-Security-Policy': [
-        "default-src 'self'",
-        "base-uri 'self'",
-        "form-action 'self'",
-        "frame-ancestors 'none'",
-        "object-src 'none'",
-        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob: https:",
-        "font-src 'self' data:",
-        "connect-src 'self' http: https: data: blob:",
-        "worker-src 'self' blob:",
-        "frame-src https://accounts.google.com",
-        "manifest-src 'self'",
-    ].join('; '),
+export function getSecurityHeaders() {
+    const isNoIndex =
+        typeof process === 'undefined' ||
+        !process.env ||
+        (process.env.NO_INDEX !== '0' && process.env.SELF_HOST_NO_INDEX !== '0')
+    return {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        ...(isNoIndex ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}),
+        'Permissions-Policy':
+            'geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), accelerometer=(), gyroscope=(), magnetometer=()',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Content-Security-Policy': [
+            "default-src 'self'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+            "object-src 'none'",
+            "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https:",
+            "font-src 'self' data:",
+            "connect-src 'self' http: https: data: blob:",
+            "worker-src 'self' blob:",
+            "frame-src https://accounts.google.com",
+            "manifest-src 'self'",
+        ].join('; '),
+    }
 }
+
+export const SECURITY_HEADERS = getSecurityHeaders()
 
 /**
  * 建立 JSON 回應
@@ -54,7 +64,7 @@ export function jsonResponse(body, status, corsHeaders, extraHeaders) {
         status,
         headers: {
             ...Object.fromEntries(corsHeaders.entries()),
-            ...SECURITY_HEADERS,
+            ...getSecurityHeaders(),
             ...(extraHeaders || {}),
             'Content-Type': 'application/json',
             // API 狀態回應不可被瀏覽器 heuristically cache：

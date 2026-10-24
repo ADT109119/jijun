@@ -214,5 +214,6 @@ jobs:
 | `SELF_HOST_STATIC_DIR` |  ❌  | 前端靜態目錄（預設 `/app/static`；Docker image 已內建前端） |
 | `SELF_HOST_ALLOW_REGISTER` | ❌ | 公開註冊開關（`1` = 開放，預設 `0` 關閉；admin 可 runtime 切換，DB 覆寫此 env） |
 | `BACKUP_RETENTION_COUNT` | ❌ | 每使用者備份保留筆數（預設 `100`）     |
+| `NO_INDEX`             |  ❌  | 搜尋引擎爬蟲控制（預設 `1` = 阻擋爬蟲與搜尋引擎收錄，設 `0` 放行） |
 
 > 純自架部署的完整指南（Docker / systemd / HTTPS / 故障排除）：[../SELF_HOST.md](../SELF_HOST.md)
