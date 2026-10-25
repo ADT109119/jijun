@@ -28,7 +28,7 @@ src/js/
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理、初次推送自動 seedAllDataToSyncLog 完整上傳歷史資料、登出與 409 衝突自動換輪換 deviceId、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
+├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理、初次推送自動 seedAllDataToSyncLog 完整上傳歷史資料、登出與 409 衝突自動換輪換 deviceId、登出即時撤銷 Token、_selfHostFetch 標頭合併防覆寫、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
 ├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
@@ -61,10 +61,10 @@ src/js/pages/
 
 server/                  # Docker 自架同步伺服器
 ├── src/
-│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護、裝置衝突 409 與 registerUserWithDevice 原子註冊)
-│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、registerUserWithDevice 交易包裹防孤兒使用者、createSharedLedger 原子新增防競態、日誌分段與 5 鍵去重)
-│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 鎖定防穿透淘汰修復、TRUST_PROXY 安全守門 isPrivateOrLoopbackIp 防外網偽造 IP 繞過限速)
-│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt、processRobotsMeta 執行期即時切換 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、500 安全標頭與 SIGTERM/SIGINT 優雅關閉)
+│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護、裝置衝突 409、registerUserWithDevice 原子註冊、成功登入清空 IP 失敗計數、帳號級延遲防 DoS、POST /logout 立即撤銷 Token、備份 500MB 總容量配額防護)
+│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、registerUserWithDevice 交易包裹防孤兒使用者、createSharedLedger 與 deleteUser 交易原子化、deleteToken 註銷、findSharedLedgersByPrefix 抽象查詢、日誌分段與 5 鍵去重)
+│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 鎖定防穿透淘汰修復、TRUST_PROXY 安全守門 isPrivateOrLoopbackIp、X-Forwarded-For 右側真實 IP 優先採信防反代偽造)
+│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt、processRobotsMeta 執行期即時切換 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、大 Body 請求未驗證提早 401 拒絕防記憶體消耗、500 安全標頭與 SIGTERM/SIGINT ctx.store.close() 優雅關閉)
 │   ├── http.js          # 核心 HTTP 路由分發與中介層 (統一安全標頭 getSecurityHeaders，預設 X-Robots-Tag: noindex, nofollow 防私有實例被索引)
 │   └── admin-cli.js     # 自架管理員 CLI 工具 (使用者管理、密碼重設、帳本查詢)
 ├── test/                # 自架伺服器單元與整合測試

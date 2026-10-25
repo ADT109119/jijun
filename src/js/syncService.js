@@ -527,6 +527,10 @@ export class SyncService {
             }
         }
 
+        if (this.selfHostToken && this.serverUrl) {
+            await this._selfHostFetch('/logout', { method: 'POST' }).catch(() => {})
+        }
+
         this.accessToken = null
         this.refreshToken = null
         this.tokenExpiresAt = null
@@ -658,20 +662,25 @@ export class SyncService {
     }
 
     async _selfHostFetch(path, options = {}) {
+        const { headers: customHeaders, ...restOptions } = options
         const res = await fetch(`${this.serverUrl}/api/selfhost${path}`, {
             // self-host API 狀態回應不可快取（PUT 後緊接的 GET 若讀快取會過期）
             cache: 'no-store',
+            ...restOptions,
             headers: {
                 ...this._selfHostHeaders(),
                 ...(options.body
                     ? { 'Content-Type': 'application/json' }
                     : {}),
-                ...options.headers,
+                ...customHeaders,
             },
-            ...options,
         })
-        if (res.status === 401) {
-            // token 被伺服器端清除（例如 DB 重設）→ 自動登出
+        const isProxyAuthChallenge = res.headers
+            ?.get?.('www-authenticate')
+            ?.toLowerCase()
+            ?.startsWith('basic')
+        if (res.status === 401 && !isProxyAuthChallenge) {
+            // token 被伺服器端清除（例如 DB 重設或主動 logout）→ 自動登出
             this.selfHostToken = null
             this.selfHostUsername = null
             await this.dataService

@@ -299,6 +299,19 @@ async function toWebRequest(req) {
             err.status = 413
             throw err
         }
+        // 🔐 防記憶體耗盡：針對大型 Payload 端點（如 backup、push、shared），
+        // 若未帶 Authorization 標頭且長度超過 64KB，在讀取 body 前直接拒絕
+        if (maxBytes > 64 * 1024 && (cl > 64 * 1024 || !req.headers['content-length'])) {
+            const requiresAuth =
+                urlPath.startsWith('/api/selfhost/backup') ||
+                urlPath.startsWith('/api/selfhost/push') ||
+                urlPath.startsWith('/api/selfhost/shared')
+            if (requiresAuth && !req.headers['authorization']) {
+                const err = new Error('Unauthorized')
+                err.status = 401
+                throw err
+            }
+        }
         const chunks = []
         let totalBytes = 0
         for await (const chunk of req) {
@@ -396,6 +409,15 @@ const server = createServer(async (req, res) => {
         const responseBody = await webResponse.text()
         res.end(responseBody)
     } catch (err) {
+        if (err && err.status === 401) {
+            res.writeHead(401, {
+                'Content-Type': 'application/json',
+                ...getSecurityHeaders(),
+            })
+            res.end(JSON.stringify({ error: 'Unauthorized' }))
+            req.destroy()
+            return
+        }
         if (err && err.status === 413) {
             res.writeHead(413, {
                 'Content-Type': 'application/json',
@@ -417,9 +439,9 @@ const server = createServer(async (req, res) => {
 function gracefulShutdown(signal) {
     console.log(`\n  [SelfHost] 收到 ${signal}，正在安全關閉伺服器...`)
     server.close(() => {
-        if (store) {
+        if (ctx?.store) {
             try {
-                store.close()
+                ctx.store.close()
                 console.log('  [SelfHost] 資料庫連接已安全關閉')
             } catch (err) {
                 console.error('  [SelfHost] 關閉資料庫時發生錯誤:', err)

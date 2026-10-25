@@ -753,6 +753,72 @@ console.log('== 註冊流程原子性（裝置衝突回滾使用者）==')
     resetLimitersForTests()
 }
 
+console.log('== 成功登入清零 IP 限速計數 ==')
+{
+    resetLimitersForTests()
+    await req('POST', '/api/selfhost/register', { body: { username: 'frequent_user', pin: 'freq-pin-123' } }, regCtx)
+    let ok = true
+    for (let i = 0; i < 35; i++) {
+        const res = await req('POST', '/api/selfhost/login', { body: { username: 'frequent_user', pin: 'freq-pin-123' } })
+        if (res.status !== 200) {
+            ok = false
+            break
+        }
+    }
+    check('同一 IP 連續成功登入 35 次不被 429 阻擋', ok)
+    resetLimitersForTests()
+}
+
+console.log('== POST /logout 撤銷 Token ==')
+{
+    const regRes = await req('POST', '/api/selfhost/register', { body: { username: 'logout_user', pin: 'pin-logout' } }, regCtx)
+    const token = regRes.json.token
+    const authH = { Authorization: `Bearer ${token}` }
+
+    const meBefore = await req('GET', '/api/selfhost/me', { headers: authH })
+    check('登出前 Token 有效', meBefore.status === 200)
+
+    const logoutRes = await req('POST', '/api/selfhost/logout', { headers: authH })
+    check('logout 回傳 200 success', logoutRes.status === 200 && logoutRes.json.success === true)
+
+    const meAfter = await req('GET', '/api/selfhost/me', { headers: authH })
+    check('登出後 Token 失效回傳 401', meAfter.status === 401)
+    resetLimitersForTests()
+}
+
+console.log('== 帳號級防護不硬鎖合法使用者（Anti-DoS）==')
+{
+    await req('POST', '/api/selfhost/register', { body: { username: 'dos_target', pin: 'target-pin-456' } }, regCtx)
+    const { accountLoginLimiter } = await import('../src/auth.js')
+    for (let i = 0; i < 20; i++) {
+        accountLoginLimiter.recordFailure('dos_target')
+    }
+    check('帳號已處於全域失敗高發狀態', accountLoginLimiter.check('dos_target') !== null)
+
+    const loginRes = await req('POST', '/api/selfhost/login', { body: { username: 'dos_target', pin: 'target-pin-456' } })
+    check('合法使用者輸入正確 PIN 依然能成功登入 (200)', loginRes.status === 200)
+    check('成功登入後清空帳號限速懲罰', accountLoginLimiter.check('dos_target') === null)
+    resetLimitersForTests()
+}
+
+console.log('== 備份使用者總容量配額防護 ==')
+{
+    const regUser = await req('POST', '/api/selfhost/register', { body: { username: 'quota_user', pin: 'pin-quota' } }, regCtx)
+    const token = regUser.json.token
+    const authH = { Authorization: `Bearer ${token}` }
+
+    // 模擬已佔滿配額
+    const smallContent = JSON.stringify({ test: 'quota' })
+    await store.putBackup(regUser.json.username === 'quota_user' ? (await store.getUserByUsername('quota_user')).id : 1, 'dev_1', 'dummy.json', smallContent, 501 * 1024 * 1024)
+
+    const overRes = await req('POST', '/api/selfhost/backup', {
+        headers: authH,
+        body: { fileName: 'exceed.json', content: smallContent, size: 1024 }
+    })
+    check('超過總配額時回報 413 Payload Too Large', overRes.status === 413)
+    resetLimitersForTests()
+}
+
 store.close()
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

@@ -210,7 +210,6 @@ export async function handleRegister(request, ctx, corsHeaders) {
     const rlKey = `${ip}|${username}`
     const blocked =
         loginLimiter.check(rlKey) ||
-        accountLoginLimiter.check(username) ||
         ipLoginLimiter.check(ip)
     if (blocked) {
         return jsonResponse(
@@ -219,6 +218,10 @@ export async function handleRegister(request, ctx, corsHeaders) {
             corsHeaders,
             { 'Retry-After': String(blocked.retryAfterSec) }
         )
+    }
+    // 帳號級防護：若該帳號遭遇跨 IP 分散式暴力猜解，引入延遲拖慢攻擊節奏（避免硬鎖導致合法管理者被 DoS）
+    if (accountLoginLimiter.check(username)) {
+        await new Promise(r => setTimeout(r, 1000))
     }
 
     const existing = await ctx.store.getUserByUsername(username)
@@ -240,6 +243,7 @@ export async function handleRegister(request, ctx, corsHeaders) {
         }
         loginLimiter.recordSuccess(rlKey)
         accountLoginLimiter.recordSuccess(username)
+        ipLoginLimiter.recordSuccess(ip)
         const { token } = await ctx.store.createToken(existing.id)
 
         // 登入分支也處理傳入的 deviceId（支援換新 deviceId 重試或新裝置登入）
@@ -315,12 +319,11 @@ export async function handleLogin(request, ctx, corsHeaders) {
     if (!isValidUsername(username) || !isValidPin(pin)) {
         return jsonResponse({ error: 'Invalid username or PIN' }, 400, corsHeaders)
     }
-    // 防暴力（紅隊報告 H-2）：每 IP+帳號 10 次失敗/分鐘，且受帳號/IP 全域失敗限速保護
+    // 防暴力（紅隊報告 H-2）：每 IP+帳號 10 次失敗/分鐘，且受 IP 全域失敗限速保護
     const ip = clientIp(request)
     const rlKey = `${ip}|${username}`
     const blocked =
         loginLimiter.check(rlKey) ||
-        accountLoginLimiter.check(username) ||
         ipLoginLimiter.check(ip)
     if (blocked) {
         return jsonResponse(
@@ -330,6 +333,11 @@ export async function handleLogin(request, ctx, corsHeaders) {
             { 'Retry-After': String(blocked.retryAfterSec) }
         )
     }
+    // 帳號級防護：若該帳號遭遇跨 IP 分散式暴力猜解，引入延遲拖慢攻擊節奏（避免硬鎖導致合法管理者被 DoS）
+    if (accountLoginLimiter.check(username)) {
+        await new Promise(r => setTimeout(r, 1000))
+    }
+
     // 預先登記嘗試（防止高併發並行請求繞過限速）
     loginLimiter.recordFailure(rlKey)
     accountLoginLimiter.recordFailure(username)
@@ -341,8 +349,28 @@ export async function handleLogin(request, ctx, corsHeaders) {
     }
     loginLimiter.recordSuccess(rlKey)
     accountLoginLimiter.recordSuccess(username)
+    ipLoginLimiter.recordSuccess(ip)
     const { token } = await ctx.store.createToken(user.id)
     return jsonResponse({ token, username: user.username }, 200, corsHeaders)
+}
+
+/**
+ * POST /api/selfhost/logout（需 auth）
+ * 立即註銷當前連線之 Bearer Token
+ */
+export async function handleLogout(request, ctx, corsHeaders) {
+    const authHeader = request.headers.get('authorization') || ''
+    const match = authHeader.match(/^Bearer\s+(.+)$/i)
+    if (!match) {
+        return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    }
+    const token = match[1].trim()
+    const user = await ctx.store.verifyToken(token)
+    if (!user) {
+        return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    }
+    await ctx.store.deleteToken(token)
+    return jsonResponse({ success: true }, 200, corsHeaders)
 }
 
 /**
@@ -589,6 +617,18 @@ export async function handleBackupPut(request, ctx, corsHeaders) {
         typeof body.size === 'number' && isFinite(body.size)
             ? body.size
             : Buffer.byteLength(body.content, 'utf8')
+
+    // 容量配額檢查（防單一使用者灌爆伺服器磁碟，預設每人總配額 500 MB）
+    const totalUserSize = await ctx.store.getUserBackupsTotalSize(user.id)
+    const maxQuota = Number(ctx.env.BACKUP_TOTAL_QUOTA_BYTES) || 500 * 1024 * 1024
+    if (totalUserSize + size > maxQuota) {
+        return jsonResponse(
+            { error: 'Backup storage quota exceeded (500 MB limit)' },
+            413,
+            corsHeaders
+        )
+    }
+
     const backup = await ctx.store.putBackup(
         user.id,
         deviceId,
@@ -929,16 +969,7 @@ export async function handleSharedLookup(request, ctx, corsHeaders) {
     if (!/^[0-9a-f-]+$/i.test(code)) {
         return jsonResponse({ error: 'Invalid code format' }, 400, corsHeaders)
     }
-    const rows =
-        code.length === 36
-            ? ctx.store.db
-                  .prepare('SELECT * FROM shared_ledgers WHERE ledger_uuid = ?')
-                  .all(code)
-            : ctx.store.db
-                  .prepare(
-                      "SELECT * FROM shared_ledgers WHERE ledger_uuid LIKE ?"
-                  )
-                  .all(code + '%')
+    const rows = await ctx.store.findSharedLedgersByPrefix(code)
     if (rows.length === 0) {
         // 未命中 = 前綴掃描探測行為 → 記失敗（配 30 次/分鐘上限，
         // 65536 前綴空間需持續數十分鐘高頻請求，正常使用者不會觸犯）
@@ -1297,6 +1328,9 @@ export async function handleSelfHostRoute(request, ctx) {
         }
         if (method === 'POST' && pathname === '/api/selfhost/login') {
             return await handleLogin(request, ctx, corsHeaders)
+        }
+        if (method === 'POST' && pathname === '/api/selfhost/logout') {
+            return await handleLogout(request, ctx, corsHeaders)
         }
         if (method === 'GET' && pathname === '/api/selfhost/me') {
             return await handleMe(request, ctx, corsHeaders)

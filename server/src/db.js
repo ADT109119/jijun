@@ -364,38 +364,55 @@ export class SqliteStore {
         return false
     }
 
+    /** 註銷單一 Token（登出撤銷） */
+    async deleteToken(token) {
+        if (!token) return false
+        const tokenHash = sha256Hex(token)
+        const result = this.db
+            .prepare('DELETE FROM user_tokens WHERE token_hash = ?')
+            .run(tokenHash)
+        return Number(result.changes) > 0
+    }
+
     /**
      * 刪除帳號（連帶 token、devices、device_logs、backups、sync_changes、shared_ledgers 與成員關係）。
      * @returns {Promise<boolean>} 成功與否
      */
     async deleteUser(userId) {
-        // 先在 devices cascade 刪除前清掉該使用者裝置的 device_logs
-        this.db
-            .prepare(
-                'DELETE FROM device_logs WHERE user_id = ? OR device_id IN (SELECT device_id FROM devices WHERE user_id = ?)'
-            )
-            .run(userId, userId)
-        const result = this.db
-            .prepare('DELETE FROM users WHERE id = ?')
-            .run(userId)
-        if (Number(result.changes) > 0) {
-            // 清除該使用者擁有的共用帳本及其成員關係，以及無 FK cascade 的表
+        this.db.exec('BEGIN IMMEDIATE')
+        try {
+            // 先在 devices cascade 刪除前清掉該使用者裝置的 device_logs
             this.db
                 .prepare(
-                    'DELETE FROM shared_ledger_members WHERE ledger_uuid IN (SELECT ledger_uuid FROM shared_ledgers WHERE owner_user_id = ?)'
+                    'DELETE FROM device_logs WHERE user_id = ? OR device_id IN (SELECT device_id FROM devices WHERE user_id = ?)'
                 )
+                .run(userId, userId)
+            const result = this.db
+                .prepare('DELETE FROM users WHERE id = ?')
                 .run(userId)
-            this.db
-                .prepare('DELETE FROM shared_ledgers WHERE owner_user_id = ?')
-                .run(userId)
-            this.db
-                .prepare('DELETE FROM shared_ledger_members WHERE user_id = ?')
-                .run(userId)
-            this.db
-                .prepare('DELETE FROM sync_changes WHERE user_id = ?')
-                .run(userId)
+            if (Number(result.changes) > 0) {
+                // 清除該使用者擁有的共用帳本及其成員關係，以及無 FK cascade 的表
+                this.db
+                    .prepare(
+                        'DELETE FROM shared_ledger_members WHERE ledger_uuid IN (SELECT ledger_uuid FROM shared_ledgers WHERE owner_user_id = ?)'
+                    )
+                    .run(userId)
+                this.db
+                    .prepare('DELETE FROM shared_ledgers WHERE owner_user_id = ?')
+                    .run(userId)
+                this.db
+                    .prepare('DELETE FROM shared_ledger_members WHERE user_id = ?')
+                    .run(userId)
+                this.db
+                    .prepare('DELETE FROM sync_changes WHERE user_id = ?')
+                    .run(userId)
+            }
+            this.db.exec('COMMIT')
+            return Number(result.changes) > 0
+        } catch (err) {
+            this.db.exec('ROLLBACK')
+            throw err
         }
-        return Number(result.changes) > 0
     }
 
     /** 取得某 username 的 user 是否為 admin */
@@ -465,6 +482,19 @@ export class SqliteStore {
                 .prepare('SELECT * FROM shared_ledgers WHERE ledger_uuid = ?')
                 .get(ledgerUuid) || null
         )
+    }
+
+    /** 依完整 UUID 或前綴查詢共用帳本列表 */
+    async findSharedLedgersByPrefix(code) {
+        if (!code) return []
+        if (code.length === 36) {
+            return this.db
+                .prepare('SELECT * FROM shared_ledgers WHERE ledger_uuid = ?')
+                .all(code)
+        }
+        return this.db
+            .prepare('SELECT * FROM shared_ledgers WHERE ledger_uuid LIKE ?')
+            .all(code + '%')
     }
 
     /** 更新共用帳本內容（合併既有與新進 changes，以 changeKey 去重防併發覆蓋）。始終保留既有歷史。@returns {Promise<number>} modified_at */
@@ -915,6 +945,14 @@ export class SqliteStore {
             .prepare('DELETE FROM backups WHERE id = ?')
             .run(id)
         return Number(result.changes) > 0
+    }
+
+    /** 取得某使用者目前所有備份之總檔案大小（bytes） */
+    async getUserBackupsTotalSize(userId) {
+        const row = this.db
+            .prepare('SELECT COALESCE(SUM(size), 0) AS total FROM backups WHERE user_id = ?')
+            .get(userId)
+        return Number(row?.total || 0)
     }
 
     /**

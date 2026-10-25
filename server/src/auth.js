@@ -258,15 +258,24 @@ export function clientIp(request) {
     const directIp = request.headers.get('x-socket-remote-address')?.trim() || ''
     if (process.env.TRUST_PROXY === '1') {
         if (!directIp || isPrivateOrLoopbackIp(directIp)) {
-            const cfIp = request.headers.get('cf-connecting-ip')
-            if (cfIp) return cfIp.trim()
-            const realIp = request.headers.get('x-real-ip')
-            if (realIp) return realIp.trim()
+            const specificHeader = process.env.TRUST_PROXY_HEADER?.toLowerCase().trim()
+            if (specificHeader) {
+                const val = request.headers.get(specificHeader)
+                if (val) {
+                    const parts = val.split(',').map(s => s.trim()).filter(Boolean)
+                    if (parts.length > 0) return parts[parts.length - 1]
+                }
+            }
+            // 預設標準反代順序：X-Forwarded-For 最右側由最近之受信任反代追加，防偽造優先度最高
             const xff = request.headers.get('x-forwarded-for')
             if (xff) {
                 const parts = xff.split(',').map(s => s.trim()).filter(Boolean)
                 if (parts.length > 0) return parts[parts.length - 1]
             }
+            const realIp = request.headers.get('x-real-ip')
+            if (realIp) return realIp.trim()
+            const cfIp = request.headers.get('cf-connecting-ip')
+            if (cfIp) return cfIp.trim()
         }
     }
     if (directIp) return directIp

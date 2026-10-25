@@ -246,15 +246,32 @@ sudo systemctl enable --now jijun-selfhost
 sudo systemctl status jijun-selfhost
 ```
 
-### HTTPS 反向代理（Caddy 範例）
+### HTTPS 反向代理（Caddy / Nginx 範例）
 
-```
+當伺服器置於反向代理之後時，**務必在 `.env` 或 `docker-compose.yml` 中設定 `TRUST_PROXY=1`**，伺服器才會依據反代轉發的 `X-Forwarded-For` 取得真實用戶 IP，以避免全站所有請求共用同一個 IP 限速池（被誤判 429）。同時強烈建議在 `.env` 設定 `HOST_BIND=127.0.0.1:`，防止外部訪客繞過反向代理直連容器公開埠。
+
+**Caddyfile 範例**：
+```caddy
 sync.yourdomain.com {
     reverse_proxy localhost:8080
 }
 ```
 
-Nginx 重點：`proxy_set_header X-Forwarded-Proto https;`（server 會用它決定 URL 協議）。
+**Nginx 範例**：
+```nginx
+server {
+    server_name sync.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
 `ALLOWED_ORIGINS` **務必設為你的前端域名（而非 `*`）**，例如：
 
 ```bash
@@ -274,6 +291,7 @@ ALLOWED_ORIGINS=https://jijun.yourdomain.com
 | ------ | ---- | ---- |
 | `POST` | `/api/selfhost/register` | 註冊帳號（body: `{username, pin, deviceId?}`）→ `201 {token, username}`；帳號已存在時等同登入（`200`）。**公開註冊關閉時回 `403`**（`SELF_HOST_ALLOW_REGISTER=0`，預設） |
 | `POST` | `/api/selfhost/login` | 登入（body: `{username, pin}`）→ `{token, username}` |
+| `POST` | `/api/selfhost/logout` | 登出（立即撤銷當前請求之 Bearer Token）→ `{success: true}` |
 | `GET` | `/api/selfhost/me` | 目前帳號 + 裝置列表 |
 | `POST` | `/api/selfhost/devices/register` | 註冊裝置（body: `{deviceId}`） |
 | `POST` | `/api/selfhost/push` | 推送變更（body: `{deviceId, changes[]}`，≤5000 筆/次） |
