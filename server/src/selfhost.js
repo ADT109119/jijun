@@ -34,6 +34,7 @@ import {
     registerLimiter,
     accountLoginLimiter,
     ipLoginLimiter,
+    memberAddLimiter,
     clientIp,
 } from './auth.js'
 
@@ -43,6 +44,45 @@ import {
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/
 const MAX_CHANGE_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
+
+function safeDecodeURIComponent(val) {
+    try {
+        return decodeURIComponent(val)
+    } catch (_) {
+        return null
+    }
+}
+
+const activeAccountVerifications = new Map()
+
+async function acquireAccountSlot(username) {
+    if (accountLoginLimiter.check(username)) {
+        let attempts = 0
+        while ((activeAccountVerifications.get(username) || 0) >= 1) {
+            attempts++
+            if (attempts > 10) {
+                return false
+            }
+            await new Promise(r => setTimeout(r, 200))
+        }
+        await new Promise(r => setTimeout(r, 500))
+    }
+    activeAccountVerifications.set(
+        username,
+        (activeAccountVerifications.get(username) || 0) + 1
+    )
+    return true
+}
+
+function releaseAccountSlot(username) {
+    const current = activeAccountVerifications.get(username) || 1
+    if (current <= 1) {
+        activeAccountVerifications.delete(username)
+    } else {
+        activeAccountVerifications.set(username, current - 1)
+    }
+}
+
 const MAX_BACKUP_BODY_BYTES = 50 * 1024 * 1024 // 50 MB
 
 function isValidUsername(username) {
@@ -219,22 +259,31 @@ export async function handleRegister(request, ctx, corsHeaders) {
             { 'Retry-After': String(blocked.retryAfterSec) }
         )
     }
-    // 帳號級防護：若該帳號遭遇跨 IP 分散式暴力猜解，引入延遲拖慢攻擊節奏（避免硬鎖導致合法管理者被 DoS）
-    if (accountLoginLimiter.check(username)) {
-        await new Promise(r => setTimeout(r, 1000))
-    }
-
     const existing = await ctx.store.getUserByUsername(username)
     if (existing) {
-        // 已存在 → 直接當 login 處理（token 會換發新值，舊 token 仍有效）
+        // 預先登記嘗試（防止高併發並行請求繞過限速）
         loginLimiter.recordFailure(rlKey)
         accountLoginLimiter.recordFailure(username)
         ipLoginLimiter.recordFailure(ip)
 
-        const ok = await ctx.store.verifyLogin(username, pin)
+        // 帳號級防護：並行控制與延遲排隊
+        const slotAcquired = await acquireAccountSlot(username)
+        if (!slotAcquired) {
+            return jsonResponse(
+                { error: 'Too many concurrent login attempts. Try again later.' },
+                429,
+                corsHeaders,
+                { 'Retry-After': '1' }
+            )
+        }
+        let ok = false
+        try {
+            ok = await ctx.store.verifyLogin(username, pin)
+        } finally {
+            releaseAccountSlot(username)
+        }
+
         if (!ok) {
-            // L-1 修正：不洩漏帳號存在性——錯 PIN 與 login 端回傳完全相同的
-            // 訊息與狀態碼（存在+錯PIN → 401 Invalid username or PIN）。
             return jsonResponse(
                 { error: 'Invalid username or PIN' },
                 401,
@@ -243,7 +292,7 @@ export async function handleRegister(request, ctx, corsHeaders) {
         }
         loginLimiter.recordSuccess(rlKey)
         accountLoginLimiter.recordSuccess(username)
-        ipLoginLimiter.recordSuccess(ip)
+        ipLoginLimiter.cancelPreRecordedFailure(ip)
         const { token } = await ctx.store.createToken(existing.id)
 
         // 登入分支也處理傳入的 deviceId（支援換新 deviceId 重試或新裝置登入）
@@ -333,23 +382,34 @@ export async function handleLogin(request, ctx, corsHeaders) {
             { 'Retry-After': String(blocked.retryAfterSec) }
         )
     }
-    // 帳號級防護：若該帳號遭遇跨 IP 分散式暴力猜解，引入延遲拖慢攻擊節奏（避免硬鎖導致合法管理者被 DoS）
-    if (accountLoginLimiter.check(username)) {
-        await new Promise(r => setTimeout(r, 1000))
-    }
-
     // 預先登記嘗試（防止高併發並行請求繞過限速）
     loginLimiter.recordFailure(rlKey)
     accountLoginLimiter.recordFailure(username)
     ipLoginLimiter.recordFailure(ip)
 
-    const user = await ctx.store.verifyLogin(username, pin)
+    // 帳號級防護：並行控制與延遲排隊
+    const slotAcquired = await acquireAccountSlot(username)
+    if (!slotAcquired) {
+        return jsonResponse(
+            { error: 'Too many concurrent login attempts. Try again later.' },
+            429,
+            corsHeaders,
+            { 'Retry-After': '1' }
+        )
+    }
+    let user = null
+    try {
+        user = await ctx.store.verifyLogin(username, pin)
+    } finally {
+        releaseAccountSlot(username)
+    }
+
     if (!user) {
         return jsonResponse({ error: 'Invalid username or PIN' }, 401, corsHeaders)
     }
     loginLimiter.recordSuccess(rlKey)
     accountLoginLimiter.recordSuccess(username)
-    ipLoginLimiter.recordSuccess(ip)
+    ipLoginLimiter.cancelPreRecordedFailure(ip)
     const { token } = await ctx.store.createToken(user.id)
     return jsonResponse({ token, username: user.username }, 200, corsHeaders)
 }
@@ -613,17 +673,22 @@ export async function handleBackupPut(request, ctx, corsHeaders) {
         }
     }
 
-    const size =
-        typeof body.size === 'number' && isFinite(body.size)
-            ? body.size
-            : Buffer.byteLength(body.content, 'utf8')
+    // 一律以實際 Buffer 位元組計算，絕不信任 client size
+    const actualSize = Buffer.byteLength(body.content, 'utf8')
 
-    // 容量配額檢查（防單一使用者灌爆伺服器磁碟，預設每人總配額 500 MB）
+    // 數量保留策略：先淘汰超出 retention - 1 的舊備份騰出空間，再進行容量配額檢查
+    const retention = ctx.env.BACKUP_RETENTION_COUNT || 100
+    if (retention > 1) {
+        await ctx.store.pruneBackups(user.id, retention - 1)
+    }
+
+    // 容量配額檢查（防單一使用者灌爆伺服器磁碟）
     const totalUserSize = await ctx.store.getUserBackupsTotalSize(user.id)
     const maxQuota = Number(ctx.env.BACKUP_TOTAL_QUOTA_BYTES) || 500 * 1024 * 1024
-    if (totalUserSize + size > maxQuota) {
+    if (totalUserSize + actualSize > maxQuota) {
+        const maxQuotaMb = Math.round(maxQuota / (1024 * 1024))
         return jsonResponse(
-            { error: 'Backup storage quota exceeded (500 MB limit)' },
+            { error: `Backup storage quota exceeded (${maxQuotaMb} MB limit)` },
             413,
             corsHeaders
         )
@@ -634,12 +699,8 @@ export async function handleBackupPut(request, ctx, corsHeaders) {
         deviceId,
         body.fileName,
         body.content,
-        size
+        actualSize
     )
-
-    // 數量保留策略
-    const retention = ctx.env.BACKUP_RETENTION_COUNT || 100
-    await ctx.store.pruneBackups(user.id, retention)
 
     return jsonResponse(
         {
@@ -971,19 +1032,23 @@ export async function handleSharedLookup(request, ctx, corsHeaders) {
     }
     const rows = await ctx.store.findSharedLedgersByPrefix(code)
     if (rows.length === 0) {
-        // 未命中 = 前綴掃描探測行為 → 記失敗（配 30 次/分鐘上限，
-        // 65536 前綴空間需持續數十分鐘高頻請求，正常使用者不會觸犯）
+        // 未命中 = 前綴掃描探測行為 → 記失敗（配 30 次/分鐘上限）
         lookupLimiter.recordFailure(rlKey)
         return jsonResponse({ found: false }, 200, corsHeaders)
     }
-    // 成員才回 uuid + name（M-1：非成員僅知存在性，且不重置限速計數）
-    const isMember = await ctx.store.isSharedMember(rows[0].ledger_uuid, user.id)
-    if (!isMember) {
+    // 遍歷所有前綴相符的共用帳本，尋找當前使用者所屬的帳本（避免前綴碰撞時次要帳本成員查不到）
+    let matchedRow = null
+    for (const r of rows) {
+        if (await ctx.store.isSharedMember(r.ledger_uuid, user.id)) {
+            matchedRow = r
+            break
+        }
+    }
+    if (!matchedRow) {
         return jsonResponse({ found: true }, 200, corsHeaders)
     }
-    lookupLimiter.recordSuccess(rlKey)
     return jsonResponse(
-        { found: true, uuid: rows[0].ledger_uuid, name: rows[0].name },
+        { found: true, uuid: matchedRow.ledger_uuid, name: matchedRow.name },
         200,
         corsHeaders
     )
@@ -1029,6 +1094,13 @@ export async function handleSharedCreate(request, ctx, corsHeaders) {
     const content = body.content && Array.isArray(body.content.changes)
         ? body.content
         : { deviceId: user.username, timestamp: Date.now(), changes: [] }
+    if (content.changes.length > 20000) {
+        return jsonResponse(
+            { error: 'Too many changes (max 20000)' },
+            400,
+            corsHeaders
+        )
+    }
     try {
         await ctx.store.createSharedLedger(body.ledgerUuid, user.id, name, content)
     } catch (err) {
@@ -1193,6 +1265,16 @@ export async function handleSharedAddMember(
     if (!user) {
         return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
     }
+    const rlKey = `member_add|${user.id}`
+    const blocked = memberAddLimiter.check(rlKey)
+    if (blocked) {
+        return jsonResponse(
+            { error: 'Too many attempts. Try again later.' },
+            429,
+            corsHeaders,
+            { 'Retry-After': String(blocked.retryAfterSec) }
+        )
+    }
     const shared = await ctx.store.getSharedLedger(uuid)
     if (!shared) {
         return jsonResponse({ error: 'Shared ledger not found' }, 404, corsHeaders)
@@ -1210,6 +1292,7 @@ export async function handleSharedAddMember(
     }
     const target = await ctx.store.getUserByUsername(body.username)
     if (!target) {
+        memberAddLimiter.recordFailure(rlKey)
         return jsonResponse(
             { error: 'User not found (ask them to register/login first)' },
             404,
@@ -1367,23 +1450,17 @@ export async function handleSelfHostRoute(request, ctx) {
             /^\/api\/selfhost\/admin\/users\/([^/]+)\/reset-pin$/
         )
         if (adminResetMatch && method === 'POST') {
-            return await handleAdminResetPin(
-                request,
-                ctx,
-                corsHeaders,
-                decodeURIComponent(adminResetMatch[1])
-            )
+            const decoded = safeDecodeURIComponent(adminResetMatch[1])
+            if (!decoded) return jsonResponse({ error: 'Invalid URL encoding' }, 400, corsHeaders)
+            return await handleAdminResetPin(request, ctx, corsHeaders, decoded)
         }
         const adminUserMatch = pathname.match(
             /^\/api\/selfhost\/admin\/users\/([^/]+)$/
         )
         if (adminUserMatch && method === 'DELETE') {
-            return await handleAdminDeleteUser(
-                request,
-                ctx,
-                corsHeaders,
-                decodeURIComponent(adminUserMatch[1])
-            )
+            const decoded = safeDecodeURIComponent(adminUserMatch[1])
+            if (!decoded) return jsonResponse({ error: 'Invalid URL encoding' }, 400, corsHeaders)
+            return await handleAdminDeleteUser(request, ctx, corsHeaders, decoded)
         }
         if (
             pathname === '/api/selfhost/admin/settings/register' &&
@@ -1406,12 +1483,14 @@ export async function handleSelfHostRoute(request, ctx) {
             /^\/api\/selfhost\/shared\/([^/]+)\/members\/([^/]+)$/
         )
         if (sharedMemberRemoveMatch && method === 'DELETE') {
+            const decoded = safeDecodeURIComponent(sharedMemberRemoveMatch[2])
+            if (!decoded) return jsonResponse({ error: 'Invalid URL encoding' }, 400, corsHeaders)
             return await handleSharedRemoveMember(
                 request,
                 ctx,
                 corsHeaders,
                 sharedMemberRemoveMatch[1],
-                decodeURIComponent(sharedMemberRemoveMatch[2])
+                decoded
             )
         }
         const sharedMemberMatch = pathname.match(

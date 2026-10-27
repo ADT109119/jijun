@@ -1,7 +1,6 @@
 # Docker build context 瘦身（Dockerfile 只 COPY 必要路徑，其餘全部排除以縮小 context）
 .git
 .github
-.hermes
 .dockerignore
 .gitignore
 

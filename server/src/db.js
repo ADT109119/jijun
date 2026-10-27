@@ -675,12 +675,19 @@ export class SqliteStore {
         const tokenHash = sha256Hex(token)
         const row = this.db
             .prepare(
-                `SELECT u.* FROM user_tokens t
+                `SELECT u.*, t.created_at AS token_created_at FROM user_tokens t
                  JOIN users u ON u.id = t.user_id
                  WHERE t.token_hash = ?`
             )
             .get(tokenHash)
-        return row || null
+        if (!row) return null
+        // 90 天滑動有效期，逾期自動清除
+        const maxAgeMs = 90 * 24 * 60 * 60 * 1000
+        if (Date.now() - row.token_created_at > maxAgeMs) {
+            this.db.prepare('DELETE FROM user_tokens WHERE token_hash = ?').run(tokenHash)
+            return null
+        }
+        return row
     }
 
     // ──────────────────────────────────────────────

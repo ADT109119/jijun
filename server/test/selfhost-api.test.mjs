@@ -819,6 +819,102 @@ console.log('== 備份使用者總容量配額防護 ==')
     resetLimitersForTests()
 }
 
+
+console.log('== 穿插成功登入無法洗白 IP 歷史失敗計數 ==')
+{
+    resetLimitersForTests()
+    await req('POST', '/api/selfhost/register', { body: { username: 'attacker_main', pin: 'main-pin-123' } }, regCtx)
+    const { ipLoginLimiter } = await import('../src/auth.js')
+    // 攻擊者先對其他帳號累積 28 次失敗
+    for (let i = 0; i < 28; i++) {
+        ipLoginLimiter.recordFailure('198.51.100.99')
+    }
+    // 穿插一次對自己帳號的成功登入
+    const successRes = await req('POST', '/api/selfhost/login', {
+        headers: { 'x-socket-remote-address': '198.51.100.99' },
+        body: { username: 'attacker_main', pin: 'main-pin-123' }
+    })
+    check('穿插成功登入回傳 200', successRes.status === 200)
+
+    // 隨後再嘗試 4 次錯誤猜解，累計失敗達標必須被 429 阻擋（無法洗白歷史計數）
+    let blocked = false
+    for (let i = 0; i < 4; i++) {
+        const failRes = await req('POST', '/api/selfhost/login', {
+            headers: { 'x-socket-remote-address': '198.51.100.99' },
+            body: { username: 'target_victim', pin: 'wrong' }
+        })
+        if (failRes.status === 429) {
+            blocked = true
+            break
+        }
+    }
+    check('穿插成功登入無法洗白 IP 失敗次數（依舊被 429 阻擋）', blocked)
+    resetLimitersForTests()
+}
+
+console.log('== 備份真實大小計算防偽造 size 繞過配額 ==')
+{
+    const regRes = await req('POST', '/api/selfhost/register', { body: { username: 'fake_size_user', pin: 'pin-size-test' } }, regCtx)
+    const token = regRes.json.token
+    const authH = { Authorization: `Bearer ${token}` }
+
+    const content500b = JSON.stringify({ data: 'A'.repeat(500) })
+    const realBytes = Buffer.byteLength(content500b, 'utf8')
+
+    // 用戶試圖帶偽造的 size: 1 或負數
+    const putRes = await req('POST', '/api/selfhost/backup', {
+        headers: authH,
+        body: { fileName: 'test_size.json', content: content500b, size: -9999 }
+    })
+    check('備份成功寫入', putRes.status === 201)
+
+    const listRes = await req('GET', '/api/selfhost/backups', { headers: authH })
+    const savedBackup = listRes.json.backups.find(b => b.name === 'test_size.json')
+    check('伺服器記錄真實大小而非客戶端偽造的負數', savedBackup && Number(savedBackup.size) === realBytes)
+    resetLimitersForTests()
+}
+
+console.log('== handleSharedLookup 前綴碰撞回傳使用者所屬帳本 ==')
+{
+    // 建立兩個前綴相同的共用帳本
+    const prefixUuid1 = 'a1b2c3d4-1111-4000-8000-000000000001'
+    const prefixUuid2 = 'a1b2c3d4-2222-4000-8000-000000000002'
+
+    // alice 擁有帳本 1
+    const regAlice = await req('POST', '/api/selfhost/login', { body: { username: 'alice', pin: 'secret-pin' } })
+    await req('POST', '/api/selfhost/shared', {
+        headers: { Authorization: `Bearer ${regAlice.json.token}` },
+        body: { ledgerUuid: prefixUuid1, name: 'Alice Ledger' }
+    })
+
+    // bob 擁有帳本 2
+    const regBob = await req('POST', '/api/selfhost/register', { body: { username: 'prefix_bob', pin: 'bob-pin-123' } }, regCtx)
+    await req('POST', '/api/selfhost/shared', {
+        headers: { Authorization: `Bearer ${regBob.json.token}` },
+        body: { ledgerUuid: prefixUuid2, name: 'Bob Ledger' }
+    })
+
+    // bob 用前 8 碼前綴查詢，應回傳屬於 bob 的帳本 2 而非 alice 的帳本 1
+    const lookupRes = await req('GET', '/api/selfhost/shared/lookup?code=a1b2c3d4', {
+        headers: { Authorization: `Bearer ${regBob.json.token}` }
+    })
+    check('前綴碰撞時準確命中使用者所屬之共用帳本', lookupRes.status === 200 && lookupRes.json.uuid === prefixUuid2 && lookupRes.json.name === 'Bob Ledger')
+    resetLimitersForTests()
+}
+
+console.log('== URL 非法編碼回傳 400 Bad Request ==')
+{
+    const adminLogin = await req('POST', '/api/selfhost/login', { body: { username: 'admin', pin: 'test-admin-secret-token-12345' } })
+    const authAdmin = { Authorization: `Bearer ${adminLogin.json.token}` }
+
+    const badUrlRes = await req('DELETE', '/api/selfhost/admin/users/%E0%A4%A', {
+        headers: authAdmin
+    })
+    check('無效百分比編碼回傳 400 Bad Request', badUrlRes.status === 400)
+    resetLimitersForTests()
+}
+
 store.close()
+
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)
 process.exit(failed > 0 ? 1 : 0)

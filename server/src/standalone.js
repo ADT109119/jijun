@@ -99,6 +99,10 @@ if (process.env.SELF_HOST_ADMIN_TOKEN) {
                 process.env.BACKUP_RETENTION_COUNT || '100',
                 10
             ),
+            BACKUP_TOTAL_QUOTA_BYTES: parseInt(
+                process.env.BACKUP_TOTAL_QUOTA_BYTES || String(500 * 1024 * 1024),
+                10
+            ),
             SELF_HOST_ALLOW_REGISTER: allowRegister,
         },
     }
@@ -204,6 +208,20 @@ async function serveStatic(pathname) {
         // 讀取失敗 → 落回 SPA fallback
     }
 
+    // 靜態資源未命中時直接回傳 404，不應落入 SPA fallback（防止將 index.html 當作 JS/CSS 載入噴語法錯誤）
+    if (
+        pathname.startsWith('/assets/') ||
+        /\.(js|mjs|css|png|jpg|jpeg|gif|svg|ico|woff2?|wasm|map|json)$/i.test(pathname)
+    ) {
+        return new Response('Not Found', {
+            status: 404,
+            headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                ...getSecurityHeaders(),
+            },
+        })
+    }
+
     // SPA fallback：非 /api 路徑一律回 index.html
     if (pathname.startsWith('/api/')) return null
     const indexFile = join(STATIC_DIR, 'index.html')
@@ -283,6 +301,7 @@ async function toWebRequest(req) {
             headers.set(key, Array.isArray(value) ? value.join(', ') : value)
     }
     // 底層 TCP Socket 遠端 IP（防標頭未啟用反代時限速器全站共用 local）
+    headers.delete('x-socket-remote-address')
     if (req.socket?.remoteAddress) {
         headers.set('x-socket-remote-address', req.socket.remoteAddress)
     }
@@ -306,10 +325,16 @@ async function toWebRequest(req) {
                 urlPath.startsWith('/api/selfhost/backup') ||
                 urlPath.startsWith('/api/selfhost/push') ||
                 urlPath.startsWith('/api/selfhost/shared')
-            if (requiresAuth && !req.headers['authorization']) {
+            if (requiresAuth) {
+                const authH = req.headers['authorization'] || ''
+                const m = authH.match(/^Bearer\s+(.+)$/i)
+                const tok = m ? m[1].trim() : ''
+                const u = tok && ctx?.store ? await ctx.store.verifyToken(tok) : null
+                if (!u) {
                 const err = new Error('Unauthorized')
                 err.status = 401
-                throw err
+                    throw err
+                }
             }
         }
         const chunks = []
@@ -412,19 +437,21 @@ const server = createServer(async (req, res) => {
         if (err && err.status === 401) {
             res.writeHead(401, {
                 'Content-Type': 'application/json',
+                'Connection': 'close',
                 ...getSecurityHeaders(),
             })
             res.end(JSON.stringify({ error: 'Unauthorized' }))
-            req.destroy()
+            req.resume()
             return
         }
         if (err && err.status === 413) {
             res.writeHead(413, {
                 'Content-Type': 'application/json',
+                'Connection': 'close',
                 ...getSecurityHeaders(),
             })
             res.end(JSON.stringify({ error: 'Payload Too Large' }))
-            req.destroy()
+            req.resume()
             return
         }
         console.error('Server error:', err)

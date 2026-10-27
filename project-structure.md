@@ -61,10 +61,10 @@ src/js/pages/
 
 server/                  # Docker 自架同步伺服器
 ├── src/
-│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護、裝置衝突 409、registerUserWithDevice 原子註冊、成功登入清空 IP 失敗計數、帳號級延遲防 DoS、POST /logout 立即撤銷 Token、備份 500MB 總容量配額防護)
-│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、registerUserWithDevice 交易包裹防孤兒使用者、createSharedLedger 與 deleteUser 交易原子化、deleteToken 註銷、findSharedLedgersByPrefix 抽象查詢、日誌分段與 5 鍵去重)
-│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 鎖定防穿透淘汰修復、TRUST_PROXY 安全守門 isPrivateOrLoopbackIp、X-Forwarded-For 右側真實 IP 優先採信防反代偽造)
-│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt、processRobotsMeta 執行期即時切換 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、大 Body 請求未驗證提早 401 拒絕防記憶體消耗、500 安全標頭與 SIGTERM/SIGINT ctx.store.close() 優雅關閉)
+│   ├── selfhost.js      # 自架同步 REST API (Per-Device 日誌、共用帳本防覆寫原子化、備份還原、成員管理、並行登入暴力猜解防護與帳號並行槽位控制、裝置衝突 409、registerUserWithDevice 原子註冊、成功登入抵銷前置計數 cancelPreRecordedFailure、帳號級延遲防 DoS、POST /logout 立即撤銷 Token、備份真實大小計算 Buffer.byteLength 防偽造負數、超過保留上限前置淘汰 pruneBackups 與 500MB 總容量配額防護、共用帳本成員邀請限速 memberAddLimiter 防帳號探測、前綴碰撞時遍歷所有前綴相符帳本回傳使用者所屬帳本、URL 參數 safeDecodeURIComponent 防 500)
+│   ├── db.js            # SQLite 資料庫操作層 (WAL 模式、多用戶、registerUserWithDevice 交易包裹防孤兒使用者、createSharedLedger 與 deleteUser 交易原子化、deleteToken 註銷、verifyToken 90 天滑動過期清除、findSharedLedgersByPrefix 抽象查詢、日誌分段與 5 鍵去重)
+│   ├── auth.js          # 身份驗證與安全模組 (scrypt 雜湊、Token 簽發、RateLimiter 鎖定防穿透淘汰修復與 cancelPreRecordedFailure 前置計數抵銷、memberAddLimiter 成員邀請限速、TRUST_PROXY 安全守門 isPrivateOrLoopbackIp、X-Forwarded-For 右側真實 IP 優先採信防反代偽造)
+│   ├── standalone.js    # 獨立 HTTP 伺服器 (靜態網頁託管與 API 轉發、動態 /robots.txt、processRobotsMeta 執行期即時切換 noindex 防爬蟲、decodeURIComponent 靜態路徑支援、404 未命中靜態資源防 SPA fallback 語法錯誤、大 Body 請求未驗證提早 401 拒絕防記憶體消耗與 Connection: close + req.resume() 釋放連接、x-socket-remote-address 防偽造清理、500 安全標頭與 SIGTERM/SIGINT ctx.store.close() 優雅關閉)
 │   ├── http.js          # 核心 HTTP 路由分發與中介層 (統一安全標頭 getSecurityHeaders，預設 X-Robots-Tag: noindex, nofollow 防私有實例被索引)
 │   └── admin-cli.js     # 自架管理員 CLI 工具 (使用者管理、密碼重設、帳本查詢)
 ├── test/                # 自架伺服器單元與整合測試

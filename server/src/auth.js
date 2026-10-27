@@ -178,6 +178,17 @@ export class RateLimiter {
         this._m.delete(key)
     }
 
+    /** 取消前置登記的嘗試（登入成功時僅抵銷前置計數，絕不洗白過往歷史失敗）。 */
+    cancelPreRecordedFailure(key) {
+        const e = this._m.get(key)
+        if (e && e.fails > 0) {
+            e.fails--
+            if (e.fails <= this.max) {
+                e.lockedUntil = 0
+            }
+        }
+    }
+
     _gc(now, force = false) {
         if (!force && now - this._lastGc < 5 * 60_000) return
         this._lastGc = now
@@ -226,6 +237,14 @@ export const registerLimiter = new RateLimiter({
 
 /** lookup 限速器：每帳號 30 次/分鐘（防 uuid 前綴空間掃描）。 */
 export const lookupLimiter = new RateLimiter({
+    windowMs: 60_000,
+    max: 30,
+    lockMs: 60_000,
+    maxLockMs: 10 * 60_000,
+})
+
+/** 共用帳本成員邀請限速器：每使用者 30 次/分鐘（防探測枚舉現有使用者名稱）。 */
+export const memberAddLimiter = new RateLimiter({
     windowMs: 60_000,
     max: 30,
     lockMs: 60_000,
@@ -289,4 +308,5 @@ export function resetLimitersForTests() {
     registerLimiter._m.clear()
     accountLoginLimiter._m.clear()
     ipLoginLimiter._m.clear()
+    memberAddLimiter._m.clear()
 }
