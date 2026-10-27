@@ -45,6 +45,18 @@ import {
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/
 const MAX_CHANGE_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
 
+const ALLOWED_SHARED_STORES = new Set([
+    'ledgers',
+    'groupMeta',
+    'accounts',
+    'contacts',
+    'debts',
+    'recurring_transactions',
+    'amortizations',
+    'credit_statements',
+    'records',
+])
+
 function safeDecodeURIComponent(val) {
     try {
         return decodeURIComponent(val)
@@ -56,7 +68,8 @@ function safeDecodeURIComponent(val) {
 const activeAccountVerifications = new Map()
 
 async function acquireAccountSlot(username) {
-    if (accountLoginLimiter.check(username)) {
+    const lockInfo = accountLoginLimiter.check(username)
+    if (lockInfo) {
         let attempts = 0
         while ((activeAccountVerifications.get(username) || 0) >= 1) {
             attempts++
@@ -65,7 +78,8 @@ async function acquireAccountSlot(username) {
             }
             await new Promise(r => setTimeout(r, 200))
         }
-        await new Promise(r => setTimeout(r, 500))
+        const delayMs = Math.min(3000, 1000 + (lockInfo.retryAfterSec || 1) * 50)
+        await new Promise(r => setTimeout(r, delayMs))
     }
     activeAccountVerifications.set(
         username,
@@ -676,22 +690,35 @@ export async function handleBackupPut(request, ctx, corsHeaders) {
     // 一律以實際 Buffer 位元組計算，絕不信任 client size
     const actualSize = Buffer.byteLength(body.content, 'utf8')
 
-    // 數量保留策略：先淘汰超出 retention - 1 的舊備份騰出空間，再進行容量配額檢查
+    // 數量保留策略：先試算淘汰超出 retention - 1 的舊備份後之預估容量
     const retention = ctx.env.BACKUP_RETENTION_COUNT || 100
+    let pruneFreedBytes = 0
     if (retention > 1) {
-        await ctx.store.pruneBackups(user.id, retention - 1)
+        const toPrune = ctx.store.db.prepare(
+            `SELECT COALESCE(SUM(size), 0) AS freed FROM backups WHERE id IN (
+                SELECT id FROM backups WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT -1 OFFSET ?
+            )`
+        ).get(user.id, retention - 1)
+        pruneFreedBytes = Number(toPrune?.freed || 0)
     }
 
-    // 容量配額檢查（防單一使用者灌爆伺服器磁碟）
-    const totalUserSize = await ctx.store.getUserBackupsTotalSize(user.id)
+    // 容量配額檢查：若「淘汰預計釋出後 + 新備份大小」超過配額，即刻拒絕，絕不提前誤刪舊備份
+    const currentTotal = await ctx.store.getUserBackupsTotalSize(user.id)
+    const projectedTotal = currentTotal - pruneFreedBytes + actualSize
     const maxQuota = Number(ctx.env.BACKUP_TOTAL_QUOTA_BYTES) || 500 * 1024 * 1024
-    if (totalUserSize + actualSize > maxQuota) {
+    if (projectedTotal > maxQuota) {
         const maxQuotaMb = Math.round(maxQuota / (1024 * 1024))
         return jsonResponse(
             { error: `Backup storage quota exceeded (${maxQuotaMb} MB limit)` },
             413,
             corsHeaders
         )
+    }
+
+    // 容量通過後才執行淘汰舊備份與寫入
+    if (retention > 1) {
+        await ctx.store.pruneBackups(user.id, retention - 1)
     }
 
     const backup = await ctx.store.putBackup(
@@ -1101,6 +1128,11 @@ export async function handleSharedCreate(request, ctx, corsHeaders) {
             corsHeaders
         )
     }
+    for (const c of content.changes) {
+        if (c && c.storeName && !ALLOWED_SHARED_STORES.has(c.storeName)) {
+            return jsonResponse({ error: `Forbidden store in shared ledger: ${c.storeName}` }, 400, corsHeaders)
+        }
+    }
     try {
         await ctx.store.createSharedLedger(body.ledgerUuid, user.id, name, content)
     } catch (err) {
@@ -1201,6 +1233,11 @@ export async function handleSharedPut(
             400,
             corsHeaders
         )
+    }
+    for (const c of body.content.changes) {
+        if (c && c.storeName && !ALLOWED_SHARED_STORES.has(c.storeName)) {
+            return jsonResponse({ error: `Forbidden store in shared ledger: ${c.storeName}` }, 400, corsHeaders)
+        }
     }
     const modifiedAt = await ctx.store.updateSharedLedgerContent(
         uuid,

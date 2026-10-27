@@ -36,10 +36,10 @@ export function createAccessGate(code, options = {}) {
     const enabled = !!code
     const storage =
         options.storage ||
-        (typeof sessionStorage !== 'undefined'
-            ? sessionStorage
-            : options.persistent
-                ? localStorage
+        (options.persistent && typeof localStorage !== 'undefined'
+            ? localStorage
+            : typeof sessionStorage !== 'undefined'
+                ? sessionStorage
                 : null)
 
     function _isGranted() {

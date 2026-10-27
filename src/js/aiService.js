@@ -670,7 +670,10 @@ export class AIService {
      * @returns {object}
      */
     extractToolCall(responseText, rawText = '', categories = []) {
-        const { calls } = parseToolCalls(responseText, { tools: ['add_record'] });
+        const { calls } = parseToolCalls(responseText, {
+            tools: ['add_record'],
+            pools: { category: Array.isArray(categories) ? categories : [] }
+        });
         const call = calls[0];
 
         if (!call.name || call.name !== 'add_record' || !call.args) {

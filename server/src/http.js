@@ -30,20 +30,20 @@ export function getSecurityHeaders() {
         ...(isNoIndex ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}),
         'Permissions-Policy':
             'geolocation=(), payment=(), usb=(), serial=(), bluetooth=(), accelerometer=(), gyroscope=(), magnetometer=()',
-        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
         'Content-Security-Policy': [
             "default-src 'self'",
             "base-uri 'self'",
             "form-action 'self'",
             "frame-ancestors 'none'",
             "object-src 'none'",
-            "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com",
+            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://apis.google.com https://pagead2.googlesyndication.com",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https:",
             "font-src 'self' data:",
             "connect-src 'self' http: https: data: blob:",
             "worker-src 'self' blob:",
-            "frame-src https://accounts.google.com",
+            "frame-src https://accounts.google.com https://googleads.g.doubleclick.net",
             "manifest-src 'self'",
         ].join('; '),
     }

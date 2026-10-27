@@ -66,7 +66,7 @@ export const TOOLS_SCHEMA = {
             date: "yyyy-mm-dd",
             additional_properties: false,
             note: "validation 欄位只供 validator 使用，絕不出現在 prompt 的 rendered schema 中（保持 prompt 位元穩定）",
-            runtime_optional: ["date"],
+            runtime_optional: ["date", "category", "account", "type"],
         },
     },
     {
@@ -490,9 +490,15 @@ export function validateCall(name, args, ctx = {}) {
         const originalInput = args[key]
         let value = args[key]
         if (value === undefined || value === null || value === '') continue
-        if (prop.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
-            issues.push(`欄位 ${key} 必須是數值`)
-            continue
+        if (prop.type === 'number') {
+            if (typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value))) {
+                value = Number(value)
+                args[key] = value
+            }
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+                issues.push(`欄位 ${key} 必須是數值`)
+                continue
+            }
         }
         if (prop.type === 'integer' && (typeof value !== 'number' || !Number.isInteger(value))) {
             issues.push(`欄位 ${key} 必須是整數`)

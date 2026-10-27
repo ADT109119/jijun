@@ -914,6 +914,52 @@ console.log('== URL 非法編碼回傳 400 Bad Request ==')
     resetLimitersForTests()
 }
 
+console.log('== 備份超額 413 時保留既有備份不被誤刪 ==')
+{
+    const regUser = await req('POST', '/api/selfhost/register', { body: { username: 'preserve_user', pin: 'pin-preserve' } }, regCtx)
+    const token = regUser.json.token
+    const authH = { Authorization: `Bearer ${token}` }
+    const userObj = await store.getUserByUsername('preserve_user')
+
+    // 寫入 2 筆合法備份
+    await store.putBackup(userObj.id, 'dev_1', 'old_1.json', JSON.stringify({ a: 1 }), 100)
+    await store.putBackup(userObj.id, 'dev_1', 'old_2.json', JSON.stringify({ a: 2 }), 100)
+
+    // 設定低配額環境（150 bytes，不足以放入新備份），觸發 413
+    const exceedRes = await req('POST', '/api/selfhost/backup', {
+        headers: authH,
+        body: { fileName: 'huge.json', content: JSON.stringify({ data: 'A'.repeat(100) }) }
+    }, { ...ctx, env: { ...ctx.env, BACKUP_RETENTION_COUNT: 2, BACKUP_TOTAL_QUOTA_BYTES: 150 } })
+
+    check('超額時回報 413', exceedRes.status === 413, exceedRes.status)
+    const remaining = await store.listBackups(userObj.id)
+    check('既有 2 筆備份完整保留未遭誤刪', remaining.length === 2, remaining.length)
+    resetLimitersForTests()
+}
+
+console.log('== 共用帳本禁止惡意 storeName 變更 ==')
+{
+    const regUser = await req('POST', '/api/selfhost/register', { body: { username: 'shared_sec_user', pin: 'sec-pin-123' } }, regCtx)
+    const token = regUser.json.token
+    const badUuid = '99999999-0000-4000-8000-000000000099'
+
+    // 嘗試建立帶有 budget_settings_1 的共用帳本
+    const badCreate = await req('POST', '/api/selfhost/shared', {
+        token,
+        body: {
+            ledgerUuid: badUuid,
+            name: 'Malicious Ledger',
+            content: {
+                changes: [
+                    { deviceId: 'attacker', timestamp: Date.now(), operation: 'update', storeName: 'budget_settings_1', data: { monthlyBudget: 0 } }
+                ]
+            }
+        }
+    })
+    check('建立含非法 storeName 之共用帳本回傳 400', badCreate.status === 400, badCreate.status)
+    resetLimitersForTests()
+}
+
 store.close()
 
 console.log(`\n===== ${passed} passed, ${failed} failed =====`)

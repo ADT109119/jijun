@@ -636,7 +636,27 @@ export class SyncService {
      * @param {string} url
      */
     async setServerUrl(url) {
-        this.serverUrl = url.replace(/\/+$/, '')
+        if (!url || typeof url !== 'string' || !url.trim()) {
+            this.serverUrl = ''
+            await this.dataService.saveSetting({
+                key: 'sync_server_url',
+                value: '',
+            })
+            return
+        }
+        let parsed
+        try {
+            parsed = new URL(url.trim())
+        } catch (_) {
+            throw new Error('伺服器網址格式不正確')
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            throw new Error('伺服器網址通訊協定必須為 http 或 https')
+        }
+        if (parsed.username || parsed.password) {
+            throw new Error('伺服器網址不得包含帳號密碼')
+        }
+        this.serverUrl = parsed.origin
         await this.dataService.saveSetting({
             key: 'sync_server_url',
             value: this.serverUrl,
@@ -1006,7 +1026,9 @@ export class SyncService {
      */
     async _selfHostPushSharedLedgerChanges() {
         const ledgers = await this.dataService.getLedgers()
-        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedProvider === 'selfhost' || (!l.sharedProvider && l.sharedFileId === l.uuid))
+        )
 
         for (const ledger of sharedLedgers) {
             try {
@@ -1016,7 +1038,22 @@ export class SyncService {
                 )
                 if (allLocalChanges.length === 0) continue
 
-                const shared = await this._selfHostSharedFetch(ledger.sharedFileId)
+                let shared = null
+                try {
+                    shared = await this._selfHostSharedFetch(ledger.sharedFileId)
+                } catch (fetchErr) {
+                    if (fetchErr.message && (fetchErr.message.includes('403') || fetchErr.message.includes('404'))) {
+                        console.warn(`[SyncService] 自架共用帳本 "${ledger.name}" 已被雲端刪除或權限撤銷 (403/404)，自動降級為個人帳本`)
+                        await this.dataService.updateLedger(ledger.id, {
+                            isShared: false,
+                            sharedFileId: null,
+                            sharedProvider: null,
+                            type: 'personal',
+                        }, true)
+                        continue
+                    }
+                    throw fetchErr
+                }
                 if (!shared) {
                     console.warn(
                         `[SyncService] pushShared (self-host): 無法讀取 "${ledger.name}" 的雲端內容，略過`
@@ -1035,12 +1072,12 @@ export class SyncService {
                     .filter(log => !cloudKeySet.has(this._changeKey(log)))
 
                 if (myMissingChanges.length > 0) {
-                    const merged = {
+                    const payload = {
                         deviceId: this.deviceId,
                         timestamp: Date.now(),
-                        changes: [...cloudChanges, ...myMissingChanges],
+                        changes: myMissingChanges,
                     }
-                    await this._selfHostSharedPut(ledger.sharedFileId, merged)
+                    await this._selfHostSharedPut(ledger.sharedFileId, payload)
                     console.log(
                         `[SyncService] pushShared (self-host): "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`
                     )
@@ -1540,11 +1577,9 @@ export class SyncService {
 
         const drivePushKey = 'sync_last_push_timestamp_drive'
         const lastPush = await this.dataService.getSetting(drivePushKey)
-        const legacyLastPush = await this.dataService.getSetting(
-            'sync_last_push_timestamp'
-        )
-        let since = lastPush?.value ?? legacyLastPush?.value ?? 0
-        if (!lastPush && !legacyLastPush) {
+        // 唯有 Drive 專屬水位不存在時，一律執行 seedAllDataToSyncLog 確保首次推至 Drive 時歷史資料完整上傳
+        let since = lastPush?.value ?? 0
+        if (!lastPush) {
             if (typeof this.dataService.seedAllDataToSyncLog === 'function') {
                 await this.dataService.seedAllDataToSyncLog()
             }
@@ -2130,7 +2165,7 @@ export class SyncService {
 
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(
-            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+            l => l.isShared && l.sharedProvider !== 'selfhost' && (l.sharedManifestId || l.sharedFileId)
         )
         let maxPushed = null
         let allSucceeded = true
@@ -2198,7 +2233,7 @@ export class SyncService {
 
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(
-            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+            l => l.isShared && l.sharedProvider !== 'selfhost' && (l.sharedManifestId || l.sharedFileId)
         )
 
         const appliedSetting = await this.dataService.getSetting(

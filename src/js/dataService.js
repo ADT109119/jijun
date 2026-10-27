@@ -1156,6 +1156,11 @@ class DataService {
                 if (recordData.groupId) {
                     await this.recalculateGroupState(recordData.groupId)
                 }
+                if (recordData.type === 'debt_repayment' || (recordData.category && recordData.category.includes('還款'))) {
+                    try {
+                        await this.autoPayCreditStatements()
+                    } catch (_) {}
+                }
             }
 
             return true
@@ -5529,16 +5534,11 @@ unbilledStartDate = new Date(lastStatementEndDate)
                         paidAmount: stmt.amount,
                     })
                 } else if (pool > 0) {
-                    const already =
-                        stmt.status === 'partial'
-                            ? stmt.paidAmount || 0
-                            : 0
-                    const newPaid = Math.max(already, pool)
                     await this.updateCreditStatement(stmt.id, {
                         status: 'partial',
-                        paidAmount: newPaid,
+                        paidAmount: pool,
                     })
-                    // 池已全數分配至本期（不足額），後續期別無款可沖，直接結束
+                    pool = 0
                     break
                 } else {
                     break

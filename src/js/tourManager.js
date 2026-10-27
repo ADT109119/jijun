@@ -36,6 +36,7 @@ const DEMO_TEST_DESC = '導覽測試記錄'
 const TOUR_VERSION_MAP = {
     '2.1.7.9': 'newFeatures',
     '2.1.8.0': 'newFeaturesV2',
+    '2.1.8.5': 'newFeaturesV2',
 }
 
 function getStored(key) {

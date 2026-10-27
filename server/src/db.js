@@ -1,7 +1,7 @@
 /**
  * Easy Accounting Sync Server — 資料庫儲存層（DB Abstraction Layer）
  *
- * 目前實作：SQLite（Node.js 內建 node:sqlite，需 Node.js >= 22.5）
+ * 目前實作：SQLite（Node.js 內建 node:sqlite，需 Node.js >= 22.13.0）
  *
  * 設計目標：所有 self-host 路由只依賴本層提供的「抽象 API」，
  * 不直接接觸 SQL。未來要支援 PostgreSQL / 其他 DB 時，
@@ -832,6 +832,9 @@ export class SqliteStore {
                 .prepare('SELECT user_id FROM devices WHERE device_id = ?')
                 .get(deviceId)
             const userId = deviceRow?.user_id || 0
+            if (parsed.changes.length > 20000) {
+                parsed.changes = parsed.changes.slice(-20000)
+            }
             const serialized = JSON.stringify(parsed)
 
             this.db

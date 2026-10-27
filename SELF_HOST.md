@@ -16,7 +16,7 @@
 - **前後端一體**：Docker image 已內建前端 build（預設 `AD_FREE=1` 無廣告），啟動後直接瀏覽 `http://你的IP:8080/` 就是完整記帳應用。
 - **公開註冊預設關閉**：只有管理員能建立帳號（web 設定頁「管理員：帳號管理」或 CLI），避免外部人士任意註冊。
 - **跨帳號共用帳本**：家人各自帳號、各自隱私，但可共用同一本「家庭支出」帳本（見下方章節）。
-- 預設使用 **SQLite**（`node:sqlite`，Node.js ≥ 22.5）。儲存層已抽象化（`server/src/db.js`），未來可換 PostgreSQL 等，路由層與前端不需更動。
+- 預設使用 **SQLite**（`node:sqlite`，Node.js ≥ 22.13.0）。儲存層已抽象化（`server/src/db.js`），未來可換 PostgreSQL 等，路由層與前端不需更動。
 
 ---
 
@@ -202,7 +202,7 @@ npm run build
 
 ## 無 Docker：Node.js 直接運行
 
-需要 **Node.js ≥ 22.5**（`node:sqlite`）。
+需要 **Node.js ≥ 22.13.0**（`node:sqlite`）。
 
 ```bash
 # 前端
@@ -345,7 +345,7 @@ docker compose exec sync-server node src/admin-cli.js set-register --disable
 
 （`--pin-file <path>` 可改從檔案讀 PIN，避免進 shell history。）
 
-認證：`Authorization: Bearer *** 為持久 token（SHA-256 hash 存 DB），**沒有過期機制**——洩漏時可重設 DB 或刪 user 使所有 token 失效。
+認證：`Authorization: Bearer ***` 採 SHA-256 雜湊儲存，具備 90 天有效期限並於驗證時自動清理過期憑證；使用者登出或管理員重設時立即撤銷。
 
 ### 帳號規則
 
@@ -404,7 +404,7 @@ docker compose exec sync-server node src/admin-cli.js set-register --disable
 
 1. **HTTPS**：生產環境務必用 HTTPS（PIN 與 token 走明文 HTTP 會被截獲）
 2. **強 token**：`SELF_HOST_ADMIN_TOKEN` 用 `openssl rand -hex 32` 產生
-3. **公開註冊預設已關閉**：需要時才開（`SELF_HOST_ALLOW_REGISTER=1` 或 admin runtime 切換）；對外的話仍建議加 reverse proxy 限流（目前 API 無 rate limit）
+3. **公開註冊預設已關閉**：需要時才開（`SELF_HOST_ALLOW_REGISTER=1` 或 admin runtime 切換）；對外時建議搭配 reverse proxy；API 本地已內建 IP、IP+帳號、帳號延遲槽位與共用帳本防探測限速
 4. **定期備份 DB 檔**（見上方「資料持久化」）
 5. 更新程序：`docker compose up -d --build`（重新 build 前端 + server）；DB schema 升級時 server 會自動 `CREATE TABLE IF NOT EXISTS`（目前無破壞性 migration）
 6. **ACCESS_CODE 是 UX 門檻非安全機制**：驗證碼在 bundle 內，擋不住懂技術的人。真正的外部存取防護用 reverse proxy（IP 白名單 / Basic Auth / VPN）

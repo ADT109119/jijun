@@ -434,10 +434,11 @@ export class LedgerManager {
             return ledger.sharedFileId
         }
 
-        // 1. 先更新本地帳本為共用（sharedFileId = uuid，讓 export 帶正確標記）
+        // 1. 先更新本地帳本為共用（sharedFileId = uuid，標註 sharedProvider = 'selfhost'）
         await this.dataService.updateLedger(ledgerId, {
             isShared: true,
             sharedFileId: uuid,
+            sharedProvider: 'selfhost',
             type: 'shared',
         })
         await this.init()
@@ -475,8 +476,19 @@ export class LedgerManager {
         }
         const content = { deviceId, timestamp: now, changes }
 
-        // 3. 建立 server 端 shared ledger（附初始快照）
-        await sync._selfHostSharedCreate(uuid, ledger.name, content)
+        // 3. 建立 server 端 shared ledger（附初始快照）；若失敗原子回滾本地狀態
+        try {
+            await sync._selfHostSharedCreate(uuid, ledger.name, content)
+        } catch (err) {
+            await this.dataService.updateLedger(ledgerId, {
+                isShared: false,
+                sharedFileId: null,
+                sharedProvider: null,
+                type: 'personal',
+            })
+            await this.init()
+            throw err
+        }
 
         // 4. 邀請成員（username）
         if (invitee) {
@@ -522,9 +534,10 @@ export class LedgerManager {
         )
         const appliedKeys = new Set(appliedKeysSetting?.value || [])
         for (const change of fileData.changes) {
-            appliedKeys.add(
-                `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
-            )
+            const key = typeof sync._changeKey === 'function'
+                ? sync._changeKey(change)
+                : `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
+            appliedKeys.add(key)
         }
         await this.dataService.saveSetting({
             key: 'sync_shared_applied_keys',
@@ -953,7 +966,11 @@ export class LedgerManager {
 
         // 刪除雲端資源
         if (this.app.syncService.isSelfHostMode()) {
-            await this.app.syncService._selfHostSharedDelete(ledger.sharedFileId)
+            try {
+                await this.app.syncService._selfHostSharedDelete(ledger.sharedFileId)
+            } catch (e) {
+                console.warn('[LedgerManager] 刪除自架共用帳本失敗（雲端可能已刪除）:', e)
+            }
         } else {
             // 清理新架構檔案：自己的日誌檔 + manifest（擁有者才有 manifest 刪除權）
             try {

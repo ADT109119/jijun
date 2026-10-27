@@ -56,7 +56,8 @@ WORKDIR /app
 COPY --from=frontend --chown=root:root /build/dist /app/static
 ENV SELF_HOST_STATIC_DIR=/app/static
 
-# server 原始碼（無 npm 依賴：node:sqlite 為 Node >= 22.5 內建模組）
+# server 原始碼（無 npm 依賴：node:sqlite 為 Node >= 22.13.0 內建模組）
+COPY server/package.json ./package.json
 COPY server/src/ ./src/
 
 # Data volume (SQLite DB 等)

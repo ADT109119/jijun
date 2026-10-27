@@ -914,6 +914,14 @@ describe('LedgerManager', () => {
                     .fn()
                     .mockResolvedValue({ found: true, uuid: 'shared-uuid-1' }),
                 _selfHostSharedFetch: vi.fn(),
+                _changeKey: (change) => {
+                    const recordIdentifier =
+                        change.data?.uuid ??
+                        (change.recordId !== undefined && change.recordId !== null
+                            ? change.recordId
+                            : (change.data?.id ?? (change.data?.key ?? (change.id ?? ''))))
+                    return `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}${recordIdentifier ? `|${recordIdentifier}` : ''}`
+                },
                 applyRemoteChanges: vi.fn().mockResolvedValue(),
                 ensureSharedSync: vi.fn().mockResolvedValue(),
             }
@@ -942,10 +950,10 @@ describe('LedgerManager', () => {
             const keysCall = saveCalls.find(c => c[0].key === 'sync_shared_applied_keys')
             expect(keysCall, 'saveSetting 應寫入 sync_shared_applied_keys').toBeTruthy()
             const saved = keysCall[0].value
-            // 3 筆 snapshot 變更的 key 全被標記為已套用
-            expect(saved).toContain('dev-owner|1700000000000|add|ledgers')
-            expect(saved).toContain('dev-owner|1700000000001|add|accounts')
-            expect(saved).toContain('dev-owner|1700000000002|update|accounts')
+            // 3 筆 snapshot 變更的 key 全被標記為已套用（5 段 key）
+            expect(saved).toContain('dev-owner|1700000000000|add|ledgers|shared-uuid-1')
+            expect(saved).toContain('dev-owner|1700000000001|add|accounts|acc-1')
+            expect(saved).toContain('dev-owner|1700000000002|update|accounts|1')
         })
 
         it('加入時保留既有的 appliedKeys（合併而非覆蓋）', async () => {
@@ -968,7 +976,7 @@ describe('LedgerManager', () => {
             const saveCalls = mockDataService.saveSetting.mock.calls
             const keysCall = saveCalls.find(c => c[0].key === 'sync_shared_applied_keys')
             expect(keysCall[0].value).toContain('other-ledger|1600000000000|add|accounts') // 保留
-            expect(keysCall[0].value).toContain('dev-owner|1700000000000|add|ledgers') // 新增
+            expect(keysCall[0].value).toContain('dev-owner|1700000000000|add|ledgers|shared-uuid-1') // 新增
         })
     })
 
