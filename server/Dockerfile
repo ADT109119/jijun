@@ -64,6 +64,7 @@ COPY server/src/ ./src/
 VOLUME /app/data
 ENV SELF_HOST_DB_PATH=/app/data/selfhost.db
 ENV NO_INDEX=1
+ENV DISABLE_GOOGLE_OAUTH=1
 
 # Expose default port
 EXPOSE 8080
