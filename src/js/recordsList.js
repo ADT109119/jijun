@@ -4,6 +4,8 @@ import {
     formatDateToString,
     getDateRange,
     escapeHTML,
+    getSafeIconClass,
+    getSafeBgColorStyle,
     closeModalWithAnimation,
     calculateEffectiveRecordAmount,
     buildDebtLookupMaps,
@@ -16,6 +18,42 @@ let isAppFirstLoaded = true
 
 export function resetAppFirstLoaded(val = true) {
     isAppFirstLoaded = val
+}
+
+/** 明細頁可顯示/隱藏的欄位 id 清單（分類與金額為核心欄位，永遠顯示、不在此列） */
+export const RECORD_FIELD_IDS = ['description', 'debtStatus', 'account', 'date']
+
+/** 欄位管理器 UI 定義（標籤 + 提示文字） */
+export const RECORD_FIELD_DEFS = [
+    { id: 'description', label: '備註', hint: '顯示紀錄的備註文字' },
+    { id: 'debtStatus', label: '欠款狀態', hint: '顯示欠款紀錄的待還款/已還清狀態' },
+    { id: 'account', label: '帳戶', hint: '僅多帳戶模式下可用' },
+    { id: 'date', label: '日期', hint: '多帳戶模式下顯示帳戶，此欄位自動停用' },
+]
+
+/**
+ * 計算實際可見的明細欄位（純函數，可獨立測試）
+ * @param {Array<string>} savedFields 使用者保存的欄位陣列（null/非陣列時回預設全顯示）
+ * @param {boolean} advancedModeEnabled 多帳戶模式開關（true 時停用 date、false 時停用 account）
+ * @returns {Array<string>} 過濾後的可見欄位 id 陣列
+ */
+export function getEffectiveVisibleFields(
+    savedFields,
+    advancedModeEnabled = false
+) {
+    let base
+    if (Array.isArray(savedFields)) {
+        base = savedFields.filter(id =>
+            RECORD_FIELD_IDS.includes(id)
+        )
+    } else {
+        base = [...RECORD_FIELD_IDS]
+    }
+    return base.filter(id => {
+        if (id === 'date' && advancedModeEnabled) return false
+        if (id === 'account' && !advancedModeEnabled) return false
+        return true
+    })
 }
 
 export class RecordsListManager {
@@ -39,6 +77,9 @@ export class RecordsListManager {
         }
 
         this.highlightGroupId = null
+
+        // 明細欄位管理器：目前可見欄位（init 時從 per-ledger setting 載入）
+        this.visibleFields = [...RECORD_FIELD_IDS]
 
         // Bind save method to call on page leave
         this._saveSessionFilters = this._saveSessionFilters.bind(this)
@@ -95,6 +136,24 @@ export class RecordsListManager {
             'advancedAccountModeEnabled'
         )
         this.advancedModeEnabled = !!advancedMode?.value
+
+        // 載入明細欄位顯示設定（per-ledger）
+        try {
+            const fieldsSetting = await this.dataService.getSetting(
+                this._recordFieldsSettingKey()
+            )
+            if (
+                fieldsSetting &&
+                Array.isArray(fieldsSetting.value)
+            ) {
+                this.visibleFields = fieldsSetting.value
+            }
+        } catch (err) {
+            console.error(
+                'Failed to load record display fields setting:',
+                err
+            )
+        }
 
         if (this.advancedModeEnabled) {
             this.accounts = await this.dataService.getAccounts()
@@ -192,6 +251,38 @@ export class RecordsListManager {
         }
     }
 
+    /**
+     * 明細欄位顯示設定的 per-ledger setting key
+     * （suffix 規則與 pinnedAccounts / recurringOrder 相同）
+     * @returns {string}
+     */
+    _recordFieldsSettingKey() {
+        const suffix = this.dataService.activeLedgerId
+            ? `_${this.dataService.activeLedgerId}`
+            : ''
+        return `recordDisplayFields${suffix}`
+    }
+
+    /** 目前實際可見的明細欄位（savedFields ∩ 依多帳戶模式可用性） */
+    _getEffectiveVisibleFields() {
+        return getEffectiveVisibleFields(
+            this.visibleFields,
+            this.advancedModeEnabled
+        )
+    }
+
+    /**
+     * 判斷欄位在目前模式下是否「可用」（可被使用者顯示/隱藏）
+     * account 僅多帳戶模式可用、date 僅非多帳戶模式可用，其餘恆可用
+     * @param {string} fieldId RECORD_FIELD_IDS 之一的欄位 id
+     * @returns {boolean}
+     */
+    _isFieldAvailable(fieldId) {
+        if (fieldId === 'account') return this.advancedModeEnabled
+        if (fieldId === 'date') return !this.advancedModeEnabled
+        return true
+    }
+
     setupEventListeners() {
         // Listen for hash changes to save filters when navigating away
         this._hashChangeHandler = () => this._saveSessionFilters()
@@ -256,6 +347,12 @@ export class RecordsListManager {
                     this.showAccountFilterModal()
                 })
         }
+
+        const fieldsBtn = this.container.querySelector('#records-fields-btn')
+        if (fieldsBtn)
+            fieldsBtn.addEventListener('click', () =>
+                this.showFieldsModal()
+            )
 
         const searchInput = this.container.querySelector(
             '#records-search-input'
@@ -566,8 +663,13 @@ export class RecordsListManager {
         }
 
         // 2. Perform transfer offsetting on this base list to get records for summary calculation
+        // 排除卡費扣繳/自動扣款平帳紀錄（這些屬於平帳性質，不計入轉帳對沖也不計入日常收支）
+        const isCardPaymentRecord = r =>
+            r.description?.startsWith('[卡費扣繳]') ||
+            r.description?.startsWith('[自動扣款]')
+
         const transferRecords = baseFilteredRecords.filter(
-            r => r.category === 'transfer'
+            r => r.category === 'transfer' && !isCardPaymentRecord(r)
         )
         const normalRecords = baseFilteredRecords.filter(
             r => r.category !== 'transfer'
@@ -607,7 +709,12 @@ export class RecordsListManager {
         const summary = recordsForSummary.reduce(
             (acc, r) => {
                 // Exclude debt collection, repayment, balance adjustment, and card repayments from summary calculation
-                if (isDebtSettlementRecord(r)) {
+                if (
+                    r.category === 'debt_collection' ||
+                    r.category === 'debt_repayment' ||
+                    r.category === 'balance_adjustment' ||
+                    isCardPaymentRecord(r)
+                ) {
                     return acc
                 }
 
@@ -792,6 +899,12 @@ export class RecordsListManager {
 
     _renderSingleRecord(record, inGroupContext = false) {
         const isIncome = record.type === 'income'
+        // 欄位管理器：目前可見欄位
+        const visibleFields = this._getEffectiveVisibleFields()
+        const showDescription = visibleFields.includes('description')
+        const showDebtStatus = visibleFields.includes('debtStatus')
+        const showAccount = visibleFields.includes('account')
+        const showDate = visibleFields.includes('date')
         const category = this.categoryManager.getCategoryById(
             record.type,
             record.category
@@ -801,7 +914,7 @@ export class RecordsListManager {
             record.category === 'balance_adjustment'
         const icon = isBalanceAdjustment
             ? 'fa-solid fa-scale-balanced'
-            : category?.icon || 'fa-solid fa-question'
+            : getSafeIconClass(category?.icon, 'fa-solid fa-question')
         const name = isTransfer
             ? '帳戶間轉帳'
             : isBalanceAdjustment
@@ -898,10 +1011,10 @@ export class RecordsListManager {
             }
         }
 
-        const colorStyle = color.startsWith('#')
-            ? `style="background-color: ${color}"`
-            : ''
-        const colorClass = !color.startsWith('#') ? color : ''
+        // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
+        const safeBg = getSafeBgColorStyle(color)
+        const colorStyle = safeBg.style ? `style="${safeBg.style}"` : ''
+        const colorClass = safeBg.className
 
         let accountName = ''
         if (this.advancedModeEnabled) {
@@ -958,7 +1071,7 @@ export class RecordsListManager {
                     <div class="flex items-center gap-1.5 flex-wrap">
                         <p class="text-wabi-text-primary text-sm font-medium line-clamp-1">${escapeHTML(name)}</p>
                         ${hasAmortization ? '<i class="fa-solid fa-credit-card text-blue-500 text-xs cursor-pointer amort-link-icon" title="分期計畫"></i>' : ''}
-                        ${hasDebt ? `
+                        ${hasDebt && showDebtStatus ? `
                             <button class="debt-link-btn inline-flex items-center gap-1 text-[10px] ${statusClass} px-1.5 py-0.5 rounded hover:opacity-80 transition-all font-medium cursor-pointer" data-debt-id="${record.debtId}" title="查看關聯欠款">
                                 <i class="fa-solid fa-handshake"></i>
                                 <span>${escapeHTML(statusLabel || '欠款')}</span>
@@ -966,7 +1079,7 @@ export class RecordsListManager {
                         ` : ''}
                         ${groupBadgeHtml}
                     </div>
-                    ${hasDescription ? `<p class="text-wabi-text-secondary text-xs font-normal line-clamp-2 break-all mt-0.5">${escapeHTML(record.description)}</p>` : ''}
+                    ${hasDescription && showDescription ? `<p class="text-wabi-text-secondary text-xs font-normal line-clamp-2 break-all mt-0.5">${escapeHTML(record.description)}</p>` : ''}
                 </div>
             </div>
                 <div class="shrink-0 text-right">
@@ -986,7 +1099,9 @@ export class RecordsListManager {
                                 </p>
                             `
                     }
-                    ${this.advancedModeEnabled ? `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${escapeHTML(accountName)}</p>` : `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${formatDate(record.date, 'short')}</p>`}
+                    ${this.advancedModeEnabled
+                        ? (showAccount ? `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${escapeHTML(accountName)}</p>` : '')
+                        : (showDate ? `<p class="text-[11px] text-wabi-text-secondary mt-0.5">${formatDate(record.date, 'short')}</p>` : '')}
                 </div>
             </a>
         `
@@ -1282,6 +1397,110 @@ export class RecordsListManager {
                 }
             })
         }
+    }
+
+    /**
+     * 明細欄位管理器彈窗（顯示/隱藏各欄位）
+     * 參考 Actual Budget v26.9.0 交易表格欄位管理器
+     */
+    showFieldsModal() {
+        const rowsHtml = RECORD_FIELD_DEFS.map(def => {
+            // 勾選狀態以「已保存」為準：available 欄位等同顯示狀態；
+            // unavailable 欄位（disabled）保留原設定，避免「套用」時
+            // 把使用者看不見的欄位偏好清掉（切回該模式時才生效）
+            const checked = this.visibleFields.includes(def.id)
+            // 可用性：advanced 模式下 date 停用、非 advanced 模式下 account 停用
+            const fieldAvailable = this._isFieldAvailable(def.id)
+            const disabled = !fieldAvailable
+            const hint = disabled
+                ? def.id === 'account'
+                    ? '需開啟多帳戶模式'
+                    : '多帳戶模式下顯示帳戶'
+                : def.hint
+            return `
+            <label class="flex items-start justify-between gap-3 p-3 bg-wabi-surface rounded-lg border border-wabi-border ${disabled ? 'opacity-50' : ''}">
+                <div class="flex items-start gap-3">
+                    <input type="checkbox" data-field-id="${def.id}" class="h-5 w-5 mt-0.5 rounded text-wabi-primary focus:ring-wabi-primary/50" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                    <div>
+                        <span class="text-wabi-text-primary text-sm font-medium">${escapeHTML(def.label)}</span>
+                        <p class="text-xs text-wabi-text-secondary mt-0.5">${escapeHTML(hint)}</p>
+                    </div>
+                </div>
+            </label>
+        `
+        }).join('')
+
+        const modalHtml = `
+            <div id="fields-modal" class="fixed inset-0 bg-black/50 z-50 flex justify-center items-end" role="dialog" aria-modal="true" aria-labelledby="fields-modal-title">
+                <div class="bg-wabi-bg w-full max-w-lg rounded-t-2xl p-4 flex flex-col max-h-[80vh]">
+                    <h3 id="fields-modal-title" class="text-lg font-bold text-wabi-primary text-center">顯示欄位</h3>
+                    <p class="text-xs text-wabi-text-secondary text-center mb-4">選擇明細頁每筆紀錄要顯示的資訊（分類與金額永遠顯示）</p>
+                    <div class="overflow-y-auto space-y-2 mb-4">
+                        ${rowsHtml}
+                    </div>
+                    <div class="flex gap-2 mt-auto pt-2 border-t border-wabi-border">
+                        <button id="apply-fields-btn" class="flex-1 py-3 bg-wabi-accent text-wabi-primary font-bold rounded-lg">套用</button>
+                        <button id="close-fields-modal" class="flex-1 py-3 bg-wabi-border text-wabi-text-primary rounded-lg">關閉</button>
+                    </div>
+                </div>
+            </div>
+        `
+        this.modalsContainer.innerHTML = modalHtml
+
+        this.modalsContainer
+            .querySelector('#apply-fields-btn')
+            .addEventListener('click', async () => {
+                // 只改動「可用」（非 disabled）欄位：available 欄位依勾選狀態，
+                // unavailable 欄位保留原設定——disabled checkbox 無法被使用者
+                // 切換，若跟著寫入會把預設值（visibleFields 含全 id）清掉，
+                // 造成切回該模式時欄位意外消失
+                const availableIds = RECORD_FIELD_IDS.filter(id =>
+                    this._isFieldAvailable(id)
+                )
+                const checkedAvailable = new Set()
+                this.modalsContainer
+                    .querySelectorAll('input[data-field-id]:checked')
+                    .forEach(el => {
+                        if (availableIds.includes(el.dataset.fieldId))
+                            checkedAvailable.add(el.dataset.fieldId)
+                    })
+                // available 欄位：以勾選狀態為準（可重新加回已隱藏的欄位）；
+                // unavailable 欄位：保留原設定（disabled checkbox 無法被切換）。
+                // 注意：不能用 this.visibleFields.filter(...) —— 已隱藏的欄位
+                // 不在 visibleFields 中，filter 永遠無法把它們加回，造成不可逆
+                const next = RECORD_FIELD_IDS.filter(id => {
+                    if (!availableIds.includes(id))
+                        return this.visibleFields.includes(id)
+                    return checkedAvailable.has(id)
+                })
+                try {
+                    await this.dataService.saveSetting({
+                        key: this._recordFieldsSettingKey(),
+                        value: next,
+                    })
+                    this.visibleFields = next
+                    this.applyFiltersAndRender()
+                } catch (error) {
+                    console.error('Failed to save record display fields:', error)
+                } finally {
+                    this.modalsContainer.innerHTML = ''
+                }
+            })
+        this.modalsContainer
+            .querySelector('#close-fields-modal')
+            .addEventListener(
+                'click',
+                () => (this.modalsContainer.innerHTML = '')
+            )
+
+        // Close modal when clicking the overlay background
+        this.modalsContainer
+            .querySelector('#fields-modal')
+            .addEventListener('click', e => {
+                if (e.target.id === 'fields-modal') {
+                    this.modalsContainer.innerHTML = ''
+                }
+            })
     }
 
     showDateRangeModal() {

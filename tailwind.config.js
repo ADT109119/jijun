@@ -107,5 +107,7 @@ export default {
             },
         },
     },
+    // forms 插件：與 Play CDN 的 ?plugins=forms 一致（統一 select/input 外觀）
+    // container-queries 插件已移除：全專案無 @container 用法
     plugins: [formsPlugin],
 }

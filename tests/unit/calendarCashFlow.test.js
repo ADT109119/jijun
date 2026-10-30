@@ -403,3 +403,168 @@ describe('CalendarCashFlow 單元測試', () => {
         expect(cal.records[0].category).toBe('food')
     })
 })
+
+// ==================== 信用卡繳款/出帳日圓點標記 ====================
+
+describe('CalendarCashFlow 繳款圓點標記', () => {
+    const catMgr = { getCategoryById: vi.fn(() => null) }
+
+    function makeCalWithCards(accounts, opts = {}) {
+        const ds = {
+            getRecords: vi.fn().mockResolvedValue([]),
+            getDebts: vi.fn().mockResolvedValue([]),
+            getAccounts: vi.fn(async () => accounts),
+            getSetting: vi.fn(async key => {
+                if (key === 'advancedAccountModeEnabled') {
+                    return opts.advanced === false ? null : { key, value: true }
+                }
+                if (key === 'calendarBillDotsEnabled' && opts.dotsOff) {
+                    return { key, value: false }
+                }
+                return null
+            }),
+        }
+        const container = document.createElement('div')
+        const cal = new CalendarCashFlow(ds, catMgr, container)
+        return { cal, container, ds }
+    }
+
+    it('多帳戶模式關閉時不產生任何圓點', async () => {
+        const { cal } = makeCalWithCards(
+            [{ type: 'credit_card', name: '台新卡', dueDay: 15, statementDay: 25 }],
+            { advanced: false }
+        )
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap).toEqual({})
+    })
+
+    it('設定 calendarBillDotsEnabled=false 時停用圓點', async () => {
+        const { cal } = makeCalWithCards(
+            [{ type: 'credit_card', name: '台新卡', dueDay: 15, statementDay: 25 }],
+            { dotsOff: true }
+        )
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap).toEqual({})
+    })
+
+    it('信用卡 dueDay/statementDay 落入正確日期', async () => {
+        const { cal } = makeCalWithCards([
+            { type: 'credit_card', name: '台新卡', dueDay: 15, statementDay: 25 },
+        ])
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap['2026-09-15'].due).toEqual(['台新卡'])
+        expect(cal._dueDateMap['2026-09-15'].statement).toEqual([])
+        expect(cal._dueDateMap['2026-09-25'].statement).toEqual(['台新卡'])
+        expect(cal._dueDateMap['2026-09-25'].due).toEqual([])
+    })
+
+    it('繳款日與出帳日同天時同一筆 entry 同時有兩種圓點', async () => {
+        const { cal } = makeCalWithCards([
+            { type: 'credit_card', name: '台新卡', dueDay: 10, statementDay: 10 },
+        ])
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap['2026-09-10']).toEqual({
+            due: ['台新卡'],
+            statement: ['台新卡'],
+        })
+    })
+
+    it('月底越界收斂：2 月遇 31 日改標示月底 (28 日)', async () => {
+        const { cal } = makeCalWithCards([
+            { type: 'credit_card', name: '三張卡', dueDay: 31, statementDay: 31 },
+        ])
+        await cal.loadBillMarkers(2026, 2)
+        expect(cal._dueDateMap['2026-02-28'].due).toEqual(['三張卡'])
+        expect(cal._dueDateMap['2026-02-28'].statement).toEqual(['三張卡'])
+        expect(cal._dueDateMap['2026-02-31']).toBeUndefined()
+    })
+
+    it('非信用卡帳戶與非法日期值被忽略', async () => {
+        const { cal } = makeCalWithCards([
+            { type: 'wallet', name: '現金', dueDay: 5, statementDay: 5 },
+            { type: 'credit_card', name: '壞卡', dueDay: 0, statementDay: 32 },
+            { type: 'credit_card', name: '壞卡2', dueDay: 'abc', statementDay: null },
+            null,
+        ])
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap).toEqual({})
+    })
+
+    it('多卡同日圓點合併卡名', async () => {
+        const { cal } = makeCalWithCards([
+            { type: 'credit_card', name: 'A卡', dueDay: 15 },
+            { type: 'credit_card', name: 'B卡', dueDay: 15 },
+        ])
+        await cal.loadBillMarkers(2026, 9)
+        expect(cal._dueDateMap['2026-09-15'].due).toEqual(['A卡', 'B卡'])
+    })
+
+    it('getAccounts 拋錯時降級為無圓點（不崩潰）', async () => {
+        const container = document.createElement('div')
+        const ds = {
+            getRecords: vi.fn().mockResolvedValue([]),
+            getAccounts: vi.fn(async () => {
+                throw new Error('db down')
+            }),
+            getSetting: vi.fn(async () => ({ value: true })),
+        }
+        const cal = new CalendarCashFlow(ds, catMgr, container)
+        await expect(cal.loadBillMarkers(2026, 9)).resolves.toBeUndefined()
+        expect(cal._dueDateMap).toEqual({})
+    })
+
+    it('renderCell 依 _dueDateMap 渲染紅/藍圓點與 title', () => {
+        const { cal } = makeCalWithCards([])
+        cal._dueDateMap = {
+            '2026-09-15': { due: ['台新卡'], statement: ['台新卡', '兆豐卡'] },
+        }
+        const html = cal.renderCell(2026, 9, 15, [], '2026-09-30')
+        expect(html).toContain('bg-red-500')
+        expect(html).toContain('bg-sky-500')
+        expect(html).toContain('繳款日：台新卡')
+        expect(html).toContain('出帳日：台新卡、兆豐卡')
+    })
+
+    it('renderCell 無標記日期不出現圓點', () => {
+        const { cal } = makeCalWithCards([])
+        cal._dueDateMap = { '2026-09-15': { due: ['台新卡'], statement: [] } }
+        const html = cal.renderCell(2026, 9, 16, [], '2026-09-30')
+        expect(html).not.toContain('bg-red-500')
+        expect(html).not.toContain('bg-sky-500')
+    })
+
+    it('圓點 title 卡名 XSS 防護：注入 <script> 被 escapeHTML', () => {
+        const { cal } = makeCalWithCards([])
+        cal._dueDateMap = {
+            '2026-09-15': { due: ['<script>alert(1)</script>'], statement: [] },
+        }
+        const html = cal.renderCell(2026, 9, 15, [], '2026-09-30')
+        expect(html).not.toContain('<script>alert(1)</script>')
+        expect(html).toContain('&lt;script&gt;')
+    })
+
+    it('render() 有圓點時顯示圖例列（繳款日/出帳日）', async () => {
+        const { cal, container } = makeCalWithCards([
+            { type: 'credit_card', name: '台新卡', dueDay: 15, statementDay: 25 },
+        ])
+        cal.currentDate = new Date(2026, 8, 10) // 2026-09
+        await cal.render()
+        expect(container.innerHTML).toContain('繳款日')
+        expect(container.innerHTML).toContain('出帳日')
+        expect(container.innerHTML).toContain('bg-red-500')
+    })
+
+    it('render() 無圓點（無信用卡）時不顯示圖例列', async () => {
+        const { cal, container } = makeCalWithCards([])
+        cal.currentDate = new Date(2026, 8, 10)
+        await cal.render()
+        expect(container.innerHTML).not.toContain('bg-red-500')
+    })
+
+    it('destroy() 清空 _dueDateMap', () => {
+        const { cal } = makeCalWithCards([])
+        cal._dueDateMap = { '2026-09-15': { due: ['台新卡'], statement: [] } }
+        cal.destroy()
+        expect(cal._dueDateMap).toEqual({})
+    })
+})

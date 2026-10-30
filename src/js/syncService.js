@@ -15,8 +15,9 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 /** @type {string} Google API Key（透過 .env.local 設定，不硬編碼） */
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || ''
 
-/** @type {string} 預設同步伺服器 URL（可透過 .env.local 的 VITE_SYNC_SERVER_URL 覆蓋） */
-const DEFAULT_SERVER_URL = 'https://jijun-server.the-walking-fish.com'
+/** @type {string} 預設同步伺服器 URL（可透過 .env.local / build 環境變數 VITE_SYNC_SERVER_URL 覆蓋；未設定時退回官方伺服器） */
+export const DEFAULT_SERVER_URL =
+    import.meta.env.VITE_SYNC_SERVER_URL || 'https://jijun-server.the-walking-fish.com'
 
 /** @type {string[]} 基礎登入與個人備份所需 scope */
 const BASE_SCOPES = [
@@ -99,9 +100,8 @@ export class SyncService {
         /** @type {object|null} Google user profile */
         this.userInfo = null
 
-        /** @type {string} 同步/驗證伺服器 URL（可透過 .env.local 的 VITE_SYNC_SERVER_URL 覆蓋） */
-        this.serverUrl =
-            import.meta.env.VITE_SYNC_SERVER_URL || DEFAULT_SERVER_URL
+        /** @type {string} 同步/驗證伺服器 URL（預設值見 DEFAULT_SERVER_URL：可透過 VITE_SYNC_SERVER_URL 環境變數覆蓋） */
+        this.serverUrl = DEFAULT_SERVER_URL
 
         /** @type {number|null} 自動同步 interval ID */
         this._autoSyncIntervalId = null
@@ -111,6 +111,12 @@ export class SyncService {
 
         /** @type {string} 裝置唯一 ID */
         this.deviceId = this.getDeviceId()
+
+        /** @type {string|null} self-host 同步 token（純自架模式） */
+        this.selfHostToken = null
+
+        /** @type {string|null} self-host 帳號 username */
+        this.selfHostUsername = null
 
         /** @type {boolean} 是否正在同步中 */
         this._syncing = false
@@ -137,6 +143,48 @@ export class SyncService {
                 await this.dataService.getSetting('sync_server_url')
             if (serverSetting?.value) {
                 this.serverUrl = serverSetting.value
+            }
+
+            // 還原 self-host（純自架）同步憑證
+            const selfHostSetting = await this.dataService.getSetting(
+                'sync_selfhost'
+            )
+            if (selfHostSetting?.value) {
+                this.selfHostToken = selfHostSetting.value.token || null
+                this.selfHostUsername = selfHostSetting.value.username || null
+            }
+
+            // 雙通道互斥防禦：舊版單向互斥 bug（自架登入會清 Google、但 Google 登入
+            // 不清自架）可能讓裝置同時殘留 Google token 與 selfHostToken，且該 bug 的
+            // 產生路徑必然是「先自架、後 Google」→ Google 才是較新的意圖 session。
+            // 若兩者並存：依 updated_at 比新舊（無時間戳的 legacy 資料視為 0，
+            // tie 時留 Google）清除另一方，避免 isSelfHostMode() 與實際登入錯位。
+            if (this.selfHostToken && this.accessToken && this.refreshToken) {
+                const tokenTs =
+                    (await this.dataService.getSetting('sync_tokens'))
+                        ?.value?.updated_at || 0
+                const selfHostTs =
+                    (await this.dataService.getSetting('sync_selfhost'))
+                        ?.value?.updated_at || 0
+                if (selfHostTs > tokenTs) {
+                    // self-host 較新 → 清 Google
+                    this.accessToken = null
+                    this.refreshToken = null
+                    this.tokenExpiresAt = null
+                    this.userInfo = null
+                    await this.dataService.saveSetting({
+                        key: 'sync_tokens',
+                        value: null,
+                    })
+                } else {
+                    // Google 較新（含無時間戳的 tie）→ 清 self-host
+                    this.selfHostToken = null
+                    this.selfHostUsername = null
+                    await this.dataService.saveSetting({
+                        key: 'sync_selfhost',
+                        value: null,
+                    })
+                }
             }
 
             // 如果已登入且 token 快過期，嘗試刷新
@@ -195,7 +243,14 @@ export class SyncService {
      * @returns {boolean}
      */
     isSignedIn() {
-        return !!(this.accessToken && this.refreshToken)
+        return (
+            !!(this.accessToken && this.refreshToken) || !!this.selfHostToken
+        )
+    }
+
+    /** 是否為純自架（self-host）同步模式 */
+    isSelfHostMode() {
+        return !!this.selfHostToken
     }
 
     /**
@@ -211,6 +266,8 @@ export class SyncService {
      * 確保有有效的 access token
      */
     async ensureValidToken() {
+        // self-host token 為持久 token，不需刷新
+        if (this.selfHostToken) return
         if (this.isTokenExpiringSoon() && this.refreshToken) {
             await this.refreshAccessToken()
         }
@@ -372,11 +429,30 @@ export class SyncService {
         this.refreshToken = data.refresh_token
         this.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000
 
+        // 切換到 Google 模式時清除自架登入（與 _saveSelfHostCredentials 對稱，
+        // 修復單向互斥：原本自架登入會清 Google token，但 Google 登入不會清
+        // selfHostToken，會殘留殭屍憑證導致 isSelfHostMode() 永久為真）
+        this.selfHostToken = null
+        this.selfHostUsername = null
+        await this.dataService.saveSetting({
+            key: 'sync_selfhost',
+            value: null,
+        })
+
         // 取得使用者資訊
         await this.fetchUserInfo()
 
         // 儲存 tokens
         await this.saveTokens()
+
+        const autoSyncSetting =
+            await this.dataService.getSetting('sync_auto_enabled')
+        if (
+            localStorage.getItem('sync_auto_enabled') === 'true' ||
+            autoSyncSetting?.value === true
+        ) {
+            this.startAutoSync()
+        }
     }
 
     /**
@@ -451,14 +527,28 @@ export class SyncService {
             }
         }
 
+        if (this.selfHostToken && this.serverUrl) {
+            await this._selfHostFetch('/logout', { method: 'POST' }).catch(() => {})
+        }
+
         this.accessToken = null
         this.refreshToken = null
         this.tokenExpiresAt = null
         this.userInfo = null
+        this.selfHostToken = null
+        this.selfHostUsername = null
         this.stopAutoSync()
         this.stopAutoBackup()
 
+        // 登出時輪換裝置 ID，防止同一瀏覽器切換帳號時引發裝置歸屬衝突
+        localStorage.removeItem('sync_device_id')
+        this.deviceId = this.getDeviceId()
+
         await this.dataService.saveSetting({ key: 'sync_tokens', value: null })
+        await this.dataService.saveSetting({
+            key: 'sync_selfhost',
+            value: null,
+        })
         await this.dataService.saveSetting({
             key: 'sync_auto_enabled',
             value: false,
@@ -484,6 +574,7 @@ export class SyncService {
                 refresh_token: this.refreshToken,
                 expires_at: this.tokenExpiresAt,
                 user_info: this.userInfo,
+                updated_at: Date.now(),
             },
         })
     }
@@ -545,7 +636,27 @@ export class SyncService {
      * @param {string} url
      */
     async setServerUrl(url) {
-        this.serverUrl = url.replace(/\/+$/, '')
+        if (!url || typeof url !== 'string' || !url.trim()) {
+            this.serverUrl = ''
+            await this.dataService.saveSetting({
+                key: 'sync_server_url',
+                value: '',
+            })
+            return
+        }
+        let parsed
+        try {
+            parsed = new URL(url.trim())
+        } catch (_) {
+            throw new Error('伺服器網址格式不正確')
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            throw new Error('伺服器網址通訊協定必須為 http 或 https')
+        }
+        if (parsed.username || parsed.password) {
+            throw new Error('伺服器網址不得包含帳號密碼')
+        }
+        this.serverUrl = parsed.origin
         await this.dataService.saveSetting({
             key: 'sync_server_url',
             value: this.serverUrl,
@@ -553,14 +664,771 @@ export class SyncService {
     }
 
     // ──────────────────────────────────────────────
+    // Self-Hosted Sync（純自架伺服器，SQLite，不綁 Google）
+    //
+    // 與 Google Drive transport 並行的第二條資料通道：
+    // 資料層（normalized change arrays / JSON 備份）完全共用，
+    // 只差在 transport（HTTP REST vs Drive API）。
+    // 部署與設定說明見 repo 根目錄 SELF_HOST.md。
+    // ──────────────────────────────────────────────
+
+    /** @type {string|null} 最近一次 self-host API 錯誤（供 UI 顯示） */
+    _selfHostLastError = null
+
+    _selfHostHeaders() {
+        return {
+            Authorization: `Bearer ${this.selfHostToken}`,
+        }
+    }
+
+    async _selfHostFetch(path, options = {}) {
+        const { headers: customHeaders, ...restOptions } = options
+        const res = await fetch(`${this.serverUrl}/api/selfhost${path}`, {
+            // self-host API 狀態回應不可快取（PUT 後緊接的 GET 若讀快取會過期）
+            cache: 'no-store',
+            ...restOptions,
+            headers: {
+                ...this._selfHostHeaders(),
+                ...(options.body
+                    ? { 'Content-Type': 'application/json' }
+                    : {}),
+                ...customHeaders,
+            },
+        })
+        const isProxyAuthChallenge = res.headers
+            ?.get?.('www-authenticate')
+            ?.toLowerCase()
+            ?.startsWith('basic')
+        if (res.status === 401 && !isProxyAuthChallenge) {
+            // token 被伺服器端清除（例如 DB 重設或主動 logout）→ 自動登出
+            this.selfHostToken = null
+            this.selfHostUsername = null
+            await this.dataService
+                .saveSetting({ key: 'sync_selfhost', value: null })
+                .catch(() => {})
+        }
+        return res
+    }
+
+    /**
+     * 註冊 self-host 帳號
+     * @param {string} username 帳號名稱（2-32 字元：英數/_/-）
+     * @param {string} pin PIN 碼（4-64 字元）
+     * @returns {Promise<{username: string, alreadyRegistered: boolean}>}
+     */
+    async selfHostRegister(username, pin) {
+        let res = await fetch(`${this.serverUrl}/api/selfhost/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                pin,
+                deviceId: this.deviceId,
+            }),
+        })
+        let data = await res.json().catch(() => ({}))
+        // 若此裝置已被其他帳號註冊過（切換帳號情境），自動輪換新 deviceId 重試
+        if (res.status === 409 && data.error?.includes('Device belongs to another account')) {
+            localStorage.removeItem('sync_device_id')
+            this.deviceId = this.getDeviceId()
+            res = await fetch(`${this.serverUrl}/api/selfhost/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    pin,
+                    deviceId: this.deviceId,
+                }),
+            })
+            data = await res.json().catch(() => ({}))
+        }
+        if (!res.ok) {
+            throw new Error(data.error || `註冊失敗 (${res.status})`)
+        }
+        return this._saveSelfHostCredentials(data.token, data.username)
+    }
+
+    /**
+     * 登入 self-host 帳號
+     * @param {string} username
+     * @param {string} pin
+     * @returns {Promise<{username: string}>}
+     */
+    async selfHostLogin(username, pin) {
+        const res = await fetch(`${this.serverUrl}/api/selfhost/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, pin }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+            throw new Error(data.error || `登入失敗 (${res.status})`)
+        }
+        return this._saveSelfHostCredentials(data.token, data.username)
+    }
+
+    /** 儲存 self-host 憑證並啟動自動同步 */
+    async _saveSelfHostCredentials(token, username) {
+        // 切換到 self-host 模式時清除 Google 登入（避免雙模式混淆）
+        this.accessToken = null
+        this.refreshToken = null
+        this.tokenExpiresAt = null
+        this.userInfo = null
+        this.driveFileAuthorized = false
+        localStorage.removeItem('sync_drive_file_authorized')
+        this.selfHostToken = token
+        this.selfHostUsername = username
+
+        await this.dataService.saveSetting({
+            key: 'sync_tokens',
+            value: null,
+        })
+        await this.dataService.saveSetting({
+            key: 'sync_drive_file_authorized',
+            value: false,
+        })
+        await this.dataService.saveSetting({
+            key: 'sync_selfhost',
+            value: { token, username, updated_at: Date.now() },
+        })
+
+        // 立即跑一次同步（拉取其他裝置的歷史變更）
+        await this.performSync(true).catch(err => {
+            console.warn('[SyncService] 首次 self-host 同步失敗:', err)
+        })
+        const autoSyncSetting =
+            await this.dataService.getSetting('sync_auto_enabled')
+        if (
+            localStorage.getItem('sync_auto_enabled') === 'true' ||
+            autoSyncSetting?.value === true
+        ) {
+            this.startAutoSync()
+        }
+        return { username }
+    }
+
+    /** 測試 self-host 伺服器是否可達（GET /api/health） */
+    async selfHostCheckServer(urlOverride) {
+        // urlOverride：供「測試連線」按鈕測試輸入框當前值（未儲存前的地址）
+        const target = urlOverride?.trim() || this.serverUrl
+        const res = await fetch(`${target}/api/health`, {
+            cache: 'no-store',
+        })
+        if (!res.ok) return false
+        const data = await res.json().catch(() => ({}))
+        return data.selfHosted === true
+    }
+
+    // ──────────────────────────────────────────────
+    // Self-Host — Shared Ledgers（跨帳號共用帳本）
+    //
+    // 語意與 Google Drive 版共用帳本一致（完整比對式 log），
+    // 差異在 transport：Drive file → server 端 shared ledger 記錄。
+    // sharedFileId 在 self-host 模式 = ledger uuid（= 共用 code）。
+    // ──────────────────────────────────────────────
+
+    /**
+     * 讀取共用帳本 content。
+     * @returns {Promise<{uuid, name, content}|null>}（404 → null）
+     */
+    async _selfHostSharedFetch(uuid) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}`
+        )
+        if (res.status === 404) return null
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Shared ledger fetch failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /**
+     * 覆寫共用帳本 content（完整比對式，同 Drive 版 _updateFile 語意）。
+     */
+    async _selfHostSharedPut(uuid, content) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}`,
+            {
+                method: 'PUT',
+                body: JSON.stringify({ content }),
+            }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Shared ledger update failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /**
+     * 建立共用帳本（owner = 目前帳號，附初始快照）。
+     */
+    async _selfHostSharedCreate(uuid, name, content) {
+        const res = await this._selfHostFetch('/shared', {
+            method: 'POST',
+            body: JSON.stringify({ ledgerUuid: uuid, name, content }),
+        })
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Shared ledger create failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 解析共用 code（完整 uuid 或前 8 字）→ {found, uuid, name} */
+    async _selfHostSharedLookup(code) {
+        const res = await this._selfHostFetch(
+            `/shared/lookup?code=${encodeURIComponent(code)}`
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Shared ledger lookup failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 邀請使用者加入共用帳本（owner 專用）。 */
+    async _selfHostSharedAddMember(uuid, username) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}/members`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ username }),
+            }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Add shared member failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 列出共用帳本成員。@returns {Promise<{members, isOwner}>} */
+    async _selfHostSharedListMembers(uuid) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}/members`
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `List shared members failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 移除成員（owner 專用）。 */
+    async _selfHostSharedRemoveMember(uuid, username) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}/members/${encodeURIComponent(username)}`,
+            { method: 'DELETE' }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Remove shared member failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 刪除共用帳本（owner 專用）。 */
+    async _selfHostSharedDelete(uuid) {
+        const res = await this._selfHostFetch(
+            `/shared/${encodeURIComponent(uuid)}`,
+            { method: 'DELETE' }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Delete shared ledger failed (${res.status})`)
+        }
+        return res.json()
+    }
+
+    // ──────────────────────────────────────────────
+    // Self-Host — Admin（帳號管理）
+    // ──────────────────────────────────────────────
+
+    /**
+     * 管理端建立帳號（admin token）。
+     * @returns {Promise<{id, username, pin}>} pin 僅回傳一次
+     */
+    async adminCreateUser(username, pin) {
+        const res = await this._selfHostFetch('/admin/users', {
+            method: 'POST',
+            body: JSON.stringify({ username, pin }),
+        })
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `建立帳號失敗 (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** @returns {Promise<{users, registerEnabled}>} */
+    async adminListUsers() {
+        const res = await this._selfHostFetch('/admin/users')
+        if (res.status === 403) throw new Error('需要管理員權限')
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `帳號列表失敗 (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 重置 PIN。@returns {Promise<{username, pin}>} */
+    async adminResetPin(username, pin) {
+        const res = await this._selfHostFetch(
+            `/admin/users/${encodeURIComponent(username)}/reset-pin`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ pin }),
+            }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `重置 PIN 失敗 (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 刪除帳號。 */
+    async adminDeleteUser(username) {
+        const res = await this._selfHostFetch(
+            `/admin/users/${encodeURIComponent(username)}`,
+            { method: 'DELETE' }
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `刪除帳號失敗 (${res.status})`)
+        }
+        return res.json()
+    }
+
+    /** 開關公開註冊。 */
+    async adminSetRegister(enabled) {
+        const res = await this._selfHostFetch('/admin/settings/register', {
+            method: 'PUT',
+            body: JSON.stringify({ enabled: !!enabled }),
+        })
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `註冊開關失敗 (${res.status})`)
+        }
+        return res.json()
+    }
+
+    // ──────────────────────────────────────────────
+    // Self-Host — Shared Ledger 同步（完整比對式，與 Drive 版語意一致）
+    // ──────────────────────────────────────────────
+
+    /**
+     * 將本地變更推送進 self-host 共用帳本。
+     * 與 Drive 版 pushSharedLedgerChanges 相同的完整比對式邏輯：
+     * 本地 sync_log（該 ledger 的）vs 雲端 log，缺的補推後完整覆寫。
+     */
+    async _selfHostPushSharedLedgerChanges() {
+        const ledgers = await this.dataService.getLedgers()
+        const sharedLedgers = ledgers.filter(
+            l => l.isShared && (l.sharedProvider === 'selfhost' || (!l.sharedProvider && l.sharedFileId === l.uuid))
+        )
+
+        for (const ledger of sharedLedgers) {
+            try {
+                const allLocalChanges = await this.dataService.getChangesSince(
+                    0,
+                    { sharedLedgerUuid: ledger.uuid }
+                )
+                if (allLocalChanges.length === 0) continue
+
+                let shared = null
+                try {
+                    shared = await this._selfHostSharedFetch(ledger.sharedFileId)
+                } catch (fetchErr) {
+                    if (fetchErr.message && (fetchErr.message.includes('403') || fetchErr.message.includes('404'))) {
+                        console.warn(`[SyncService] 自架共用帳本 "${ledger.name}" 已被雲端刪除或權限撤銷 (403/404)，自動降級為個人帳本`)
+                        await this.dataService.updateLedger(ledger.id, {
+                            isShared: false,
+                            sharedFileId: null,
+                            sharedProvider: null,
+                            type: 'personal',
+                        }, true)
+                        continue
+                    }
+                    throw fetchErr
+                }
+                if (!shared) {
+                    console.warn(
+                        `[SyncService] pushShared (self-host): 無法讀取 "${ledger.name}" 的雲端內容，略過`
+                    )
+                    continue
+                }
+                const cloudChanges = shared.content?.changes || []
+
+                const cloudKeySet = new Set()
+                cloudChanges.forEach(log => {
+                    cloudKeySet.add(this._changeKey(log))
+                })
+
+                const myMissingChanges = allLocalChanges
+                    .map(log => ({ ...log, deviceId: this.deviceId }))
+                    .filter(log => !cloudKeySet.has(this._changeKey(log)))
+
+                if (myMissingChanges.length > 0) {
+                    const payload = {
+                        deviceId: this.deviceId,
+                        timestamp: Date.now(),
+                        changes: myMissingChanges,
+                    }
+                    await this._selfHostSharedPut(ledger.sharedFileId, payload)
+                    console.log(
+                        `[SyncService] pushShared (self-host): "${ledger.name}" 推送了 ${myMissingChanges.length} 筆變更`
+                    )
+                }
+
+                const pushedIds = allLocalChanges
+                    .filter(log => typeof log.id === 'number')
+                    .map(log => log.id)
+                if (
+                    pushedIds.length > 0 &&
+                    this.dataService.deleteSyncLogsByIds
+                ) {
+                    await this.dataService.deleteSyncLogsByIds(pushedIds)
+                }
+            } catch (e) {
+                console.error(
+                    `[SyncService] pushSharedLedgerChanges (self-host) failed for "${ledger.name}":`,
+                    e.message
+                )
+            }
+        }
+    }
+
+    /**
+     * 從 self-host 共用帳本拉取其他成員的變更（完整比對式）。
+     * 與 Drive 版 pullSharedLedgerChanges 相同的 appliedKeys 去重邏輯。
+     */
+    async _selfHostPullSharedLedgerChanges() {
+        const ledgers = await this.dataService.getLedgers()
+        const sharedLedgers = ledgers.filter(l => l.isShared && l.sharedFileId)
+
+        const appliedKeysSetting = await this.dataService.getSetting(
+            'sync_shared_applied_keys'
+        )
+        const appliedKeys = new Set(appliedKeysSetting?.value || [])
+        const seenInBatch = new Set()
+        const allRemoteChanges = []
+
+        for (const ledger of sharedLedgers) {
+            try {
+                const shared = await this._selfHostSharedFetch(ledger.sharedFileId)
+                const changes = shared?.content?.changes
+                if (!Array.isArray(changes)) continue
+
+                for (const change of changes) {
+                    if (change.deviceId === this.deviceId) continue
+                    if (
+                        change.storeName === 'ledgers' &&
+                        change.data?.uuid &&
+                        change.data.uuid !== ledger.uuid
+                    ) {
+                        continue
+                    }
+                    if (
+                        change.storeName !== 'ledgers' &&
+                        change.data?.ledgerUuid &&
+                        change.data.ledgerUuid !== ledger.uuid
+                    ) {
+                        continue
+                    }
+                    if (
+                        change.storeName !== 'ledgers' &&
+                        change.data &&
+                        !change.data.ledgerUuid
+                    ) {
+                        change.data = {
+                            ...change.data,
+                            ledgerUuid: ledger.uuid,
+                        }
+                    }
+                    const key = this._changeKey(change)
+                    if (appliedKeys.has(key) || seenInBatch.has(key)) continue
+                    seenInBatch.add(key)
+                    allRemoteChanges.push(change)
+                }
+            } catch (e) {
+                console.warn(
+                    `[SyncService] pullSharedLedgerChanges (self-host) failed for ledger ${ledger.name}:`,
+                    e.message
+                )
+            }
+        }
+
+        if (allRemoteChanges.length > 0) {
+            console.log(
+                `[SyncService] pullShared (self-host): 收到 ${allRemoteChanges.length} 筆遠端變更，準備套用...`
+            )
+            allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges, {
+                isShared: true,
+            })
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+            }
+        }
+
+        // 持久化已套用鍵集合（全量保留，與 Drive 版 C2 / R1 / N1 對齊）
+        await this.dataService.saveSetting({
+            key: 'sync_shared_applied_keys',
+            value: [...appliedKeys],
+        })
+    }
+
+    /**
+     * 將本地 change log 推送到自架伺服器
+     * （changes 收集邏輯與 Google Drive 版完全相同）
+     */
+    async _selfHostPushChanges() {
+        if (!this.selfHostToken) return
+
+        const pushKey = `sync_last_push_timestamp_selfhost_${this.selfHostUsername || 'default'}`
+        const lastPush = await this.dataService.getSetting(pushKey)
+        let since = lastPush?.value || 0
+
+        // 若為此自架伺服器/帳號之初次推送，且本機已有既有資料，確保本機所有歷史資料皆已編入 sync_log 供完整遷移
+        if (!lastPush || !lastPush.value) {
+            if (typeof this.dataService.seedAllDataToSyncLog === 'function') {
+                await this.dataService.seedAllDataToSyncLog()
+            }
+            since = 0
+        }
+        let guard = 0
+        const pushedKeys = new Set()
+
+        // 批次推送：從最舊的變更開始，逐批（≤5000 筆/批，server 端上限）推完。
+        // 安全前提：
+        // - getChangesSince 用 >= 邊界；本輪推送以 pushedKeys 記憶體去重防重覆
+        // - 若批次於同時間戳截斷，優先在時間戳交界處切分批次或保持當前時間戳游標，避免 maxTimestamp + 1 漏掉同毫秒變更
+        // - server 端以 5-part key 去重（冪等），邊界重送/重試皆安全
+        while (guard++ < 1000) {
+            const rawChanges = await this.dataService.getChangesSince(since)
+            const changes = rawChanges.filter(c => !pushedKeys.has(this._changeKey(c)))
+            if (changes.length === 0) break
+
+            let batch
+            if (changes.length > 5000) {
+                if (
+                    changes[4999].timestamp === changes[5000].timestamp &&
+                    changes[0].timestamp < changes[4999].timestamp
+                ) {
+                    const cutoffTs = changes[4999].timestamp
+                    const cutIdx = changes.findIndex(c => c.timestamp === cutoffTs)
+                    batch = changes.slice(0, cutIdx > 0 ? cutIdx : 5000)
+                } else {
+                    batch = changes.slice(0, 5000)
+                }
+            } else {
+                batch = changes
+            }
+
+            const res = await this._selfHostFetch('/push', {
+                method: 'POST',
+                body: JSON.stringify({
+                    deviceId: this.deviceId,
+                    changes: batch,
+                }),
+            })
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                if (res.status === 403 && data.error?.includes('Device belongs to another account')) {
+                    localStorage.removeItem('sync_device_id')
+                    this.deviceId = this.getDeviceId()
+                }
+                this._selfHostLastError = data.error || `push 失敗 (${res.status})`
+                throw new Error(this._selfHostLastError)
+            }
+
+            for (const c of batch) {
+                pushedKeys.add(this._changeKey(c))
+            }
+
+            const ledgers = (await this.dataService.getLedgers?.()) || []
+            const sharedUuids = new Set(
+                ledgers.filter(l => l.isShared).map(l => l.uuid)
+            )
+            const idsToDelete = batch
+                .filter(
+                    c =>
+                        typeof c.id === 'number' &&
+                        !(
+                            c.storeName === 'ledgers' &&
+                            sharedUuids.has(c.data?.uuid)
+                        )
+                )
+                .map(c => c.id)
+            if (
+                idsToDelete.length > 0 &&
+                this.dataService.deleteSyncLogsByIds
+            ) {
+                await this.dataService.deleteSyncLogsByIds(idsToDelete)
+            }
+
+            const maxTimestamp = Math.max(...batch.map(c => c.timestamp))
+            await this.dataService.saveSetting({
+                key: pushKey,
+                value: maxTimestamp,
+            })
+            await this.dataService.saveSetting({
+                key: 'sync_last_push_timestamp',
+                value: maxTimestamp,
+            })
+
+            const hasMoreSameTs =
+                changes.length > batch.length &&
+                changes[batch.length].timestamp === maxTimestamp
+            since = hasMoreSameTs ? maxTimestamp : maxTimestamp + 1
+        }
+    }
+
+    /**
+     * 從自架伺服器拉取其他裝置的變更並合併
+     */
+    async _selfHostPullChanges() {
+        if (!this.selfHostToken) return
+
+        // 全量拉取 + 本端 appliedKeys 去重（與 _selfHostPullSharedLedgerChanges
+        // 相同模式）。
+        // 舊實作用本端 Date.now() 記錄上次拉取時間、server 端再以
+        // c.timestamp >= since 過濾遠端變更——但 c.timestamp 是各裝置「產生變更
+        // 時」的本地時間，裝置 B 離線期間產生的變更時間戳早於 A 的上次拉取時間，
+        // 會被永久過濾掉，造成跨裝置漏帳。
+        // 安全前提：applyRemoteChanges 冪等（add 遇同 uuid 轉 update、
+        // update/delete 皆冪等），重放已套用過的變更等同 no-op。
+        const res = await this._selfHostFetch(
+            `/pull?deviceId=${encodeURIComponent(this.deviceId)}`
+        )
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            this._selfHostLastError = data.error || `pull 失敗 (${res.status})`
+            throw new Error(this._selfHostLastError)
+        }
+        const data = await res.json()
+
+        const appliedKeysSetting = await this.dataService.getSetting(
+            'sync_selfhost_applied_keys'
+        )
+        const appliedKeys = new Set(appliedKeysSetting?.value || [])
+        const seenInBatch = new Set()
+
+        const allRemoteChanges = []
+        for (const device of data.devices || []) {
+            for (const change of device.changes || []) {
+                if (change.deviceId === this.deviceId) continue
+                const key = this._changeKey(change)
+                const legacyKey = `${change.deviceId || 'unknown'}|${change.timestamp}|${change.operation}|${change.storeName}`
+                if (
+                    appliedKeys.has(key) ||
+                    appliedKeys.has(legacyKey) ||
+                    seenInBatch.has(key)
+                )
+                    continue
+                seenInBatch.add(key)
+                allRemoteChanges.push(change)
+            }
+        }
+
+        if (allRemoteChanges.length > 0) {
+            allRemoteChanges.sort((a, b) => a.timestamp - b.timestamp)
+            const appliedNow = await this.applyRemoteChanges(allRemoteChanges)
+            const successfulKeys =
+                appliedNow instanceof Set || Array.isArray(appliedNow)
+                    ? appliedNow
+                    : allRemoteChanges.map(c => this._changeKey(c))
+            for (const key of successfulKeys) {
+                appliedKeys.add(key)
+            }
+        }
+
+        // 持久化已套用鍵集合（全量保留，與 Drive 版 C2 / R1 / N1 對齊）
+        await this.dataService.saveSetting({
+            key: 'sync_selfhost_applied_keys',
+            value: [...appliedKeys],
+        })
+        await this.dataService.saveSetting({
+            key: 'sync_last_sync',
+            value: Date.now(),
+        })
+    }
+
+    /** 備份資料到自架伺服器（JSON 內容與 Drive 版相同） */
+    async _selfHostBackup() {
+        if (!this.selfHostToken) return
+
+        const exportData = await this.dataService.exportDataForSync()
+        exportData.backup_device = this.deviceId
+        exportData.backup_timestamp = Date.now()
+
+        const fileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+        const content = JSON.stringify(exportData)
+
+        const res = await this._selfHostFetch('/backup', {
+            method: 'POST',
+            body: JSON.stringify({ fileName, content, deviceId: this.deviceId }),
+        })
+        if (!res.ok && res.status !== 201) {
+            const data = await res.json().catch(() => ({}))
+            this._selfHostLastError = data.error || `backup 失敗 (${res.status})`
+            throw new Error(this._selfHostLastError)
+        }
+
+        await this.dataService.saveSetting({
+            key: 'sync_last_backup',
+            value: { timestamp: Date.now(), fileName },
+        })
+    }
+
+    /** 列出自架伺服器上的備份（回傳格式與 Drive 版相容：id/name/size/createdTime） */
+    async _selfHostListBackups() {
+        if (!this.selfHostToken) return []
+        const res = await this._selfHostFetch('/backups')
+        if (!res.ok) throw new Error(`Failed to list backups (${res.status})`)
+        const data = await res.json()
+        return data.backups || []
+    }
+
+    /** 從自架伺服器下載備份內容 */
+    async _selfHostRestore(backupId) {
+        if (!this.selfHostToken) throw new Error('Not signed in')
+        const res = await this._selfHostFetch(`/backups/${encodeURIComponent(backupId)}`)
+        if (!res.ok) {
+            throw new Error(`Failed to download backup (${res.status})`)
+        }
+        return await res.json()
+    }
+
+    /** 刪除自架伺服器上的備份 */
+    async _selfHostDeleteBackup(backupId) {
+        if (!this.selfHostToken) return
+        const res = await this._selfHostFetch(
+            `/backups/${encodeURIComponent(backupId)}`,
+            { method: 'DELETE' }
+        )
+        if (!res.ok && res.status !== 404) {
+            throw new Error(`Failed to delete backup (${res.status})`)
+        }
+    }
+
+    // ──────────────────────────────────────────────
     // Google Drive — Backup
     // ──────────────────────────────────────────────
 
     /**
-     * 備份資料到 Google Drive appDataFolder
+     * 備份資料到雲端（Google Drive 或自架伺服器）
      * @returns {Promise<object>} 備份檔案的 metadata
      */
     async backupToDrive() {
+        if (this.selfHostToken) return this._selfHostBackup()
         await this.ensureValidToken()
 
         // 備份前先清理舊備份
@@ -622,10 +1490,11 @@ export class SyncService {
     }
 
     /**
-     * 列出所有備份檔案
+     * 列出所有備份檔案（Google Drive 或自架伺服器）
      * @returns {Promise<Array>} 備份列表
      */
     async listBackups() {
+        if (this.selfHostToken) return this._selfHostListBackups()
         await this.ensureValidToken()
 
         const allFiles = []
@@ -654,11 +1523,12 @@ export class SyncService {
     }
 
     /**
-     * 從 Google Drive 還原指定備份
-     * @param {string} fileId  Drive file ID
+     * 還原指定備份（Google Drive 或自架伺服器）
+     * @param {string} fileId  備份 ID
      * @returns {Promise<object>} 備份資料
      */
     async restoreFromDrive(fileId) {
+        if (this.selfHostToken) return this._selfHostRestore(fileId)
         await this.ensureValidToken()
 
         const res = await fetch(
@@ -674,10 +1544,11 @@ export class SyncService {
     }
 
     /**
-     * 刪除指定備份
-     * @param {string} fileId  Drive file ID
+     * 刪除指定備份（Google Drive 或自架伺服器）
+     * @param {string} fileId  備份 ID
      */
     async deleteBackup(fileId) {
+        if (this.selfHostToken) return this._selfHostDeleteBackup(fileId)
         await this.ensureValidToken()
 
         const res = await fetch(
@@ -698,15 +1569,22 @@ export class SyncService {
     // ──────────────────────────────────────────────
 
     /**
-     * 將本地 change log 推送到 Google Drive
+     * 將本地 change log 推送到雲端（Google Drive 或自架伺服器）
      */
     async pushChanges() {
+        if (this.selfHostToken) return this._selfHostPushChanges()
         await this.ensureValidToken()
 
-        const lastPush = await this.dataService.getSetting(
-            'sync_last_push_timestamp'
-        )
-        const since = lastPush?.value || 0
+        const drivePushKey = 'sync_last_push_timestamp_drive'
+        const lastPush = await this.dataService.getSetting(drivePushKey)
+        // 唯有 Drive 專屬水位不存在時，一律執行 seedAllDataToSyncLog 確保首次推至 Drive 時歷史資料完整上傳
+        let since = lastPush?.value ?? 0
+        if (!lastPush) {
+            if (typeof this.dataService.seedAllDataToSyncLog === 'function') {
+                await this.dataService.seedAllDataToSyncLog()
+            }
+            since = 0
+        }
         const changes = await this.dataService.getChangesSince(since)
 
         // ============================================
@@ -826,6 +1704,10 @@ export class SyncService {
         // 記錄推送的最新時間
         const maxTimestamp = Math.max(...changes.map(c => c.timestamp))
         await this.dataService.saveSetting({
+            key: 'sync_last_push_timestamp_drive',
+            value: maxTimestamp,
+        })
+        await this.dataService.saveSetting({
             key: 'sync_last_push_timestamp',
             value: maxTimestamp,
         })
@@ -834,13 +1716,14 @@ export class SyncService {
     }
 
     /**
-     * 從其他裝置的 sync log 拉取變更並合併。
-     * 使用 checkedMap (依 modifiedTime 跳過未變更檔) 與 appliedKeys 去重。
+     * 從雲端拉取其他裝置的變更並合併（Google Drive 或自架伺服器）
+     * Drive 版使用 checkedMap (依 modifiedTime 跳過未變更檔) 與 appliedKeys 去重。
      */
     async pullChanges() {
+        if (this.selfHostToken) return this._selfHostPullChanges()
         await this.ensureValidToken()
 
-        let files = []
+        const files = []
         let pageToken = null
         do {
             const pageParam = pageToken
@@ -946,6 +1829,7 @@ export class SyncService {
             })
         }
 
+        // 記錄最後同步時間
         await this.dataService.saveSetting({
             key: 'sync_last_sync',
             value: Date.now(),
@@ -975,6 +1859,10 @@ export class SyncService {
             'amortizations',
             'records',
             'recurring_transactions',
+            // #SYNC-AMORT: amortizations 依賴 accounts（accountId 外鍵），排在 accounts 之後即可；
+            // credit_statements 為各裝置本機計算產物，套用端刻意跳過（見 _applyAdd 的 case 註解），
+            // 此處僅作同 timestamp 的穩定排序預留
+            'credit_statements',
         ]
 
         // 嚴格排序邏輯：
@@ -1132,6 +2020,70 @@ export class SyncService {
      * 將所有遠端變更標記為已套用（用於 Restore 後避免重複套用舊變更）
      */
     async markAllRemoteChangesAsPulled() {
+        if (this.selfHostToken) {
+            try {
+                const res = await this._selfHostFetch(
+                    `/pull?deviceId=${encodeURIComponent(this.deviceId)}`
+                )
+                if (res.ok) {
+                    const data = await res.json()
+                    const appliedSetting = await this.dataService.getSetting(
+                        'sync_selfhost_applied_keys'
+                    )
+                    const appliedKeys = new Set(appliedSetting?.value || [])
+                    for (const device of data.devices || []) {
+                        for (const c of device.changes || []) {
+                            appliedKeys.add(this._changeKey(c))
+                        }
+                    }
+                    await this.dataService.saveSetting({
+                        key: 'sync_selfhost_applied_keys',
+                        value: [...appliedKeys],
+                    })
+                }
+
+                const sharedAppliedSetting = await this.dataService.getSetting(
+                    'sync_shared_applied_keys'
+                )
+                const sharedAppliedKeys = new Set(
+                    sharedAppliedSetting?.value || []
+                )
+                const ledgers = (await this.dataService.getLedgers?.()) || []
+                for (const l of ledgers.filter(
+                    item => item.isShared && item.sharedFileId
+                )) {
+                    try {
+                        const shared = await this._selfHostSharedFetch(
+                            l.sharedFileId
+                        )
+                        for (const c of shared?.content?.changes || []) {
+                            sharedAppliedKeys.add(this._changeKey(c))
+                        }
+                    } catch (_) {}
+                }
+                await this.dataService.saveSetting({
+                    key: 'sync_shared_applied_keys',
+                    value: [...sharedAppliedKeys],
+                })
+
+                const now = Date.now()
+                await this.dataService.saveSetting({
+                    key: 'sync_last_sync',
+                    value: now,
+                })
+                await this.dataService.saveSetting({
+                    key: 'sync_last_push_timestamp',
+                    value: now,
+                })
+            } catch (err) {
+                console.error(
+                    '[SyncService] markAllRemoteChangesAsPulled (self-host) error:',
+                    err
+                )
+            }
+            return
+        }
+
         await this.ensureValidToken()
         try {
             const allFiles = []
@@ -1201,6 +2153,9 @@ export class SyncService {
      * @returns {Promise<{ok: boolean, maxTs: number|null}>} 推送狀態與最大時間戳
      */
     async pushSharedLedgerChanges() {
+        if (this.selfHostToken) {
+            return this._selfHostPushSharedLedgerChanges()
+        }
         await this.ensureValidToken()
 
         if (!(await this.isSharingAuthorized())) {
@@ -1210,7 +2165,7 @@ export class SyncService {
 
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(
-            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+            l => l.isShared && l.sharedProvider !== 'selfhost' && (l.sharedManifestId || l.sharedFileId)
         )
         let maxPushed = null
         let allSucceeded = true
@@ -1266,6 +2221,9 @@ export class SyncService {
      * 從 manifest 列出的各成員日誌檔拉取遠端變更（appliedKeys 去重 + modifiedTime 快取）
      */
     async pullSharedLedgerChanges() {
+        if (this.selfHostToken) {
+            return this._selfHostPullSharedLedgerChanges()
+        }
         await this.ensureValidToken()
 
         if (!(await this.isSharingAuthorized())) {
@@ -1275,7 +2233,7 @@ export class SyncService {
 
         const ledgers = await this.dataService.getLedgers()
         const sharedLedgers = ledgers.filter(
-            l => l.isShared && (l.sharedManifestId || l.sharedFileId)
+            l => l.isShared && l.sharedProvider !== 'selfhost' && (l.sharedManifestId || l.sharedFileId)
         )
 
         const appliedSetting = await this.dataService.getSetting(
@@ -2279,7 +3237,7 @@ export class SyncService {
                 // 從舊共用檔權限查詢真正擁有者，避免位置判定的擁有者錯亂
                 let ownerEmail = this.userInfo?.email || ''
                 let legacyPerms = []
-                let isLegacyOwner = true
+                let isLegacyOwner
                 if (ledger.sharedFileId) {
                     isLegacyOwner = false
                     try {
@@ -2582,7 +3540,7 @@ export class SyncService {
      */
     async joinViaManifest(manifestId) {
         await this.ensureValidToken()
-        let manifest = null
+        let manifest
         try {
             const res = await this._downloadFile(manifestId)
             if (res?.status === 404) {
@@ -3243,6 +4201,28 @@ export class SyncService {
     }
 
     /**
+     * 將遠端 amortization 的 accountUuid 解析為本地 accountId（#SYNC-AMORT）。
+     * 與 _resolveRecurringAccountId 語意相同，但保留「無 accountUuid 舊資料不動」行為：
+     * 攤提的 accountId 為選填（periodic 可無帳戶），無 uuid 時無法解析，維持原值。
+     * @param {object} data
+     * @returns {object} 已修正 accountId 的 data
+     */
+    async _resolveAmortizationAccountId(data) {
+        if (!data.accountUuid) return data
+        try {
+            const accounts = await this.dataService.getAccounts({
+                allLedgers: true,
+            })
+            const matched = accounts.find(a => a.uuid === data.accountUuid)
+            // 解析不到時清為 null：來源裝置的整數 id 在本機會撞名到其他帳戶，
+            // null（processAmortizations 依無帳戶處理）比掛到錯誤帳戶安全
+            return { ...data, accountId: matched ? matched.id : null }
+        } catch (_) {
+            return data
+        }
+    }
+
+    /**
      * 將遠端 record 的 groupUuid 解析為本地 groupId。
      * @param {object} data
      * @returns {object} 已修正 groupId 的 data
@@ -3291,7 +4271,7 @@ export class SyncService {
         if (storeName === 'recurring_transactions') {
             resolved = await this._resolveRecurringAccountId(resolved)
         } else if (storeName === 'amortizations') {
-            resolved = await this._resolveRecordAccountId(resolved)
+            resolved = await this._resolveAmortizationAccountId(resolved)
         }
         return resolved
     }
@@ -3676,20 +4656,26 @@ export class SyncService {
                 break
             }
             case 'amortizations': {
-                let resolvedAmortization = await this._resolveLedgerId(
-                    data,
-                    options
-                )
-                resolvedAmortization =
-                    await this._resolveRecordAccountId(resolvedAmortization)
-                await this.dataService.addAmortization(
-                    resolvedAmortization,
-                    true
-                )
+                // #SYNC-AMORT: 遠端整數 id 在本機可能撞名到不相干的分期計畫
+                // （autoIncrement store 的 add 接受明確 key → ConstraintError），
+                // 移除後交由本機 autoIncrement 產生
+                const restData = { ...data }
+                delete restData.id
+                let resolvedAmort = await this._resolveLedgerId(restData, options)
+                resolvedAmort =
+                    await this._resolveAmortizationAccountId(resolvedAmort)
+                // skipLog=true：接收端不重複入 sync_log，避免回音放大
+                await this.dataService.addAmortization(resolvedAmort, true)
                 break
             }
             case 'credit_statements': {
-                // 信用卡帳單為各裝置本機由 records/accounts 自動運算產物，明示跳過不同步，避免多裝置獨立生成衝突與重複扣款
+                // #SYNC-AMORT: 刻意跳過——帳單為各裝置本機計算產物
+                // （addRecord/updateCreditStatementsStatus 自動生成 + FIFO 沖銷），
+                // 套用遠端帳單會與本機生成重複/衝突，維持各端自行生成語意
+                console.log(
+                    '[SyncService] credit_statements is device-local computed, skip apply:',
+                    data?.uuid || data?.id
+                )
                 break
             }
             default:
@@ -4153,21 +5139,37 @@ export class SyncService {
                 break
             }
             case 'amortizations': {
-                let resolvedAmortization = await this._resolveLedgerId(
-                    data,
-                    options
-                )
-                resolvedAmortization =
-                    await this._resolveRecordAccountId(resolvedAmortization)
+                // #SYNC-AMORT: 仿 recurring_transactions 的 P01 修法——
+                // 先用 UUID 查找本地 ID，避免遠端整數 ID 不匹配改到不相干計畫；
+                // 本地不存在則跳過（add 會由後續或上層 upsert 處理）
+                let targetId = id
+                if (data?.uuid) {
+                    const existing = await this.dataService.getByUUID(
+                        'amortizations',
+                        data.uuid
+                    )
+                    if (existing) {
+                        targetId = existing.id
+                    } else {
+                        console.log(
+                            '[SyncService] amortizations update skipped (not found locally):',
+                            data.uuid
+                        )
+                        break
+                    }
+                }
+                let resolvedAmort = await this._resolveLedgerId(data, options)
+                resolvedAmort =
+                    await this._resolveAmortizationAccountId(resolvedAmort)
                 await this.dataService.updateAmortization(
-                    id,
-                    resolvedAmortization,
+                    targetId,
+                    resolvedAmort,
                     true
                 )
                 break
             }
             case 'credit_statements': {
-                // 信用卡帳單為本機計算產物，明示跳過
+                // #SYNC-AMORT: 本機計算產物，刻意跳過（語意同 _applyAdd 的 case 註解）
                 break
             }
             default:
@@ -4284,10 +5286,12 @@ export class SyncService {
                 await this.dataService.deleteRecurringTransaction(id, true)
                 break
             case 'amortizations':
+                // #SYNC-AMORT: 刪除分期計畫不連帶刪除已自動生成的記帳紀錄
+                // （與本機 deleteAmortization 行為一致：歷史紀錄保留可追溯）
                 await this.dataService.deleteAmortization(id, true)
                 break
             case 'credit_statements':
-                // 信用卡帳單為本機計算產物，明示跳過
+                // #SYNC-AMORT: 本機計算產物，刻意跳過（語意同 _applyAdd 的 case 註解）
                 break
             default:
                 console.warn(

@@ -193,6 +193,93 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
         })
     })
 
+    describe('getCreditCardBillingInfo 結帳日邊界與月底收斂 (#CREDIT-UNBILLED)', () => {
+        it('statementDay=31 遇 2 月：未出帳週期收斂到月底，不溢位到 3 月', async () => {
+            // 31 日出帳卡，2026-02-15 尚未結帳（2 月有效結帳日 = 2/28）
+            // 未出帳週期應為 2026-02-01 ~ 2026-02-28（舊版 endStr 會溢出成 2026-03-03，
+            // 與 getStatementPeriod 已收斂的帳單週期錯開，造成消費重複列示）
+            const cardId = await ds.addAccount({
+                name: '31日出帳卡',
+                type: 'credit_card',
+                statementDay: 31,
+                dueDay: 15,
+                balance: 0,
+            })
+            const refDate = new Date(2026, 1, 15) // 2026-02-15
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+            expect(info.unbilledPeriod.startStr).toBe('2026-02-01')
+            expect(info.unbilledPeriod.endStr).toBe('2026-02-28')
+            expect(info.unbilledPeriod.lastStatementEndStr).toBe('2026-01-31')
+            // 距結帳天數以收斂後的 2/28 為基準（2/15 → 13 天）
+            expect(info.daysUntilStatement).toBe(13)
+        })
+
+        it('statementDay=31 已過月底結帳日：未出帳從 3/1 起算到下月 3/31 收斂', async () => {
+            // 2026-03-05，31 日出帳卡：本月有效結帳日 3/31 未到，
+            // 上期已於 2/28（月底收斂）結帳 → 未出帳 2026-03-01 ~ 2026-03-31
+            const cardId = await ds.addAccount({
+                name: '31日出帳卡B',
+                type: 'credit_card',
+                statementDay: 31,
+                dueDay: 15,
+                balance: 0,
+            })
+            const refDate = new Date(2026, 2, 5) // 2026-03-05
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+            expect(info.unbilledPeriod.startStr).toBe('2026-03-01')
+            expect(info.unbilledPeriod.endStr).toBe('2026-03-31')
+            expect(info.unbilledPeriod.lastStatementEndStr).toBe('2026-02-28')
+        })
+
+        it('結帳日當天消費歸屬已結帳帳單，不重複列於即時未出帳', async () => {
+            // 25 日出帳卡，2026-10-25 當天：autoGenerateCreditStatements 以
+            // now.getDate() >= statementDay 判斷已結帳（當日消費已入該期帳單），
+            // 故未出帳週期應從 10/26 起算，當日消費不得同時出現在未出帳清單
+            const cardId = await ds.addAccount({
+                name: '25日出帳卡',
+                type: 'credit_card',
+                statementDay: 25,
+                dueDay: 10,
+                balance: 0,
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 600,
+                date: '2026-10-25', // 結帳日當天消費 → 屬 2026-09 期帳單
+                accountId: cardId,
+                description: '結帳日當天刷卡',
+            })
+            await ds.addRecord({
+                type: 'expense',
+                amount: 900,
+                date: '2026-10-26', // 隔天消費 → 屬下期未出帳
+                accountId: cardId,
+                description: '結帳日隔天刷卡',
+            })
+            const refDate = new Date(2026, 9, 25) // 2026-10-25
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+            expect(info.unbilledPeriod.startStr).toBe('2026-10-26')
+            expect(info.unbilledPeriod.endStr).toBe('2026-11-25')
+            expect(info.unbilledRecords).toHaveLength(1)
+            expect(info.unbilledTotal).toBe(900)
+        })
+
+        it('結帳日 31 日跨年底界：12/31 已結帳，未出帳正確進位到隔年 1 月', async () => {
+            const cardId = await ds.addAccount({
+                name: '跨年31日卡',
+                type: 'credit_card',
+                statementDay: 31,
+                dueDay: 15,
+                balance: 0,
+            })
+            const refDate = new Date(2026, 11, 31) // 2026-12-31
+            const info = await ds.getCreditCardBillingInfo(cardId, refDate)
+            expect(info.unbilledPeriod.lastStatementEndStr).toBe('2026-12-31')
+            expect(info.unbilledPeriod.startStr).toBe('2027-01-01')
+            expect(info.unbilledPeriod.endStr).toBe('2027-01-31')
+        })
+    })
+
     describe('autoGenerateCreditStatements 與繳款日計算', () => {
         it('當今日日期小於結帳日 (now.getDate() < statementDay)，仍能正確產生前一期已過結帳日的帳單', async () => {
             const cardId = await ds.addAccount({

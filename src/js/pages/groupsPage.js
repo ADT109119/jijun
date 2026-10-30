@@ -1,6 +1,6 @@
 // 群組管理頁面
 import { GroupManager } from '../groupManager.js'
-import { formatCurrency, formatDate, formatDateToString, showToast, customConfirm, customAlert, escapeHTML } from '../utils.js'
+import { formatCurrency, formatDate, showToast, customConfirm, customAlert, escapeHTML } from '../utils.js'
 
 export class GroupsPage {
     constructor(app) {

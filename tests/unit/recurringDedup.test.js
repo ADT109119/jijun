@@ -1049,3 +1049,120 @@ describe('processRecurringTransactions', () => {
         })
     })
 })
+
+// ==================== #EOM-E2 週期交易月底收斂（錨定原始起始日） ====================
+
+describe('processRecurringTransactions — #EOM-E2 月底收斂', () => {
+    let app, ds
+
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('每月 31 日房租補跑三期：2 月落 2/28、3 月回 3/31（不漂移成 28 日）', async () => {
+        const today = '2026-03-31'
+        vi.mocked(formatDateToString).mockReturnValue(today)
+
+        ds = createMockDataService({
+            recurringTxs: [
+                {
+                    id: 1,
+                    uuid: 'rt-eom-001',
+                    type: 'expense',
+                    amount: 5000,
+                    category: 'Rent',
+                    description: 'Monthly Rent 31',
+                    nextDueDate: '2026-01-31',
+                    frequency: 'monthly',
+                    interval: 1,
+                    startDate: '2026-01-31',
+                    accountId: 1,
+                    ledgerId: 1,
+                },
+            ],
+            records: [],
+        })
+
+        app = createMockApp(ds)
+        await app.processRecurringTransactions()
+
+        // 三筆紀錄日期：1/31、2/28（收斂）、3/31（錨定可逆，回到 31 日）
+        const dates = ds.addRecord.mock.calls.map(c => c[0].date)
+        expect(dates).toEqual(['2026-01-31', '2026-02-28', '2026-03-31'])
+        expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(1, {
+            nextDueDate: '2026-04-30',
+        })
+    })
+
+    it('舊資料無 startDate：退回自身日语意（2/28 再推一月停在 3/28）', async () => {
+        const today = '2026-03-31'
+        vi.mocked(formatDateToString).mockReturnValue(today)
+
+        ds = createMockDataService({
+            recurringTxs: [
+                {
+                    id: 2,
+                    uuid: 'rt-eom-002',
+                    type: 'expense',
+                    amount: 5000,
+                    category: 'Rent',
+                    description: 'Legacy no startDate',
+                    nextDueDate: '2026-02-28',
+                    frequency: 'monthly',
+                    interval: 1,
+                    // 無 startDate（舊資料）
+                    accountId: 1,
+                    ledgerId: 1,
+                },
+            ],
+            records: [],
+        })
+
+        app = createMockApp(ds)
+        await app.processRecurringTransactions()
+
+        const dates = ds.addRecord.mock.calls.map(c => c[0].date)
+        expect(dates).toEqual(['2026-02-28', '2026-03-28'])
+    })
+
+    it('每年 2/29 年費：非閏年收斂到 2/28', async () => {
+        const today = '2027-03-01'
+        vi.mocked(formatDateToString).mockReturnValue(today)
+
+        ds = createMockDataService({
+            recurringTxs: [
+                {
+                    id: 3,
+                    uuid: 'rt-eom-003',
+                    type: 'expense',
+                    amount: 1200,
+                    category: 'Insurance',
+                    description: 'Yearly on leap day',
+                    nextDueDate: '2024-02-29',
+                    frequency: 'yearly',
+                    interval: 1,
+                    startDate: '2024-02-29',
+                    accountId: 1,
+                    ledgerId: 1,
+                },
+            ],
+            records: [],
+        })
+
+        app = createMockApp(ds)
+        await app.processRecurringTransactions()
+
+        const dates = ds.addRecord.mock.calls.map(c => c[0].date)
+        // 2024-02-29、2025-02-28、2026-02-28（錨定 29 收斂）、2027-02-28
+        expect(dates).toEqual([
+            '2024-02-29',
+            '2025-02-28',
+            '2026-02-28',
+            '2027-02-28',
+        ])
+        // 下一期 2028 閏年回到 2/29（錨定可逆）
+        expect(ds.updateRecurringTransaction).toHaveBeenCalledWith(3, {
+            nextDueDate: '2028-02-29',
+        })
+    })
+})

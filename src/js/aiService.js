@@ -3,6 +3,9 @@
  * 負責下載模型、初始化 wllama/端側推論引擎、動態組裝 Prompt (含日期錨定) 以及雙軌解析 Tool Call (JSON + 特殊 Token 壓縮格式)
  */
 
+import { buildSystemPrompt, parseToolCalls, extractBalancedJson } from './toolsSchema.js';
+import { CATEGORIES } from './categories.js';
+
 export const HF_GGUF_REPO = 'the-walking-fish/jijun-LM-GGUF';
 export const HF_GGUF_BASE_URL = `https://huggingface.co/${HF_GGUF_REPO}/resolve/main/`;
 
@@ -437,6 +440,8 @@ export class AIService {
      * @returns {string} - 組裝好的 System Prompt
      */
     generateSystemPrompt(categories, accounts, currentDate) {
+        // 輸入正規化：容忍呼叫端傳入物件陣列（如 {name}）與髒空白，並去重
+        // （分類兩側合併時「其他」等重疊分類會重複出現在 enum，冗餘且稀釋權重）
         const rawCategories = Array.isArray(categories) && categories.length > 0
             ? categories.map(c => typeof c === 'string' ? c.trim() : c?.name?.trim() || '').filter(Boolean)
             : [];
@@ -451,26 +456,22 @@ export class AIService {
             ? Array.from(new Set(rawAccounts))
             : ['現金', '信用卡', '悠遊卡', '一卡通', '街口支付', 'LINE Pay', 'Apple Pay', 'Google Pay', '郵局帳戶', '銀行存款', '外幣帳戶', '加密貨幣', '悠遊付', 'icash'];
 
-        const { formattedStr } = this.getCurrentDateAnchor(currentDate);
-
-        const toolDef = {
-            name: "add_record",
-            description: "新增一筆記帳記錄",
-            parameters: {
-                type: "object",
-                properties: {
-                    amount: { type: "number" },
-                    category: { type: "string", enum: cleanCategories },
-                    account: { type: "string", enum: cleanAccounts },
-                    description: { type: "string" },
-                    type: { type: "string", enum: ["expense", "income"] },
-                    date: { type: "string", description: "ISO 8601 格式日期，僅日期精度，例如 YYYY-MM-DD" }
-                },
-                required: ["amount", "category", "account", "type", "date"]
+        // Protocol v2：委托 toolsSchema.js 組裝（v1 單工具模式），與訓練端
+        // gen/build_prompt.py 的 prompt 位元完全一致。
+        // descriptions.date 覆寫為訓練集變體（「僅日期精度」），對齊
+        // tools/jijun-ai-training/tools.schema.json 的實際訓練字串。
+        // 收支類型規則不再寫入 prompt（規則文字會偏離訓練集分佈），
+        // 改由 applySemanticGuardrail() 於解析後做高確信度關鍵字校正 (#64)。
+        return buildSystemPrompt(['add_record'], currentDate || new Date(), {
+            category: cleanCategories,
+            account: cleanAccounts
+        }, {
+            descriptions: {
+                add_record: {
+                    date: 'ISO 8601 格式日期，僅日期精度，例如 YYYY-MM-DD'
+                }
             }
-        };
-
-        return `${formattedStr}。你是一個記帳助理。你被賦予了以下 tools:\n${JSON.stringify(toolDef)}`;
+        });
     }
 
     /**
@@ -494,7 +495,7 @@ export class AIService {
     }
 
     /**
-     * 前端語意守門校正：針對高確信度關鍵字進行收支類型校準，防止小模型幻覺
+     * 前端語意守門校正：針對高確信度關鍵字進行收支類型校準，防止小模型幻覺 (#64)
      * @param {object} record - 解析後的記帳物件
      * @param {string} rawText - 原始使用者輸入文字
      * @returns {object}
@@ -517,61 +518,84 @@ export class AIService {
     }
 
     /**
+     * 字面分類守門：使用者直接把類別名打成輸入（例「孝親費10000」「孝親費10000給媽」）時，
+     * 以原始輸入中「字面出現的最長分類名」覆寫模型選出的分類。
+     *
+     * 動機（2026-10-14 以 v4c f16 GGUF 實測）：使用者自訂類別名（孝親費/電話費/代墊/股票）
+     * 從未出現在訓練 enum 池（訓練集僅見過 213 種名稱），且 byte-level BPE 把「孝親費」
+     * 切成 6 個半字元 token，模型讀不出詞、只能套金額先驗 →
+     * 「孝親費10000」→ category=教育、description 幻覺成「孫親費」。
+     * 訓練端要修得重訓（v4d「類別名回聲」資料族），前端這條是零成本的高確信度兜底。
+     *
+     * 高確信度條件（避免誤傷）：
+     * 1. 名稱長度 >= 2（排除單字類別）
+     * 2. 最長名稱優先（同時有「股票」與「股票股利」時選後者）
+     * 3. 命中即覆寫 category；僅當模型 description 未字面出現在原文（視為幻覺）時，
+     *    才用原文殘句（扣掉金額與類別名）取代，避免把「買晚餐600」的 description 改壞
+     * @param {object} record - 解析後的記帳物件
+     * @param {string} rawText - 原始使用者輸入文字
+     * @param {Array<string|object>} categories - 目前帳本的分類清單
+     * @returns {object}
+     */
+    applyLiteralCategoryGuardrail(record, rawText, categories) {
+        if (!record || !rawText || typeof rawText !== 'string') return record;
+
+        let candidateCategories = categories;
+        if (Array.isArray(categories)) {
+            const incomeNames = new Set((CATEGORIES?.income || []).map(c => c.name).filter(n => n !== '其他' && n !== '其它'));
+            const expenseNames = new Set((CATEGORIES?.expense || []).map(c => c.name).filter(n => n !== '其他' && n !== '其它'));
+
+            if (record.type === 'expense') {
+                candidateCategories = categories.filter(c => {
+                    if (typeof c === 'object' && c !== null) {
+                        if (c.type === 'income') return false;
+                        if (c.type === 'expense') return true;
+                        return !incomeNames.has(c.name);
+                    }
+                    return !incomeNames.has(c);
+                });
+            } else if (record.type === 'income') {
+                candidateCategories = categories.filter(c => {
+                    if (typeof c === 'object' && c !== null) {
+                        if (c.type === 'expense') return false;
+                        if (c.type === 'income') return true;
+                        return !expenseNames.has(c.name);
+                    }
+                    return !expenseNames.has(c);
+                });
+            }
+        }
+
+        const literal = findLiteralCategoryName(rawText, candidateCategories);
+        if (!literal) return record;
+
+        record.category = literal;
+
+        // description 只在模型講了原文沒有的詞（幻覺/崩字）時才接手，
+        // 取「原文扣掉類別名與金額」的殘句；殘句為空則回填類別名。
+        const desc = typeof record.description === 'string' ? record.description.trim() : '';
+        const descIsGrounded = desc.length > 0 && rawText.includes(desc);
+        if (!descIsGrounded) {
+            const residual = rawText
+                .replace(literal, '')
+                .replace(/[0-9０-９]+(?:\.[0-9０-９]+)?\s*(?:元|塊|圓|万|萬|k|K|千)?/g, '')
+                .replace(/^[，。、\s：:]+|[，。、\s：:]+$/g, '')
+                .trim();
+            record.description = residual || literal;
+        }
+        return record;
+    }
+
+    /**
      * 從文字中提取第一座完整且平衡的大括號 JSON 物件 (處理字串轉義與任意層級嵌套，防止非貪婪正則截斷)
+     * 實作已提升至 toolsSchema.extractBalancedJson（單一真相源，含 stop token
+     * 微截斷補齊容錯），本方法保留為相容私人介面。
      * @param {string} text
      * @returns {string|null}
      * @private
      */
     _extractBalancedJson(text) {
-        if (!text) return null;
-        const start = text.indexOf('{');
-        if (start < 0) return null;
-
-        let depth = 0;
-        let inStr = false;
-        let escaped = false;
-
-        for (let i = start; i < text.length; i++) {
-            const ch = text[i];
-            if (inStr) {
-                if (escaped) {
-                    escaped = false;
-                } else if (ch === '\\') {
-                    escaped = true;
-                } else if (ch === '"') {
-                    inStr = false;
-                }
-            } else {
-                if (ch === '"') {
-                    inStr = true;
-                } else if (ch === '{') {
-                    depth++;
-                } else if (ch === '}') {
-                    depth--;
-                    if (depth === 0) {
-                        return text.slice(start, i + 1);
-                    }
-                }
-            }
-        }
-
-        // 容錯修復：若模型因 stop token 或 max_tokens 剛好在最後一層大括號前截斷 (如 depth > 0 且非字串中)
-        if (depth > 0 && !inStr) {
-            let candidate = text.slice(start);
-            let patchDepth = depth;
-            while (patchDepth > 0) {
-                candidate += '}';
-                patchDepth--;
-            }
-            try {
-                JSON.parse(candidate);
-                return candidate;
-            } catch (_) {
-                // 自動補齊若仍不合法則放棄
-            }
-        }
-
-        return null;
+        return text ? extractBalancedJson(text) : null;
     }
 
     /**
@@ -625,121 +649,61 @@ export class AIService {
                 throw error;
             }
             this.lastMode = 'llm';
-            return this.extractToolCall(responseText, text);
+            return this.extractToolCall(responseText, text, categories);
         } catch (error) {
             if (!this.lastErrorStage) this.lastErrorStage = 'init';
             console.warn(`wllama ${this.lastErrorStage} 失敗，降級為離線規則模組:`, error);
             this.lastMode = 'rules';
-            return this.extractToolCall(this._ruleInference(text, categories, accounts, currentDate), text);
+            return this.extractToolCall(this._ruleInference(text, categories, accounts, currentDate), text, categories);
         }
     }
 
     /**
      * 雙軌容錯解析模型輸出的 Tool Call (支援 JSON 格式與特殊 Token 壓縮格式)
+     * Protocol v2：委托 toolsSchema.parseToolCalls（含 compressed 軌、thinking 標籤
+     * 剔除、schema 驗證與動態 enum 模糊匹配）；本方法維持 v1 回傳結構。
+     * #64 移植：rawText 語意守門——高確信度關鍵字校正收支類型，防止小模型幻覺。
+     * 字面分類守門：rawText 字面含分類名時覆寫分類（使用者自訂類別名模型不認得）。
      * @param {string} responseText - 模型產生的文字
      * @param {string} [rawText] - 原始使用者輸入文字（用於語意守門校準）
+     * @param {Array<string|object>} [categories] - 目前帳本分類清單（用於字面分類守門）
      * @returns {object}
      */
-    extractToolCall(responseText, rawText = '') {
-        if (!responseText) {
-            throw new Error('模型輸出為空');
+    extractToolCall(responseText, rawText = '', categories = []) {
+        const { calls } = parseToolCalls(responseText, {
+            tools: ['add_record'],
+            pools: { category: Array.isArray(categories) ? categories : [] }
+        });
+        const call = calls[0];
+
+        if (!call.name || call.name !== 'add_record' || !call.args) {
+            const reason = call.issues[0] || '無法識別 add_record tool call';
+            throw new Error(reason);
         }
-
-        // 0. 剔除思考鏈標籤以相容 Reasoning/Thinking 模型 (如 DeepSeek-R1 / Qwen3 推理系列)
-        responseText = responseText.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();
-        responseText = responseText.replace(/^[\s\S]*?<\/think(?:ing)?>/i, '').trim();
-        responseText = responseText.replace(/^\s*thinking\b[\s\S]*?(?=<tool_call>|\{)/i, '').trim();
-
-        let result = null;
-
-        // 1. 檢測是否為「特殊標記壓縮格式」 [AMT] / [CAT]
-        if (responseText.includes('[AMT]') || responseText.includes('[CAT]')) {
-            const args = {};
-            const amtMatch = responseText.match(/\[AMT\]\s*([0-9.]+)/);
-            if (amtMatch) args.amount = Number(amtMatch[1]);
-
-            const catMatch = responseText.match(/\[CAT\]\s*([^[<]+)/);
-            if (catMatch) args.category = catMatch[1].trim();
-
-            const accMatch = responseText.match(/\[ACC\]\s*([^[<]+)/);
-            if (accMatch) args.account = accMatch[1].trim();
-
-            const descMatch = responseText.match(/\[DESC\]\s*([^[<]*)/);
-            if (descMatch) args.description = descMatch[1].trim();
-
-            const dateMatch = responseText.match(/\[DATE\]\s*(\d{4}-\d{2}-\d{2})/);
-            if (dateMatch) args.date = dateMatch[1].trim();
-
-            const typeMatch = responseText.match(/\[TYPE\]\s*([^[<]+)/);
-            if (typeMatch) args.type = typeMatch[1].trim();
-
-            const amount = Number(args.amount);
-            if (isNaN(amount) || amount <= 0) {
-                throw new Error('AI 未能提取有效的記帳金額');
-            }
-
-            result = {
-                amount: amount,
-                category: args.category || '其他',
-                account: args.account || '現金',
-                description: args.description || '',
-                type: args.type === 'income' ? 'income' : 'expense',
-                date: args.date || undefined
-            };
-        } else {
-            // 2. 通用 JSON 格式解析（支援嵌套 args、無閉合標籤容錯、平衡括號安全抽取）
-            let jsonStr = '';
-            const toolCallMatch = responseText.match(/<tool_call>([\s\S]*?)(?:<\/tool_call>|$)/i);
-            if (toolCallMatch && toolCallMatch[1]) {
-                jsonStr = this._extractBalancedJson(toolCallMatch[1]);
-            }
-            if (!jsonStr) {
-                jsonStr = this._extractBalancedJson(responseText);
-            }
-
-            if (!jsonStr) {
-                throw new Error('無法從 AI 輸出中提取 Tool Call 格式。原始輸出: ' + responseText);
-            }
-
-            let parsed;
-            try {
-                parsed = JSON.parse(jsonStr);
-            } catch (e) {
-                throw new Error('解析 JSON 失敗: ' + e.message + '，提取的內容為: ' + jsonStr);
-            }
-
-            let args = parsed;
-            if (parsed && typeof parsed === 'object') {
-                if (parsed.args && typeof parsed.args === 'object') {
-                    args = parsed.args;
-                } else if (parsed.arguments && typeof parsed.arguments === 'object') {
-                    args = parsed.arguments;
-                } else if (typeof parsed.arguments === 'string') {
-                    try {
-                        args = JSON.parse(parsed.arguments);
-                    } catch (_) {}
-                }
-            }
-
-            const amount = Number(args.amount);
-            if (isNaN(amount) || amount <= 0) {
-                throw new Error('AI 未能提取有效的記帳金額');
-            }
-
-            result = {
-                amount: amount,
-                category: args.category || '其他',
-                account: args.account || '現金',
-                description: args.description || '',
-                type: args.type === 'income' ? 'income' : 'expense',
-                date: args.date || undefined
-            };
+        // Protocol v2：解析、思考鏈剔除、compressed 軌、平衡括號與巢狀 JSON
+        // 容錯（含 stop token 截斷補齊）、schema 驗證與動態 enum 模糊匹配，全部
+        // 委托 toolsSchema.parseToolCalls（單一真相源）。本方法只負責 v1 回傳
+        // 結構組裝與 #64 語意守門。
+        const args = call.args;
+        const amount = Number(args.amount);
+        if (isNaN(amount) || amount <= 0) {
+            throw new Error('AI 未能提取有效的記帳金額');
         }
-
+        if (!call.valid) {
+            throw new Error('AI 輸出的記帳內容無效: ' + call.issues.join('; '));
+        }
+        let result = {
+            amount: amount,
+            category: args.category || '其他',
+            account: args.account || '現金',
+            description: args.description || '',
+            type: args.type === 'income' ? 'income' : 'expense',
+            date: args.date || undefined
+        };
         if (rawText) {
             result = this.applySemanticGuardrail(result, rawText);
+            result = this.applyLiteralCategoryGuardrail(result, rawText, categories);
         }
-
         return result;
     }
 
@@ -751,8 +715,11 @@ export class AIService {
         const amountMatch = text.match(/\d+/);
         const amount = amountMatch ? parseInt(amountMatch[0], 10) : 100;
 
-        const matchedCategory = categories.find(c => text.includes(c)) || categories[0] || '飲食';
-        const matchedAccount = accounts.find(a => text.includes(a)) || accounts[0] || '現金';
+        const catList = (Array.isArray(categories) ? categories : []).map(c => typeof c === 'string' ? c : (c?.name || '')).filter(Boolean);
+        const accList = (Array.isArray(accounts) ? accounts : []).map(a => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean);
+
+        const matchedCategory = catList.find(c => text.includes(c)) || catList[0] || '飲食';
+        const matchedAccount = accList.find(a => text.includes(a)) || accList[0] || '現金';
 
         const isIncome = text.includes('領') || text.includes('领') || text.includes('賺') || text.includes('赚') || text.includes('收入') || text.includes('薪水');
         const type = isIncome ? 'income' : 'expense';
@@ -882,7 +849,7 @@ export function fuzzyMatchAccount(predicted, accounts) {
         if (!b) return a.length;
         let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
         for (let i = 1; i <= a.length; i++) {
-            let curr = [i];
+            const curr = [i];
             for (let j = 1; j <= b.length; j++) {
                 curr.push(Math.min(
                     prev[j] + 1,
@@ -907,6 +874,38 @@ export function fuzzyMatchAccount(predicted, accounts) {
     if (bestDist <= 1) return bestAcc;
 
     return null;
+}
+
+/**
+ * 不參與字面命中的內建兜底分類名：「其他」在自由文字中極常以連接詞身分出現
+ * （例「買東西和其他雜支300」），字面命中會誤把整筆蓋成其他；且該名稱本就在
+ * 訓練 enum 池（11525 次），模型本可正確處理，守門介入沒有增益。
+ */
+const LITERAL_GUARDRAIL_BLOCKLIST = new Set(['其他', '其它']);
+
+/**
+ * 找出原始輸入中「字面出現的最長分類名」（使用者把類別名直接打成輸入的情境）。
+ * 例：類別有「孝親費」，輸入「孝親費10000給媽」→ 回傳 '孝親費'。
+ * @param {string} text - 原始使用者輸入
+ * @param {Array<string|object>} categories - 分類清單（字串或含 name 的物件）
+ * @returns {string|null}
+ */
+export function findLiteralCategoryName(text, categories) {
+    if (!text || typeof text !== 'string') return null;
+    if (!Array.isArray(categories) || categories.length === 0) return null;
+
+    const names = [];
+    for (const c of categories) {
+        const name = typeof c === 'string' ? c : (c && typeof c.name === 'string' ? c.name : '');
+        const trimmed = (name || '').trim();
+        if (trimmed.length < 2 || LITERAL_GUARDRAIL_BLOCKLIST.has(trimmed)) continue;
+        if (text.includes(trimmed)) names.push(trimmed);
+    }
+    if (names.length === 0) return null;
+
+    // 最長優先：「股票股利」勝過「股票」
+    names.sort((a, b) => b.length - a.length);
+    return names[0];
 }
 
 /**
@@ -969,7 +968,7 @@ export function fuzzyMatchCategory(predicted, categories) {
         if (!b) return a.length;
         let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
         for (let i = 1; i <= a.length; i++) {
-            let curr = [i];
+            const curr = [i];
             for (let j = 1; j <= b.length; j++) {
                 curr.push(Math.min(
                     prev[j] + 1,

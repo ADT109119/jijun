@@ -8,6 +8,8 @@ import {
     calculateNextDueDate,
     customConfirm,
     customAlert,
+    getSafeIconClass,
+    getSafeBgColorStyle,
 } from '../utils.js'
 import { VirtualKeyboardDetector } from '../virtualKeyboardDetector.js'
 import { fuzzyMatchAccount, fuzzyMatchCategory } from '../aiService.js'
@@ -17,6 +19,135 @@ export class AddPage {
         this.app = app
         this.aiService = this.app.aiService
         this._keypadListener = null
+    }
+
+    /**
+     * 判斷帳戶在存入支出後是否觸發「餘額不足」警示（純邏輯，可獨立測試）。
+     *
+     * - 一般帳戶：餘額轉為負值（透支）→ 警示
+     * - 信用卡：欠款（額度佔用）超過額度 → 警示額度不足
+     *   （額度未設定時不警示；信用卡正常消費會使餘額為負，屬預期行為）
+     *
+     * @param {object} account - 帳戶物件（需含 name / type / creditLimit）
+     * @param {number} balance - 存入該筆支出「之後」的帳戶目前餘額
+     * @returns {string|null} 警示訊息；不需警示時回傳 null
+     */
+    getLowBalanceWarning(account, balance) {
+        if (!account || !Number.isFinite(balance)) return null
+        if (account.type === 'credit_card') {
+            const creditLimit = account.creditLimit || 0
+            if (creditLimit <= 0) return null
+            const debt = Math.max(0, -balance)
+            if (debt > creditLimit) {
+                return `「${account.name}」超出信用卡額度 ${formatCurrency(debt - creditLimit)}`
+            }
+            return null
+        }
+        if (balance < 0) {
+            return `「${account.name}」餘額不足（${formatCurrency(balance)}）`
+        }
+        return null
+    }
+
+    /**
+     * 檢查並回傳「餘額不足」警示訊息（純判斷 + 讀取，不顯示 toast）。
+     *
+     * 必須在 addRecord/updateRecord「之前」呼叫：目前餘額不含本筆新紀錄，
+     * projected = 記帳前餘額 − 本筆支出，才是記帳後的真實預計餘額。
+     * 編輯模式傳入 editContext 時，目前餘額已含「舊紀錄」的淨影響，
+     * 需先排除舊紀錄影響再加本筆（語意同 MOZE「餘額試算排除正在編輯的那筆」），
+     * 否則改小金額會被舊紀錄雙重計入而誤警示。
+     * 任何例外（設定/帳戶/餘額讀取失敗）皆靜默回傳 null，不影響記帳流程。
+     *
+     * @param {string} recordType - 紀錄類型（只有 'expense' 會檢查）
+     * @param {number|null} accountId - 帳戶 ID（多帳戶模式下才有）
+     * @param {number} amount - 本筆支出金額
+     * @param {{record?: object}|null} [editContext] - 編輯模式上下文：
+     *   record 為編輯中的舊紀錄（recordToEdit）。僅在舊紀錄與本筆同帳戶時
+     *   補回其淨影響；payable 欠款原始紀錄未計入餘額（同
+     *   calculateAccountCurrentBalance 排除規則），不補回。
+     * @returns {Promise<string|null>} 警示訊息；不需警示時回傳 null
+     */
+    async _checkLowBalanceWarning(
+        recordType,
+        accountId,
+        amount,
+        editContext = null
+    ) {
+        try {
+            if (
+                editContext?.isPayableDebt ||
+                (this.debtEnabled &&
+                    this.debtContactId &&
+                    this.debtType === 'payable')
+            ) {
+                return null
+            }
+            if (recordType !== 'expense' || !accountId) return null
+            const amt = Number(amount)
+            if (!Number.isFinite(amt)) return null
+            const setting = await this.app.dataService.getSetting(
+                'lowBalanceWarningEnabled'
+            )
+            if (!setting?.value) return null
+            const account = await this.app.dataService.getAccount(accountId)
+            if (!account) return null
+            const currentBalance =
+                await this.app.dataService.calculateAccountCurrentBalance(
+                    accountId
+                )
+            // 編輯模式：先排除舊紀錄對目標帳戶餘額的淨影響，再減本筆
+            const oldNet = await this._getOldRecordNetContribution(
+                editContext?.record,
+                accountId
+            )
+            const projectedBalance = currentBalance - oldNet - amt
+            return this.getLowBalanceWarning(account, projectedBalance)
+        } catch (e) {
+            console.warn('餘額不足提醒檢查失敗:', e)
+            return null
+        }
+    }
+
+    /**
+     * 計算「編輯中的舊紀錄」對指定帳戶目前餘額的淨影響（單一真相源同
+     * calculateAccountCurrentBalance 語意：income 記正、其他記負）。
+     *
+     * - 舊紀錄不在該帳戶（換帳戶）或欄位缺失 → 回傳 0（不補回）
+     * - payable 欠款原始紀錄：餘額計算已排除它，影響視同 0
+     * - 任何例外靜默回傳 0（保守：不補回 = 與未接線前行為一致）
+     *
+     * @param {object|null} oldRecord - 編輯中的舊紀錄
+     * @param {number} accountId - 本筆要寫入的帳戶 ID
+     * @returns {Promise<number>} 舊紀錄計入目前餘額的淨影響
+     */
+    async _getOldRecordNetContribution(oldRecord, accountId) {
+        if (
+            !oldRecord ||
+            oldRecord.accountId === null ||
+            oldRecord.accountId === undefined ||
+            oldRecord.accountId !== accountId ||
+            !Number.isFinite(oldRecord.amount)
+        ) {
+            return 0
+        }
+        // payable 欠款原始紀錄未計入餘額（排除規則：debtId 存在、
+        // category 非 debt_repayment、欠款類型 payable）→ 不補回
+        if (
+            oldRecord.debtId !== null &&
+            oldRecord.debtId !== undefined &&
+            oldRecord.category !== 'debt_repayment'
+        ) {
+            try {
+                const debt = await this.app.dataService.getDebt(
+                    oldRecord.debtId
+                )
+                if (debt && debt.type === 'payable') return 0
+            } catch (_) {
+                return 0
+            }
+        }
+        return oldRecord.type === 'income' ? oldRecord.amount : -oldRecord.amount
     }
 
     async render(params) {
@@ -346,7 +477,6 @@ export class AddPage {
 
         // Virtual keyboard state tracking
         let vkForcedHide = false
-        let vkDetector = null
 
         // Debt panel state
         let debtEnabled = false // 是否已設定欠款（已選聯絡人）→ 決定右上角按鈕 active
@@ -664,7 +794,7 @@ export class AddPage {
             const perEl = document.getElementById('installment-per-period')
             if (perEl) perEl.textContent = '--'
             // 信用卡分期 upfront 狀態同步重置
-            upfrontActive = false
+            _upfrontActive = false
             upfrontDebitName = ''
             if (document.getElementById('installment-mode-hint'))
                 document
@@ -679,7 +809,7 @@ export class AddPage {
 
         // --- 信用卡分期 upfront 模式（選到信用卡帳戶時：全額入账 + 月度扣款）---
         // 註：function 宣告會 hoist，可安全引用後段宣告的 accounts/selectedAccountId
-        let upfrontActive = false
+        let _upfrontActive = false
         let upfrontDebitName = ''
         function getUpfrontCard() {
             const sel =
@@ -702,7 +832,7 @@ export class AddPage {
                 'installment-downpayment'
             )
             const card = getUpfrontCard()
-            upfrontActive = !!card
+            _upfrontActive = !!card
             upfrontDebitName = card
                 ? accounts.find(a => a.id === card.autoPayAccountId)?.name ||
                   ''
@@ -1449,8 +1579,8 @@ export class AddPage {
                     <label class="text-sm text-wabi-text-secondary">帳戶</label>
                     <button id="account-selector-btn" class="w-full flex items-center justify-between bg-wabi-surface py-1 px-2 mt-1 rounded-lg border border-wabi-border">
                         <div class="flex items-center gap-3 truncate">
-                            <i class="${selectedAccount.icon} text-lg"></i>
-                            <span class="font-medium">${selectedAccount.name}</span>
+                            <i class="${getSafeIconClass(selectedAccount.icon, 'fa-solid fa-wallet')} text-lg"></i>
+                            <span class="font-medium">${escapeHTML(selectedAccount.name)}</span>
                         </div>
                         <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
                     </button>
@@ -1517,7 +1647,7 @@ export class AddPage {
         keypadContainer.classList.remove('translate-y-full')
 
         // Initialize virtual keyboard detector
-        vkDetector = new VirtualKeyboardDetector({
+        const vkDetector = new VirtualKeyboardDetector({
             onShow: () => {
                 if (window.innerWidth < 768) {
                     vkForcedHide = true
@@ -1585,16 +1715,18 @@ export class AddPage {
                     )
                 }
 
-                const colorStyle = cat.color.startsWith('#')
-                    ? `style="background-color: ${cat.color}"`
+                // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
+                const safeBg = getSafeBgColorStyle(cat.color)
+                const colorStyle = safeBg.style
+                    ? `style="${safeBg.style}"`
                     : ''
-                const colorClass = !cat.color.startsWith('#') ? cat.color : ''
+                const colorClass = safeBg.className
 
                 btn.innerHTML = `
                     <div class="flex size-12 items-center justify-center rounded-full ${colorClass} text-white" ${colorStyle}>
-                        <i class="${cat.icon} text-2xl"></i>
+                        <i class="${getSafeIconClass(cat.icon, 'fa-solid fa-question')} text-2xl"></i>
                     </div>
-                    <p class="text-xs text-center text-wabi-text-secondary">${cat.name}</p>
+                    <p class="text-xs text-center text-wabi-text-secondary">${escapeHTML(cat.name)}</p>
                 `
                 btn.addEventListener('click', () => {
                     selectedCategory = cat.id
@@ -1625,17 +1757,17 @@ export class AddPage {
 
         const updateSelectedCategoryUI = category => {
             if (category) {
-                const colorStyle = category.color.startsWith('#')
-                    ? `style="background-color: ${category.color}"`
+                // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
+                const safeBg = getSafeBgColorStyle(category.color)
+                const colorStyle = safeBg.style
+                    ? `style="${safeBg.style}"`
                     : ''
-                const colorClass = !category.color.startsWith('#')
-                    ? category.color
-                    : ''
+                const colorClass = safeBg.className
                 selectedCategoryUI.innerHTML = `
                     <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-12" ${colorStyle}>
-                        <i class="${category.icon} text-3xl"></i>
+                        <i class="${getSafeIconClass(category.icon, 'fa-solid fa-question')} text-3xl"></i>
                     </div>
-                    <p class="text-lg font-medium flex-1 truncate">${category.name}</p>
+                    <p class="text-lg font-medium flex-1 truncate">${escapeHTML(category.name)}</p>
                 `
             } else {
                 selectedCategoryUI.innerHTML = `<div class="flex items-center justify-center rounded-full bg-wabi-text-secondary/10 shrink-0 size-12"><i class="fa-solid fa-question text-3xl text-wabi-text-secondary"></i></div><p class="text-lg font-medium">選擇分類</p>`
@@ -1696,7 +1828,14 @@ export class AddPage {
                 decimalStrategy
             )
 
+            let lowBalanceWarning = null
             if (isUpfront) {
+                // 餘額不足提醒：記帳「前」計算（目前餘額不含本筆，減去本筆支出即為預計餘額）
+                lowBalanceWarning = await this._checkLowBalanceWarning(
+                    currentType,
+                    advancedModeEnabled ? selectedAccountId : null,
+                    amount
+                )
                 // 全額入账：立即佔用額度（真實消費事實，不可刪除）
                 await this.app.dataService.addRecord({
                     type: 'expense',
@@ -1719,6 +1858,9 @@ export class AddPage {
                 interestRate: instRate,
                 periods: instPeriods,
                 completedPeriods: 0,
+                // #MOZE-START: addPage 快速建立不提供起始期數（由攤提頁建立時才有），
+                // 明確存 0 基線
+                startCompletedPeriods: 0,
                 amountPerPeriod,
                 frequency: instFrequency,
                 decimalStrategy,
@@ -1740,9 +1882,12 @@ export class AddPage {
             await this.app.processAmortizations()
             showToast(
                 isUpfront
-                    ? `「${instName}」已全額入账，${formatCurrency(amountPerPeriod)} 起每月自動扣款`
+                    ? `「${instName}」已全額入账，${formatCurrency(amountPerPeriod)} 起每月自動扣款${lowBalanceWarning ? `（${lowBalanceWarning}）` : ''}`
                     : `「${instName}」分期計畫已建立！`
             )
+            if (lowBalanceWarning) {
+                showToast(lowBalanceWarning, 'warning', 4000)
+            }
             window.location.hash = 'records'
         }
 
@@ -1794,6 +1939,19 @@ export class AddPage {
             if (isEditMode) {
                 try {
                     const numericId = parseInt(recordId, 10)
+                    // 餘額不足提醒（編輯模式接線）：updateRecord「前」計算，
+                    // 傳入 editContext 排除舊紀錄雙重計入（改小金額不再誤警示）
+                    // 若為他人代墊（payable 欠款），本筆不扣減自身帳戶餘額，跳過檢查
+                    const isPayableDebt =
+                        debtEnabled && debtContactId && debtType === 'payable'
+                    const lowBalanceWarning = isPayableDebt
+                        ? null
+                        : await this._checkLowBalanceWarning(
+                              recordData.type,
+                              recordData.accountId,
+                              amount,
+                              { record: recordToEdit }
+                          )
                     await this.app.dataService.updateRecord(
                         numericId,
                         recordData
@@ -1842,11 +2000,23 @@ export class AddPage {
                     } else {
                         showToast('更新成功！')
                     }
+                    if (lowBalanceWarning) showToast(lowBalanceWarning, 'warning', 4000)
                     window.location.hash = 'records'
                 } catch (e) {
                     console.error('Update failed or cancelled:', e)
                 }
             } else {
+                // 餘額不足提醒：記帳「前」計算（目前餘額不含本筆，減去本筆支出即為預計餘額）
+                // 若為他人代墊（payable 欠款），本筆不扣減自身帳戶餘額，跳過檢查
+                const isPayableDebt =
+                    debtEnabled && debtContactId && debtType === 'payable'
+                const lowBalanceWarning = isPayableDebt
+                    ? null
+                    : await this._checkLowBalanceWarning(
+                          recordData.type,
+                          recordData.accountId,
+                          amount
+                      )
                 const newRecordId =
                     await this.app.dataService.addRecord(recordData)
                 if (!newRecordId) return
@@ -1874,6 +2044,7 @@ export class AddPage {
                 } else {
                     showToast('儲存成功！')
                 }
+                if (lowBalanceWarning) showToast(lowBalanceWarning, 'warning', 4000)
                 window.location.hash = 'records'
             }
         }
@@ -2901,61 +3072,164 @@ export class AddPage {
         })
     }
 
+    /**
+     * 依釘選清單排序帳戶（供帳戶選擇 modal 使用）
+     * - pinnedIds 為 null/undefined/非陣列/空陣列 → 回傳原順序的新陣列
+     * - 釘選帳戶依 pinnedIds 順序置前，未釘選帳戶保留原相對順序
+     * - pinnedIds 中不存在的帳戶 id 自動忽略
+     * @param {Array} accounts 帳戶陣列
+     * @param {Array|null} pinnedIds 釘選帳戶 id 陣列
+     * @returns {Array} 排序後的新陣列（不修改原陣列）
+     */
+    sortAccountsForSelection(accounts, pinnedIds) {
+        const list = [...accounts]
+        if (!Array.isArray(pinnedIds) || pinnedIds.length === 0) {
+            return list
+        }
+        const validIds = [...new Set(pinnedIds)]
+        const pinned = []
+        const rest = []
+        for (const account of list) {
+            if (validIds.includes(account.id)) {
+                pinned.push(account)
+            } else {
+                rest.push(account)
+            }
+        }
+        pinned.sort((a, b) => validIds.indexOf(a.id) - validIds.indexOf(b.id))
+        return [...pinned, ...rest]
+    }
+
+    /**
+     * 釘選帳戶的 per-ledger setting key（與 recurringOrder 的 suffix 規則相同）
+     * @returns {string}
+     */
+    _pinnedAccountsSettingKey() {
+        const suffix = this.app.dataService.activeLedgerId
+            ? `_${this.app.dataService.activeLedgerId}`
+            : ''
+        return `pinnedAccounts${suffix}`
+    }
+
+    /**
+     * 讀取 per-ledger 釘選帳戶 id 陣列（設定讀取失敗時回傳空陣列）
+     * @returns {Promise<number[]>}
+     */
+    async _getPinnedAccountIds() {
+        try {
+            const setting = await this.app.dataService.getSetting(
+                this._pinnedAccountsSettingKey()
+            )
+            if (setting && Array.isArray(setting.value)) {
+                return setting.value.filter(id => typeof id === 'number')
+            }
+            return []
+        } catch (e) {
+            console.error('Failed to load pinned accounts:', e)
+            return []
+        }
+    }
+
     showAccountSelectionModal(accounts, currentAccountId, onSelect) {
         const modal = document.createElement('div')
         modal.id = 'account-selection-modal'
         modal.className =
             'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
 
-        const accountListHtml = accounts
-            .map(account => {
-                const isHex = account.color && account.color.startsWith('#')
-                const colorClass = isHex
-                    ? ''
-                    : escapeHTML(account.color || 'bg-gray-500')
-                const colorStyle = isHex
-                    ? `style="background-color: ${escapeHTML(account.color)}"`
-                    : ''
-                return `
-            <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-4 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
+        // 帳戶清單區塊（內含釘選排序，重繪時只換這個區塊，避免整個 modal 重建）
+        const listContainer = document.createElement('div')
+        listContainer.className = 'space-y-2 max-h-60 overflow-y-auto'
+
+        const closeModal = () => modal.remove()
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        const renderAccountList = (pinnedIds = []) => {
+            // 每次重建前先清除舊內容與舊事件（listContainer 整體換內容，
+            // 子元素 listener 隨之銷毀，不會重複綁定）
+            listContainer.innerHTML = this.sortAccountsForSelection(
+                accounts,
+                pinnedIds
+            )
+                .map(account => {
+                    const isHex = account.color && account.color.startsWith('#')
+                    const colorClass = isHex
+                        ? ''
+                        : escapeHTML(account.color || 'bg-gray-500')
+                    const colorStyle = isHex
+                        ? `style="background-color: ${escapeHTML(account.color)}"`
+                        : ''
+                    const isPinned = pinnedIds.includes(account.id)
+                    const pinIcon = isPinned
+                        ? 'fa-solid fa-thumbtack text-wabi-accent'
+                        : 'fa-regular fa-thumbtack text-wabi-text-secondary'
+                    return `
+            <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-3 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
                 <div class="relative flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-10" ${colorStyle}>
-                    <i class="${escapeHTML(account.icon || 'fa-solid fa-wallet')} text-xl"></i>
+                    <i class="${getSafeIconClass(account.icon, 'fa-solid fa-wallet')} text-xl"></i>
                     ${account.type === 'credit_card' ? '<span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-xs px-1 rounded-full" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>' : ''}
                 </div>
-                <span class="font-medium text-wabi-text-primary">${escapeHTML(account.name)}</span>
+                <span class="font-medium text-wabi-text-primary flex-1 truncate">${escapeHTML(account.name)}</span>
+                <i class="pin-toggle-btn ${pinIcon} shrink-0" data-id="${account.id}" title="釘選/取消釘選" aria-label="釘選/取消釘選"></i>
             </button>
         `
+                })
+                .join('')
+
+            // 綁定列選擇與釘選 toggle
+            listContainer.querySelectorAll('.account-select-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const newAccountId = parseInt(btn.dataset.id, 10)
+                    onSelect(newAccountId)
+                    closeModal()
+                })
             })
-            .join('')
+            listContainer.querySelectorAll('.pin-toggle-btn').forEach(pin => {
+                pin.addEventListener('click', async e => {
+                    e.stopPropagation() // 不觸發整列的帳戶選擇
+                    const accountId = parseInt(pin.dataset.id, 10)
+                    const isPinned = pinnedIds.includes(accountId)
+                    const nextPinned = isPinned
+                        ? pinnedIds.filter(id => id !== accountId)
+                        : [accountId, ...pinnedIds]
+                    try {
+                        await this.app.dataService.saveSetting({
+                            key: this._pinnedAccountsSettingKey(),
+                            value: nextPinned,
+                        })
+                        renderAccountList(nextPinned)
+                    } catch (err) {
+                        console.error('Failed to save pinned accounts:', err)
+                    }
+                })
+            })
+        }
 
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 space-y-4">
                 <h3 class="text-lg font-bold text-wabi-primary">選擇帳戶</h3>
-                <div class="space-y-2 max-h-60 overflow-y-auto">
-                    ${accountListHtml}
-                </div>
+                <div id="account-select-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
                 <button id="cancel-account-select-btn" class="w-full py-3 bg-wabi-surface border border-wabi-border text-wabi-text-primary rounded-lg">取消</button>
             </div>
         `
         document.body.appendChild(modal)
 
-        const closeModal = () => modal.remove()
-
-        modal.addEventListener('click', e => {
-            if (e.target === modal) closeModal()
-        })
+        // 將 listContainer 掛到 modal 內的列表位置
+        const target = modal.querySelector('#account-select-list')
+        target.replaceWith(listContainer)
 
         modal
             .querySelector('#cancel-account-select-btn')
             .addEventListener('click', closeModal)
 
-        modal.querySelectorAll('.account-select-item').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const newAccountId = parseInt(btn.dataset.id, 10)
-                onSelect(newAccountId)
-                closeModal()
-            })
-        })
+        // 讀取釘選設定後渲染（失敗時照常用原順序渲染）
+        ;(async () => {
+            const pinnedIds = await this._getPinnedAccountIds()
+            // 重入防護：modal 可能已被關閉
+            if (!modal.isConnected) return
+            renderAccountList(pinnedIds)
+        })()
     }
 
     async showPaymentModal(debt, recordId, remainingAmount) {

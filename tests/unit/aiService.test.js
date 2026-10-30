@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AIService, QUANTIZATION_MODELS, fuzzyMatchAccount, fuzzyMatchCategory } from '../../src/js/aiService.js'
+import { AIService, QUANTIZATION_MODELS, fuzzyMatchAccount, fuzzyMatchCategory, findLiteralCategoryName } from '../../src/js/aiService.js'
 
 describe('AIService - generateSystemPrompt', () => {
     it('動態分類與帳戶能正確注入 Prompt 內部的 enum 欄位與日期錨定', () => {
@@ -272,6 +272,72 @@ describe('AIService - 「花了100元」支出語意守門與糾錯機制', () =
     })
 })
 
+describe('AIService - 類別名字面命中守門（孝親費10000 型）', () => {
+    const aiService = new AIService({})
+    // 使用者自訂類別名（從未進過訓練 enum 池，模型認不出詞）
+    const CATS = ['飲食', '日常', '交通', '娛樂', '醫療', '教育', '還款', '其他', '孝親費', '代墊', '股票', '電話費']
+
+    it('findLiteralCategoryName 命中字面類別名並取最長', () => {
+        expect(findLiteralCategoryName('孝親費10000', CATS)).toBe('孝親費')
+        expect(findLiteralCategoryName('孝親費10000給媽', CATS)).toBe('孝親費')
+        expect(findLiteralCategoryName('昨天打電話費1200', CATS)).toBe('電話費')
+        // 最長優先
+        expect(findLiteralCategoryName('股票股利500', ['股票', '股票股利'])).toBe('股票股利')
+        // 單字類別不參與（避免誤傷）
+        expect(findLiteralCategoryName('買衣50', ['衣'])).toBeNull()
+        // 完全沒命中
+        expect(findLiteralCategoryName('買晚餐600', CATS)).toBeNull()
+        expect(findLiteralCategoryName('', CATS)).toBeNull()
+        expect(findLiteralCategoryName('孝親費100', [])).toBeNull()
+        // 接受 {name} 物件陣列
+        expect(findLiteralCategoryName('代墊300', [{ id: 1, name: '代墊' }])).toBe('代墊')
+        // 「其他」是連接詞高頻字（買東西和其他雜支）且不參與字面命中
+        expect(findLiteralCategoryName('買東西和其他雜支300', ['其他', '飲食'])).toBeNull()
+    })
+
+    it('模型選錯類別時，字面守門覆寫為原文的分類（孝親費10000 實測案例）', () => {
+        // v4c f16 GGUF 實測輸出：category 誤判為教育、description 幻覺成「孫親費」
+        const TC = '<' + '|tool_call|>'
+        const hallucinated = TC + '{"name":"add_record","args":{"amount":10000,"category":"教育","account":"現金","description":"孫親費","type":"expense","date":"2026-10-14"}}'
+        const record = aiService.extractToolCall(hallucinated, '孝親費10000', CATS)
+        expect(record.category).toBe('孝親費')
+        expect(record.amount).toBe(10000)
+        // 幻覺 description「孫親費」應被原文殘句取代（此例殘句為空 → 回填類別名）
+        expect(record.description).toBe('孝親費')
+    })
+
+    it('「孝親費10000給媽」保留給媽資訊到 description', () => {
+        const TC = '<' + '|tool_call|>'
+        const hallucinated = TC + '{"name":"add_record","args":{"amount":10000,"category":"教育","account":"現金","description":"孫親費","type":"expense","date":"2026-10-14"}}'
+        const record = aiService.extractToolCall(hallucinated, '孝親費10000給媽', CATS)
+        expect(record.category).toBe('孝親費')
+        expect(record.description).toContain('給媽')
+    })
+
+    it('模型已選對類別時不重複打擾；description 有原文根據時不改寫', () => {
+        const TC = '<' + '|tool_call|>'
+        const good = TC + '{"name":"add_record","args":{"amount":600,"category":"飲食","account":"現金","description":"晚餐","type":"expense","date":"2026-10-14"}}'
+        const record = aiService.extractToolCall(good, '買晚餐600', CATS)
+        expect(record.category).toBe('飲食')
+        expect(record.description).toBe('晚餐')
+    })
+
+    it('未命中任何字面類別名時完全不介入（回歸保護）', () => {
+        const TC = '<' + '|tool_call|>'
+        const out = TC + '{"name":"add_record","args":{"amount":300,"category":"日常","account":"現金","description":"雜貨","type":"expense","date":"2026-10-14"}}'
+        const record = aiService.extractToolCall(out, '買了一些雜貨300元', CATS)
+        expect(record.category).toBe('日常')
+        expect(record.description).toBe('雜貨')
+    })
+
+    it('不傳 categories 時向後相容（舊呼叫端不受影響）', () => {
+        const TC = '<' + '|tool_call|>'
+        const out = TC + '{"name":"add_record","args":{"amount":300,"category":"日常","account":"現金","description":"雜貨","type":"expense","date":"2026-10-14"}}'
+        const record = aiService.extractToolCall(out, '孝親費300')
+        expect(record.category).toBe('日常')
+    })
+})
+
 describe('AIService - 巢狀 JSON 與 Stop Token 截斷容錯 (v2~v4c 格式修復)', () => {
     const aiService = new AIService({})
 
@@ -430,6 +496,35 @@ describe('AIService - 帳戶與分類模糊匹配 (fuzzyMatchAccount / fuzzyMatc
         it('空值或無匹配時安全回傳 null', () => {
             expect(fuzzyMatchCategory('', mockCategories)).toBeNull()
             expect(fuzzyMatchCategory('天馬行空無關詞', mockCategories)).toBeNull()
+        })
+    })
+
+    describe('applyLiteralCategoryGuardrail & _ruleInference', () => {
+        it('支出類型不被收入分類 (如零用錢) 誤覆寫', () => {
+            const aiService = new AIService({})
+            const categories = [
+                { id: 'food', name: '飲食', type: 'expense' },
+                { id: 'pocket', name: '零用錢', type: 'income' }
+            ]
+            const record = {
+                amount: 50,
+                category: '飲食',
+                account: '現金',
+                description: '早餐',
+                type: 'expense'
+            }
+            const res = aiService.applyLiteralCategoryGuardrail(record, '用零用錢買早餐50元', categories)
+            expect(res.category).toBe('飲食')
+        })
+
+        it('_ruleInference 能正確解析物件陣列形式的 categories 與 accounts', () => {
+            const aiService = new AIService({})
+            const categories = [{ id: 'food', name: '飲食' }, { id: 'traffic', name: '交通' }]
+            const accounts = [{ id: 1, name: '現金' }, { id: 2, name: '信用卡' }]
+            const output = aiService._ruleInference('今天吃火鍋600元用信用卡', categories, accounts)
+            expect(output).toContain('[CAT]飲食')
+            expect(output).toContain('[ACC]信用卡')
+            expect(output).not.toContain('[object Object]')
         })
     })
 })

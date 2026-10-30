@@ -807,5 +807,69 @@ describe('GuideManager', () => {
             }
         })
     })
+
+    describe('版本導覽映射與補發修復（2.1.7.9 newFeatures）', () => {
+        it('TOUR_VERSION_MAP 將 2.1.7.9 版本映射到 newFeatures 導覽', () => {
+            expect(gm.getVersionTourId('2.1.7.9')).toBe('newFeatures')
+        })
+
+        it('onVersionUpdated 對 2.1.7.9 設定待導覽；導覽已看過後不再設定', () => {
+            gm.onVersionUpdated('2.1.7.9')
+            expect(gm._pendingVersionTour).toBe('newFeatures')
+            gm.markTourSeen('newFeatures')
+            gm._pendingVersionTour = 'newFeatures'
+            gm.onVersionUpdated('2.1.7.9')
+            expect(gm._pendingVersionTour).toBeNull()
+        })
+
+        it('onChangelogClosed 無參（更新彈窗直接關閉）預設略過並標記已看，不啟動導覽', () => {
+            const spy = vi.spyOn(gm, 'startFeatureTour')
+            gm._pendingVersionTour = 'newFeatures'
+            gm.onChangelogClosed()
+            expect(spy).not.toHaveBeenCalled()
+            expect(gm.hasSeenTour('newFeatures')).toBe(true)
+            expect(gm._pendingVersionTour).toBeNull()
+        })
+
+        it('導覽結束後補發積壓版本導覽時以 startTour: true 啟動（不被標記略過）', async () => {
+            const spy = vi.spyOn(gm, 'startFeatureTour').mockReturnValue(false)
+            gm._pendingVersionTour = 'newFeatures'
+            // 空 steps 觸發 showStep 的導覽結束分支（markTourSeen + 補發）
+            gm.showStep([], 'newFeatures')
+            // 補發在 100ms 後觸發
+            await new Promise(r => setTimeout(r, 150))
+            expect(spy).toHaveBeenCalledWith('newFeatures')
+            expect(gm._pendingVersionTour).toBeNull()
+        })
+    })
+
+    describe('導覽註冊表結構（2.1.7.9 新增導覽）', () => {
+        it('TOURS 包含 lowBalance（含 toggle 配置）與 newFeatures（版本導覽）', () => {
+            expect(TOURS.lowBalance).toBeDefined()
+            expect(TOURS.lowBalance.id).toBe('lowBalance')
+            expect(TOURS.lowBalance.toggle.goto).toBe('#add')
+            expect(TOURS.lowBalance.steps.length).toBeGreaterThan(0)
+            expect(TOURS.newFeatures).toBeDefined()
+            expect(TOURS.newFeatures.id).toBe('newFeatures')
+            expect(TOURS.newFeatures.steps.length).toBeGreaterThanOrEqual(4)
+            // newFeatures 是版本專屬導覽，不透過功能開關觸發
+            expect(TOURS.newFeatures.toggle).toBeUndefined()
+        })
+
+        it('TOUR_VERSION_MAP 將 2.1.8.0 版本映射到 newFeaturesV2 導覽，且與 newFeatures 記錄互不影響', () => {
+            expect(gm.getVersionTourId('2.1.8.0')).toBe('newFeaturesV2')
+            // 新版導覽已存在註冊表且為版本專屬（無 toggle）
+            expect(TOURS.newFeaturesV2).toBeDefined()
+            expect(TOURS.newFeaturesV2.id).toBe('newFeaturesV2')
+            expect(TOURS.newFeaturesV2.toggle).toBeUndefined()
+            // 2.1.7.9 仍映射 v1 導覽（需在標記已看前斷言）
+            expect(gm.getVersionTourId('2.1.7.9')).toBe('newFeatures')
+            // 已看過 v1 導覽不影響 v2 觸發（tourSeen key 獨立）
+            gm.markTourSeen('newFeatures')
+            expect(gm.getVersionTourId('2.1.8.0')).toBe('newFeaturesV2')
+            gm.markTourSeen('newFeaturesV2')
+            expect(gm.getVersionTourId('2.1.8.0')).toBeNull()
+        })
+    })
 })
 

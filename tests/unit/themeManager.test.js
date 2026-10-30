@@ -608,3 +608,137 @@ describe('startIconObserver', () => {
         expect(globalThis.MutationObserver).toHaveBeenCalled()
     })
 })
+
+// ── hexToRgbArray (L-01 shared hex parse) ─────────────────────────
+describe('hexToRgbArray', () => {
+    let tm
+    beforeEach(() => {
+        tm = new ThemeManager(createMockDataService())
+    })
+
+    it('full hex #334A52 → [51, 74, 82]', () => {
+        expect(tm.hexToRgbArray('#334A52')).toEqual([51, 74, 82])
+    })
+
+    it('shorthand hex #03F → [0, 51, 255]', () => {
+        expect(tm.hexToRgbArray('#03F')).toEqual([0, 51, 255])
+    })
+
+    it('returns null for invalid input', () => {
+        expect(tm.hexToRgbArray('not-a-color')).toBeNull()
+        expect(tm.hexToRgbArray(null)).toBeNull()
+        expect(tm.hexToRgbArray('')).toBeNull()
+    })
+})
+
+// ── destroy (L-02 lifecycle cleanup) ──────────────────────────────
+describe('destroy', () => {
+    let tm
+    beforeEach(() => {
+        const old = document.getElementById('dynamic-theme-styles')
+        if (old) old.remove()
+        document.body.innerHTML = '<i class="fa fa-home"></i>'
+        tm = new ThemeManager(createMockDataService())
+    })
+
+    it('stops observer, removes replacements, removes style element, resets state', async () => {
+        // 注意：新四態架構下 applyTheme() 是路由到 setThemeMode 的相容 wrapper
+        // （需 theme 已入库），核心渲染方法是 _applyThemeStyles，life-cycle 測它。
+        await tm._applyThemeStyles({
+            id: 'test-theme',
+            colors: { 'wabi-bg': '#111111' },
+            icons: { '.fa-home': { type: 'fontawesome', className: 'fas fa-star' } },
+        })
+        // 確認已注入替換圖示、style element 存在、activeTheme 已設定
+        expect(document.querySelector('.theme-icon-replacement')).not.toBeNull()
+        expect(document.getElementById('dynamic-theme-styles')).not.toBeNull()
+        expect(tm.activeTheme).not.toBeNull()
+
+        tm.destroy()
+
+        expect(document.querySelector('.theme-icon-replacement')).toBeNull()
+        expect(document.getElementById('dynamic-theme-styles')).toBeNull()
+        expect(tm.styleElement).toBeNull()
+        expect(tm.activeTheme).toBeNull()
+        expect(tm.observer).toBeNull()
+    })
+
+    it('is safe to call when no observer and no replacements', () => {
+        tm.destroy()
+        expect(tm.styleElement).toBeNull()
+        expect(tm.activeTheme).toBeNull()
+    })
+})
+
+// ── init offline/timeout guard (M-03) ─────────────────────────────
+describe('init (M-03 offline/timeout guard)', () => {
+    let mockDS, tm
+    const originalFetch = globalThis.fetch
+
+    const setOnline = (val) => {
+        Object.defineProperty(navigator, 'onLine', {
+            value: val,
+            configurable: true,
+            writable: true,
+        })
+    }
+
+    beforeEach(() => {
+        mockDS = createMockDataService()
+        const old = document.getElementById('dynamic-theme-styles')
+        if (old) old.remove()
+        document.body.innerHTML = ''
+        tm = new ThemeManager(mockDS)
+        vi.spyOn(mockDS, 'installTheme')
+        vi.spyOn(mockDS, 'getSetting')
+        setOnline(true)
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+        globalThis.fetch = originalFetch
+    })
+
+    it('skips remote fetch when offline', async () => {
+        setOnline(false)
+        const fetchMock = vi.fn()
+        globalThis.fetch = fetchMock
+        await tm.init()
+        expect(fetchMock).not.toHaveBeenCalled()
+        // 離線時仍應繼續讀取既有設定（不中斷 init 流程）
+        expect(mockDS.getSetting).toHaveBeenCalledWith('activeThemeId')
+    })
+
+    it('fetches and installs dark.json when online', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ id: DARK_THEME_ID, colors: {} }),
+        })
+        await tm.init()
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+        expect(mockDS.installTheme).toHaveBeenCalledTimes(1)
+    })
+
+    it('aborts the fetch after the 5s timeout', async () => {
+        vi.useFakeTimers()
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        globalThis.fetch = vi.fn((_url, opts) =>
+            new Promise((_resolve, reject) => {
+                if (opts && opts.signal) {
+                    opts.signal.addEventListener('abort', () => {
+                        const err = new Error('The operation was aborted.')
+                        err.name = 'AbortError'
+                        reject(err)
+                    })
+                }
+            })
+        )
+        const initPromise = tm.init()
+        await vi.advanceTimersByTimeAsync(5000)
+        await initPromise
+        expect(warnSpy).toHaveBeenCalledWith(
+            'Dark theme auto-update timed out'
+        )
+        vi.useRealTimers()
+    })
+})

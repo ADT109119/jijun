@@ -2,6 +2,7 @@
 import {
     showToast,
     escapeHTML,
+    formatDateToString,
     calculateAmortizationDetails,
     customConfirm,
 } from '../utils.js'
@@ -147,15 +148,21 @@ export class AmortizationsPage {
                 const historyRecords = recordsByAmortId.get(item.id) || []
 
                 // upfront 額度狀態：已還 = 卡端 transfer 收入總和（兩腿不雙重計數）
+                // + 起始已還期數基線（#MOZE-START：建立時跳過不補記的前 N 期）
+                const startBaseline =
+                    (item.startCompletedPeriods || 0) *
+                    (item.amountPerPeriod || 0)
                 const isUpfront = item.chargeMode === 'upfront'
                 let upfrontLine = ''
-                let hasDebit = false
+                let hasDebit
                 if (isUpfront && item.accountId) {
                     const card = accountById.get(item.accountId)
                     hasDebit = !!(card && card.autoPayAccountId)
-                    const paidSoFar = historyRecords
-                        .filter(r => r.type === 'income')
-                        .reduce((sum, r) => sum + r.amount, 0)
+                    const paidSoFar =
+                        historyRecords
+                            .filter(r => r.type === 'income')
+                            .reduce((sum, r) => sum + r.amount, 0) +
+                        startBaseline
                     const remainingOnCard = Math.max(
                         0,
                         (item.totalAmount || 0) - paidSoFar
@@ -177,10 +184,10 @@ export class AmortizationsPage {
                     const paidRecords = isUpfront
                         ? historyRecords.filter(r => r.type === 'income')
                         : historyRecords
-                    const actualPaidSoFar = paidRecords.reduce(
-                        (sum, r) => sum + r.amount,
-                        0
-                    )
+                    // + 起始已還期數基線（#MOZE-START）
+                    const actualPaidSoFar =
+                        paidRecords.reduce((sum, r) => sum + r.amount, 0) +
+                        startBaseline
                     const principal = Math.max(
                         0,
                         item.totalAmount - (item.downPayment || 0)
@@ -235,6 +242,9 @@ export class AmortizationsPage {
                                     ? `
                                 <button class="toggle-pause-btn p-1.5 text-wabi-text-secondary hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-colors" data-id="${item.id}" title="${item.status === 'paused' ? '恢復' : '暫停'}">
                                     <i class="fa-solid ${item.status === 'paused' ? 'fa-play' : 'fa-pause'} text-sm"></i>
+                                </button>
+                                <button class="early-settle-btn p-1.5 text-wabi-text-secondary hover:text-wabi-accent hover:bg-wabi-accent/10 rounded-lg transition-colors" data-id="${item.id}" title="提前結清">
+                                    <i class="fa-solid fa-money-bill-transfer text-sm"></i>
                                 </button>`
                                     : ''
                             }
@@ -299,6 +309,24 @@ export class AmortizationsPage {
                 await this.render()
             })
         })
+        document.querySelectorAll('.early-settle-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const item = await this.app.dataService.getAmortization(
+                    parseInt(btn.dataset.id)
+                )
+                if (!item) return
+                // 防重複點擊：DB 已是最新狀態，非進行中項目直接重繪
+                if (item.status === 'completed') {
+                    await this.render()
+                    return
+                }
+                const done = await this._earlySettle(item)
+                if (done) {
+                    showToast('已提前結清', 'success')
+                    await this.render()
+                }
+            })
+        })
         document.querySelectorAll('.delete-amort-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const item = await this.app.dataService.getAmortization(
@@ -318,6 +346,110 @@ export class AmortizationsPage {
                 await this.render()
             })
         })
+    }
+
+    // ==================== 提前結清 ====================
+    /**
+     * 提前結清：把剩餘期數金額一次入帳並結案（借鏡 MOZE「提前償還本金」）。
+     * 剩餘金額 = 含息總額(exactTotalToPay) - 已入帳金額，四捨五入取整、下限 0。
+     * upfront（信用卡分期）採與 processAmortizations 相同的「扣款帳戶支出 + 卡收入」
+     * 轉帳對入帳，卡收入抵銷欠款釋放額度；periodic 採單筆原類型入帳。
+     * @param {object} item 攤提/分期項目
+     * @returns {Promise<boolean>} true = 已結清；false = 使用者取消或條件不足
+     */
+    async _earlySettle(item) {
+        const principal = Math.max(
+            0,
+            (item.totalAmount || 0) - (item.downPayment || 0)
+        )
+        const { exactTotalToPay } = calculateAmortizationDetails(
+            principal,
+            item.periods,
+            item.interestRate || 0,
+            item.frequency || 'monthly',
+            item.decimalStrategy || 'round'
+        )
+        // 已入帳金額：與 overpaidWarning 邏輯一致。
+        // upfront 轉帳對含兩腿，只算卡端收入避免雙重計數。
+        // + 起始已還期數基線（#MOZE-START：建立時跳過不補記的前 N 期）
+        const historyRecords = await this.app.dataService.getRecords({
+            amortizationId: item.id,
+            allLedgers: true,
+        })
+        const paidSoFar =
+            (historyRecords || [])
+                .filter(r =>
+                    item.chargeMode === 'upfront' ? r.type === 'income' : true
+                )
+                .reduce((sum, r) => sum + (r.amount || 0), 0) +
+            (item.startCompletedPeriods || 0) * (item.amountPerPeriod || 0)
+        const remaining = Math.max(0, Math.round(exactTotalToPay - paidSoFar))
+
+        // 信用卡分期：必須先有自動扣繳帳戶，否則扣款腿無歸屬
+        let card = null
+        if (item.chargeMode === 'upfront') {
+            card = item.accountId
+                ? await this.app.dataService.getAccount(item.accountId)
+                : null
+            if (!card || !card.autoPayAccountId) {
+                showToast('信用卡分期需先設定自動扣繳帳戶', 'warning')
+                return false
+            }
+        }
+
+        const confirmed = await customConfirm(
+            `提前結清「${item.name}」將一次入帳 $${this._formatAmount(remaining)}，並停止後續自動記帳。確定？`
+        )
+        if (!confirmed) return false
+
+        if (remaining > 0) {
+            const today = formatDateToString(new Date())
+            if (item.chargeMode === 'upfront') {
+                // 成對轉帳：扣款帳戶支出 + 卡收入（欄位對齊 main.js processAmortizations）
+                const debitRecord = {
+                    type: 'expense',
+                    category: 'transfer',
+                    amount: remaining,
+                    description: `${item.name} 提前結清`,
+                    date: today,
+                    accountId: card.autoPayAccountId,
+                    ledgerId: item.ledgerId,
+                    amortizationId: item.id,
+                }
+                const incomeRecord = {
+                    type: 'income',
+                    category: 'transfer',
+                    amount: remaining,
+                    description: `${item.name} 提前結清入卡`,
+                    date: today,
+                    accountId: item.accountId,
+                    ledgerId: item.ledgerId,
+                    amortizationId: item.id,
+                }
+                await this.app.dataService.addRecord(debitRecord)
+                await this.app.dataService.addRecord(incomeRecord)
+            } else {
+                const record = {
+                    type: item.recordType || 'expense',
+                    amount: remaining,
+                    category: item.category,
+                    description: `${item.name} 提前結清`,
+                    date: today,
+                    accountId: item.accountId || undefined,
+                    ledgerId: item.ledgerId,
+                    amortizationId: item.id,
+                }
+                await this.app.dataService.addRecord(record)
+            }
+        }
+
+        // 結案：剩餘期數視為已完成，清空下期到期日（processAmortizations 不再觸發）
+        await this.app.dataService.updateAmortization(item.id, {
+            completedPeriods: item.periods,
+            nextDueDate: null,
+            status: 'completed',
+        })
+        return true
     }
 
     _formatAmount(num) {

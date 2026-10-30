@@ -99,17 +99,37 @@ export class ThemeManager {
     }
 
     async init() {
-        // 總是重新抓取 dark.json，確保內建深色主題保持最新版本
-        try {
-            const response = await fetch('themes/dark.json')
-            if (response.ok) {
-                const latestDark = await response.json()
-                this.darkThemeCache = latestDark
-                await this.dataService.installTheme(latestDark) // installTheme 有 upsert 語意
-                console.log('Built-in Dark Mode theme updated.')
+        // 總是重新抓取 dark.json，確保內建深色主題保持最新版本。
+        // (M-03 移植) 離線時跳過遠端更新（PWA 離線優先），並以 5 秒超時保護避免
+        // 慢網路/離線環境讓 init 被 hang 住而延遲主題應用。
+        const isOffline =
+            typeof navigator !== 'undefined' &&
+            typeof navigator.onLine === 'boolean' &&
+            navigator.onLine === false
+        if (!isOffline) {
+            try {
+                const controller = new AbortController()
+                const timeoutId = setTimeout(() => controller.abort(), 5000)
+                try {
+                    const response = await fetch('themes/dark.json', {
+                        signal: controller.signal,
+                    })
+                    if (response.ok) {
+                        const latestDark = await response.json()
+                        this.darkThemeCache = latestDark
+                        await this.dataService.installTheme(latestDark) // installTheme 有 upsert 語意
+                        console.log('Built-in Dark Mode theme updated.')
+                    }
+                } finally {
+                    clearTimeout(timeoutId)
+                }
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    console.warn('Dark theme auto-update timed out')
+                } else {
+                    console.warn('Failed to auto-update dark theme', e)
+                }
             }
-        } catch (e) {
-            console.warn('Failed to auto-update dark theme', e)
         }
 
         // 初始化系統深淺色媒體查詢監聽
@@ -252,6 +272,17 @@ export class ThemeManager {
             : null
     }
 
+    /**
+     * 將 hex 顏色解析為 [r, g, b] 陣列（共用解析，避免 luminance 計算與
+     * hexToRgbTriplet 各自獨立解析 hex 造成不一致 (L-01)）。
+     * @param {string} hex
+     * @returns {number[]|null}
+     */
+    hexToRgbArray(hex) {
+        const triplet = this.hexToRgbTriplet(hex)
+        return triplet ? triplet.split(' ').map(Number) : null
+    }
+
     // 套用特定主題樣式（內部核心渲染方法）
     async _applyThemeStyles(theme) {
         this.activeTheme = theme
@@ -290,15 +321,8 @@ export class ThemeManager {
                         (theme.colors['wabi-bg'] ||
                             theme.colors['wabi-surface'])
                     if (bg && bg.startsWith('#')) {
-                        const hex = bg.substring(1)
-                        let r = parseInt(hex.substring(0, 2), 16)
-                        let g = parseInt(hex.substring(2, 4), 16)
-                        let b = parseInt(hex.substring(4, 6), 16)
-                        if (hex.length === 3) {
-                            r = parseInt(hex[0] + hex[0], 16)
-                            g = parseInt(hex[1] + hex[1], 16)
-                            b = parseInt(hex[2] + hex[2], 16)
-                        }
+                        // 共用 hexToRgbArray 解析 (L-01)，避免重複 hex 解析邏輯
+                        const [r, g, b] = this.hexToRgbArray(bg) || []
                         const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
                         return luminance < 128
                     }
@@ -517,5 +541,22 @@ export class ThemeManager {
             this.observer.disconnect()
             this.observer = null
         }
+    }
+
+    /**
+     * 清理所有資源（L-02）：停止 icon observer、移除注入的替換圖示、
+     * 移除動態主題 style element、移除系統深淺色監聽器並重置狀態。與其他管理
+     * 類別（StatisticsManager、PluginManager）一致，提供明確的生命週期收尾，
+     * 供測試或未來多實例場景使用。
+     */
+    destroy() {
+        this.stopIconObserver()
+        this.clearReplacedIcons()
+        this._removeMediaListener()
+        if (this.styleElement && this.styleElement.parentNode) {
+            this.styleElement.remove()
+        }
+        this.styleElement = null
+        this.activeTheme = null
     }
 }

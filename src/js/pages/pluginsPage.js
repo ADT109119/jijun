@@ -1,4 +1,16 @@
-import { showToast, customConfirm, getStoreUrl } from '../utils.js'
+import { showToast, customConfirm, getStoreUrl, escapeHTML } from '../utils.js'
+
+// 遠端商店插件資料不可信任（native 平台經 __WEB_STORE_URL__ 從遠端商店載入）：
+// name/description/version/id/file 直接嵌入 innerHTML 可注入 DOM 標籤，
+// icon 直接嵌入 class="..." 可注入任意 class（XSS 面，同 themeStorePage #SEC01 模式）
+const SAFE_PLUGIN_ICON_RE = /^fa-[a-zA-Z0-9-]+$/
+
+/** 不可信的 icon class → 通過白名單回傳原值，否則回傳 null（fallback 內建圖示） */
+function safePluginIcon(value) {
+    return typeof value === 'string' && SAFE_PLUGIN_ICON_RE.test(value)
+        ? value
+        : null
+}
 
 export class PluginsPage {
     constructor(app) {
@@ -38,10 +50,10 @@ export class PluginsPage {
                         )
                             .map(
                                 ([route, page]) => `
-                            <a href="#${route}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-wabi-bg">
+                            <a href="#${escapeHTML(route)}" class="block bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center hover:bg-wabi-bg">
                                 <div>
-                                    <h4 class="font-bold text-wabi-text-primary">${page.title}</h4>
-                                    <p class="text-xs text-wabi-text-secondary mt-1">#${route}</p>
+                                    <h4 class="font-bold text-wabi-text-primary">${escapeHTML(page.title)}</h4>
+                                    <p class="text-xs text-wabi-text-secondary mt-1">#${escapeHTML(route)}</p>
                                 </div>
                                 <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                             </a>
@@ -69,10 +81,10 @@ export class PluginsPage {
                                       p => `
                         <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border flex justify-between items-center">
                             <div>
-                                <h4 class="font-bold text-wabi-text-primary">${p.name} <span class="text-xs text-wabi-text-secondary font-normal">v${p.version}</span></h4>
-                                <p class="text-xs text-wabi-text-secondary mt-1">${p.description || '無描述'}</p>
+                                <h4 class="font-bold text-wabi-text-primary">${escapeHTML(p.name)} <span class="text-xs text-wabi-text-secondary font-normal">v${escapeHTML(p.version)}</span></h4>
+                                <p class="text-xs text-wabi-text-secondary mt-1">${escapeHTML(p.description || '無描述')}</p>
                             </div>
-                            <button class="delete-plugin-btn text-wabi-expense p-2" data-id="${p.id}">
+                            <button class="delete-plugin-btn text-wabi-expense p-2" data-id="${escapeHTML(p.id)}">
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
                         </div>
@@ -97,7 +109,7 @@ export class PluginsPage {
                 storeContainer.innerHTML = storePlugins
                     .map(p => {
                         const installed = plugins.find(i => i.id === p.id)
-                        let btnHtml = ''
+                        let btnHtml
 
                         if (installed) {
                             if (
@@ -108,8 +120,8 @@ export class PluginsPage {
                             ) {
                                 // Update available
                                 btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow"
-                                data-url="${p.file}" data-id="${p.id}">
-                                更新 (v${p.version})
+                                data-url="${escapeHTML(p.file)}" data-id="${escapeHTML(p.id)}">
+                                更新 (v${escapeHTML(p.version)})
                             </button>`
                             } else {
                                 // Already installed & up to date
@@ -120,7 +132,7 @@ export class PluginsPage {
                         } else {
                             // Not installed
                             btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow"
-                            data-url="${p.file}" data-id="${p.id}">
+                            data-url="${escapeHTML(p.file)}" data-id="${escapeHTML(p.id)}">
                             安裝
                         </button>`
                         }
@@ -129,11 +141,11 @@ export class PluginsPage {
                     <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl aspect-square">
-                                <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
+                                <i class="fa-solid ${safePluginIcon(p.icon) || 'fa-puzzle-piece'}"></i>
                             </div>
                             <div>
-                                <h4 class="font-bold text-wabi-text-primary text-lg">${p.name}</h4>
-                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${p.description}</p>
+                                <h4 class="font-bold text-wabi-text-primary text-lg">${escapeHTML(p.name)}</h4>
+                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${escapeHTML(p.description)}</p>
                             </div>
                         </div>
                         ${btnHtml}
