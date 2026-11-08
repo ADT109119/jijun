@@ -1,7 +1,7 @@
 // 現代化 Service Worker（v2：precache + opaque cache-first）
 // 使用統一的版本號和 build hash 命名快取
-const APP_VERSION = '2.1.8.5' // build 時自動注入 package.json 的版本號
-const BUILD_HASH = '703bcbdb' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
+const APP_VERSION = '2.1.9.0' // build 時自動注入 package.json 的版本號
+const BUILD_HASH = '4a348870' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
 
 // 快取命名帶 BUILD_HASH：新 build 的 SW 用新快取，舊快取在 activate 時清理
 const APP_CACHE = `app-v${APP_VERSION}-${BUILD_HASH}` // install 時的 precache（本機 assets + 核心 + CDN）
@@ -113,6 +113,15 @@ self.addEventListener('fetch', event => {
 
     // 跳過 Chrome 擴充功能和其他協議的請求
     if (!event.request.url.startsWith('http')) {
+        return
+    }
+
+    // API 請求一律放行、不經 SW 快取（含自架同步 server 的跨域 /api/）：
+    // 同步狀態 / admin 帳號列表 / 備份清單等是動態資料，
+    // cache-first 會讓 PUT/POST 變更後的 GET 讀到 SW 舊快取
+    // （瀏覽器 cache:'no-store' 對 SW 攔截無效）。
+    const path = new URL(event.request.url).pathname
+    if (path.startsWith('/api/') || path.includes('/api/')) {
         return
     }
 
