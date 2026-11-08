@@ -2,11 +2,18 @@
 
 [繁體中文](README.md) | [English](README_en.md)
 
+[![Docker Hub](https://img.shields.io/docker/v/adt109119/jijun?sort=semver&logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Pulls](https://img.shields.io/docker/pulls/adt109119/jijun?logo=docker&color=blue)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Image Size](https://img.shields.io/docker/image-size/adt109119/jijun/latest?logo=docker)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Image CI](https://github.com/ADT109119/jijun/actions/workflows/docker-image.yml/badge.svg)](https://github.com/ADT109119/jijun/actions/workflows/docker-image.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/ADT109119/jijun?logo=github)](https://github.com/ADT109119/jijun/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Easy Accounting 2.0** is a modern, high-performance, offline-first Progressive Web Application (PWA) built from the ground up with native Web Standards, Tailwind CSS, and IndexedDB. It delivers an intuitive, elegant, and secure personal finance management experience across mobile, tablet, and desktop devices.
 
 ![](banner.png)
 
-📋 **[View Change Log](CHANGE_LOG.md)** | 📖 **[Per-Device Sync Technical Specification](docs/PER_DEVICE_SYNC_en.md)**
+📋 **[View Change Log](CHANGE_LOG.md)** | 🐳 **[Self-Hosted Guide (SELF_HOST.md)](SELF_HOST.md)** | 📖 **[Per-Device Sync Technical Specification](docs/PER_DEVICE_SYNC_en.md)**
 
 | ![](https://github.com/user-attachments/assets/a1c3ddab-6004-433d-bcdd-6b7d5cb1c59f) | ![](https://github.com/user-attachments/assets/f0e268d0-abec-4e5c-8384-38e0194dffb2) | ![](https://github.com/user-attachments/assets/07156d1d-3fef-4ac4-950d-46f61746e026) |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
@@ -51,6 +58,92 @@
 - **Desktop & Native Widgets**:
   - **Android Widget**: Native desktop widget for calendar cash flow overview and quick expense entry.
   - **Windows 11 Widget Board**: Adaptive Cards integration querying local IndexedDB via background Service Worker.
+
+---
+
+## 🐳 Docker Self-Hosted Deployment
+
+Easy Accounting provides an official Docker image published on Docker Hub: [`adt109119/jijun`](https://hub.docker.com/r/adt109119/jijun). Run your private personal finance cloud on any NAS, VPS, or home server in seconds.
+
+### 🌟 Architecture Highlights
+- **All-in-One Container**: A single container hosts both the PWA frontend and the synchronization backend API on the same port (default `8080`), eliminating complex reverse proxy configurations and CORS friction.
+- **Native Zero-Dependency SQLite**: Built upon Node.js 22+ native `node:sqlite` with WAL mode. Starts in milliseconds with minimal resource footprint.
+- **100% Offline-Capable + On-Device AI**: Client-side WASM SLM (58M parameters) processes natural language inputs directly in your browser. The server only handles encrypted synchronization and backups.
+- **Enterprise-Grade Consistency**: Features **Per-Device Append-Only Log Architecture** with a 5-part change deduplication key (`uuid|type|entityId|action|dataHash`), preventing phantom record resurrections caused by clock drifts.
+- **Security & Privacy by Default**: Injects `X-Robots-Tag: noindex, nofollow` headers to block search engines, enforces scrypt PIN hashing with constant-time dummy verification against timing attacks, and employs account/IP rate limiters.
+
+---
+
+### 🚀 Quick Start
+
+#### Option 1: Docker Run CLI
+
+Launch with a single command (replace `your_secure_admin_token_here_at_least_16_chars` with a secure random token, minimum 16 characters):
+
+```bash
+docker run -d \
+  --name easy-accounting \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
+  -e SELF_HOST_ADMIN_TOKEN="your_secure_admin_token_here_at_least_16_chars" \
+  -e DISABLE_GOOGLE_OAUTH=1 \
+  --restart unless-stopped \
+  adt109119/jijun:latest
+```
+
+> [!TIP]
+> We recommend generating a 64-character hex string for `SELF_HOST_ADMIN_TOKEN` (e.g. `openssl rand -hex 32`). This token serves as the initial PIN for the `admin` account.
+
+#### Option 2: Docker Compose (Recommended)
+
+Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  easy-accounting:
+    image: adt109119/jijun:latest
+    container_name: easy-accounting
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Admin bootstrap PIN (required, minimum 16 chars)
+      - SELF_HOST_ADMIN_TOKEN=your_secure_admin_token_here_at_least_16_chars
+      # Pure self-hosted mode (disables Google OAuth)
+      - DISABLE_GOOGLE_OAUTH=1
+      # Anti-crawler protection (1 = noindex, nofollow)
+      - NO_INDEX=1
+      # Trust reverse proxy headers (set to 1 if behind Nginx / Caddy / Cloudflare)
+      - TRUST_PROXY=0
+    volumes:
+      # Persistent SQLite database volume
+      - ./data:/app/data
+```
+
+Start the service:
+
+```bash
+docker compose up -d
+```
+
+---
+
+### 📱 Getting Started
+1. **Access Web App**: Navigate to `http://<YOUR_SERVER_IP>:8080/` in your browser.
+2. **Open Sync Settings**: Go to **Settings (⚙️)** ➔ **Cloud Backup & Sync**.
+3. **Select Provider**: Switch to **Docker Self-Hosted Server**.
+4. **Log In**:
+   - **Username**: `admin`
+   - **PIN**: The value configured in `SELF_HOST_ADMIN_TOKEN`.
+   - Click **Sign In**. Your device is now connected with seamless two-way synchronization!
+5. **Manage Users & Shared Ledgers**:
+   - As `admin`, access the **Admin Console** in Sync Settings to create family accounts or manage shared ledgers.
+
+---
+
+### 📖 Full Documentation
+For reverse proxy configurations (Caddy/Nginx), SSL/HTTPS setup, hot database backups (`.backup`), and Admin CLI commands, see the complete guide:
+👉 **[Self-Hosted Deployment Guide (SELF_HOST.md)](SELF_HOST.md)**
 
 ---
 
@@ -215,6 +308,7 @@ npm run build && npx cap copy android
 - **[Per-Device Sync Architecture Specification](docs/PER_DEVICE_SYNC_en.md)** - Deep technical specification of the multi-user sync protocol
 - **[Chinese Documentation (繁體中文說明文件)](README.md)** - Traditional Chinese project documentation
 - **[Full Change Log](CHANGE_LOG.md)** - Comprehensive history of updates and releases
+- **[Self-Hosted Deployment Guide](SELF_HOST.md)** - Comprehensive Docker deployment, environment variables, and administration guide
 - **[Theme Development Guide](THEME_DEV_GUIDE.md)** - Guide for creating custom themes
 - **[Plugin Development Guide](PLUGIN_DEV_GUIDE.md)** - Extension API and sandbox architecture
 

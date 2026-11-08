@@ -132,8 +132,9 @@ docs/                    # 專案設計文件與技術規格目錄
 ├── deploy.yml           # GitHub Pages 自動部署 (推送 main 分支時自動建置並發布前端至 gh-pages)
 └── docker-image.yml     # Docker 映像檔建置與發布 (僅在推送正式版號標籤 v* / ver* 時觸發建置並推送至 Docker Hub adt109119/jijun)
 
-README.md                # 專案中文主要說明文件
-README_en.md             # 專案英文主要說明文件
+README.md                # 專案中文主要說明文件 (含特色介紹、Docker Hub 徽章、一鍵 docker run 與 docker compose 部署指引、進階文件導引)
+README_en.md             # 專案英文主要說明文件 (含架構亮點、Docker 部署指南、Docker Hub 徽章)
+SELF_HOST.md             # 純自架伺服器完整部署手冊 (前後端一體化、Docker/Docker Compose、SQLite 熱備份、Admin CLI、反向代理與安全架構)
 CHANGE_LOG.md            # 版本更新日誌 (語意化版本紀錄)
 AGENTS.md                # AI Agent 專案架構規範與關鍵設計決策
 THEME_DEV_GUIDE.md       # 外觀主題擴充與商店格式開發指南

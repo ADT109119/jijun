@@ -2,11 +2,18 @@
 
 [繁體中文](README.md) | [English](README_en.md)
 
+[![Docker Hub](https://img.shields.io/docker/v/adt109119/jijun?sort=semver&logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Pulls](https://img.shields.io/docker/pulls/adt109119/jijun?logo=docker&color=blue)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Image Size](https://img.shields.io/docker/image-size/adt109119/jijun/latest?logo=docker)](https://hub.docker.com/r/adt109119/jijun)
+[![Docker Image CI](https://github.com/ADT109119/jijun/actions/workflows/docker-image.yml/badge.svg)](https://github.com/ADT109119/jijun/actions/workflows/docker-image.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/ADT109119/jijun?logo=github)](https://github.com/ADT109119/jijun/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 這是「輕鬆記帳」應用程式的現代化版本，採用最新的前端技術重新打造，旨在提供更美觀、更易用、更穩健的記帳體驗。
 
 ![](banner.png)
 
-📋 **[查看完整更新日誌](CHANGE_LOG.md)** - 了解所有版本的詳細更新內容
+📋 **[查看完整更新日誌](CHANGE_LOG.md)** | 🐳 **[純自架部署手冊 (SELF_HOST.md)](SELF_HOST.md)**
 
 | ![](https://github.com/user-attachments/assets/a1c3ddab-6004-433d-bcdd-6b7d5cb1c59f) | ![](https://github.com/user-attachments/assets/f0e268d0-abec-4e5c-8384-38e0194dffb2) | ![](https://github.com/user-attachments/assets/07156d1d-3fef-4ac4-950d-46f61746e026) |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
@@ -108,6 +115,100 @@
     - 新增「應用程式」區塊，包含「強制更新」、「分享 App」、「安裝為應用程式」等實用功能。
     - 清晰的功能分組和視覺層次，將資料管理、應用程式設定與版本資訊分開。
     - 版本資訊卡片顯示當前版本號。
+
+## 🐳 Docker 快速自架部署（Self-Hosted）
+
+輕鬆記帳提供官方 Docker 映像檔（發布於 Docker Hub：[`adt109119/jijun`](https://hub.docker.com/r/adt109119/jijun)），支援 NAS、VPS、家用伺服器與私有雲一鍵部署。
+
+### 🌟 核心特色
+- **前後端一體化**：單一容器、單一連接埠（預設 `8080`）同時託管前端 PWA 網頁與自架同步後端，免除反向代理與跨來源 CORS 設定困擾。
+- **極致輕量與原生零依賴**：伺服器採用 Node.js 22+ 內建原生 SQLite（`node:sqlite`）與 WAL 高效日誌寫入模式，毫秒級冷啟動，不需額外架設資料庫服務。
+- **100% 離線可用 + 端側 AI 記帳**：PWA 架構結合瀏覽器端 58M 小語言模型（WASM/wllama），收支運算與語意解析全在本機完成，伺服器純儲存加密備份與同步變更。
+- **企業級去重與一致性保證**：獨創 **Per-Device Append-Only 獨立日誌** 與 `uuid|type|entityId|action|dataHash` **5 段式唯一去重鍵**，徹底杜絕跨裝置時鐘偏差引發的幽靈紀錄。
+- **資安加固與隱私防護**：
+  - 預設注入 `X-Robots-Tag: noindex, nofollow` 與禁止爬蟲 robots.txt，杜絕私有帳本被搜尋引擎索引。
+  - PIN 碼採用 `scrypt-kdf` 高強度單向雜湊，並對未註冊帳號實施常數時間假雜湊防時序探測。
+  - 具備多層級 IP 與帳號 Rate Limiting 與並行槽位控制，有效防禦慢雜湊 DoS 與暴力破解。
+
+---
+
+### 🚀 快速啟動
+
+#### 方式一：Docker CLI 一鍵指令 (`docker run`)
+
+只需要一行指令即可啟動（請將 `your_secure_admin_token_here_at_least_16_chars` 替換為你的隨機管理員金鑰，至少 16 字元）：
+
+```bash
+docker run -d \
+  --name easy-accounting \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
+  -e SELF_HOST_ADMIN_TOKEN="your_secure_admin_token_here_at_least_16_chars" \
+  -e DISABLE_GOOGLE_OAUTH=1 \
+  --restart unless-stopped \
+  adt109119/jijun:latest
+```
+
+> [!TIP]
+> `SELF_HOST_ADMIN_TOKEN` 建議使用隨機 32 位元組 16 進位字串（例如使用 `openssl rand -hex 32` 產生）。此金鑰將作為初始 `admin` 管理員帳號的登入 PIN 碼。
+
+#### 方式二：Docker Compose 部署（推薦）
+
+建立一個 `docker-compose.yml` 檔案：
+
+```yaml
+services:
+  easy-accounting:
+    image: adt109119/jijun:latest
+    container_name: easy-accounting
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # 管理員初始 PIN 碼（必填，請用隨機長字串，例如 openssl rand -hex 32）
+      - SELF_HOST_ADMIN_TOKEN=your_secure_admin_token_here_at_least_16_chars
+      # 純自架模式（停用 Google OAuth）
+      - DISABLE_GOOGLE_OAUTH=1
+      # 阻擋搜尋引擎爬蟲（1 = 啟用 noindex / nofollow）
+      - NO_INDEX=1
+      # 反向代理信任（若前面有 Nginx / Caddy / Cloudflare Tunnel 請設為 1）
+      - TRUST_PROXY=0
+    volumes:
+      # SQLite 資料持久化掛載目錄
+      - ./data:/app/data
+```
+
+執行啟動：
+
+```bash
+docker compose up -d
+```
+
+---
+
+### 📱 首次連線與使用步驟
+
+1. **瀏覽頁面**：在瀏覽器輸入 `http://<你的伺服器IP>:8080/`（本機測試為 `http://localhost:8080/`）。
+2. **開啟自架同步**：點選底部導覽列「設定 (⚙️)」➔「雲端備份與同步」。
+3. **選擇同步管道**：切換為「Docker 自架伺服器」。
+4. **登入管理員帳號**：
+   - **帳號**：`admin`
+   - **PIN 碼**：填入你在環境變數設定的 `SELF_HOST_ADMIN_TOKEN`
+   - 點擊「登入」，系統即會自動綁定本裝置並開始自動雙向同步與備份。
+5. **管理員控制台與共用帳本**：
+   - 登入 `admin` 後，同步設定頁會出現「管理員控制台」，可新增其他成員帳號、切換是否開放公開註冊。
+   - 支援建立跨帳號家庭共用帳本，成員各自保有隱私，亦可協同記帳。
+
+---
+
+### 📖 進階設定與完整文件
+
+如需進一步設定以下進階功能，請參閱詳細專屬手冊 **[SELF_HOST.md](SELF_HOST.md)**：
+- 🔒 **Nginx / Caddy 反向代理與 HTTPS SSL 憑證設定**
+- 🛡️ **前端存取碼門禁驗證（ACCESS_CODE）**
+- 💾 **SQLite 熱備份指令（`.backup`）與無損備份策略**
+- 🛠️ **命令列管理工具（Admin CLI：使用者增修、密碼重設）**
+- ☁️ **與 Google OAuth Proxy 雙軌並存設定**
 
 ## 🛠️ 技術升級與開發環境
 
@@ -500,6 +601,7 @@ npx cap open android
 - **[English Documentation (英文說明文件)](README_en.md)** - Complete project documentation in English
 - **[Per-Device 同步架構技術文件 (English Spec)](docs/PER_DEVICE_SYNC_en.md)** - Technical specification for the multi-user shared ledger sync protocol
 - **[完整更新日誌](CHANGE_LOG.md)** - 查看所有版本的詳細更新記錄
+- **[純自架部署完整手冊](SELF_HOST.md)** - Docker 容器化部署、環境變數與安全維運說明
 - **[主題開發指南](THEME_DEV_GUIDE.md)** - 深入了解外觀主題自訂與商店規格
 - **[擴充功能開發指南](PLUGIN_DEV_GUIDE.md)** - 插件系統 API 與沙箱架構說明
 
