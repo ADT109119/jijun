@@ -30,8 +30,8 @@ src/js/
 ├── pluginStorage.js     # 插件沙箱化儲存
 ├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理與 Drive 缺水位強制 seed、共用帳本 sharedProvider 通道隔離與 403/404 雲端刪除自動降級、共用日誌合法 store 白名單隔離防篡改私人設定、自架拉取 _selfHostPullSharedLedgerChanges 畸形變更防禦性檢查、推送 _selfHostPushChanges 時鐘回撥游標自動歸零防跳過、自架推送僅上傳差異變更、登出與 409 衝突自動輪換 deviceId、登出即時撤銷 Token、setServerUrl 嚴格 URL 驗證、_selfHostFetch 標頭合併防覆寫、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
-├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
-├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
+├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化，優先確保版本更新導覽不被常駐功能導覽搶先打斷)
+├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔、syncTour 雲端備份與同步常駐導覽與統一註冊表 index.js)
 ├── router.js            # 路由管理
 ├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取，精確排除 transfer 與卡費扣繳平帳，整合 calculateEffectiveRecordAmount 避免代墊干擾桌面支出)
 └── utils.js             # 共用工具函數 (格式化、Toast、customConfirm/customAlert、showProgressModal 即時進度彈窗、calculateEffectiveRecordAmount 生活收支實質金額計算引擎、isDebtSettlementRecord 辨識還款/平帳/結清前綴、calculateNextDueDate 支援 anchorDay 防止月底溢出與逐期漂移達成收斂可逆、buildDebtLookupMaps 與 findDebtForRecord 雙向快取等)

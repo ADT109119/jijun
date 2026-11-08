@@ -36,6 +36,7 @@ const DEMO_TEST_DESC = '導覽測試記錄'
 const TOUR_VERSION_MAP = {
     '2.1.7.9': 'newFeatures',
     '2.1.8.0': 'newFeaturesV2',
+    '2.1.9.0': 'newFeaturesV2',
     '2.1.8.5': 'newFeaturesV2',
 }
 
@@ -838,8 +839,11 @@ export class GuideManager {
      * @param {string} pageName 路由頁面名
      */
     checkFeatureTour(pageName) {
-        // 導覽互斥：導覽進行中則不觸發新導覽，避免打斷
-        if (this._tourActive) return
+        // 導覽互斥與更新導覽優先：
+        // 1. 若已有任何導覽進行中 (this._tourActive)，不觸發新導覽，避免打斷當前導覽
+        // 2. 若有版本更新導覽待觸發 (this._pendingVersionTour)，絕不觸發常駐導覽，確保版本更新導覽優先
+        // 3. 若當前版本有尚未展示/未看過之版本更新導覽，一律讓位給版本更新導覽
+        if (this._tourActive || this._pendingVersionTour || this.getVersionTourId(this.latestVersion)) return
 
         // 優先處理待觸發導覽（實驗功能開啟時設定，僅在綁定頁面觸發）
         // 注意：pending 導覽是用戶主動開啟功能後觸發的，不受 isFirstLaunch 限制
@@ -877,6 +881,8 @@ export class GuideManager {
             amortizations: 'amortizations',
             add: 'ai',
             home: 'budget',
+            'sync-settings': 'sync',
+            sync: 'sync',
         }
         const tourId = tourMap[pageName]
         if (!tourId) return

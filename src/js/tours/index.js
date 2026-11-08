@@ -16,6 +16,7 @@ import { aiTour } from './aiTour.js'
 import { lowBalanceTour } from './lowBalanceTour.js'
 import { newFeaturesTour } from './newFeaturesTour.js'
 import { newFeaturesTourV2 } from './newFeaturesTourV2.js'
+import { syncTour } from './syncTour.js'
 
 export const TOURS = {
     welcome: welcomeTour,
@@ -32,4 +33,5 @@ export const TOURS = {
     lowBalance: lowBalanceTour,
     newFeatures: newFeaturesTour,
     newFeaturesV2: newFeaturesTourV2,
+    sync: syncTour,
 }

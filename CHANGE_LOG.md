@@ -1,5 +1,22 @@
 # 輕鬆記帳 2.0 - 更新日誌
 
+## v2.1.9.0 (2026-11-08) - 全新 Docker 純自架同步伺服器、Protocol v2 協議、全站頁面單元測試覆蓋與安全性加固
+
+### ✨ 新功能
+
+- **全新 Docker 純自架同步伺服器 (Production-Ready Self-Hosted Server)**：完整支援 Docker 容器與 Docker Compose 一鍵部署，採用 Node.js 原生 SQLite (`node:sqlite`) 與 WAL 高效能日誌模式，提供完整的自架同步後端架構。支援多使用者註冊、多裝置管理、PIN 碼 scrypt 加密雜湊防暴力破解、常數時間假雜湊防時序攻擊、多層級 IP 與帳號頻率限制 (Rate Limiting) 與 DoS 槽位防禦。
+- **企業級分散式日誌同步協議**：採用 Per-Device Append-Only 獨立日誌與 5 段式唯一去重鍵 (`uuid|type|entityId|action|dataHash`)，徹底杜絕跨裝置時鐘偏差引發的已刪除記錄幽靈復活；完整支援跨使用者自架共用帳本 (Shared Ledgers)，具備白名單 store 隔離、原子化交易防覆寫與邀請成員限速防探測。
+- **自架雲端備份與管理員 CLI**：內建使用者雲端備份與還原端點，支援真實容量配額限制與線上熱備份指南；提供獨立管理員 CLI 工具 (`server/src/admin-cli.js`)，支援使用者管理、PIN 碼重設與註冊開關切換。
+- **Protocol v2 AI 語意記帳協議升級**：建立 Protocol v2 單一真相源 (`toolsSchema.js`)，工具調用協議與訓練管線 100% 同步；導入平衡括號解析器 (`extractBalancedJson`) 與非標籤語意修復，支援任意深度巢狀 JSON 提取與 stop token 容錯；支援全方位帳戶與分類動態列舉智慧模糊匹配 (`fuzzyMatchAccount` / `fuzzyMatchCategory`)、同義詞映射與字串數值自動安全轉型。
+- **退休 Monte Carlo 蒙地卡羅資產推演與安全提領報表**：新增獨立退休模擬引擎 (`retirementReport.js`) 與互動式圖表介面 (`retirementPage.js`)，支援常態分佈隨機抽樣、實質報酬推演、破產機率與年期統計。
+- **Docker Image CI/CD 自動化建置工作流**：新增 GitHub Actions 工作流 (`.github/workflows/docker-image.yml`)，於推送正式版號標籤（`v*`）時自動驗證 `main` 分支並建置、多標籤發布 Docker 映像檔至 Docker Hub (`adt109119/jijun`)。
+
+### 🔧 改進優化
+
+- **全站頁面單元測試覆蓋與安全防護加固**：全站所有頁面單元測試全面覆蓋，測試總數突破 2,829 項；加固 XSS/HTML 屬性白名單渲染防護與 CSS 顏色消毒校驗，確保外掛與主題沙箱安全性；靜態託管預設注入 `X-Robots-Tag: noindex, nofollow` 與 `/robots.txt`，嚴防私有自架實例被搜尋引擎爬取索引。
+
+---
+
 ## v2.1.8.5 (2026-10-19) - 帳本圖示選取、欠款還款歷程同步與群組分帳沖銷修復
 
 ### 🐛 錯誤修復

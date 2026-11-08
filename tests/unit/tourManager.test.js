@@ -462,6 +462,42 @@ describe('GuideManager', () => {
             document.getElementById('guide-tour-bubble')?.remove()
             el.remove()
         })
+
+        it('首次進入同步頁 (sync-settings) 且未看過時觸發同步導覽', async () => {
+            gm.markVersionCompleted('2.1.7.3')
+            const el = document.createElement('button')
+            el.id = 'sync-mode-official'
+            document.body.appendChild(el)
+            gm.checkFeatureTour('sync-settings')
+            await new Promise(r => setTimeout(r, 400))
+            expect(document.getElementById('guide-tour-bubble')).toBeTruthy()
+            document.getElementById('guide-tour-bubble')?.remove()
+            el.remove()
+        })
+
+        it('有版本更新導覽待觸發時 (_pendingVersionTour) 進入同步頁不觸發常駐導覽（更新導覽優先）', async () => {
+            gm.markVersionCompleted('2.1.7.3')
+            gm._pendingVersionTour = 'newFeaturesV2'
+            const el = document.createElement('button')
+            el.id = 'sync-mode-official'
+            document.body.appendChild(el)
+            gm.checkFeatureTour('sync-settings')
+            await new Promise(r => setTimeout(r, 400))
+            expect(document.getElementById('guide-tour-bubble')).toBeNull()
+            el.remove()
+        })
+
+        it('當前版本有未看過之更新導覽時 (getVersionTourId) 進入同步頁不觸發常駐導覽（更新導覽優先）', async () => {
+            gm.markVersionCompleted('2.1.7.3')
+            gm.latestVersion = '2.1.9.0'
+            const el = document.createElement('button')
+            el.id = 'sync-mode-official'
+            document.body.appendChild(el)
+            gm.checkFeatureTour('sync-settings')
+            await new Promise(r => setTimeout(r, 400))
+            expect(document.getElementById('guide-tour-bubble')).toBeNull()
+            el.remove()
+        })
     })
 
     describe('重置', () => {
