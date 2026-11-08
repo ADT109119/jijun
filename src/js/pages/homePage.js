@@ -1,11 +1,12 @@
 import {
     formatCurrency,
     formatDate,
-    showToast,
-    getDateRange,
     formatDateToString,
     getMonthRange,
     escapeHTML,
+    getSafeIconClass,
+    getSafeBgColorStyle,
+    getSafeHexColor,
 } from '../utils.js'
 import Sortable from 'sortablejs'
 
@@ -31,10 +32,10 @@ export class HomePage {
                             ledgerCount > 1
                                 ? `
                         <button id="home-ledger-btn" class="flex items-center gap-2 px-2.5 py-1.5 bg-wabi-primary/5 rounded-lg border border-wabi-border hover:bg-wabi-primary/10 transition-colors md:hidden" title="切換帳本">
-                            <div class="flex items-center justify-center rounded text-white shrink-0 size-6 text-xs" style="background-color: ${activeLedger?.color || '#334A52'}">
-                                <i class="${activeLedger?.icon || 'fa-solid fa-book'} text-[10px]"></i>
+                            <div class="flex items-center justify-center rounded text-white shrink-0 size-6 text-xs" style="background-color: ${getSafeHexColor(activeLedger?.color)}">
+                                <i class="${getSafeIconClass(activeLedger?.icon, 'fa-solid fa-book')} text-[10px]"></i>
                             </div>
-                            <span class="text-xs font-medium text-wabi-text-primary max-w-[60px] truncate">${activeLedger?.name || '預設帳本'}</span>
+                            <span class="text-xs font-medium text-wabi-text-primary max-w-[60px] truncate">${escapeHTML(activeLedger?.name || '預設帳本')}</span>
                         </button>`
                                 : ''
                         }
@@ -223,15 +224,17 @@ export class HomePage {
                                 record.type,
                                 record.category
                             )
-                        icon = category?.icon || 'fa-solid fa-question'
+                        icon = getSafeIconClass(category?.icon, 'fa-solid fa-question')
                         name = category?.name || '未分類'
                         color = category?.color || 'bg-gray-400'
                     }
 
-                    const colorStyle = color.startsWith('#')
-                        ? `style="background-color: ${color}"`
+                    // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
+                    const safeBg = getSafeBgColorStyle(color)
+                    const colorStyle = safeBg.style
+                        ? `style="${safeBg.style}"`
                         : ''
-                    const colorClass = !color.startsWith('#') ? color : ''
+                    const colorClass = safeBg.className
 
                     const isTransfer =
                         record.category === 'transfer' ||
@@ -249,8 +252,8 @@ export class HomePage {
                             <i class="${icon} text-2xl"></i>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <p class="font-medium text-wabi-text-primary truncate">${name}</p>
-                            <p class="text-sm text-wabi-text-secondary line-clamp-2 break-all">${record.description || '無備註'}</p>
+                            <p class="font-medium text-wabi-text-primary truncate">${escapeHTML(name)}</p>
+                            <p class="text-sm text-wabi-text-secondary line-clamp-2 break-all">${escapeHTML(record.description || '無備註')}</p>
                         </div>
                         <div class="text-right">
                             <p class="font-medium ${amountColor}">${amountPrefix} ${formatCurrency(record.amount)}</p>
@@ -521,7 +524,7 @@ export class HomePage {
                 return '<p class="text-center text-wabi-text-secondary py-4">無可用的小工具</p>'
 
             return activeWidgets
-                .map((id, index) => {
+                .map((id, _index) => {
                     const name =
                         this.app.pluginManager.getPluginName(id) || '未知小工具'
                     const isHidden = hiddenWidgets.includes(id)
@@ -568,7 +571,7 @@ export class HomePage {
 
         const listEl = modal.querySelector('#widget-order-list')
 
-        const sortableInstance = new Sortable(listEl, {
+        const _sortableInstance = new Sortable(listEl, {
             animation: 150,
             handle: '.drag-handle',
             ghostClass: 'opacity-50',
@@ -582,7 +585,7 @@ export class HomePage {
 
         const bindEvents = () => {
             modal.querySelectorAll('.toggle-hide-btn').forEach(btn => {
-                btn.addEventListener('click', async e => {
+                btn.addEventListener('click', async _e => {
                     const id = btn.dataset.id
                     const hiddenWidgets = this.app.pluginManager.hiddenWidgets
 

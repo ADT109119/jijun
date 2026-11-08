@@ -1,6 +1,10 @@
 // src/js/quickSelectManager.js
 
-import { escapeHTML } from './utils.js'
+import {
+    escapeHTML,
+    getSafeIconClass,
+    getSafeBgColorStyle,
+} from './utils.js'
 
 const QUICK_SELECT_STORAGE_KEY = 'quickSelectRecords'
 const MAX_TOTAL_RECORDS = 20
@@ -159,12 +163,12 @@ export class QuickSelectManager {
                             const descriptionText = record.description
                                 ? record.description
                                 : category.name
-                            const colorStyle = category.color.startsWith('#')
-                                ? `style="background-color: ${category.color}"`
+                            // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
+                            const safeBg = getSafeBgColorStyle(category.color)
+                            const colorStyle = safeBg.style
+                                ? `style="${safeBg.style}"`
                                 : ''
-                            const colorClass = !category.color.startsWith('#')
-                                ? category.color
-                                : ''
+                            const colorClass = safeBg.className
 
                             return `
                             <button class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 mt-1 text-sm"
@@ -174,7 +178,7 @@ export class QuickSelectManager {
                                 data-account-id="${record.accountId}"
                             >
                                 <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-6" ${colorStyle}>
-                                    <i class="${category.icon} text-xs"></i>
+                                    <i class="${getSafeIconClass(category.icon, 'fa-solid fa-question')} text-xs"></i>
                                 </div>
                                 <span class="text-wabi-text-primary font-medium truncate max-w-[100px]">${escapeHTML(descriptionText)}</span>
                             </button>

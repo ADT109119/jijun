@@ -116,6 +116,15 @@ self.addEventListener('fetch', event => {
         return
     }
 
+    // API 請求一律放行、不經 SW 快取（含自架同步 server 的跨域 /api/）：
+    // 同步狀態 / admin 帳號列表 / 備份清單等是動態資料，
+    // cache-first 會讓 PUT/POST 變更後的 GET 讀到 SW 舊快取
+    // （瀏覽器 cache:'no-store' 對 SW 攔截無效）。
+    const path = new URL(event.request.url).pathname
+    if (path.startsWith('/api/') || path.includes('/api/')) {
+        return
+    }
+
     // 導覽請求（index.html / /）一律網路優先：
     // HTML 是入口，cache-first 會讓舊 SW 在更新後仍提供舊 index.html，
     // 載入舊 JS 開新版本 DB → VersionError → 資料「看似消失」的根因鏈之一。

@@ -1,0 +1,68 @@
+name: Docker Image CI
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'ver*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get current time
+        uses: josStorer/get-current-time@v2
+        id: current-time
+        with:
+          format: YYYYMMDD-HH
+          utcOffset: "+08:00"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} is not on the main branch! Docker images are only published for official releases on main."
+            exit 1
+          fi
+
+      - name: Extract Docker metadata & tag versions
+        id: meta
+        run: |
+          # 確保 Docker Hub 帳號名稱轉小寫，防止 repository name 格式錯誤
+          DOCKER_USER=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | tr '[:upper:]' '[:lower:]')
+          RAW_TAG="${{ github.ref_name }}"
+          CLEAN_VER="${RAW_TAG#v}"
+          CLEAN_VER="${CLEAN_VER#ver}"
+          
+          IMAGE="${DOCKER_USER}/jijun"
+          
+          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "clean_version=${CLEAN_VER}" >> $GITHUB_OUTPUT
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./server/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ github.ref_name }}
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.clean_version }}
+            ${{ steps.meta.outputs.image }}:${{ steps.current-time.outputs.formattedTime }}

@@ -6,6 +6,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mock utils.js escapeHTML — 直接回傳原始字串
 vi.mock('../../src/js/utils.js', () => ({
     escapeHTML: vi.fn(s => s),
+    // #SEC04：getSafeIconClass 以真實語意提供（白名單外一律 fallback）
+    getSafeIconClass: (icon, fallback = 'fa-solid fa-question') =>
+        typeof icon === 'string' &&
+        /^(fas|far|fab|fa-solid|fa-regular|fa-brands)\s+fa-[a-zA-Z0-9-]+$/.test(icon.trim())
+            ? icon.trim()
+            : fallback,
+    // #SEC05：顏色白名單以真實語意提供（髒值雙空→不輸出屬性）
+    getSafeBgColorStyle: color => {
+        if (typeof color === 'string' &&
+            /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
+            return { style: `background-color: ${color}`, className: '' }
+        }
+        if (typeof color === 'string' && /^bg-[a-z0-9-]+$/.test(color)) {
+            return { style: '', className: color }
+        }
+        return { style: '', className: '' }
+    },
 }))
 
 import { QuickSelectManager } from '../../src/js/quickSelectManager.js'
@@ -800,14 +817,36 @@ describe('QuickSelectManager', () => {
             const mockCategoryManager = {
                 getCategoryById: vi.fn(() => ({
                     name: '餐飲',
-                    icon: 'fa-utensils',
+                    // #SEC04：改用白名單內的合法寫法（裸 fa-utensils 非合法 FA6 class）
+                    icon: 'fa-solid fa-utensils',
                     color: '#FF5733',
                 })),
             }
 
             qsm.render(container, null, mockCategoryManager, false)
 
-            expect(container.innerHTML).toContain('fa-utensils')
+            expect(container.innerHTML).toContain('fa-solid fa-utensils')
+        })
+
+        it('#SEC04 歷史髒 icon 渲染時退回中性圖示（class breakout 阻斷）', () => {
+            const qsm = new QuickSelectManager()
+            qsm.addRecord('expense', 'food', '午餐', null)
+
+            const container = document.createElement('div')
+
+            const mockCategoryManager = {
+                getCategoryById: vi.fn(() => ({
+                    name: '餐飲',
+                    icon: '"><img src=x onerror=alert(1)>',
+                    color: '#FF5733',
+                })),
+            }
+
+            qsm.render(container, null, mockCategoryManager, false)
+
+            expect(container.querySelector('img[src="x"]')).toBeNull()
+            expect(container.innerHTML).toContain('fa-solid fa-question')
+            expect(container.innerHTML).not.toContain('onerror')
         })
     })
 })

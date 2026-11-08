@@ -487,3 +487,143 @@ describe('ComparisonReport.calculateComparison', () => {
         expect(result.typeFilter).toBe('all')
     })
 })
+
+// ==================== calculateComparison — 對象篩選 (#MOZE-TGT) ====================
+
+describe('ComparisonReport.calculateComparison — 對象（聯絡人）篩選 (#MOZE-TGT)', () => {
+    // v2.1.8.4 起 calculateComparison 全面改走 calculateEffectiveRecordAmount，
+    // debt fixture 必須是真實 addDebt 落庫形態（type/originalAmount/remainingAmount
+    // 齊備）：此處用「別人欠我」的代墊（receivable）未結清態——代墊支出全額計入，
+    // 語意與使用者直覺一致。
+    // contact 1（小明）的 debt=1,2；contact 2（小美）的 debt=3
+    const debts = [
+        { id: 1, contactId: 1, type: 'receivable', originalAmount: 100, remainingAmount: 100, ledgerId: 1 },
+        { id: 2, contactId: 1, type: 'receivable', originalAmount: 150, remainingAmount: 150, ledgerId: 1 },
+        { id: 3, contactId: 2, type: 'receivable', originalAmount: 900, remainingAmount: 900, ledgerId: 1 },
+    ]
+    const records = [
+        // 掛 contact 1 欠款：兩個期間各一筆
+        { type: 'expense', amount: 100, category: 'food', date: '2026-01-10', debtId: 1 },
+        { type: 'expense', amount: 150, category: 'food', date: '2026-02-10', debtId: 2 },
+        // 掛 contact 2 欠款
+        { type: 'expense', amount: 900, category: 'shopping', date: '2026-01-20', debtId: 3 },
+        // 無 debtId 的一般紀錄（不屬於任何對象）
+        { type: 'income', amount: 5000, category: 'salary', date: '2026-01-05' },
+    ]
+
+    function makeDS(extra = {}) {
+        return {
+            getRecords: vi.fn(async () => records),
+            getDebts: vi.fn(async () => debts),
+            ...extra,
+        }
+    }
+
+    it('contactId 篩選：只計該對象欠款關聯的紀錄', async () => {
+        const comp = new ComparisonReport(makeDS(), null)
+        const result = await comp.calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: 1 }
+        )
+        expect(result.periodData[0].expense).toBe(100)
+        expect(result.periodData[1].expense).toBe(150)
+        expect(result.periodData[0].income).toBe(0) // 薪資無 debtId → 被過濾
+        expect(result.periodData[0].recordCount).toBe(1)
+        expect(result.periodData[1].recordCount).toBe(1)
+    })
+
+    it('contactId=null 時全部計入', async () => {
+        const comp = new ComparisonReport(makeDS(), null)
+        const result = await comp.calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: null }
+        )
+        expect(result.periodData[0].expense).toBe(1000) // 100 + 900
+        expect(result.periodData[0].income).toBe(5000)
+        expect(result.periodData[0].recordCount).toBe(3)
+    })
+
+    it('未傳 contactId 選項時行為與 null 一致（向後相容）', async () => {
+        const comp = new ComparisonReport(makeDS(), null)
+        const result = await comp.calculateComparison('month', [
+            '2026-01',
+            '2026-02',
+        ])
+        expect(result.periodData[0].recordCount).toBe(3)
+    })
+
+    it('欠款一律單批次載入（有無 contactId 篩選都只打一次，防雙載/N+1）', async () => {
+        // v2.1.8.4：effective amount 計算需要 debts，故無論有無對象篩選都會載入；
+        // #MOZE-TGT 的 contactId 篩選復用同一份快取，不得再多打一次。
+        const dsNoFilter = makeDS()
+        await new ComparisonReport(dsNoFilter, null).calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: null }
+        )
+        expect(dsNoFilter.getDebts).toHaveBeenCalledTimes(1)
+
+        const dsFilter = makeDS()
+        await new ComparisonReport(dsFilter, null).calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: 2 }
+        )
+        expect(dsFilter.getDebts).toHaveBeenCalledTimes(1)
+    })
+
+    it('回傳物件帶 contactId 與 contactName', async () => {
+        const comp = new ComparisonReport(makeDS(), null)
+        const result = await comp.calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: 1, contactName: '小明' }
+        )
+        expect(result.contactId).toBe(1)
+        expect(result.contactName).toBe('小明')
+    })
+
+    it('debt 存在但 contactId 不符 → 排除；debtId 引用不存在 → 排除', async () => {
+        const ds = {
+            getRecords: vi.fn(async () => [
+                { type: 'expense', amount: 100, category: 'food', date: '2026-01-10', debtId: 1 },
+                { type: 'expense', amount: 200, category: 'food', date: '2026-01-11', debtId: 2 },
+                { type: 'expense', amount: 300, category: 'food', date: '2026-01-12', debtId: 999 },
+            ]),
+            getDebts: vi.fn(async () => [
+                { id: 1, contactId: 1, type: 'receivable', originalAmount: 100, remainingAmount: 100 },
+                { id: 2, contactId: 2, type: 'receivable', originalAmount: 200, remainingAmount: 200 },
+            ]),
+        }
+        const comp = new ComparisonReport(ds, null)
+        const result = await comp.calculateComparison(
+            'month',
+            ['2026-01', '2026-02'],
+            { contactId: 1 }
+        )
+        expect(result.periodData[0].expense).toBe(100)
+        expect(result.periodData[0].recordCount).toBe(1)
+    })
+
+    it('exportToCSV 帶篩選對象列（有/無 contactName）', () => {
+        const base = {
+            periodLabels: ['2026-01', '2026-02'],
+            periodType: 'month',
+            typeFilter: 'all',
+            periodData: [
+                { label: '2026-01', income: 0, expense: 100 },
+                { label: '2026-02', income: 0, expense: 150 },
+            ],
+            categoryComparisons: [],
+        }
+        const csvAll = new ComparisonReport(null, null).exportToCSV(base)
+        expect(csvAll).toContain('篩選對象,全部')
+        const csvNamed = new ComparisonReport(null, null).exportToCSV({
+            ...base,
+            contactName: '小明',
+        })
+        expect(csvNamed).toContain('篩選對象,小明')
+    })
+})

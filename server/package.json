@@ -1,14 +1,18 @@
 {
     "name": "easy-accounting-sync-server",
     "version": "1.0.0",
-    "description": "輕鬆記帳雲端備份&同步伺服器 — Google OAuth Proxy",
+    "description": "輕鬆記帳雲端備份&同步伺服器 — Google OAuth Proxy 與純自架同步 (Self-Hosted Sync)",
     "type": "module",
+    "engines": {
+        "node": ">=22.13.0"
+    },
     "main": "src/index.js",
     "scripts": {
         "dev": "wrangler dev",
         "deploy": "wrangler deploy",
         "standalone": "node src/standalone.js",
-        "start": "node src/standalone.js"
+        "start": "node src/standalone.js",
+        "test": "node test/selfhost-api.test.mjs && node test/selfhost-http.test.mjs"
     },
     "devDependencies": {
         "wrangler": "^4.147.0"

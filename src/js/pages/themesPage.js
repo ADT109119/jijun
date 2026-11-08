@@ -1,5 +1,26 @@
-import { showToast, customConfirm, getStoreUrl } from '../utils.js'
+import { showToast, customConfirm, getStoreUrl, escapeHTML } from '../utils.js'
 import { DARK_THEME_ID, THEME_MODES } from '../themeManager.js'
+
+// CSS 顏色值白名單（#hex / rgb / rgba / hsl / hsla / 標準色彩名）：
+// 遠端商店的 theme 資料不可信任，直接嵌入 style="" 可被引號 breakout 注入 CSS 規則
+const SAFE_COLOR_RE =
+    /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.%]+(?:\s*,\s*[\d.%]+){2,3}\s*\)|hsla?\(\s*[\d.%]+(?:\s*,\s*[\d.%]+){2,3}\s*\)|[a-zA-Z]+)$/
+// FontAwesome class 白名單（圖示預覽僅允許 fa-* 令牌）
+const SAFE_FA_ICON_RE = /^fa-[a-zA-Z0-9-/ ]+$/
+
+/** 不可信任的顏色值 → 通過白名單回傳原值，否則回傳 fallback */
+function safeColor(value, fallback) {
+    return typeof value === 'string' && SAFE_COLOR_RE.test(value)
+        ? value
+        : fallback
+}
+
+/** 不可信任的 FA icon class → 通過白名單回傳原值，否則回傳 null（走色點 fallback） */
+function safeIconPreview(value) {
+    return typeof value === 'string' && SAFE_FA_ICON_RE.test(value)
+        ? value
+        : null
+}
 
 export class ThemesPage {
     constructor(app) {
@@ -133,16 +154,16 @@ export class ThemesPage {
                                           currentMode === THEME_MODES.CUSTOM &&
                                           activeThemeId === t.id
 
-                                      let thumbnailHtml = ''
+                                      let thumbnailHtml
                                       const bgColor =
-                                          t.colors?.['wabi-bg'] || '#fff'
+                                          safeColor(t.colors?.['wabi-bg'], '#fff')
                                       const primaryColor =
-                                          t.colors?.['wabi-primary'] ||
-                                          '#334A52'
+                                          safeColor(t.colors?.['wabi-primary'],
+                                              '#334A52')
                                       const rawSvgPreview =
                                           t.svgPreview || store?.svgPreview
                                       const iconPreview =
-                                          t.iconPreview || store?.iconPreview
+                                          safeIconPreview(t.iconPreview || store?.iconPreview)
                                       const sanitizedSvg = rawSvgPreview
                                           ? this.app.themeManager?.sanitizeSVGToString(
                                                 rawSvgPreview
@@ -158,31 +179,31 @@ export class ThemesPage {
                                       }
 
                                       return `
-                        <div class="bg-wabi-surface p-4 rounded-xl border ${isCustomActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'} flex justify-between items-center transition-all cursor-pointer custom-theme-item relative overflow-hidden group hover:bg-wabi-bg/30" data-id="${t.id}">
+                        <div class="bg-wabi-surface p-4 rounded-xl border ${isCustomActive ? 'border-wabi-primary shadow-md' : 'border-wabi-border'} flex justify-between items-center transition-all cursor-pointer custom-theme-item relative overflow-hidden group hover:bg-wabi-bg/30" data-id="${escapeHTML(t.id)}">
                             <div class="flex items-center gap-4 z-10 min-w-0">
                                 ${thumbnailHtml}
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
-                                        <h4 class="font-bold text-wabi-text-primary group-hover:text-wabi-primary transition-colors">${t.name}</h4>
+                                        <h4 class="font-bold text-wabi-text-primary group-hover:text-wabi-primary transition-colors">${escapeHTML(t.name)}</h4>
                                         ${
                                             updatable
-                                                ? `<span class="text-xs bg-yellow-400/20 text-yellow-600 border border-yellow-400/40 px-1.5 py-0.5 rounded-full font-medium shrink-0">v${store.version} 可更新</span>`
-                                                : `<span class="text-xs text-wabi-text-secondary shrink-0">v${t.version || '?'}</span>`
+                                                ? `<span class="text-xs bg-yellow-400/20 text-yellow-600 border border-yellow-400/40 px-1.5 py-0.5 rounded-full font-medium shrink-0">v${escapeHTML(store.version)} 可更新</span>`
+                                                : `<span class="text-xs text-wabi-text-secondary shrink-0">v${escapeHTML(t.version || '?')}</span>`
                                         }
                                     </div>
-                                    <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${t.description || '無描述'}</p>
+                                    <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${escapeHTML(t.description) || '無描述'}</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2 z-10 shrink-0 ml-2">
                                 ${isCustomActive ? '<i class="fa-solid fa-circle-check text-wabi-primary text-xl"></i>' : ''}
                                 ${
                                     updatable
-                                        ? `<button class="update-theme-btn text-xs font-bold px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition-colors shrink-0" data-id="${t.id}" data-url="${store.file}" title="更新至 v${store.version}">
+                                        ? `<button class="update-theme-btn text-xs font-bold px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition-colors shrink-0" data-id="${escapeHTML(t.id)}" data-url="${escapeHTML(store.file)}" title="更新至 v${escapeHTML(store.version)}">
                                            <i class="fa-solid fa-arrow-up-from-bracket mr-1"></i>更新
                                        </button>`
                                         : ''
                                 }
-                                <button class="delete-theme-btn text-wabi-expense p-2 transition-opacity hover:bg-red-500/10 rounded-lg" data-id="${t.id}" title="刪除主題"><i class="fa-solid fa-trash-can"></i></button>
+                                <button class="delete-theme-btn text-wabi-expense p-2 transition-opacity hover:bg-red-500/10 rounded-lg" data-id="${escapeHTML(t.id)}" title="刪除主題"><i class="fa-solid fa-trash-can"></i></button>
                             </div>
                         </div>
                         `

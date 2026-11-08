@@ -1,4 +1,17 @@
-import { showToast, getStoreUrl } from '../utils.js'
+import { showToast, getStoreUrl, escapeHTML } from '../utils.js'
+
+// 遠端商店插件資料不可信任（native 平台經 __WEB_STORE_URL__ 從遠端商店載入）：
+// name/description/version/author 直接嵌入 innerHTML 可注入 DOM 標籤，
+// file/id 直接嵌入 data-url/data-id 屬性可引號 breakout 注入任意屬性，
+// icon 直接嵌入 class="..." 可注入任意 class（XSS 面，同 pluginsPage #SEC02 模式）
+const SAFE_PLUGIN_ICON_RE = /^fa-[a-zA-Z0-9-]+$/
+
+/** 不可信的 icon class → 通過白名單回傳原值，否則回傳 null（fallback 內建圖示） */
+function safePluginIcon(value) {
+    return typeof value === 'string' && SAFE_PLUGIN_ICON_RE.test(value)
+        ? value
+        : null
+}
 
 export class StorePage {
     constructor(app) {
@@ -65,7 +78,7 @@ export class StorePage {
         container.innerHTML = list
             .map(p => {
                 const installed = installedPlugins.find(i => i.id === p.id)
-                let btnHtml = ''
+                let btnHtml
 
                 if (installed) {
                     if (
@@ -74,24 +87,24 @@ export class StorePage {
                             installed.version
                         ) > 0
                     ) {
-                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${p.file}" data-id="${p.id}">更新 (v${p.version})</button>`
+                        btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-yellow-500 text-white hover:bg-yellow-600 shadow" data-url="${escapeHTML(p.file)}" data-id="${escapeHTML(p.id)}">更新 (v${escapeHTML(p.version)})</button>`
                     } else {
                         btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-green-100 text-green-700 cursor-default" disabled>已安裝</button>`
                     }
                 } else {
-                    btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${p.file}" data-id="${p.id}">安裝</button>`
+                    btnHtml = `<button class="store-install-btn px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 bg-wabi-primary text-wabi-surface hover:bg-opacity-90 shadow" data-url="${escapeHTML(p.file)}" data-id="${escapeHTML(p.id)}">安裝</button>`
                 }
 
                 return `
                     <div class="bg-wabi-surface p-4 rounded-xl border border-wabi-border shadow-sm flex items-center justify-between hover:border-wabi-primary transition-colors group">
                         <div class="flex items-center gap-4">
                             <div class="bg-wabi-primary/10 text-wabi-primary rounded-xl size-14 flex items-center justify-center text-2xl aspect-square group-hover:scale-110 transition-transform">
-                                <i class="fa-solid ${p.icon || 'fa-puzzle-piece'}"></i>
+                                <i class="fa-solid ${safePluginIcon(p.icon) || 'fa-puzzle-piece'}"></i>
                             </div>
                             <div>
-                                <h4 class="font-bold text-wabi-text-primary text-lg">${p.name}</h4>
-                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${p.description}</p>
-                                <p class="text-xs text-wabi-text-secondary mt-1">v${p.version} • ${p.author || 'Unknown'}</p>
+                                <h4 class="font-bold text-wabi-text-primary text-lg">${escapeHTML(p.name)}</h4>
+                                <p class="text-sm text-wabi-text-secondary line-clamp-1">${escapeHTML(p.description)}</p>
+                                <p class="text-xs text-wabi-text-secondary mt-1">v${escapeHTML(p.version)} • ${escapeHTML(p.author || 'Unknown')}</p>
                             </div>
                         </div>
                         ${btnHtml}

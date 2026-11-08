@@ -5,6 +5,9 @@ import {
     formatDateToString,
     customAlert,
     customConfirm,
+    isSafeIconClass,
+    getSafeIconClass,
+    getSafeBgColorStyle,
 } from '../utils.js'
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
 import { getCategoryName, getCategoryIcon } from '../categories.js'
@@ -152,11 +155,12 @@ export class AccountsPage {
             const accountEl = document.createElement('div')
             accountEl.className =
                 'flex items-center justify-between bg-wabi-surface p-3.5 sm:p-4 rounded-lg border border-wabi-border hover:border-wabi-primary/40 transition-colors'
-            const isHex = account.color && account.color.startsWith('#')
-            const colorClass = isHex ? '' : (account.color || 'bg-gray-500')
-            const colorStyle = isHex
-                ? `style="background-color: ${escapeHTML(account.color)}"`
-                : ''
+            // #SEC05：顏色走全站白名單單一真相源（歷史髒 color 可能帶
+            // `#fff;background-image:url(evil)` 逃脫成任意 CSS 規則，或
+            // `"><img src=x onerror=...>` 突破 style 屬性）
+            const safeBg = getSafeBgColorStyle(account.color)
+            const colorStyle = safeBg.style ? `style="${safeBg.style}"` : ''
+            const colorClass = safeBg.className || (safeBg.style ? '' : 'bg-gray-500')
 
             if (isCreditCard) {
                 accountEl.className =
@@ -167,7 +171,7 @@ export class AccountsPage {
                         <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer credit-card-card-click" data-id="${account.id}" title="點擊查看帳務明細 (即時消費 / 出帳帳單)">
                             <div class="relative shrink-0">
                                 <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-10 sm:size-11" ${colorStyle}>
-                                    <i class="${account.icon} text-lg sm:text-xl"></i>
+                                    <i class="${getSafeIconClass(account.icon, 'fa-solid fa-credit-card')} text-lg sm:text-xl"></i>
                                 </div>
                                 <span class="absolute -top-1 -right-1 bg-wabi-expense text-wabi-surface text-[9px] px-1 rounded-full font-bold" title="信用卡"><i class="fa-solid fa-credit-card"></i></span>
                             </div>
@@ -236,7 +240,7 @@ export class AccountsPage {
                 accountEl.innerHTML = `
                     <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                         <div class="flex items-center justify-center rounded-lg ${colorClass} text-wabi-surface shrink-0 size-11 sm:size-12" ${colorStyle}>
-                            <i class="${account.icon} text-xl sm:text-2xl"></i>
+                            <i class="${getSafeIconClass(account.icon, 'fa-solid fa-wallet')} text-xl sm:text-2xl"></i>
                         </div>
                         <div class="min-w-0">
                             <p class="font-medium text-wabi-text-primary text-sm sm:text-base truncate">${escapeHTML(account.name)}</p>
@@ -551,7 +555,15 @@ export class AccountsPage {
             'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
         const defaultCreditIcon = 'fa-solid fa-credit-card'
         const defaultWalletIcon = 'fa-solid fa-wallet'
-        const currentIcon = accountToEdit?.icon || defaultWalletIcon
+        // #SEC04：歷史髒 icon 在彈窗建立時即自愈為合法預設圖示（與 ledgersPage
+        // 同模式）——預覽/反白/存檔全鏈安全，編輯其他欄位不受阻；存檔時順帶
+        // 把髒資料洗回合法值，不再需要使用者手動重新選圖示。
+        const currentIcon = getSafeIconClass(
+            accountToEdit?.icon,
+            accountToEdit?.type === 'credit_card'
+                ? defaultCreditIcon
+                : defaultWalletIcon
+        )
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col overflow-hidden box-border">
                 <h3 class="text-lg font-bold text-wabi-primary">${isEdit ? '編輯帳戶' : '新增帳戶'}</h3>
@@ -634,7 +646,7 @@ export class AccountsPage {
                                        class="flex-1 min-w-0 p-2 text-sm bg-transparent border border-wabi-border rounded-lg bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                                 <button type="button" id="preview-icon-btn" class="shrink-0 px-3 py-2 bg-wabi-bg border border-wabi-border rounded-lg hover:bg-wabi-border transition-colors">
                                   <span id="icon-preview" class="text-lg text-wabi-primary">
-                                    <i class="${currentIcon}"></i>
+                                    <i class="${getSafeIconClass(currentIcon, 'fa-solid fa-wallet')}"></i>
                                   </span>
                                 </button>
                             </div>
@@ -697,11 +709,21 @@ export class AccountsPage {
         const iconPreview = document.getElementById('icon-preview')
 
         // 圖標預覽功能
+        // #SEC04：白名單外的輸入不寫入 innerHTML，改顯示純文字警示（與
+        // categoryManager H01 同款防護），並保留合法值 trim 後入庫。
         const updateIconPreview = () => {
             const iconClass =
                 customIconInput.value.trim() || 'fa-solid fa-wallet'
-            iconPreview.innerHTML = `<i class="${iconClass}"></i>`
-            selectedIcon = iconClass
+            if (isSafeIconClass(iconClass)) {
+                iconPreview.innerHTML = `<i class="${iconClass}"></i>`
+                selectedIcon = iconClass
+            } else {
+                iconPreview.textContent = '格式不正確'
+                iconPreview.setAttribute(
+                    'title',
+                    '請輸入 FontAwesome class（如 fas fa-heart）'
+                )
+            }
             document.querySelectorAll('.icon-option').forEach(b => {
                 b.classList.remove('border-wabi-primary', 'bg-wabi-primary/10')
                 b.classList.add('border-wabi-border')
@@ -792,9 +814,13 @@ export class AccountsPage {
                 .join('')
 
             if (selectedIcon) {
-                const btn = iconSelector.querySelector(
-                    `[data-icon="${selectedIcon}"]`
-                )
+                // #SEC04：編輯模式 selectedIcon 取自歷史髒資料，含引號直接組
+                // CSS selector 會拋 SyntaxError 中斷彈窗初始化；白名單外跳過反白。
+                const btn = isSafeIconClass(selectedIcon)
+                    ? iconSelector.querySelector(
+                          `[data-icon="${selectedIcon}"]`
+                      )
+                    : null
                 if (btn) {
                     btn.classList.remove('border-wabi-border')
                     btn.classList.add(
@@ -928,6 +954,13 @@ export class AccountsPage {
                     'input[name="account-type"]:checked'
                 ).value
 
+                // #SEC04 防禦深度：編輯模式下 selectedIcon 初始值取自歷史資料，
+                // 可能帶有白名單外的舊值；存檔前統一驗證，拒絕非法圖示入庫。
+                if (!isSafeIconClass(selectedIcon)) {
+                    showToast('圖示格式不正確，請重新選擇圖示', 'error')
+                    return
+                }
+
                 const accountData = {
                     type: selectedType,
                     name: name,
@@ -1001,11 +1034,10 @@ export class AccountsPage {
         modal.className =
             'fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden'
 
-        const isHex = account.color && account.color.startsWith('#')
-        const colorClass = isHex ? '' : (account.color || 'bg-gray-500')
-        const colorStyle = isHex
-            ? `style="background-color: ${escapeHTML(account.color)}"`
-            : ''
+        // #SEC05：顏色走全站白名單（歷史髒 color 注入面），#SEC04：圖示白名單
+        const safeBg = getSafeBgColorStyle(account.color)
+        const colorStyle = safeBg.style ? `style="${safeBg.style}"` : ''
+        const colorClass = safeBg.className || (safeBg.style ? '' : 'bg-gray-500')
 
         const {
             statementDay,
@@ -1042,7 +1074,7 @@ export class AccountsPage {
                 <div class="flex items-center justify-between border-b border-wabi-border/60 pb-3">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="size-10 sm:size-11 rounded-xl flex items-center justify-center text-wabi-surface shrink-0 ${colorClass}" ${colorStyle}>
-                            <i class="${account.icon} text-lg sm:text-xl"></i>
+                            <i class="${getSafeIconClass(account.icon, 'fa-solid fa-credit-card')} text-lg sm:text-xl"></i>
                         </div>
                         <div class="min-w-0">
                             <h3 class="font-bold text-base sm:text-lg text-wabi-text-primary truncate">${escapeHTML(account.name)}</h3>
@@ -1667,27 +1699,37 @@ export class AccountsPage {
         const cardDebt =
             billingInfo?.totalDebt ?? Math.max(0, -currentCardBal)
 
-        // 獲取該信用卡所有帳單以取得未繳帳單及最近一期資訊
+        // 待繳金額合計：unpaid 全額 + partial 剩額（帳單額 − 已繳）。
+        // 舊版只抓 unpaid 全額，部分繳款後仍提示全額，用戶照預填金額繳款會重複多繳。
         const allStatements = await this.app.dataService.getCreditStatements({
             accountId: account.id,
             allLedgers: true,
         })
-        const unpaidStatements = allStatements.filter(s => s.status === 'unpaid')
-        const unpaidTotal = unpaidStatements.reduce(
-            (sum, s) => sum + (s.amount || 0),
-            0
+        const openStatementsList = allStatements.filter(
+            s => s.status === 'unpaid' || s.status === 'partial'
         )
-        const recentStatement = allStatements
-            .filter(s => (s.amount || 0) > 0)
-            .sort((a, b) => b.period.localeCompare(a.period))[0]
+        const unpaidTotal = openStatementsList.reduce((sum, s) => {
+            const remaining =
+                (s.amount || 0) -
+                (s.status === 'partial' ? (s.paidAmount || 0) : 0)
+            return sum + Math.max(0, remaining)
+        }, 0)
+        // 「最近一期」提示僅在有實際待繳帳單時顯示：待繳為 0 時（無帳單，
+        // 或髒資料 paidAmount ≥ 帳單額致剩額歸零）提示帶入金額會誘發超繳。
+        const recentStatement =
+            unpaidTotal > 0
+                ? allStatements
+                      .filter(s => (s.amount || 0) > 0)
+                      .sort((a, b) =>
+                          b.period.localeCompare(a.period)
+                      )[0]
+                : null
 
         let amountToPay = 0
         if (prefilledAmount !== null) {
             amountToPay = prefilledAmount
         } else if (unpaidTotal > 0) {
             amountToPay = unpaidTotal
-        } else if (recentStatement) {
-            amountToPay = recentStatement.amount
         }
 
         const isDeductOnlyDefault =

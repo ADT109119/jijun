@@ -7,6 +7,8 @@ import {
     customConfirm,
     customAlert,
     escapeHTML,
+    getSafeIconClass,
+    getSafeBgColorStyle,
 } from './utils.js'
 import { getCategoryById } from './categories.js'
 
@@ -142,7 +144,14 @@ export class DebtManager {
         )
         if (!container) return
 
-        const allDebts = await this.dataService.getDebts({ settled: false })
+        // 全帳本：與 loadDebtList / getGroups（netAmount 由 allLedgers debts 計算）
+        // 保持一致。群組欠款無 ledgerId，限當前帳本會被過濾掉 → 群組欠款從
+        // 個人卡與群組卡同時消失；多帳本時上下金額也不一致（agy M1）。
+        // v2.1.8.0 起群組欠款一律計入統計（不再過濾），與雲端修復語意對齊。
+        const allDebts = await this.dataService.getDebts({
+            allLedgers: true,
+            settled: false,
+        })
         const allRecords = await this.dataService.getRecords()
         const recordsMap = new Map(allRecords.map(r => [r.id, r]))
 
@@ -215,11 +224,27 @@ export class DebtManager {
                 (s, g) => s + g.netAmount,
                 0
             )
+            // 有聯絡人篩選時：群組金額只算該聯絡人的分擔（debt.contactId 歸屬），
+            // 而非整個群組淨額，避免「選擇個別欠款人時總金額不正確」
+            let groupNetAmount = totalGroupNet
+            let groupCardSubLabel = '未結清群組'
+            if (this.currentContactFilter && unsettledGroups.length > 0) {
+                const shares = await this._getContactGroupShares(
+                    allDebts,
+                    this.currentContactFilter,
+                    recordsMap
+                )
+                groupNetAmount = unsettledGroups.reduce((s, g) => {
+                    const share = shares[g.id]
+                    return s + (share ? share.net : 0)
+                }, 0)
+                groupCardSubLabel = `未結清群組 (僅 ${escapeHTML(selectedContact || '此聯絡人')} 分擔)`
+            }
             groupCardHtml = `
         <div class="bg-emerald-500/10 rounded-xl p-4 text-center border border-emerald-500/20">
-          <p class="text-sm text-emerald-600 font-medium">未結清群組</p>
+          <p class="text-sm text-emerald-600 font-medium">${groupCardSubLabel}</p>
           <p class="text-lg font-bold text-emerald-600">${unsettledGroups.length} 個</p>
-          <p class="text-xs text-emerald-600/70 mt-1">淨額 ${formatCurrency(totalGroupNet)}</p>
+          <p class="text-xs text-emerald-600/70 mt-1">淨額 ${formatCurrency(groupNetAmount)}</p>
         </div>
       `
         } catch (e) {
@@ -237,6 +262,36 @@ export class DebtManager {
       </div>
       ${groupCardHtml}
     `
+    }
+
+    // 計算單一聯絡人在各群組中的分擔金額（未結清欠款）
+    // 群組內的欠款以 debt 的 contactId 歸屬；群組歸屬走 debt.groupId
+    // 或 debt.recordId → record.groupId（與既有過濾邏輯一致，addDebt 正規路徑不存 groupId）
+    // 回傳 { [groupId]: { receivable, payable, net } }
+    // 讓「選擇個別欠款人」時，群組金額只算該聯絡人的部分，而非整個群組淨額
+    async _getContactGroupShares(allDebts, contactId, recordsMap = new Map()) {
+        const shares = {}
+        if (!contactId) return shares
+        allDebts.forEach(d => {
+            if (d.settled || d.contactId !== contactId) return
+            let groupId = d.groupId
+            if (!groupId && d.recordId) {
+                const rec = recordsMap.get(d.recordId)
+                if (rec && rec.groupId) groupId = rec.groupId
+            }
+            if (!groupId) return
+            if (!shares[groupId])
+                shares[groupId] = { receivable: 0, payable: 0, net: 0 }
+            const rem = d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0
+            if (d.type === 'receivable') {
+                shares[groupId].receivable += rem
+                shares[groupId].net += rem
+            } else {
+                shares[groupId].payable += rem
+                shares[groupId].net -= rem
+            }
+        })
+        return shares
     }
 
     // Show contact summary table as modal
@@ -553,6 +608,9 @@ export class DebtManager {
         }
 
         // Render debts
+        // 註：此 html 初值為死計算（L782 html = fullHtml 覆寫後才使用），
+        // 保留現況不重構（刪計算屬 90 行重構，另行排程），ESLint warn 留檔
+        // eslint-disable-next-line no-useless-assignment
         let html = debts
             .map(debt => {
                 const contact = contacts.find(c => c.id === debt.contactId)
@@ -573,7 +631,8 @@ export class DebtManager {
                         : 0
                 const hasPartialPayments = paidAmount > 0 && remainingAmount > 0
                 const hasPaymentHistory =
-                    debt.payments && debt.payments.length > 0
+                    (debt.payments && debt.payments.length > 0) ||
+                    (Number(debt.initialPaidAmount) || 0) > 0
                 const isHighlighted = this.highlightDebtId === debt.id
 
                 return `
@@ -614,7 +673,7 @@ export class DebtManager {
               hasPaymentHistory
                   ? `
             <button class="view-history-btn w-full mt-2 py-1 text-xs text-wabi-primary border border-wabi-primary/30 rounded bg-wabi-primary/5" data-id="${debt.id}">
-              <i class="fa-solid fa-clock-rotate-left mr-1"></i>查看還款歷程 (${debt.payments.length} 筆)
+              <i class="fa-solid fa-clock-rotate-left mr-1"></i>查看還款歷程 (${(debt.payments?.length || 0) + (Number(debt.initialPaidAmount) > 0 ? 1 : 0)} 筆)
             </button>
           `
                   : ''
@@ -664,11 +723,6 @@ export class DebtManager {
 
         // Render group cards (inserted at their sorted positions)
         // Rebuild the full sorted HTML by interleaving debts and groups
-        let fullHtml = ''
-        let debtIdx
-        let groupIdx
-        const sortedDebtIds = new Set(debts.map(d => d.id))
-        const sortedGroupIds = new Set(pageGroups.map(g => g.id))
         const debtHtmlMap = {}
         // Re-render debts individually for interleaving
         debts.forEach(debt => {
@@ -685,7 +739,9 @@ export class DebtManager {
                     ? ((paidAmount / originalAmount) * 100).toFixed(0)
                     : 0
             const hasPartialPayments = paidAmount > 0 && remainingAmount > 0
-            const hasPaymentHistory = debt.payments && debt.payments.length > 0
+            const hasPaymentHistory =
+                (debt.payments && debt.payments.length > 0) ||
+                (Number(debt.initialPaidAmount) || 0) > 0
             const isHighlighted = this.highlightDebtId === debt.id
 
             const record = debt.recordId ? recordsMap.get(debt.recordId) : null
@@ -720,7 +776,7 @@ export class DebtManager {
                       categoryObj
                           ? `
                     <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-wabi-bg border border-wabi-border text-wabi-text-primary font-medium">
-                      <i class="${categoryObj.icon} text-[10px]"></i>
+                      <i class="${getSafeIconClass(categoryObj.icon, 'fa-solid fa-question')} text-[10px]"></i>
                       <span>${escapeHTML(categoryObj.name)}</span>
                     </span>
                   `
@@ -755,7 +811,7 @@ export class DebtManager {
               hasPaymentHistory
                   ? `
             <button class="view-history-btn w-full mt-2 py-1 text-xs text-wabi-primary border border-wabi-primary/30 rounded bg-wabi-primary/5" data-id="${debt.id}">
-              <i class="fa-solid fa-clock-rotate-left mr-1"></i>查看還款歷程 (${debt.payments.length} 筆)
+              <i class="fa-solid fa-clock-rotate-left mr-1"></i>查看還款歷程 (${(debt.payments?.length || 0) + (Number(debt.initialPaidAmount) > 0 ? 1 : 0)} 筆)
             </button>
           `
                   : ''
@@ -803,11 +859,42 @@ export class DebtManager {
         })
 
         // Build group card HTML
+        // 聯絡人篩選時的群組分擔金額（debt.contactId 歸屬 + record 路徑），無篩選時為空
+        const contactGroupShares = this.currentContactFilter
+            ? await this._getContactGroupShares(
+                  await this.dataService.getDebts({ allLedgers: true }),
+                  this.currentContactFilter,
+                  recordsMap
+              )
+            : {}
         const groupCardHtml = group => {
+            // 有聯絡人篩選時：群組卡片只顯示該聯絡人的分擔金額（debt.contactId 歸屬）
+            let displayNet = group.netAmount
+            let displayNote = `支 ${formatCurrency(group.totalExpense)} ｜ 收 ${formatCurrency(group.totalIncome)}`
+            if (this.currentContactFilter) {
+                const share = contactGroupShares[group.id]
+                if (share) {
+                    displayNet = share.net
+                    const parts = []
+                    if (share.receivable > 0)
+                        parts.push(`應收 ${formatCurrency(share.receivable)}`)
+                    if (share.payable > 0)
+                        parts.push(`應付 ${formatCurrency(share.payable)}`)
+                    displayNote =
+                        parts.length > 0
+                            ? `${parts.join(' ｜ ')} (此聯絡人分擔)`
+                            : '此聯絡人在此群組無欠款'
+                } else {
+                    // 該聯絡人在此群組無未結清分擔（已結清、或僅掛在 record 上）：
+                    // 必須歸零，否則會回退顯示整群淨額，與頂部摘要卡（share ? share.net : 0）矛盾
+                    displayNet = 0
+                    displayNote = '此聯絡人在此群組無未結清欠款'
+                }
+            }
             const netClass =
-                group.netAmount > 0
+                displayNet > 0
                     ? 'text-wabi-income'
-                    : group.netAmount < 0
+                    : displayNet < 0
                       ? 'text-wabi-expense'
                       : 'text-wabi-text-secondary'
             const isGroupHighlighted = this.highlightGroupId === group.id
@@ -827,8 +914,8 @@ export class DebtManager {
               </div>
             </div>
             <div class="text-right shrink-0">
-              <p class="font-bold ${netClass}">${group.netAmount > 0 ? '+' : group.netAmount < 0 ? '-' : ''}${formatCurrency(Math.abs(group.netAmount))}</p>
-              <p class="text-xs text-wabi-text-secondary">支 ${formatCurrency(group.totalExpense)} ｜ 收 ${formatCurrency(group.totalIncome)}</p>
+              <p class="font-bold ${netClass}">${displayNet > 0 ? '+' : displayNet < 0 ? '-' : ''}${formatCurrency(Math.abs(displayNet))}</p>
+              <p class="text-xs text-wabi-text-secondary">${displayNote}</p>
             </div>
           </div>
           ${
@@ -868,7 +955,7 @@ export class DebtManager {
             (a, b) => new Date(b._sortDate) - new Date(a._sortDate)
         )
 
-        fullHtml = merged
+        const fullHtml = merged
             .map(item => {
                 if (item._isGroup) {
                     return groupCardHtml(item)
@@ -1441,9 +1528,19 @@ export class DebtManager {
           <div class="flex justify-between text-sm mb-2">
             <span class="text-wabi-text-secondary">已${isReceivable ? '收款' : '還款'}</span>
             <span class="font-medium ${isReceivable ? 'text-wabi-income' : 'text-wabi-expense'}">
-              ${formatCurrency(payments.reduce((sum, p) => sum + p.amount, 0))}
+              ${formatCurrency((Number(debt.initialPaidAmount) || 0) + payments.reduce((sum, p) => sum + p.amount, 0))}
             </span>
           </div>
+          ${
+              (Number(debt.initialPaidAmount) || 0) > 0
+                  ? `
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-wabi-text-secondary">含既有款項基線</span>
+            <span class="text-wabi-text-secondary">${formatCurrency(Number(debt.initialPaidAmount))}（無記帳明細）</span>
+          </div>
+          `
+                  : ''
+          }
           <div class="flex justify-between text-sm">
             <span class="text-wabi-text-secondary">剩餘金額</span>
             <span class="font-bold">${formatCurrency(debt.remainingAmount || 0)}</span>
@@ -1529,6 +1626,20 @@ export class DebtManager {
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 
+        ${
+            !isEdit
+                ? `
+        <!-- 既有款項基線（借鏡 MOZE 既有款項登記）-->
+        <div class="mb-4">
+          <label class="text-sm font-medium text-wabi-text-primary mb-2 block">已還／已收金額（選填）</label>
+          <input type="number" id="debt-initial-paid" value="" min="0" step="1" placeholder="建立前已還款或已收款的金額"
+                 class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
+          <p class="text-xs text-wabi-text-secondary mt-1">登記進行到一半的款項：不產生記帳明細、不影響資金帳戶，直接從剩餘金額開始追蹤</p>
+        </div>
+        `
+                : ''
+        }
+
         <!-- Date -->
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">日期</label>
@@ -1561,7 +1672,7 @@ export class DebtManager {
 
         // Type toggle
         modal.querySelectorAll('.debt-type-btn').forEach(btn => {
-            btn.addEventListener('click', e => {
+            btn.addEventListener('click', _e => {
                 selectedType =
                     btn.id === 'debt-type-receivable' ? 'receivable' : 'payable'
                 modal.querySelectorAll('.debt-type-btn').forEach(b => {
@@ -1608,21 +1719,42 @@ export class DebtManager {
                     return
                 }
 
+                // 新增模式：讀取「既有款項」基線（選填，不影響資金帳戶，僅調整剩餘追蹤起點）
+                let initialPaidAmount = 0
+                if (!isEdit) {
+                    const initialPaidInput =
+                        modal.querySelector('#debt-initial-paid')
+                    initialPaidAmount = initialPaidInput
+                        ? parseFloat(initialPaidInput.value) || 0
+                        : 0
+                    if (initialPaidAmount < 0) initialPaidAmount = 0
+                    if (initialPaidAmount > amount) {
+                        customAlert('已還／已收金額不能大於欠款總額')
+                        return
+                    }
+                }
+
                 const debtData = {
                     type: selectedType,
                     contactId,
                     amount,
                     date,
                     description,
+                    ...(initialPaidAmount > 0 ? { initialPaidAmount } : {}),
                 }
 
                 if (isEdit) {
                     // 編輯模式下，同步更新 originalAmount 並根據已還金額重新計算 remainingAmount
+                    // 已還總額 = 「既有款項」基線（initialPaidAmount，無記帳明細）+ payments 陣列
                     debtData.originalAmount = amount
-                    const paidAmount = (debtToEdit.payments || []).reduce(
-                        (sum, p) => sum + p.amount,
-                        0
-                    )
+                    const baselinePaid =
+                        Number(debtToEdit.initialPaidAmount) || 0
+                    const paidAmount =
+                        baselinePaid +
+                        (debtToEdit.payments || []).reduce(
+                            (sum, p) => sum + p.amount,
+                            0
+                        )
                     const newRemaining = Math.max(0, amount - paidAmount)
                     debtData.remainingAmount = newRemaining
 
@@ -1658,7 +1790,7 @@ export class DebtManager {
         // Use remainingAmount for reminder message
         const remainingAmount =
             debt.remainingAmount ?? debt.originalAmount ?? debt.amount ?? 0
-        let message = ''
+        let message
 
         if (isReceivable) {
             message = `嗨 ${escapeHTML(contactName)}，提醒一下之前${debt.date}${debt.description ? `「${escapeHTML(debt.description)}」` : ''}的 ${formatCurrency(remainingAmount)} 還沒收到喔！方便的話再麻煩你轉給我，謝謝！`
@@ -1749,6 +1881,170 @@ export class DebtManager {
             })
     }
 
+    // ─────────────────────────────────────────────
+    // 匯出聯絡人欠款資訊 (#DEBT-EXP1)
+    // 純函數：把該聯絡人的欠款依發生月份（debt.date）分組，產出可複製/分享的純文字條列
+    // ─────────────────────────────────────────────
+    buildContactDebtExportText(contactName, debts) {
+        // 開頭標題讓複製/分享的內容自帶語意（不知道是誰的明細）
+        const title = `${contactName || '聯絡人'}的欠款明細（共 ${Array.isArray(debts) ? debts.length : 0} 筆）`
+        if (!Array.isArray(debts) || debts.length === 0) {
+            return `${title}\n（沒有欠款紀錄）`
+        }
+
+        const isReceivable = d => d.type === 'receivable'
+        const settled = debts.filter(d => d.settled)
+        const unsettled = debts.filter(d => !d.settled)
+        // 未結清合計（receivable=應收、payable/舊格式=應付）
+        const openReceivable = unsettled
+            .filter(isReceivable)
+            .reduce(
+                (s, d) =>
+                    s +
+                    (d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0),
+                0
+            )
+        const openPayable = unsettled
+            .filter(d => !isReceivable(d))
+            .reduce(
+                (s, d) =>
+                    s +
+                    (d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0),
+                0
+            )
+
+        // 依發生月份（date 前 7 字元 YYYY-MM）分組，月份降序（最近在前）
+        const byMonth = new Map()
+        for (const d of debts) {
+            const key = (d.date || '').slice(0, 7) || '日期不明'
+            if (!byMonth.has(key)) byMonth.set(key, [])
+            byMonth.get(key).push(d)
+        }
+        const months = [...byMonth.keys()].sort((a, b) => b.localeCompare(a))
+
+        const lines = []
+        for (const m of months) {
+            lines.push(m)
+            const group = [...byMonth.get(m)].sort((a, b) => {
+                if (a.date !== b.date)
+                    return (b.date || '').localeCompare(a.date || '')
+                return (b.createdAt || 0) - (a.createdAt || 0)
+            })
+            for (const d of group) {
+                const desc = d.description ? `${d.description} ` : ''
+                // 未結清顯示剩餘金額、已結清顯示原金額（結清後剩餘為 0 不有意義）
+                const amount = d.settled
+                    ? (d.originalAmount ?? d.remainingAmount ?? d.amount ?? 0)
+                    : (d.remainingAmount ?? d.originalAmount ?? d.amount ?? 0)
+                lines.push(
+                    `- ${d.date || '日期不明'} ${desc}${formatCurrency(amount)}（${d.settled ? '已結清' : '未結清'}）`
+                )
+            }
+            lines.push('')
+        }
+        lines.pop() // 移除最後多出的空行
+
+        if (settled.length === debts.length) {
+            lines.push(`全部 ${debts.length} 筆已結清`)
+        } else {
+            lines.push(
+                `未結清合計：應收 ${formatCurrency(openReceivable)} ／ 應付 ${formatCurrency(openPayable)}`
+            )
+        }
+        return `${title}\n${lines.join('\n')}`
+    }
+
+    // 匯出聯絡人欠款 modal（交互模式仿 showReminderModal：複製 + 分享 + 背景點擊關閉）
+    async showContactDebtExportModal(contactId) {
+        const contact = await this.dataService.getContact(contactId)
+        if (!contact) {
+            showToast('找不到聯絡人', 'error')
+            return
+        }
+        // 不傳 settled filter：匯出要包含已結清欠款（完整明細）
+        const debts = await this.dataService.getDebts({ contactId })
+        const text = this.buildContactDebtExportText(contact.name, debts)
+
+        const modal = document.createElement('div')
+        modal.id = 'contact-debt-export-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
+        modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-md w-full p-6">
+        <h3 class="text-lg font-semibold mb-4 text-wabi-primary">匯出欠款 — ${escapeHTML(contact.name)}</h3>
+        <textarea id="export-debt-text" readonly class="w-full h-64 p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary text-sm resize-none mb-4 whitespace-pre-wrap">${escapeHTML(text)}</textarea>
+        <div class="flex space-x-3">
+          <button id="copy-export-debt-btn" class="flex-1 bg-wabi-primary hover:bg-wabi-primary/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
+            <i class="fa-solid fa-copy mr-2"></i>複製
+          </button>
+          <button id="share-export-debt-btn" class="flex-1 bg-wabi-income hover:bg-wabi-income/90 text-wabi-surface font-bold py-3 rounded-lg transition-colors">
+            <i class="fa-solid fa-share-nodes mr-2"></i>分享
+          </button>
+          <button id="close-export-debt-btn" class="px-4 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-3 rounded-lg transition-colors">
+            關閉
+          </button>
+        </div>
+      </div>
+    `
+
+        document.body.appendChild(modal)
+
+        const closeModal = () => modal.remove()
+
+        modal
+            .querySelector('#close-export-debt-btn')
+            .addEventListener('click', closeModal)
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal()
+        })
+
+        modal
+            .querySelector('#copy-export-debt-btn')
+            .addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(text)
+                    customAlert('欠款明細已複製到剪貼簿！')
+                    closeModal()
+                } catch (err) {
+                    // Fallback for older browsers
+                    modal.querySelector('#export-debt-text').select()
+                    document.execCommand('copy')
+                    customAlert('欠款明細已複製！')
+                    closeModal()
+                }
+            })
+
+        modal
+            .querySelector('#share-export-debt-btn')
+            ?.addEventListener('click', async () => {
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: '欠款明細',
+                            text: text,
+                        })
+                        closeModal()
+                    } catch (err) {
+                        // User cancelled or share failed
+                        if (err.name !== 'AbortError') {
+                            customAlert('分享失敗，請使用複製功能')
+                        }
+                    }
+                } else {
+                    // Fallback: copy to clipboard
+                    try {
+                        await navigator.clipboard.writeText(text)
+                        customAlert(
+                            '您的瀏覽器不支援分享功能，欠款明細已複製到剪貼簿！'
+                        )
+                    } catch (err) {
+                        customAlert('分享功能不支援，請使用複製功能')
+                    }
+                }
+            })
+    }
+
     // 渲染聯絡人管理頁面
     async renderContactsPage(container) {
         if (typeof this.dataService.deduplicateContacts === 'function') {
@@ -1791,6 +2087,9 @@ export class DebtManager {
                 <span class="font-medium text-wabi-text-primary">${escapeHTML(contact.name)}</span>
               </div>
               <div class="flex gap-2">
+                <button class="export-debt-btn p-2" data-id="${contact.id}" title="匯出欠款">
+                  <i class="fa-solid fa-file-export text-wabi-text-secondary"></i>
+                </button>
                 <button class="edit-contact-btn p-2" data-id="${contact.id}">
                   <i class="fa-solid fa-pen text-wabi-text-secondary"></i>
                 </button>
@@ -1816,6 +2115,14 @@ export class DebtManager {
             .addEventListener('click', () => {
                 this.showContactModal()
             })
+
+        // Export debt buttons (#DEBT-EXP1)
+        container.querySelectorAll('.export-debt-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const contactId = parseInt(btn.dataset.id)
+                await this.showContactDebtExportModal(contactId)
+            })
+        })
 
         // Edit buttons
         container.querySelectorAll('.edit-contact-btn').forEach(btn => {
@@ -2194,7 +2501,6 @@ export class DebtManager {
             await this.dataService._calculateGroupNetAsync(groupRecords)
         // netAmount > 0: 群組欠我 (應收) → 部分收款
         // netAmount < 0: 我欠群組 (應付) → 部分還/退款
-        const isRefund = netAmount < 0
         const netDirection =
             netAmount > 0
                 ? `應收 ${escapeHTML(groupMeta.name)}`
@@ -2392,14 +2698,17 @@ export class DebtManager {
                           }
                           const isSettled = r.groupStatus === 'settled'
                           const isIncome = r.type === 'income'
-                          const isHexColor =
-                              cat.color && cat.color.startsWith('#')
-                          const colorStyle = isHexColor
-                              ? `style="background-color: ${cat.color};"`
+                          // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→退回灰底）
+                          const safeBg = getSafeBgColorStyle(cat.color)
+                          const hasSafeColor = !!(
+                              safeBg.style || safeBg.className
+                          )
+                          const colorStyle = safeBg.style
+                              ? `style="${safeBg.style};"`
                               : ''
-                          const colorClass = isHexColor
-                              ? ''
-                              : cat.color || 'bg-gray-500'
+                          const colorClass = hasSafeColor
+                              ? safeBg.className
+                              : 'bg-gray-500'
 
                           // 判定關聯欠款與聯絡人
                           const debt =
@@ -2426,7 +2735,7 @@ export class DebtManager {
 
                           // 判定是否有實際欠款 & 債務方向標籤 (專業用語)
                           let hasDebt = false
-                          let debtTagHtml = ''
+                          let debtTagHtml
 
                           if (debt) {
                               hasDebt = true
@@ -2464,7 +2773,7 @@ export class DebtManager {
         <div class="flex items-center justify-between p-3 bg-wabi-surface rounded-xl border border-wabi-border gap-2">
           <div class="flex items-center gap-2.5 min-w-0 flex-1">
             <div class="flex items-center justify-center rounded-full size-9 shrink-0 text-white text-sm ${colorClass}" ${colorStyle}>
-              <i class="${cat.icon || 'fa-solid fa-receipt'}"></i>
+              <i class="${getSafeIconClass(cat.icon, 'fa-solid fa-receipt')}"></i>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -2473,7 +2782,7 @@ export class DebtManager {
                 ${debtTagHtml}
                 ${isSettled ? `<span class="text-[10px] whitespace-nowrap bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded font-medium shrink-0">已結清</span>` : ''}
               </div>
-              <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${formatDate(r.date, 'short')} · ${cat.name}${contactName ? ` · <span class="text-wabi-text-primary font-medium">${contactRole}：${escapeHTML(contactName)}</span>` : ''}</p>
+              <p class="text-xs text-wabi-text-secondary mt-0.5 truncate">${formatDate(r.date, 'short')} · ${escapeHTML(cat.name)}${contactName ? ` · <span class="text-wabi-text-primary font-medium">${contactRole}：${escapeHTML(contactName)}</span>` : ''}</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0 ml-1">

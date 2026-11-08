@@ -1,5 +1,5 @@
 // 預算管理模組
-import { formatCurrency, getDateRange, showToast, escapeHTML } from './utils.js'
+import { formatCurrency, getDateRange, showToast, escapeHTML, getSafeIconClass } from './utils.js'
 import Sortable from 'sortablejs'
 
 export class BudgetManager {
@@ -9,6 +9,8 @@ export class BudgetManager {
         this.categoryBudgets = {}
         this.categoryBudgetOrder = []
         this.excludedBudgetCategories = []
+        // #AB4：月預算目前選擇的月份偏移（0 = 本月，1 = 下月，可選未來月份預覽）
+        this.budgetMonthOffset = 0
     }
 
     async loadBudget() {
@@ -18,6 +20,37 @@ export class BudgetManager {
                 ledgerSuffix = `_${this.dataService.activeLedgerId}`
             }
 
+            // #BUDGET-KEY-H5：主帳本判定（lazy 快取，多處共用）。
+            // 只有「主帳本」或「單帳本 legacy（無後綴）」才准許讀取無帳本後綴的
+            // 全域預算來源；尚未設定過預算的非主帳本若撿到全域預算，
+            // 使用者一回存檔就會把別的帳本的預算固化成自己的正式預算。
+            let primaryLedgerCache = null
+            const isPrimaryLedger = async () => {
+                if (primaryLedgerCache !== null) return primaryLedgerCache
+                let primary = ledgerSuffix === '' || ledgerSuffix === '_1'
+                if (
+                    !primary &&
+                    this.dataService &&
+                    typeof this.dataService.getLedgers === 'function'
+                ) {
+                    try {
+                        const ledgers = await this.dataService.getLedgers()
+                        if (
+                            ledgers &&
+                            ledgers.length > 0 &&
+                            ledgers[0].id === this.dataService.activeLedgerId
+                        ) {
+                            primary = true
+                        }
+                    } catch (_) {
+                        // 保守：帳本清單查詢失敗一律視為非主帳本，不做全域 fallback
+                        primary = false
+                    }
+                }
+                primaryLedgerCache = primary
+                return primary
+            }
+
             if (this.dataService) {
                 let budgetSettings = await this.dataService.getSetting(
                     `budget_settings${ledgerSuffix}`
@@ -25,16 +58,7 @@ export class BudgetManager {
 
                 // Fallback for migration from single-ledger to multi-ledger
                 if (!budgetSettings && ledgerSuffix !== '') {
-                    let isPrimaryLedger = ledgerSuffix === '_1'
-                    if (!isPrimaryLedger && typeof this.dataService.getLedgers === 'function') {
-                        try {
-                            const ledgers = await this.dataService.getLedgers()
-                            if (ledgers && ledgers.length > 0 && ledgers[0].id === this.dataService.activeLedgerId) {
-                                isPrimaryLedger = true
-                            }
-                        } catch (_) {}
-                    }
-                    if (isPrimaryLedger) {
+                    if (await isPrimaryLedger()) {
                         budgetSettings =
                             await this.dataService.getSetting('budget_settings')
                     }
@@ -88,15 +112,21 @@ export class BudgetManager {
             }
 
             // Fallback to local storage (legacy or non-indexedDB)
-            const budget =
-                localStorage.getItem(`monthlyBudget${ledgerSuffix}`) ||
-                localStorage.getItem('monthlyBudget')
+            // #BUDGET-KEY-H5：非主帳本只准讀自己 `_<id>` 後綴的鍵；
+            // 無後綴的全域 legacy 鍵是單帳本時代遺留，直接退回會讓新帳本
+            // 繼承別的帳本的預算（存一次就固化成該帳本的正式預算）。
+            const allowGlobalFallback = await isPrimaryLedger()
+            const readBudgetItem = baseKey => {
+                const own = localStorage.getItem(`${baseKey}${ledgerSuffix}`)
+                if (own !== null) return own
+                return allowGlobalFallback ? localStorage.getItem(baseKey) : null
+            }
+
+            const budget = readBudgetItem('monthlyBudget')
             const parsedBudget = budget ? parseFloat(budget) : 0
             this.currentBudget = isNaN(parsedBudget) ? 0 : parsedBudget
 
-            const categoryBudgetsRaw =
-                localStorage.getItem(`categoryBudgets${ledgerSuffix}`) ||
-                localStorage.getItem('categoryBudgets')
+            const categoryBudgetsRaw = readBudgetItem('categoryBudgets')
             const parsedCats = categoryBudgetsRaw
                 ? JSON.parse(categoryBudgetsRaw)
                 : {}
@@ -106,17 +136,14 @@ export class BudgetManager {
                 this.categoryBudgets[catId] = isNaN(parsedVal) ? 0 : parsedVal
             }
 
-            const categoryBudgetOrderRaw =
-                localStorage.getItem(`categoryBudgetOrder${ledgerSuffix}`) ||
-                localStorage.getItem('categoryBudgetOrder')
+            const categoryBudgetOrderRaw = readBudgetItem('categoryBudgetOrder')
             this.categoryBudgetOrder = categoryBudgetOrderRaw
                 ? JSON.parse(categoryBudgetOrderRaw)
                 : Object.keys(this.categoryBudgets)
 
-            const excludedBudgetCategoriesRaw =
-                localStorage.getItem(
-                    `excludedBudgetCategories${ledgerSuffix}`
-                ) || localStorage.getItem('excludedBudgetCategories')
+            const excludedBudgetCategoriesRaw = readBudgetItem(
+                'excludedBudgetCategories'
+            )
             const rawExcluded = excludedBudgetCategoriesRaw
                 ? JSON.parse(excludedBudgetCategoriesRaw)
                 : []
@@ -223,8 +250,9 @@ export class BudgetManager {
         }
     }
 
-    async getBudgetStatus() {
-        const dateRange = getDateRange('month')
+    async getBudgetStatus(offsetMonths = 0) {
+        // #AB4：支援指定月份偏移（0 = 本月，>0 = 未來月份預覽）
+        const dateRange = getDateRange('monthOffset', offsetMonths)
         // Budget should not include transfers, so offset them
         const stats = await this.dataService.getStatistics(
             dateRange.startDate,
@@ -262,7 +290,8 @@ export class BudgetManager {
             categoryStatuses.push({
                 categoryId,
                 name: catObj?.name || categoryId,
-                icon: catObj?.icon || '',
+                // #SEC04：圖示在源頭即過白名單（渲染面另有防呆，雙重防護）
+                icon: getSafeIconClass(catObj?.icon, 'fa-solid fa-circle-question'),
                 budget: budgetAmount,
                 spent: catSpent,
                 remaining: catRemaining,
@@ -290,6 +319,18 @@ export class BudgetManager {
             })
         }
 
+        // #AB4：月份標籤（0 = 本月，>0 用系統真實日期 + 偏移計算，跨年正確）
+        let monthLabel = '本月'
+        if (offsetMonths > 0) {
+            const now = new Date()
+            const target = new Date(
+                now.getFullYear(),
+                now.getMonth() + offsetMonths,
+                1
+            )
+            monthLabel = `${target.getFullYear()}年${target.getMonth() + 1}月`
+        }
+
         return {
             budget: this.currentBudget,
             spent: spent,
@@ -297,11 +338,15 @@ export class BudgetManager {
             percentage: Math.min(100, percentage),
             isOverBudget: spent > this.currentBudget,
             categoryStatuses: categoryStatuses,
+            offsetMonths: offsetMonths,
+            isPreview: offsetMonths > 0,
+            monthLabel: monthLabel,
         }
     }
 
     renderBudgetWidget() {
-        return this.getBudgetStatus().then(status => {
+        // #AB4：依目前選擇的月份偏移（this.budgetMonthOffset）取得預算狀態
+        return this.getBudgetStatus(this.budgetMonthOffset).then(status => {
             const isOverBudget = status.isOverBudget
             const percentage = Math.min(100, status.percentage)
             let waterLevel = 100 - percentage
@@ -311,13 +356,37 @@ export class BudgetManager {
                 waterLevel = 105
             }
 
-            return `
+            // #AB4：月份按鈕短標籤（0 = 本月，>0 = YYYY/M）
+            let monthShortLabel = '本月'
+            if (status.offsetMonths > 0) {
+                const now = new Date()
+                const target = new Date(
+                    now.getFullYear(),
+                    now.getMonth() + status.offsetMonths,
+                    1
+                )
+                monthShortLabel = `${target.getFullYear()}/${target.getMonth() + 1}`
+            }
+
+            // #AB4：未來月份預覽提示（本月不顯示）
+            const previewHint = status.isPreview
+                ? '<div class="text-xs text-wabi-text-secondary mt-1">尚未來臨的月份，實際支出將隨時間累積</div>'
+                : ''
+
+            const widgetHtml = `
         <div class="bg-wabi-surface p-4 rounded-lg shadow-sm border border-wabi-border mb-6">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="text-lg font-semibold text-wabi-primary">本月預算</h3>
-            <button id="edit-budget-btn" class="text-wabi-accent hover:underline text-sm">
-              ${status.budget > 0 ? '編輯' : '設定'}
-            </button>
+            <h3 class="text-lg font-semibold text-wabi-primary">預算</h3>
+            <div class="flex items-center gap-3">
+              <!-- #AB4：月份選擇按鈕（本月 / 未來月份預覽） -->
+              <button id="budget-month-btn" class="text-wabi-text-secondary hover:text-wabi-primary text-sm flex items-center gap-1 transition-colors">
+                <i class="fa-regular fa-calendar"></i>
+                <span>${monthShortLabel}</span>
+              </button>
+              <button id="edit-budget-btn" class="text-wabi-accent hover:underline text-sm">
+                ${status.budget > 0 ? '編輯' : '設定'}
+              </button>
+            </div>
           </div>
           
           ${
@@ -331,6 +400,7 @@ export class BudgetManager {
                     ${isOverBudget ? '-' : ''}${formatCurrency(Math.abs(status.remaining))}
                   </div>
                   <div class="text-xs text-wabi mt-1">${formatCurrency(status.spent)} / ${formatCurrency(status.budget)}</div>
+                  ${previewHint}
               </div>
             </div>
             ${
@@ -355,7 +425,7 @@ export class BudgetManager {
                     <div class="category-budget-item ${catStat.isExcluded ? 'opacity-50' : ''}">
                       <div class="flex justify-between items-end mb-1">
                         <div class="flex items-center gap-1.5 min-w-0">
-                          <i class="${catStat.icon} text-wabi-text-secondary"></i>
+                          <i class="${getSafeIconClass(catStat.icon, 'fa-solid fa-circle-question')} text-wabi-text-secondary"></i>
                           <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(catStat.name)}${catStat.isExcluded ? ' <span class="text-[0.65rem] text-wabi-text-secondary">(排除)</span>' : ''}</span>
                         </div>
                         <div class="text-right flex-shrink-0">
@@ -389,7 +459,112 @@ export class BudgetManager {
           }
         </div>
       `
+            // #AB4：綁定月份按鈕（DOM 由 homePage 插入，故延後到下一 frame）。
+            // 用 onclick 屬性而非 addEventListener：homePage 每次 re-render 會重建 DOM，
+            // 避免重複綁定。edit-budget-btn 由 homePage 綁定，這裡不可重複綁。
+            requestAnimationFrame(() => {
+                const monthBtn = document.getElementById('budget-month-btn')
+                if (!monthBtn) return
+                monthBtn.onclick = () => {
+                    this.showBudgetMonthPickerModal(_offset => {
+                        if (
+                            typeof window !== 'undefined' &&
+                            window.app &&
+                            window.app.router &&
+                            typeof window.app.router.routes['home']
+                                .loadBudgetWidget === 'function'
+                        ) {
+                            window.app.router.routes['home'].loadBudgetWidget()
+                        }
+                    })
+                }
+            })
+
+            return widgetHtml
         })
+    }
+
+    // #AB4：月份選擇彈窗（本月 + 未來 11 個月）
+    showBudgetMonthPickerModal(onSelect) {
+        // 確保每次只存在一個月份選擇彈窗
+        this.closeBudgetMonthPickerModal()
+
+        const modal = document.createElement('div')
+        modal.id = 'budget-month-picker-modal'
+        modal.className =
+            'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+
+        // 選項：本月（offset 0）+ 之後 11 個月（offset 1..11），跨年正確
+        const now = new Date()
+        const options = []
+        for (let offset = 0; offset <= 11; offset++) {
+            const target = new Date(
+                now.getFullYear(),
+                now.getMonth() + offset,
+                1
+            )
+            const label =
+                offset === 0
+                    ? '本月'
+                    : `${target.getFullYear()}年${target.getMonth() + 1}月`
+            options.push(
+                `<option value="${offset}" ${offset === this.budgetMonthOffset ? 'selected' : ''}>${escapeHTML(label)}</option>`
+            )
+        }
+
+        modal.innerHTML = `
+      <div class="bg-wabi-bg rounded-lg max-w-xs w-full p-6" role="dialog" aria-modal="true" aria-labelledby="budget-month-picker-title">
+        <h3 id="budget-month-picker-title" class="text-lg font-semibold mb-4 text-wabi-primary">選擇月份</h3>
+        <p class="text-xs text-wabi-text-secondary mb-3">選擇要查看的月份，可預覽未來月份的預算</p>
+        <select id="budget-month-select" class="w-full p-3 bg-transparent border border-wabi-border rounded-lg focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary mb-5 wabi-scrollbar">
+          ${options.join('')}
+        </select>
+        <div class="flex space-x-3">
+          <button id="confirm-budget-month-btn" class="flex-1 bg-wabi-accent hover:bg-wabi-accent/90 text-wabi-primary font-bold py-2.5 rounded-lg transition-colors">
+            確定
+          </button>
+          <button id="cancel-budget-month-btn" class="px-6 bg-wabi-border hover:bg-wabi-border text-wabi-text-primary py-2.5 rounded-lg transition-colors">
+            取消
+          </button>
+        </div>
+      </div>
+    `
+
+        document.body.appendChild(modal)
+
+        modal
+            .querySelector('#confirm-budget-month-btn')
+            .addEventListener('click', () => {
+                const selectEl = modal.querySelector('#budget-month-select')
+                const offset = parseInt(selectEl.value, 10)
+                if (!isNaN(offset) && offset >= 0) {
+                    this.budgetMonthOffset = offset
+                    this.closeBudgetMonthPickerModal()
+                    if (typeof onSelect === 'function') {
+                        onSelect(this.budgetMonthOffset)
+                    }
+                }
+            })
+
+        modal
+            .querySelector('#cancel-budget-month-btn')
+            .addEventListener('click', () => {
+                this.closeBudgetMonthPickerModal()
+            })
+
+        // 點擊背景關閉（不做任何變更）
+        modal.addEventListener('click', e => {
+            if (e.target === modal) {
+                this.closeBudgetMonthPickerModal()
+            }
+        })
+    }
+
+    closeBudgetMonthPickerModal() {
+        const modal = document.getElementById('budget-month-picker-modal')
+        if (modal) {
+            modal.remove()
+        }
     }
 
     showBudgetModal() {
@@ -497,7 +672,7 @@ export class BudgetManager {
                     item.className = `flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${isChecked ? 'bg-wabi-surface border-wabi-border' : 'border-wabi-border/30 hover:bg-wabi-surface'}`
                     item.innerHTML = `
             <input type="checkbox" value="${cat.id}" ${isChecked ? 'checked' : ''} class="exclude-cat-checkbox accent-wabi-accent w-4 h-4 cursor-pointer">
-            <div class="flex-shrink-0 w-5 text-center"><i class="${cat.icon} text-wabi-text-secondary"></i></div>
+            <div class="flex-shrink-0 w-5 text-center"><i class="${getSafeIconClass(cat.icon, 'fa-solid fa-circle-question')} text-wabi-text-secondary"></i></div>
             <span class="text-sm text-wabi-text-primary truncate">${escapeHTML(cat.name)}</span>
           `
                     excludeCategoriesList.appendChild(item)
@@ -567,7 +742,7 @@ export class BudgetManager {
                     let catIcon = ''
                     if (window.app && window.app.categoryManager) {
                         const cat = window.app.categoryManager.getCategoryById('expense', catId)
-                        if (cat) { catName = cat.name; catIcon = cat.icon }
+                        if (cat) { catName = cat.name; catIcon = getSafeIconClass(cat.icon, 'fa-solid fa-circle-question') }
                     }
 
                     let row = categoryBudgetsList.querySelector(`.cat-budget-item-row[data-id="${catId}"]`)
@@ -655,7 +830,7 @@ export class BudgetManager {
                     )
                     if (cat) {
                         catName = cat.name
-                        catIcon = cat.icon
+                        catIcon = getSafeIconClass(cat.icon, 'fa-solid fa-circle-question')
                     }
                 }
 

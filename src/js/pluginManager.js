@@ -387,7 +387,7 @@ export class PluginManager {
           <div class="p-5">
             <div class="flex items-center gap-3 mb-4">
               <div class="bg-wabi-primary/10 text-wabi-primary rounded-lg size-12 flex items-center justify-center text-xl">
-                <i class="fa-solid ${meta.icon || 'fa-puzzle-piece'}"></i>
+                <i class="fa-solid ${/^fa-[a-zA-Z0-9-]+$/.test(meta.icon || '') ? meta.icon : 'fa-puzzle-piece'}"></i>
               </div>
               <div>
                 <h3 class="text-lg font-bold text-wabi-text-primary">${safeName}</h3>
@@ -436,7 +436,7 @@ export class PluginManager {
                     type: 'text/javascript',
                 })
                 const url = URL.createObjectURL(blob)
-                let meta = {}
+                let meta
                 try {
                     // @ts-ignore
                     /* @vite-ignore */

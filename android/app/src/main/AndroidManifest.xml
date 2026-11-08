@@ -99,4 +99,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- QR 掃描加入共用帳本（html5-qrcode getUserMedia）：未聲明時 Capacitor WebView
+         的 onPermissionRequest 會被系統拒絕 → 原生端相機掃描靜默失敗 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

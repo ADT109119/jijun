@@ -1,5 +1,3 @@
-import DataService from './dataService.js'
-
 export class NotificationService {
     constructor(dataService) {
         this.dataService = dataService
@@ -166,6 +164,9 @@ export class NotificationService {
                             channelId: this.channelId,
                             schedule: {
                                 on: { hour: hours, minute: minutes },
+                                // Android 端 LocalNotificationSchedule.isRepeating()
+                                // 只認 repeats=true，缺了它每日提醒只會觸發一次
+                                repeats: true,
                                 allowWhileIdle: true,
                             },
                             smallIcon: 'ic_stat_icon', // Make sure to define in res/drawable if using Android

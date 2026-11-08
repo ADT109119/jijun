@@ -32,6 +32,7 @@ import { AIService } from './aiService.js'
 import { Router } from './router.js'
 import { GuideManager } from './tourManager.js'
 import { escapeHTML } from './utils.js'
+import { ensureAccess } from './accessGate.js'
 import { updateAndroidWidget } from './widgetHelper.js'
 
 import { HomePage } from './pages/homePage.js'
@@ -44,6 +45,7 @@ import { PluginsPage } from './pages/pluginsPage.js'
 import { RecordsPage } from './pages/recordsPage.js'
 import { StatsPage } from './pages/statsPage.js'
 import { ComparisonPage } from './pages/comparisonPage.js'
+import { RetirementPage } from './pages/retirementPage.js'
 import { DebtsPage } from './pages/debtsPage.js'
 import { ContactsPage } from './pages/contactsPage.js'
 import { LedgersPage } from './pages/ledgersPage.js'
@@ -109,6 +111,11 @@ export class EasyAccountingApp {
     }
 
     async init() {
+        // 存取驗證碼門檻（build 時 ACCESS_CODE 設定才啟用；純自架部署用）。
+        // 無驗證碼時立即 resolve（零開銷）；有驗證碼時顯示全螢幕輸入畫面，
+        // 輸入正確前 **永不 resolve**——app 的 UI / 資料一律不會先渲染。
+        await ensureAccess()
+
         // 請求瀏覽器將本站的儲存（IndexedDB/localStorage）標記為「持久化」，
         // 大幅降低 Chromium/Brave 在磁碟空間不足時自動清除（eviction）的機率。
         // 失敗不阻擋啟動（部分瀏覽器會要求用戶手動點擊授權）。
@@ -239,6 +246,7 @@ export class EasyAccountingApp {
         this.router.register('privacy', new PrivacyPage(this))
         this.router.register('license', new LicensePage(this))
         this.router.register('comparison', new ComparisonPage(this))
+        this.router.register('retirement', new RetirementPage(this))
 
         // Check for PWA Share Target parameters
         const urlParams = new URLSearchParams(window.location.search)
@@ -417,9 +425,13 @@ export class EasyAccountingApp {
         for (const tx of recurringTxs) {
             try {
                 let { nextDueDate } = tx
-                const anchorDay = tx.startDate
-                    ? parseInt(tx.startDate.split('-')[2], 10)
-                    : (nextDueDate ? parseInt(nextDueDate.split('-')[2], 10) : null)
+                // #EOM-E2 月底收斂錨定日：以原始起始日的「日」為準（每月 31 日房租
+                // 在 2 月落 2/28、3 月回 3/31，不會逐期漂移）。舊資料無 startDate
+                // 時回退到 nextDueDate 起始值之日，避免多期補帳時逐期漂移。
+                const anchorSource = tx.startDate || nextDueDate
+                const anchorDay = anchorSource
+                    ? parseInt(String(anchorSource).split('-')[2], 10)
+                    : null
 
                 let iterations = 0
 
@@ -429,10 +441,9 @@ export class EasyAccountingApp {
                     iterations < MAX_ITERATIONS
                 ) {
                     iterations++
-                    const dateToCheck = new Date(nextDueDate)
 
                     // Check if the date should be skipped
-                    if (shouldSkipDate(dateToCheck, tx.skipRules)) {
+                    if (shouldSkipDate(nextDueDate, tx.skipRules)) {
                         // If skipped, just advance the date and continue the loop
                         nextDueDate = calculateNextDueDate(
                             nextDueDate,
@@ -632,9 +643,13 @@ export class EasyAccountingApp {
                 if (item.status !== 'active') continue
 
                 let { nextDueDate, completedPeriods } = item
-                const anchorDay = item.startDate
-                    ? parseInt(item.startDate.split('-')[2], 10)
-                    : (nextDueDate ? parseInt(nextDueDate.split('-')[2], 10) : null)
+                // #EOM-E2 月底收斂錨定日：以分期原始起始日的「日」為準
+                // （1/31 起每月一期：2 月落 2/28、3 月回 3/31，不逐期漂移）。
+                // 舊資料無 startDate 時回退到 nextDueDate 起始值之日，避免多期補帳時逐期漂移。
+                const amortAnchorSource = item.startDate || nextDueDate
+                const amortAnchorDay = amortAnchorSource
+                    ? parseInt(String(amortAnchorSource).split('-')[2], 10)
+                    : null
                 let iterations = 0
 
                 while (
@@ -671,9 +686,17 @@ export class EasyAccountingApp {
                         const paidSoFarFilter = item.chargeMode === 'upfront'
                             ? (r) => r.type === 'income'
                             : () => true
-                        const actualPaidSoFar = historyRecords
-                            .filter(paidSoFarFilter)
-                            .reduce((sum, r) => sum + r.amount, 0)
+                        // 起始已還期數（#MOZE-START）：建立時跳過不補記的前 N 期
+                        // 無紀錄，按每期金額計入已還，否則末期差額會把跳過期數
+                        // 當成未付而多扣
+                        const startBaseline =
+                            (item.startCompletedPeriods || 0) *
+                            (item.amountPerPeriod || 0)
+                        const actualPaidSoFar =
+                            historyRecords
+                                .filter(paidSoFarFilter)
+                                .reduce((sum, r) => sum + r.amount, 0) +
+                            startBaseline
                         const remaining = exactTotalToPay - actualPaidSoFar
 
                         if (item.decimalStrategy === 'keep') {
@@ -696,38 +719,42 @@ export class EasyAccountingApp {
                                 card && card.autoPayAccountId
                                     ? card.autoPayAccountId
                                     : null
-                            if (debitId) {
-                                const periodLabel = `第 ${completedPeriods + 1}/${item.periods} 期`
-                                const debitRecord = {
-                                    type: 'expense',
-                                    category: 'transfer',
-                                    amount: generateAmount,
-                                    description: `${item.name} 分期扣款 (${periodLabel})`,
-                                    date: nextDueDate,
-                                    accountId: debitId,
-                                    ledgerId: item.ledgerId,
-                                    amortizationId: item.id, // 標記關聯 ID
-                                }
-                                const incomeRecord = {
-                                    type: 'income',
-                                    category: 'transfer',
-                                    amount: generateAmount,
-                                    description: `${item.name} 分期還款入卡 (${periodLabel})`,
-                                    date: nextDueDate,
-                                    accountId: item.accountId,
-                                    ledgerId: item.ledgerId,
-                                    amortizationId: item.id, // 標記關聯 ID
-                                }
-                                await this.dataService.addRecord(debitRecord, true)
-                                await this.dataService.addRecord(incomeRecord, true)
-                                // 同步記憶體快取：同一次執行補跑多期時，
-                                // 末期差額分支才能看到本輪已記的款項（防多扣）
-                                const amortRecs =
-                                    recordsByAmortId.get(item.id) || []
-                                amortRecs.push(debitRecord, incomeRecord)
-                                recordsByAmortId.set(item.id, amortRecs)
+                            if (!debitId) {
+                                // 未設定扣款帳戶：不能推進期數/到期日、也不能結案，
+                                // 否則額度佔用無法沖銷；末期補設帳戶時還會因
+                                // actualPaidSoFar=0 一口氣暴扣全部期數。
+                                // 停在該期等待，設定帳戶後會自動補跑（nextDueDate 已過期）
+                                break
                             }
-                            // 無扣款帳戶：跳過紀錄、只推進期數（攤提頁顯示警示）
+                            const periodLabel = `第 ${completedPeriods + 1}/${item.periods} 期`
+                            const debitRecord = {
+                                type: 'expense',
+                                category: 'transfer',
+                                amount: generateAmount,
+                                description: `${item.name} 分期扣款 (${periodLabel})`,
+                                date: nextDueDate,
+                                accountId: debitId,
+                                ledgerId: item.ledgerId,
+                                amortizationId: item.id, // 標記關聯 ID
+                            }
+                            const incomeRecord = {
+                                type: 'income',
+                                category: 'transfer',
+                                amount: generateAmount,
+                                description: `${item.name} 分期還款入卡 (${periodLabel})`,
+                                date: nextDueDate,
+                                accountId: item.accountId,
+                                ledgerId: item.ledgerId,
+                                amortizationId: item.id, // 標記關聯 ID
+                            }
+                            await this.dataService.addRecord(debitRecord, true)
+                            await this.dataService.addRecord(incomeRecord, true)
+                            // 同步記憶體快取：同一次執行補跑多期時，
+                            // 末期差額分支才能看到本輪已記的款項（防多扣）
+                            const amortRecs =
+                                recordsByAmortId.get(item.id) || []
+                            amortRecs.push(debitRecord, incomeRecord)
+                            recordsByAmortId.set(item.id, amortRecs)
                         } else {
                             const newRecord = {
                                 type: item.recordType || 'expense',
@@ -751,12 +778,12 @@ export class EasyAccountingApp {
 
                     completedPeriods++
 
-                    // 計算下一期日期
+                    // 計算下一期日期（#EOM-E2：錨定原始起始日，月底不逐期漂移）
                     nextDueDate = calculateNextDueDate(
                         nextDueDate,
                         item.frequency,
                         1,
-                        anchorDay
+                        amortAnchorDay
                     )
                 }
 

@@ -3,6 +3,94 @@
 /** 週期交易/攤提最大迭代次數上限 */
 export const MAX_ITERATIONS = 365
 
+// ── 圖示 class 安全白名單（#SEC04：全站渲染面共用的單一真相源）──────────
+// 歷史資料（#CAT-SEC 入庫收口前建立）可能帶有 `"><img src=x onerror=...>`
+// 之類的髒 icon，直接嵌入 `<i class="${icon}">` 即可逃脫 class 屬性注入 DOM。
+// 凡將使用者可控的 icon 欄位嵌入 innerHTML 前，一律先過本白名單。
+const SAFE_ICON_RE =
+    /^(fas|far|fab|fa-solid|fa-regular|fa-brands)\s+fa-[a-zA-Z0-9-]+$/
+
+/**
+ * 判斷字串是否為安全的 FontAwesome 圖示 class（白名單）
+ * @param {*} value 待驗證值
+ * @returns {boolean}
+ */
+export function isSafeIconClass(value) {
+    return typeof value === 'string' && SAFE_ICON_RE.test(value.trim())
+}
+
+/**
+ * 取得可安全嵌入 innerHTML class 屬性的圖示字串；
+ * 白名單外（含 null/undefined/非字串）一律退回 fallback。
+ * @param {*} icon 待驗證圖示 class
+ * @param {string} [fallback] 不安全時的替代圖示
+ * @returns {string} 已 trim 的安全圖示 class
+ */
+export function getSafeIconClass(icon, fallback = 'fa-solid fa-question') {
+    return isSafeIconClass(icon) ? icon.trim() : fallback
+}
+
+// ── 顏色值安全白名單（#SEC05：全站渲染面共用的單一真相源）──────────────
+// 與 #SEC04 圖示白名單同根因：歷史分類/帳本資料（#CAT-SEC 入庫收口前建立）
+// 可能帶有如 `#fff;background-image:url(evil)` 或 `"><img src=x onerror=...>`
+// 之類的髒 color，直接嵌入 `style="background-color: ${color}"` 即可逃脫
+// 屬性注入 CSS 規則或 DOM。凡將使用者可控的 color 欄位嵌入 innerHTML 前，
+// 一律先過本白名單。
+const SAFE_HEX_RE =
+    /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+
+// 非 hex 顏色走 Tailwind 背景 class（內建分類如 bg-blue-400）；同樣要白名單，
+// 否則惡意值可從 class 屬性 breakout 注入任意屬性。
+const SAFE_BG_CLASS_RE = /^bg-[a-z0-9-]+$/
+
+/**
+ * 判斷字串是否為安全的 hex 顏色值（3/4/6/8 位，白名單）
+ * @param {*} value 待驗證值
+ * @returns {boolean}
+ */
+export function isSafeHexColor(value) {
+    return typeof value === 'string' && SAFE_HEX_RE.test(value)
+}
+
+/**
+ * 判斷字串是否為安全的 Tailwind 背景 class（bg-* 白名單）
+ * @param {*} value 待驗證值
+ * @returns {boolean}
+ */
+export function isSafeBgClass(value) {
+    return typeof value === 'string' && SAFE_BG_CLASS_RE.test(value)
+}
+
+/**
+ * 取得可安全嵌入 innerHTML 的背景顏色描述（渲染面統一入口）。
+ * 回傳 { style, className } 二擇一（皆字串，白名單外則皆空字串）：
+ *   - 合法 hex（#rgb/#rgba/#rrggbb/#rrggbbaa）→ style = 'background-color: #xxx'
+ *   - 合法 bg-* class → className = 'bg-xxx'
+ *   - 髒值/null/非字串 → style 與 className 皆空字串（呼叫端不輸出對應屬性）
+ * @param {*} color 待驗證顏色值（hex 或 Tailwind bg class）
+ * @returns {{ style: string, className: string }}
+ */
+export function getSafeBgColorStyle(color) {
+    if (isSafeHexColor(color)) {
+        return { style: `background-color: ${color}`, className: '' }
+    }
+    if (isSafeBgClass(color)) {
+        return { style: '', className: color }
+    }
+    return { style: '', className: '' }
+}
+
+/**
+ * 取得可安全嵌入 style 屬性的 hex 顏色；白名單外退回 fallback（hex 字串）。
+ * 適用於顏色系統固定為 hex 體系的欄位（如帳本主題色）。
+ * @param {*} color 待驗證顏色值
+ * @param {string} [fallback] 不安全時的替代 hex
+ * @returns {string} 安全 hex 字串
+ */
+export function getSafeHexColor(color, fallback = '#334A52') {
+    return isSafeHexColor(color) ? color : fallback
+}
+
 /**
  * 轉義 HTML 特殊字元，防止 XSS 攻擊
  * @param {string} str - 要轉義的字串
@@ -247,13 +335,14 @@ export function formatDate(date, format = 'short') {
                 day: '2-digit',
             })
         case 'long-weekday':
-        case 'long-with-weekday':
+        case 'long-with-weekday': {
             const formattedLong = dateObj.toLocaleDateString('zh-TW', {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
             })
             return `${formattedLong} ${weekdayName}`
+        }
         case 'weekday':
             return weekdayName
         case 'month-day':
@@ -289,8 +378,8 @@ export function showToast(message, type = 'info', duration = 3000) {
         'bg-wabi-income',
         'bg-wabi-expense',
         'bg-wabi-primary',
+        'bg-yellow-500',
         'toast-hide',
-        'text-wabi-surface',
         'text-wabi-surface'
     )
 
@@ -315,8 +404,12 @@ export function showToast(message, type = 'info', duration = 3000) {
     toast.classList.add('toast-show')
 
     // Hide after duration
-    setTimeout(() => {
+    if (toast._hideTimeout) {
+        clearTimeout(toast._hideTimeout)
+    }
+    toast._hideTimeout = setTimeout(() => {
         toast.classList.replace('toast-show', 'toast-hide')
+        toast._hideTimeout = null
     }, duration)
 }
 
@@ -399,10 +492,11 @@ export function isValidDate(dateString) {
 
 /**
  * 獲取日期範圍
- * @param {string} period - 期間類型 ('today', 'week', 'month', 'year')
+ * @param {string} period - 期間類型 ('today', 'week', 'month', 'year', 'quarter', 'lastquarter', 'monthOffset')
+ * @param {number} [offsetMonths] - 月份偏移（僅 'monthOffset' 使用，0 = 本月，1 = 下月...）
  * @returns {object} 包含 startDate 和 endDate 的對象
  */
-export function getDateRange(period) {
+export function getDateRange(period, offsetMonths = 0) {
     const today = new Date()
 
     switch (period) {
@@ -450,6 +544,42 @@ export function getDateRange(period) {
                 endDate: formatDateToString(yearEnd),
             }
         }
+        case 'quarter': {
+            // 本季度
+            const q = Math.floor(today.getMonth() / 3) // 0-3，對應 Q1-Q4
+            const quarterStartMonth = q * 3
+            const quarterStart = new Date(today.getFullYear(), quarterStartMonth, 1)
+            const quarterEnd = new Date(today.getFullYear(), quarterStartMonth + 3, 0)
+            return {
+                startDate: formatDateToString(quarterStart),
+                endDate: formatDateToString(quarterEnd),
+            }
+        }
+        case 'lastquarter': {
+            // 上季度（需正確處理跨年）
+            const q = Math.floor(today.getMonth() / 3) // 0-3，對應 Q1-Q4
+            let lastQuarterStartMonth = (q - 1) * 3
+            let lastQuarterYear = today.getFullYear()
+            if (q === 0) {
+                // 目前是 Q1，上季度為去年 Q4
+                lastQuarterStartMonth = 9 // 去年 10 月
+                lastQuarterYear -= 1
+            }
+            const lastQuarterStart = new Date(
+                lastQuarterYear,
+                lastQuarterStartMonth,
+                1
+            )
+            const lastQuarterEnd = new Date(
+                lastQuarterYear,
+                lastQuarterStartMonth + 3,
+                0
+            )
+            return {
+                startDate: formatDateToString(lastQuarterStart),
+                endDate: formatDateToString(lastQuarterEnd),
+            }
+        }
         case 'today': {
             const todayStr = formatDateToString(today)
             return {
@@ -483,6 +613,24 @@ export function getDateRange(period) {
                 endDate: endOfMonth,
             }
         }
+        case 'monthOffset': {
+            // 指定月份偏移的完整月範圍（offset=0 為本月，跨年自動處理）
+            const offset = Math.max(0, offsetMonths | 0)
+            const offsetStart = new Date(
+                today.getFullYear(),
+                today.getMonth() + offset,
+                1
+            )
+            const offsetEnd = new Date(
+                offsetStart.getFullYear(),
+                offsetStart.getMonth() + 1,
+                0
+            )
+            return {
+                startDate: formatDateToString(offsetStart),
+                endDate: formatDateToString(offsetEnd),
+            }
+        }
         default: {
             const defaultStr = formatDateToString(today)
             return {
@@ -509,71 +657,273 @@ export function getMonthRange(year, monthIndex) {
 }
 
 /**
+ * 將「每月幾日」收斂到指定年月的合法範圍（月底自動收斂）。
+ *
+ * 信用卡出帳日/繳款日可設 1-31，但並非每月都有 31 天（如 2 月遇 31 日）。
+ * 若直接 new Date(year, month, 31) 會溢出到下個月（2026-02-31 → 3 月 3 日），
+ * 造成帳單週期與期別錯亂、繳款日整整錯開一個月，自動扣繳隨之錯位。
+ * 本函數把日期收斂到該月最後一天（2 月 31 日 → 2 月 28/29 日）。
+ *
+ * @param {number} year - 西元年
+ * @param {number} monthIndex - 月份 (0-11)，與 Date 建構子一致
+ * @param {number} day - 欲套用的每月日期 (1-31)
+ * @param {number} fallbackDay - day 非 1-31 整數時的退回值（呼叫端傳各自預設）
+ * @returns {number} 收斂後的合法日期 (1 ~ 該月天數)
+ */
+export function clampDayToMonth(year, monthIndex, day, fallbackDay = 1) {
+    // 容忍數字字串（舊備份匯入的 statementDay/dueDay 可能為 "15" 字串，
+    // 原 new Date() 語意本就會自動轉型，此處保持一致不误退 fallback）
+    const numDay = typeof day === 'string' && day.trim() !== '' ? Number(day) : day
+    const safeDay =
+        Number.isInteger(numDay) && numDay >= 1 && numDay <= 31 ? numDay : fallbackDay
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate()
+    return Math.min(safeDay, lastDay)
+}
+
+/**
+ * anchorDay 防呆：僅接受 1-31 的整數（呼叫端可能傳入 undefined/舊資料髒值）
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isValidAnchorDay(value) {
+    const n =
+        typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+    return Number.isInteger(n) && n >= 1 && n <= 31
+}
+
+/**
+ * 解析 'YYYY-MM-DD' 為民用日期三段（month 為 1-12）。不合式回傳 null。
+ *
+ * #TZ-DUE：為什麼要自己解析而不走 `new Date(str)`——ES 規定「純日期字串
+ * (YYYY-MM-DD)」一律依 **UTC** 中午前那一刻解析，但 `getFullYear/getMonth/
+ * getDate` 讀的是**本地**時區。於 UTC 負時區（美加/歐洲冬令）讀回的是**前一天**：
+ * `new Date('2024-01-01').getDate()` 在 America/New_York = 31。週期到期日因此
+ * 整期倒退一天，每日頻更會卡在同期無限循環（見 #TZ-DUE 迴歸測試）。
+ * 純整數解析完全脫離時區，也與 #EOM-E2 的「字串進、字串出」慣例一致。
+ *
+ * @param {*} value - 待解析值
+ * @returns {{year:number, month:number, day:number}|null}
+ */
+function parseCivilDate(value) {
+    if (typeof value !== 'string') return null
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+    if (!m) return null
+    const year = Number(m[1])
+    const month = Number(m[2])
+    const day = Number(m[3])
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    return { year, month, day }
+}
+
+/**
+ * 民用日期 → 自 1970-01-01 起的天數（Proleptic Gregorian，純整數、無時區）
+ * 採 Howard Hinnant days_from_civil 演算法。
+ * @param {number} y 西元年
+ * @param {number} m 月 (1-12)
+ * @param {number} d 日 (1-31)
+ * @returns {number}
+ */
+function daysFromCivil(y, m, d) {
+    const yy = y - (m <= 2 ? 1 : 0)
+    const era = Math.floor(yy / 400)
+    const yoe = yy - era * 400 // [0, 399]
+    const doy =
+        Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + (d - 1) // [0, 365]
+    const doe =
+        yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy // [0, 146096]
+    return era * 146097 + doe - 719468
+}
+
+/**
+ * 自 1970-01-01 起的天數 → 民用日期（daysFromCivil 的反向，純整數、無時區）
+ * @param {number} z 天數
+ * @returns {{year:number, month:number, day:number}}
+ */
+function civilFromDays(z) {
+    const zz = z + 719468
+    const era = Math.floor(zz / 146097)
+    const doe = zz - era * 146097 // [0, 146096]
+    const yoe = Math.floor(
+        (doe -
+            Math.floor(doe / 1460) +
+            Math.floor(doe / 36524) -
+            Math.floor(doe / 146096)) /
+            365
+    ) // [0, 399]
+    const y = yoe + era * 400
+    const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100))
+    const mp = Math.floor((5 * doy + 2) / 153) // [0, 11]
+    const day = doy - Math.floor((153 * mp + 2) / 5) + 1 // [1, 31]
+    const month = mp + (mp < 10 ? 3 : -9) // [1, 12]
+    return { year: y + (month <= 2 ? 1 : 0), month, day }
+}
+
+/**
+ * 固定格式輸出 'YYYY-MM-DD'（不經 Date，避免任何時區正規化）
+ * @param {{year:number, month:number, day:number}} c 民用日期
+ * @returns {string}
+ */
+function formatCivilDate(c) {
+    return `${String(c.year).padStart(4, '0')}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`
+}
+
+/**
  * 計算下一個週期性交易日期
+ *
+ * 月底收斂（#EOM-E2，沿用 clampDayToMonth 的全站慣例）：月/年頻直接 setMonth /
+ * setFullYear 遇月底溢出——1/31 + 1 月 → JS 正規化成 3/2、2/29 + 1 年 → 3/1。
+ * 週期性交易（每月 31 日房租）會把整期紀錄生成在錯日期上且期別逐月漂移
+ * （1/31 → 3/2 → 4/2 → ...）；分期計畫首期錯日后逐期迭代全部跟錯。
+ * 修法：先記下原始「日」，月/年位移後收斂回該月月底（1/31 + 1 月 → 2/28）。
+ * 呼叫端若持有原始起始日（週期交易 startDate / 分期 startDate），務必經
+ * anchorDay 傳入：錨定原始日可讓月底收斂「可逆」——31 日房租在 2 月落在
+ * 2/28、3 月回到 3/31，而非逐期迭代後永久漂到 28 日。
+ * 日/週頻為純天數位移，無月底問題，維持原樣。
+ *
  * @param {string} currentDueDate - 當前到期日期 (YYYY-MM-DD)
  * @param {string} frequency - 頻率 ('daily', 'weekly', 'monthly', 'yearly')
  * @param {number} interval - 間隔 (例如：每 2 週)
- * @param {number|null} [anchorDay=null] - 原始基準日 (1~31)，用於防止月底溢出 (如 1/31) 與多期迭代逐期漂移，達成收斂可逆
+ * @param {number} [anchorDay=null] - 月/年頻錨定日（原始起始日的「日」）；
+ *   省略時退回 currentDueDate 自身的日（單步呼叫語意不變）
  * @returns {string} 下一個到期日期 (YYYY-MM-DD)
  */
-export function calculateNextDueDate(currentDueDate, frequency, interval, anchorDay = null) {
-    let currYear, currMonth, currDay
-    if (typeof currentDueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(currentDueDate)) {
-        const parts = currentDueDate.split('-').map(Number)
-        currYear = parts[0]
-        currMonth = parts[1]
-        currDay = parts[2]
-    } else {
-        const d = new Date(currentDueDate)
-        currYear = d.getFullYear()
-        currMonth = d.getMonth() + 1
-        currDay = d.getDate()
+export function calculateNextDueDate(
+    currentDueDate,
+    frequency,
+    interval,
+    anchorDay = null
+) {
+    const step = Number(interval)
+    // #TZ-DUE 配套防呆：interval 缺失/0/負值一律明確拒絕。舊實作會把 0 變成
+    // 「到期日永不前進」，讓 processRecurringTransactions 的 while 迴圈原地打轉到
+    // MAX_ITERATIONS、該筆週期交易永久凍結（與時區讀回前一天是同類失效模式）；
+    // 間隔 0 無正當語意，fail-fast 讓上層 per-tx try/catch 跳過並留下警訊，
+    // 優於 silently 凍結或寫出 NaN 日期污染資料。
+    if (!Number.isInteger(step) || step < 1) {
+        throw new Error('Invalid interval')
     }
-
-    const effectiveAnchorDay =
-        anchorDay !== null && anchorDay !== undefined
-            ? Number(anchorDay)
-            : currDay
+    // #TZ-DUE：改走「字串解析 + 純整數日曆天數」，不再經 `new Date(字串)`。
+    // 舊實作 `new Date('2024-01-01')` 依 ES 規格以 UTC 解析，但取得式讀本地時區，
+    // UTC 負時區會整天讀回前一天 → 到期日倒退一天、每日頻卡在同期無限循環。
+    const civil = parseCivilDate(currentDueDate)
+    if (!civil) {
+        // null/undefined 不得淪為 epoch 1970（`new Date(null)` 的 JS 語意陷阱會讓
+        // 到期日無聲變成 1970 年並在 while 迴圈生成一批 1970 紀錄，屬資料污染）
+        if (currentDueDate === null || currentDueDate === undefined) {
+            throw new Error('Invalid currentDueDate')
+        }
+        // 非 'YYYY-MM-DD'（Date 物件、'2024/1/5'、ISO 時間戳等）正規化後遞迴走純整數路徑
+        const date = new Date(currentDueDate)
+        if (Number.isNaN(date.getTime())) {
+            throw new Error('Invalid currentDueDate')
+        }
+        return calculateNextDueDate(
+            formatDateToString(date),
+            frequency,
+            interval,
+            anchorDay
+        )
+    }
+    // 月/年頻錨定日：合法則優先採用呼叫端的原始起始日，否則退回本日期自身的日
+    const anchor = isValidAnchorDay(anchorDay) ? anchorDay : civil.day
 
     switch (frequency) {
-        case 'daily': {
-            const d = new Date(currYear, currMonth - 1, currDay + interval)
-            return formatDateToString(d)
-        }
-        case 'weekly': {
-            const d = new Date(currYear, currMonth - 1, currDay + interval * 7)
-            return formatDateToString(d)
-        }
-        case 'monthly': {
-            const totalMonths = currYear * 12 + (currMonth - 1) + interval
-            const targetYear = Math.floor(totalMonths / 12)
-            const targetMonth = (totalMonths % 12) + 1
-            const maxDays = new Date(targetYear, targetMonth, 0).getDate()
-            const targetDay = Math.min(effectiveAnchorDay, maxDays)
-            return (
-                String(targetYear).padStart(4, '0') +
-                '-' +
-                String(targetMonth).padStart(2, '0') +
-                '-' +
-                String(targetDay).padStart(2, '0')
+        case 'daily':
+            return formatCivilDate(
+                civilFromDays(
+                    daysFromCivil(civil.year, civil.month, civil.day) + step
+                )
             )
+        case 'weekly':
+            return formatCivilDate(
+                civilFromDays(
+                    daysFromCivil(civil.year, civil.month, civil.day) + step * 7
+                )
+            )
+        case 'monthly': {
+            // 月底收斂：以月序算出目標年月後，依錨定日收斂到該月月底
+            const totalMonths = civil.year * 12 + (civil.month - 1) + step
+            const year = Math.floor(totalMonths / 12)
+            const month = (totalMonths % 12) + 1
+            return formatCivilDate({
+                year,
+                month,
+                day: clampDayToMonth(year, month - 1, anchor, anchor),
+            })
         }
         case 'yearly': {
-            const targetYear = currYear + interval
-            const targetMonth = currMonth
-            const maxDays = new Date(targetYear, targetMonth, 0).getDate()
-            const targetDay = Math.min(effectiveAnchorDay, maxDays)
-            return (
-                String(targetYear).padStart(4, '0') +
-                '-' +
-                String(targetMonth).padStart(2, '0') +
-                '-' +
-                String(targetDay).padStart(2, '0')
-            )
+            const year = civil.year + step
+            return formatCivilDate({
+                year,
+                month: civil.month,
+                day: clampDayToMonth(year, civil.month - 1, anchor, anchor),
+            })
         }
         default:
             throw new Error('Invalid frequency')
     }
+}
+
+/**
+ * 依「已完成的期數」推算分期/攤提計畫的進度快照（還原用）
+ *
+ * 借鏡 MOZE v4.3「起始期數」：使用者中途開始記錄時（例如已還 5 期的分期才開始
+ * 用 jijun），填起始已完成期數即可從目前這一期開始記，前面的期數不用補記。
+ * 本函數依起始期數推算：下期到期日、每期金額、含息剩餘應還總額。
+ *
+ * 語意對齊 processAmortizations()：
+ * - nextDueDate = 從 startDate 起的第 (completed+1) 期到期日（與逐期
+ *   calculateNextDueDate 迭代等價，月頻月末自動收斂）
+ * - exactTotalRemaining = 含息總額 − 前 completed 期「四捨五入後每期金額」累計，
+ *   下限 0（與末期差額分支的 actualPaidSoFar 算法一致）
+ *
+ * @param {object} plan - { totalAmount, downPayment, interestRate, periods, frequency, decimalStrategy, startDate, completedPeriods }
+ * @returns {object|null} { nextDueDate, amountPerPeriod, exactTotalRemaining }；startDate 缺失回傳 null
+ */
+export function calculateAmortizationProgress(plan) {
+    const startDate = plan.startDate
+    if (!startDate) return null
+
+    const periods = parseInt(plan.periods) || 0
+    const completed = Math.min(
+        Math.max(parseInt(plan.completedPeriods) || 0, 0),
+        periods
+    )
+    const frequency = plan.frequency || 'monthly'
+    const principal = Math.max(
+        0,
+        (parseFloat(plan.totalAmount) || 0) - (parseFloat(plan.downPayment) || 0)
+    )
+
+    const { amountPerPeriod, exactTotalToPay } = calculateAmortizationDetails(
+        principal,
+        periods,
+        parseFloat(plan.interestRate) || 0,
+        frequency,
+        plan.decimalStrategy || 'round'
+    )
+
+    // 下期到期日 = 第 completed+1 期。#EOM-E2：錨定起始日的「日」逐期收斂
+    // （1/31 起每月一期：2 月落 2/28、3 月回 3/31），與 processAmortizations
+    // 的 amortAnchorDay 迭代語意一致。
+    const startAnchorDay = parseInt(String(startDate).slice(8, 10), 10)
+    let nextDueDate = startDate
+    for (let i = 0; i < completed; i++) {
+        nextDueDate = calculateNextDueDate(
+            nextDueDate,
+            frequency,
+            1,
+            Number.isInteger(startAnchorDay) ? startAnchorDay : null
+        )
+    }
+
+    // 剩餘含息總額 = 含息總額 − 已還 completed 期（每期為四捨五入後的實際入帳額）
+    const exactTotalRemaining = Math.max(
+        0,
+        exactTotalToPay - amountPerPeriod * completed
+    )
+
+    return { nextDueDate, amountPerPeriod, exactTotalRemaining }
 }
 
 /**
@@ -587,6 +937,18 @@ export function shouldSkipDate(date, skipRules) {
         return false
     }
 
+    let dateObj = date
+    if (typeof date === 'string') {
+        const parts = date.split('-').map(Number)
+        if (parts.length === 3 && !parts.some(isNaN)) {
+            dateObj = new Date(parts[0], parts[1] - 1, parts[2])
+        } else {
+            dateObj = new Date(date)
+        }
+    } else if (date instanceof Date && isNaN(date.getTime())) {
+        return false
+    }
+
     for (const rule of skipRules) {
         if (!rule.values || rule.values.length === 0) {
             continue
@@ -595,13 +957,13 @@ export function shouldSkipDate(date, skipRules) {
         let match = false
         switch (type) {
             case 'dayOfWeek':
-                match = values.includes(date.getDay()) // 0 (Sun) to 6 (Sat)
+                match = values.includes(dateObj.getDay()) // 0 (Sun) to 6 (Sat)
                 break
             case 'dayOfMonth':
-                match = values.includes(date.getDate()) // 1 to 31
+                match = values.includes(dateObj.getDate()) // 1 to 31
                 break
             case 'monthOfYear':
-                match = values.includes(date.getMonth()) // 0 (Jan) to 11 (Dec)
+                match = values.includes(dateObj.getMonth()) // 0 (Jan) to 11 (Dec)
                 break
         }
         if (match) {

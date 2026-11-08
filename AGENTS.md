@@ -3,10 +3,13 @@
 ```
 src/js/
 ├── main.js              # 主應用程式 (EasyAccountingApp 類別，路由、頁面渲染、帳本切換器、processAmortizations, updateNavAddIcon)
+├── accessGate.js        # 存取碼驗證與保護門禁 (ACCESS_CODE gate)
+├── toolsSchema.js       # Protocol v2 工具協議單一真相源 (buildSystemPrompt, parseToolCalls, extractBalancedJson)
+├── retirementReport.js  # 退休 Monte Carlo 模擬與資產提領推演引擎
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 Prompt 格式、無痛換模防錯、HEAD ETag 版次檢驗與即時 Token 串流)
 ├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援 + 群組分帳與單筆個別還款)
-├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除、共用邀請/移除、Drive 權限撤銷)
+├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除、共用邀請/移除、Drive/自架權限撤銷)
 ├── groupManager.js      # 群組分帳管理商業邏輯 (建立、刪除群組、一鍵結清與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數
 ├── categoryManager.js   # 分類管理 UI 邏輯
@@ -21,7 +24,7 @@ src/js/
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 雲端備份&同步 (Per-Device 獨立日誌共用帳本同步與 Manifest 架構)
+├── syncService.js       # 雲端備份&同步 (Google Drive + Docker 自架伺服器雙通道、Per-Device 獨立日誌共用帳本同步與 Manifest 架構)
 ├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
 ├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化)
 ├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔與統一註冊表 index.js)
@@ -41,7 +44,11 @@ src/js/pages/
 ├── contactsPage.js      # 聯絡人管理
 ├── ledgersPage.js       # 帳本管理頁面 (新增/編輯/刪除/切換帳本，含圖示搜尋與自訂顏色、共用代碼)
 ├── amortizationsPage.js # 攤提/折舊/分期管理頁面 (新增/編輯/刪除，進度追蹤，首付+利息計算)
+├── retirementPage.js    # 退休 Monte Carlo 推演頁面 (安全提領率、資產壽命預測圖表)
+├── syncSettingsPage.js  # 同步設定頁面 (Google Drive 與 Docker 自架伺服器雙通道切換、管理員控制台)
 └── ...                  # 其他頁面
+
+server/                  # Docker 自架同步伺服器 (SQLite WAL、Per-Device 獨立日誌、scrypt-kdf、RateLimiter)
 
 src/css/
 └── main.css             # 主樣式表
@@ -105,4 +112,9 @@ index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCo
     - 整合端側 58M LLM (WASM/wllama) 離線推論、OPFS 快取與規則引擎降級
     - 具備 `applySemanticGuardrail()` 前端語意守門校準，防止小模型因幻覺將「花了/買了/付了」消費口語誤判為收入
     - 支援跨收支重疊分類（如「其他」）防呆驗證與 `CategoryManager.getAllCategories()` 無參數調用
+- **Docker 自架同步架構 (Self-Hosted Sync Architecture)**:
+    - 前端透過 `sync_driver` (`gdrive` / `selfhost`) 支援零摩擦雙軌切換，統一呼叫 `syncService` 核心邏輯
+    - 後端提供 REST API 介面、本機 SQLite (WAL 模式)、Per-Device 獨立日誌與 `uuid|type|entityId|action|dataHash` 5 鍵去重
+    - 採用 `scrypt-kdf` 單向雜湊儲存密碼與 PIN 碼，支援防使用者枚舉（Dummy Verification）與指數退避 `RateLimiter` 限速
+    - 靜態檔案路徑遍歷防禦 (`path.sep`) 與 Request Body 串流上限防護 (413 Payload Too Large)
 - **Capacitor Android**: Web 資產打包進 `android/app/src/main/assets/public/`，透過 WebView 載入本地檔案，AdMob 為原生 overlay

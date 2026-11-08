@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
     calculateAmortizationDetails,
+    calculateAmortizationProgress,
     calculateNextDueDate,
     shouldSkipDate,
 } from '../../src/js/utils.js'
@@ -118,14 +119,14 @@ describe('calculateNextDueDate', () => {
         )
     })
 
-    it('monthly + interval=1：加一個月（月末截斷防溢出）', () => {
-        // 2024-01-31 + 1 month → 2024年2月有29天，截斷至該月最後一日 2024-02-29
+    it('monthly + interval=1：加一個月（跨月，#EOM-E2 月末自動收斂）', () => {
+        // 1/31 + 1 月 → 2024 閏年 2/29（不再溢出到 3/2）
         const result = calculateNextDueDate('2024-01-31', 'monthly', 1)
         expect(result).toBe('2024-02-29')
     })
 
-    it('yearly + interval=1：加一年（閏年→非閏年截斷防溢出）', () => {
-        // 2024-02-29 + 1 year → 2025年非閏年，截斷至 2025-02-28，不溢出至 3/1
+    it('yearly + interval=1：加一年（#EOM-E2 閏年→非閏年月底收斂）', () => {
+        // 2024-02-29 + 1 年 → 2025-02-28（收斂到月底，不再溢出 3/1）
         const result = calculateNextDueDate('2024-02-29', 'yearly', 1)
         expect(result).toBe('2025-02-28')
     })
@@ -203,5 +204,125 @@ describe('shouldSkipDate', () => {
     it('unknown type 不匹配', () => {
         const rules = [{ type: 'unknownType', values: [1] }]
         expect(shouldSkipDate(new Date('2024-01-15'), rules)).toBe(false)
+    })
+})
+
+// ==================== calculateAmortizationProgress (#MOZE-START) ====================
+
+describe('calculateAmortizationProgress', () => {
+    // 無利率 12000/12 期：每期 1000、exactTotalToPay = 12000
+    const plan = over => ({
+        totalAmount: 12000,
+        downPayment: 0,
+        interestRate: 0,
+        periods: 12,
+        frequency: 'monthly',
+        decimalStrategy: 'round',
+        startDate: '2026-01-15',
+        completedPeriods: 0,
+        ...over,
+    })
+
+    it('startDate 缺失回傳 null', () => {
+        expect(
+            calculateAmortizationProgress({ ...plan(), startDate: '' })
+        ).toBeNull()
+        expect(
+            calculateAmortizationProgress({ ...plan(), startDate: undefined })
+        ).toBeNull()
+    })
+
+    it('completedPeriods=0：nextDueDate = startDate，剩餘 = 全部', () => {
+        const p = calculateAmortizationProgress(plan())
+        expect(p.nextDueDate).toBe('2026-01-15')
+        expect(p.amountPerPeriod).toBe(1000)
+        expect(p.exactTotalRemaining).toBe(12000)
+    })
+
+    it('completedPeriods=5：nextDueDate 向後推 5 個月，剩餘扣 5 期', () => {
+        const p = calculateAmortizationProgress(plan({ completedPeriods: 5 }))
+        expect(p.nextDueDate).toBe('2026-06-15')
+        expect(p.exactTotalRemaining).toBe(7000)
+    })
+
+    it('月頻月末收斂 #EOM-E2：錨定起始日，月底可逆不漂移', () => {
+        // 1/31 起每月一期，錨定起始日 31：2 月落 2/28、3 月回 3/31、4 月落 4/30
+        const p = calculateAmortizationProgress(
+            plan({ startDate: '2026-01-31', completedPeriods: 3 })
+        )
+        expect(p.nextDueDate).toBe('2026-04-30')
+        // 逐期錨定迭代等價（與 processAmortizations 的 amortAnchorDay 同款語意）
+        let iterated = '2026-01-31'
+        for (let i = 0; i < 3; i++)
+            iterated = calculateNextDueDate(iterated, 'monthly', 1, 31)
+        expect(p.nextDueDate).toBe(iterated)
+        // 第 2 期（completed=1）落在收斂後的 2/28
+        expect(
+            calculateAmortizationProgress(
+                plan({ startDate: '2026-01-31', completedPeriods: 1 })
+            ).nextDueDate
+        ).toBe('2026-02-28')
+    })
+
+    it('completedPeriods 超過 periods：clamp 至 periods，剩餘下限 0', () => {
+        const p = calculateAmortizationProgress(plan({ completedPeriods: 20 }))
+        // clamp 到 12：nextDueDate = 第 13 期（1/15 + 12 個月）
+        expect(p.nextDueDate).toBe('2027-01-15')
+        expect(p.exactTotalRemaining).toBe(0)
+    })
+
+    it('completedPeriods 負值/非法：視同 0', () => {
+        const p = calculateAmortizationProgress(
+            plan({ completedPeriods: -3 })
+        )
+        expect(p.nextDueDate).toBe('2026-01-15')
+        expect(p.exactTotalRemaining).toBe(12000)
+        const p2 = calculateAmortizationProgress(
+            plan({ completedPeriods: 'abc' })
+        )
+        expect(p2.nextDueDate).toBe('2026-01-15')
+    })
+
+    it('首付從本金扣除：每期與剩餘按 (total - downPayment) 計算', () => {
+        // 12000 總額、首付 2000 → 本金 10000 / 10 期 = 每期 1000
+        const p = calculateAmortizationProgress(
+            plan({
+                totalAmount: 12000,
+                downPayment: 2000,
+                periods: 10,
+                completedPeriods: 2,
+            })
+        )
+        expect(p.amountPerPeriod).toBe(1000)
+        expect(p.exactTotalRemaining).toBe(8000)
+        expect(p.nextDueDate).toBe('2026-03-15')
+    })
+
+    it('有利率：剩餘 = 含息總額 - 已還期數×每期金額', () => {
+        const p = calculateAmortizationProgress(
+            plan({ interestRate: 5, completedPeriods: 4 })
+        )
+        const { amountPerPeriod, exactTotalToPay } =
+            calculateAmortizationDetails(12000, 12, 5, 'monthly', 'round')
+        expect(p.amountPerPeriod).toBe(amountPerPeriod)
+        expect(p.exactTotalRemaining).toBe(
+            Math.max(0, exactTotalToPay - amountPerPeriod * 4)
+        )
+        // 有息時剩餘 > 本金剩餘（利息已攤入）
+        expect(p.exactTotalRemaining).toBeGreaterThan(12000 - amountPerPeriod * 4)
+    })
+
+    it('週頻：nextDueDate 向後推 completed 週', () => {
+        const p = calculateAmortizationProgress(
+            plan({ frequency: 'weekly', completedPeriods: 10 })
+        )
+        expect(p.nextDueDate).toBe('2026-03-26')
+    })
+
+    it('年頻：nextDueDate 向後推 completed 年', () => {
+        const p = calculateAmortizationProgress(
+            plan({ frequency: 'yearly', completedPeriods: 2 })
+        )
+        expect(p.nextDueDate).toBe('2028-01-15')
     })
 })

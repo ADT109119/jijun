@@ -52,6 +52,15 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
 }
 
+// @capgo/capacitor-social-login 帶入 androidx.browser:1.9.0（要求 compileSdk 36 + AGP 8.9.1）。
+// 本專案只用 Google 登入（Credential Manager，不走 CustomTabs；CustomTabs 僅 AppleProvider 使用），
+// 鎖定到 1.8.0（最後一個 compileSdk 35 相容版）避免 AAR metadata 檢查失敗。
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.browser:browser:1.8.0'
+    }
+}
+
 apply from: 'capacitor.build.gradle'
 
 try {

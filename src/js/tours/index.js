@@ -13,6 +13,9 @@ import { groupsTour } from './groupsTour.js'
 import { budgetTour } from './budgetTour.js'
 import { amortizationsTour } from './amortizationsTour.js'
 import { aiTour } from './aiTour.js'
+import { lowBalanceTour } from './lowBalanceTour.js'
+import { newFeaturesTour } from './newFeaturesTour.js'
+import { newFeaturesTourV2 } from './newFeaturesTourV2.js'
 
 export const TOURS = {
     welcome: welcomeTour,
@@ -26,4 +29,7 @@ export const TOURS = {
     budget: budgetTour,
     amortizations: amortizationsTour,
     ai: aiTour,
+    lowBalance: lowBalanceTour,
+    newFeatures: newFeaturesTour,
+    newFeaturesV2: newFeaturesTourV2,
 }

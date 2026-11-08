@@ -63,6 +63,8 @@ export class ComparisonReport {
      * @param {string[]} periods  e.g. ['2026-05','2026-06']  (2-4 items)
      * @param {Object} [options]  optional filters
      * @param {'all'|'income'|'expense'} [options.typeFilter='all']  filter by record type
+     * @param {number|null} [options.contactId=null]  依對象（聯絡人）篩選（#MOZE-TGT）：
+     *   只保留 debtId → debt.contactId 命中該對象的紀錄（語意同 getStatistics）
      * @returns {Promise<Object>} comparison data
      */
     async calculateComparison(periodType, periods, options = {}) {
@@ -74,13 +76,17 @@ export class ComparisonReport {
         }
 
         const typeFilter = options.typeFilter || 'all'
+        // 對象（聯絡人）篩選（#MOZE-TGT）：null/undefined = 全部對象
+        const contactId =
+            options.contactId === undefined ? null : options.contactId
+        const contactName = options.contactName ?? null
 
         const sortedPeriods = [...periods].sort()
         const minPeriod = sortedPeriods[0]
         const maxPeriod = sortedPeriods[sortedPeriods.length - 1]
 
-        let startDate = null
-        let endDate = null
+        let startDate
+        let endDate
 
         if (periodType === 'month') {
             startDate = `${minPeriod}-01`
@@ -100,11 +106,32 @@ export class ComparisonReport {
         })
 
         // Pre-filter debt-collection / debt-repayment / balance-adjustment / transfer (same as getStatistics)
-        const filtered = records.filter(
+        let filtered = records.filter(
             r =>
                 r.category !== 'transfer' &&
                 !isDebtSettlementRecord(r)
         )
+
+        // 批次載入欠款（單次查詢，同時供兩處使用，避免同一次計算打 DB 兩次）：
+        // ①下方 effective amount 計算（v2.1.8.4 calculateEffectiveRecordAmount）
+        // ②#MOZE-TGT 對象篩選取 debt.contactId
+        const allDebts = typeof this.dataService.getDebts === 'function'
+            ? (await this.dataService.getDebts({ allLedgers: true })) || []
+            : []
+        const debtMaps = buildDebtLookupMaps(allDebts)
+
+        // 依對象（聯絡人）篩選（#MOZE-TGT，語意對齊 getStatistics 的 contactId 分支）：
+        // 紀錄本身不存 contactId，只保留透過 debtId 關聯到該聯絡人欠款（debt.contactId）
+        // 的紀錄；無 debtId 的一般紀錄不屬於任何對象。
+        if (contactId !== null) {
+            const debtsMap = debtMaps.byId
+            filtered = filtered.filter(r => {
+                const debt = r.debtId
+                    ? debtsMap[r.debtId] || debtsMap[String(r.debtId)]
+                    : null
+                return !!debt && debt.contactId === contactId
+            })
+        }
 
         const periodData = periods.map(label => ({
             label,
@@ -114,12 +141,6 @@ export class ComparisonReport {
             categories: {}, // categoryKey -> amount (signed: +income, -expense)
         }))
 
-        // Batch load debts for effective amount calculation
-        const allDebts = typeof this.dataService.getDebts === 'function'
-            ? (await this.dataService.getDebts({ allLedgers: true })) || []
-            : []
-        const debtMaps = buildDebtLookupMaps(allDebts)
-
         for (const r of filtered) {
             if (!r.date) continue
 
@@ -127,7 +148,7 @@ export class ComparisonReport {
             if (typeFilter === 'income' && r.type !== 'income') continue
             if (typeFilter === 'expense' && r.type !== 'expense') continue
 
-            let matchIndex = -1
+            let matchIndex
 
             if (periodType === 'month') {
                 // period label = 'YYYY-MM'
@@ -207,6 +228,8 @@ export class ComparisonReport {
             })),
             categoryComparisons,
             typeFilter,
+            contactId,
+            contactName,
         }
     }
 
@@ -297,6 +320,8 @@ export class ComparisonReport {
             categoryComparisons,
             typeFilter,
         } = data
+        // 對象篩選（#MOZE-TGT）：舊資料物件可能無此欄位，fallback 全部對象
+        const contactName = data.contactName ?? null
 
         const lines = []
 
@@ -304,6 +329,7 @@ export class ComparisonReport {
         lines.push(`期間類型,${periodType === 'month' ? '月' : '年'}`)
         lines.push(`比較期間,${periodLabels.join(', ')}`)
         lines.push(`篩選類型,${typeFilter === 'all' ? '全部' : typeFilter === 'income' ? '僅收入' : '僅支出'}`)
+        lines.push(`篩選對象,${contactName ?? '全部'}`)
         lines.push('')
 
         // ── 期間摘要 ──

@@ -55,6 +55,10 @@ export class RecordsPage {
                         <p class="text-wabi-text-primary text-sm font-medium leading-normal">帳戶</p>
                         <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
                     </button>
+                    <button id="records-fields-btn" class="h-9 shrink-0 flex items-center justify-center gap-x-1.5 rounded-full bg-wabi-surface px-4 border border-wabi-border">
+                        <p class="text-wabi-text-primary text-sm font-medium leading-normal">欄位</p>
+                        <i class="fa-solid fa-chevron-down text-xs text-wabi-text-secondary"></i>
+                    </button>
                 </div>
 
                 <!-- Summary Cards -->

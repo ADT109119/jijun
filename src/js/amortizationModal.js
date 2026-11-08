@@ -3,6 +3,7 @@ import {
     escapeHTML,
     formatDateToString,
     calculateAmortizationDetails,
+    calculateAmortizationProgress,
 } from './utils.js'
 
 const TYPE_LABELS = {
@@ -126,6 +127,19 @@ export function showAmortizationModal(
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
                     value="${defaults.periods}" placeholder="例如：12" />
             </div>
+            ${
+                // 起始已還期數僅新增模式提供：編輯模式既有「已完成期數」欄位可直接調整
+                isEdit
+                    ? ''
+                    : `
+            <div class="mb-3">
+                <label class="text-sm font-medium text-wabi-text-primary block mb-1">起始已還期數 <span class="text-xs text-wabi-text-secondary">(選填，中途開始記錄時填寫)</span></label>
+                <input type="number" id="amort-start-completed" min="0"
+                    class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
+                    value="0" placeholder="0" />
+                <p id="amort-start-completed-hint" class="text-xs text-wabi-text-secondary mt-1 hidden"></p>
+            </div>`
+            }
             <div class="mb-3">
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">扣款頻率</label>
                 <select id="amort-frequency" class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary appearance-none">
@@ -234,6 +248,11 @@ export function showAmortizationModal(
     const totalWithInterestDisplay = modal.querySelector(
         '#amort-total-with-interest'
     )
+    // 起始已還期數（僅新增模式存在此欄位）
+    const startCompletedInput = modal.querySelector('#amort-start-completed')
+    const startCompletedHint = modal.querySelector(
+        '#amort-start-completed-hint'
+    )
 
     const fmt = num => {
         if (num === undefined || num === null || isNaN(num)) return '0'
@@ -270,7 +289,7 @@ export function showAmortizationModal(
 
         perPeriodDisplay.textContent = `$${fmt(amountPerPeriod)}`
 
-        let message = ''
+        let message
         if (annualRate > 0) {
             const totalPayment = exactTotalToPay + downPayment
             message = `含息總額 $${fmt(Math.round(totalPayment))} (利息 $${fmt(Math.round(totalPayment - total))})`
@@ -296,15 +315,50 @@ export function showAmortizationModal(
         }
 
         totalWithInterestDisplay.innerHTML = message
+
+        // 起始已還期數提示（僅新增模式）：從第幾期開始自動記帳 + 剩餘應還
+        if (startCompletedHint) {
+            const startCompleted =
+                parseInt(startCompletedInput?.value) || 0
+            let hintText = ''
+            if (startCompleted > 0) {
+                const clamped = Math.min(startCompleted, periods)
+                const progress = calculateAmortizationProgress({
+                    totalAmount: total,
+                    downPayment,
+                    interestRate: annualRate,
+                    periods,
+                    frequency,
+                    decimalStrategy,
+                    startDate:
+                        modal.querySelector('#amort-start-date').value,
+                    completedPeriods: clamped,
+                })
+                if (clamped >= periods) {
+                    hintText = '起始期數已達總期數，建立後直接結案（不會自動記帳）'
+                } else if (progress) {
+                    hintText = `前 ${clamped} 期不補記，將從第 ${clamped + 1} 期（${progress.nextDueDate}）開始自動記帳，剩餘應還 $${fmt(Math.round(progress.exactTotalRemaining))}`
+                }
+            }
+            startCompletedHint.textContent = hintText
+            startCompletedHint.classList.toggle('hidden', !hintText)
+        }
     }
-    ;[totalInput, periodsInput, downPaymentInput, interestInput].forEach(el =>
-        el.addEventListener('input', updateCalculation)
-    )
+    ;[
+        totalInput,
+        periodsInput,
+        downPaymentInput,
+        interestInput,
+        startCompletedInput,
+    ].forEach(el => el && el.addEventListener('input', updateCalculation))
     modal
         .querySelector('#amort-frequency')
         .addEventListener('change', updateCalculation)
     modal
         .querySelector('#amort-decimal-strategy')
+        .addEventListener('change', updateCalculation)
+    modal
+        .querySelector('#amort-start-date')
         .addEventListener('change', updateCalculation)
     updateCalculation()
 
@@ -351,6 +405,30 @@ export function showAmortizationModal(
             )
 
             const startDate = modal.querySelector('#amort-start-date').value
+
+            // 起始已還期數（僅新增模式）：還原中途開始記錄的進度
+            // （借鏡 MOZE v4.3「起始期數」：前 N 期不補記，直接從第 N+1 期開始記）
+            let startCompleted = 0
+            let startProgress = null
+            if (!isEdit && startCompletedInput) {
+                startCompleted = Math.min(
+                    Math.max(parseInt(startCompletedInput.value) || 0, 0),
+                    periods
+                )
+                if (startCompleted > 0) {
+                    startProgress = calculateAmortizationProgress({
+                        totalAmount: total,
+                        downPayment,
+                        interestRate: annualRate,
+                        periods,
+                        frequency,
+                        decimalStrategy,
+                        startDate,
+                        completedPeriods: startCompleted,
+                    })
+                }
+            }
+
             const data = {
                 name,
                 type: typeInput.value,
@@ -364,12 +442,21 @@ export function showAmortizationModal(
                     ? parseInt(
                           modal.querySelector('#amort-completed')?.value
                       ) || 0
-                    : 0,
+                    : startCompleted,
+                // #MOZE-START: 記錄建立時跳過不補記的期數基線，供末期差額/已還計算
+                // （編輯模式沿用原基線，不動）
+                startCompletedPeriods: isEdit
+                    ? item.startCompletedPeriods || 0
+                    : startCompleted,
                 amountPerPeriod,
                 frequency,
                 decimalStrategy,
                 startDate,
-                nextDueDate: isEdit ? item.nextDueDate || startDate : startDate,
+                nextDueDate: isEdit
+                    ? item.nextDueDate || startDate
+                    : startProgress
+                      ? startProgress.nextDueDate
+                      : startDate,
                 status: isEdit ? item.status : 'active',
                 description: '',
             }
@@ -381,6 +468,11 @@ export function showAmortizationModal(
                     await app.dataService.updateAmortization(item.id, data)
                     showToast('已更新', 'success')
                 } else {
+                    // 起始期數已達總期數：直接結案，不進入自動記帳
+                    if (data.completedPeriods >= data.periods) {
+                        data.status = 'completed'
+                        data.nextDueDate = null
+                    }
                     await app.dataService.addAmortization(data)
                     showToast(`「${name}」已建立`, 'success')
                 }

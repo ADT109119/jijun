@@ -1,5 +1,5 @@
 // 群組管理模組
-import { formatCurrency, formatDate, generateId, showToast } from './utils.js'
+import { generateId, showToast } from './utils.js'
 
 /**
  * 產生不重複的群組名稱，若已有同名群組則自動加上 (2), (3) 等後綴

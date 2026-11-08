@@ -23,7 +23,7 @@ vi.mock('../../src/js/utils.js', async importOriginal => {
 })
 
 import { DebtManager } from '../../src/js/debtManager.js'
-import { customConfirm, customAlert } from '../../src/js/utils.js'
+import { customConfirm, customAlert, showToast } from '../../src/js/utils.js'
 
 // 建立最小化的 DataService mock
 function createMockDataService() {
@@ -135,6 +135,41 @@ describe('DebtManager - 核心業務邏輯（真實實例）', () => {
     beforeEach(() => {
         ds = createMockDataService()
         dm = new DebtManager(ds)
+    })
+
+    it('summary 卡以全帳本為準：無 ledgerId 的群組欠款不被帳本過濾掉（agy M1）', async () => {
+        // 模擬真實 getDebts 帳本語義：非 allLedgers 時只回傳 d.ledgerId === activeLedgerId
+        ds.activeLedgerId = 1
+        const groupDebt = {
+            id: 900,
+            contactId: 1,
+            type: 'receivable',
+            remainingAmount: 5000,
+            originalAmount: 5000,
+            settled: false,
+            recordId: null,
+            date: '2026-09-01',
+        }
+        ds.getDebts = vi.fn(async (filters = {}) => {
+            let list = [groupDebt]
+            if (!filters.allLedgers) {
+                const target = filters.ledgerId ?? ds.activeLedgerId
+                list = list.filter(d => d.ledgerId === target)
+            }
+            if (filters.settled === false) list = list.filter(d => !d.settled)
+            return list
+        })
+        ds.getContacts = vi.fn(async () => [{ id: 1, name: '小明', phone: '0912' }])
+
+        const container = document.createElement('div')
+        document.body.appendChild(container)
+        container.innerHTML = '<div id="summary-cards-container"></div>'
+        dm.container = container
+        await dm.updateSummaryCards()
+
+        // 若誤限當前帳本（activeLedgerId=1），無 ledgerId 的群組欠款會被過濾掉 → 金額 0
+        expect(container.textContent).toContain('5000')
+        document.body.innerHTML = ''
     })
 
     describe('總結卡片金額計算 (updateSummaryCards)', () => {
@@ -1241,8 +1276,545 @@ describe('DebtManager - 建構與基本狀態', () => {
             await dm.updateSummaryCards()
             await dm.loadDebtList()
 
-            expect(container.querySelector('.group-card[data-group-id="group-1"]')).toBeNull()
+            expect(container.querySelector('.group-card[data-group-id="group-1"]')).toBeNull();
+        })
+
+        it('選擇個別聯絡人時，群組金額只算該聯絡人的分擔（而非整群淨額）', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+            const cBob = await ds.addContact({ name: 'Bob', phone: '0912' })
+
+            // 同一群組：Alice 欠 500、Bob 欠 300 → 整群淨額 800
+            const rec1 = await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 500, date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cAlice.id, type: 'receivable', amount: 500,
+                recordId: rec1.id, groupId: 'group-1', settled: false, date: '2024-01-01',
+            })
+            const rec2 = await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 300, date: '2024-01-02',
+            })
+            await ds.addDebt({
+                contactId: cBob.id, type: 'receivable', amount: 300,
+                recordId: rec2.id, groupId: 'group-1', settled: false, date: '2024-01-02',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: '旅行群組', settled: false, netAmount: 800, totalExpense: 800, totalIncome: 0, dateFrom: '2024-01-01', dateTo: '2024-01-02', recordCount: 2 },
+            ])
+
+            const container = await renderPage(dm)
+
+            // 無篩選：群組卡顯示整群淨額 800
+            let summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('800')
+            expect(summaryCards[2].textContent).toContain('1 個')
+
+            // 篩選 Alice：群組卡只算 Alice 分擔 500；v2.1.8.0 起群組欠款
+            // 一律計入聯絡人應收/應付統計（遠端修復：關聯群組不再導致漏算）
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+            summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('Alice')
+            expect(summaryCards[2].textContent).toContain('500')
+            expect(summaryCards[2].textContent).not.toContain('800')
+            // 群組欠款計入個人應收卡（v2.1.8.0 語意：無論是否屬於群組皆累加）
+            expect(summaryCards[0].textContent).toContain('500')
+            // 列表群組卡也顯示該聯絡人分擔
+            const groupCard = container.querySelector('.group-card[data-group-id="group-1"]')
+            expect(groupCard).not.toBeNull()
+            expect(groupCard.textContent).toContain('500')
+            expect(groupCard.textContent).not.toContain('800')
+            expect(groupCard.textContent).toContain('此聯絡人分擔')
+
+            // 篩選 Bob：群組卡只算 Bob 分擔 300
+            dm.currentContactFilter = cBob.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+            summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('Bob')
+            expect(summaryCards[2].textContent).toContain('300')
+            expect(summaryCards[2].textContent).not.toContain('800')
+        })
+
+        it('聯絡人在群組中欠款已結清時，分擔金額為 0', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+            const cBob = await ds.addContact({ name: 'Bob', phone: '0912' })
+
+            const rec1 = await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 500, date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cAlice.id, type: 'receivable', amount: 500,
+                recordId: rec1.id, groupId: 'group-1', settled: true, date: '2024-01-01',
+            })
+            const rec2 = await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 300, date: '2024-01-02',
+            })
+            await ds.addDebt({
+                contactId: cBob.id, type: 'receivable', amount: 300,
+                recordId: rec2.id, groupId: 'group-1', settled: false, date: '2024-01-02',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: '旅行群組', settled: false, netAmount: 300, totalExpense: 800, totalIncome: 0, dateFrom: '2024-01-01', dateTo: '2024-01-02', recordCount: 2 },
+            ])
+
+            const container = await renderPage(dm)
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            const summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            // Alice 的欠款已結清 → 群組對 Alice 而言已無未結清分擔 → 0 個、淨額 0（不是整群的 300）
+            expect(summaryCards[2].textContent).toContain('0 個')
+            expect(summaryCards[2].textContent).toContain('NT$0')
+            expect(summaryCards[2].textContent).not.toContain('300')
+
+            // 未結清篩選下，Alice 已無未結清群組欠款 → 群組卡不顯示
+            const groupCard = container.querySelector('.group-card[data-group-id="group-1"]')
+            expect(groupCard).toBeNull()
+        })
+
+        it('聯絡人在群組中僅有 record（無未結清 debt 分擔）時，群組卡金額歸零不洩漏整群淨額', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+            const cBob = await ds.addContact({ name: 'Bob', phone: '0912' })
+
+            // 群組 netAmount 800 全來自 Bob 的未結清欠款；
+            // Alice 只掛了 record（無 debt），屬於該群組但無未結清分擔
+            await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 200, date: '2024-01-01',
+                contactId: cAlice.id,
+            })
+            const rec2 = await ds.addRecord({
+                groupId: 'group-1', type: 'expense', amount: 300, date: '2024-01-02',
+            })
+            await ds.addDebt({
+                contactId: cBob.id, type: 'receivable', amount: 300,
+                recordId: rec2.id, groupId: 'group-1', settled: false, date: '2024-01-02',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: '旅行群組', settled: false, netAmount: 800, totalExpense: 800, totalIncome: 0, dateFrom: '2024-01-01', dateTo: '2024-01-02', recordCount: 2 },
+            ])
+
+            const container = await renderPage(dm)
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            // 頂部摘要卡：Alice 無未結清分擔 → 淨額 NT$0
+            const summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('NT$0')
+            expect(summaryCards[2].textContent).not.toContain('800')
+
+            // 列表群組卡（因 record 路徑仍顯示該群組）：金額必須歸零，
+            // 不得回退顯示整群淨額 800，與頂部摘要卡保持一致
+            const groupCard = container.querySelector('.group-card[data-group-id="group-1"]')
+            expect(groupCard).not.toBeNull()
+            expect(groupCard.textContent).toContain('NT$0')
+            expect(groupCard.textContent).not.toContain('800')
+            expect(groupCard.textContent).toContain('此聯絡人在此群組無未結清欠款')
+        })
+
+        it('群組內部分擔為應付時，聯絡人分擔淨額為負值', async () => {
+            const cAlice = await ds.addContact({ name: 'Alice', phone: '0911' })
+
+            // Alice 欠別人（payable）500 在群組中
+            const rec1 = await ds.addRecord({
+                groupId: 'group-1', type: 'income', amount: 500, date: '2024-01-01',
+            })
+            await ds.addDebt({
+                contactId: cAlice.id, type: 'payable', amount: 500,
+                recordId: rec1.id, groupId: 'group-1', settled: false, date: '2024-01-01',
+            })
+
+            ds.getGroups.mockResolvedValue([
+                { id: 'group-1', name: '宿舍群組', settled: false, netAmount: -500, totalExpense: 0, totalIncome: 500, dateFrom: '2024-01-01', dateTo: '2024-01-01', recordCount: 1 },
+            ])
+
+            const container = await renderPage(dm)
+            dm.currentContactFilter = cAlice.id
+            await dm.updateSummaryCards()
+            await dm.loadDebtList()
+
+            const summaryCards = container.querySelectorAll('#summary-cards-container > div')
+            expect(summaryCards[2].textContent).toContain('500')
+            // 群組卡分擔方向為應付
+            const groupCard = container.querySelector('.group-card[data-group-id="group-1"]')
+            expect(groupCard).not.toBeNull()
+            expect(groupCard.textContent).toContain('應付')
         })
     })
 })
 
+// ==================== 匯出聯絡人欠款資訊 (#DEBT-EXP1) ====================
+// buildContactDebtExportText 為純函數；showContactDebtExportModal 用真實 DebtManager + mock dataService
+describe('匯出聯絡人欠款資訊 #DEBT-EXP1', () => {
+    let ds
+    let dm
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        dm = new DebtManager(ds)
+    })
+
+    describe('buildContactDebtExportText (純函數)', () => {
+        it('空陣列回傳標題 +（沒有欠款紀錄）', () => {
+            const text = dm.buildContactDebtExportText('小明', [])
+            expect(text).toContain('小明的欠款明細（共 0 筆）')
+            expect(text).toContain('（沒有欠款紀錄）')
+        })
+
+        it('非陣列輸入回傳標題 +（沒有欠款紀錄）', () => {
+            const text = dm.buildContactDebtExportText('小明', null)
+            expect(text).toContain('小明的欠款明細（共 0 筆）')
+            expect(text).toContain('（沒有欠款紀錄）')
+        })
+
+        it('單筆未結清 receivable → 標題 + 月份 + 明細行 + 應收合計', () => {
+            const debts = [{
+                id: 1, type: 'receivable', originalAmount: 500,
+                remainingAmount: 500, date: '2026-07-15',
+                description: '午餐代墊', settled: false, createdAt: 1,
+            }]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            expect(text).toContain('小明的欠款明細（共 1 筆）')
+            expect(text).toContain('2026-07')
+            expect(text).toContain('- 2026-07-15 午餐代墊 NT$500（未結清）')
+            expect(text).toContain('應收 NT$500')
+            expect(text).toContain('應付 NT$0')
+        })
+
+        it('多月份 → 月份降序排列（最近月份在前）', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 100, remainingAmount: 100, date: '2026-07-10', description: null, settled: false, createdAt: 1 },
+                { id: 2, type: 'payable', originalAmount: 200, remainingAmount: 200, date: '2026-09-01', description: null, settled: false, createdAt: 2 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            const idxAug = text.indexOf('2026-09')
+            const idxJul = text.indexOf('2026-07')
+            expect(idxAug).toBeGreaterThan(-1)
+            expect(idxJul).toBeGreaterThan(-1)
+            expect(idxAug).toBeLessThan(idxJul)
+        })
+
+        it('同月多筆 → date 降序排列', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 100, remainingAmount: 100, date: '2026-07-01', description: '早', settled: false, createdAt: 1 },
+                { id: 2, type: 'payable', originalAmount: 200, remainingAmount: 200, date: '2026-07-20', description: '晚', settled: false, createdAt: 2 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            const idxEarly = text.indexOf('2026-07-01')
+            const idxLate = text.indexOf('2026-07-20')
+            expect(idxLate).toBeLessThan(idxEarly)
+        })
+
+        it('已結清 → 顯示 originalAmount +（已結清），不計入未結清合計', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 300, remainingAmount: 0, date: '2026-06-01', description: null, settled: true, createdAt: 1 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            expect(text).toContain('- 2026-06-01 NT$300（已結清）')
+            expect(text).toContain('全部 1 筆已結清')
+            expect(text).not.toContain('未結清合計')
+        })
+
+        it('無 description → 行內無逗號/空格殘留（日期後直接跟金額）', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 100, remainingAmount: 100, date: '2026-07-01', description: null, settled: false, createdAt: 1 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            expect(text).toContain('- 2026-07-01 NT$100（未結清）')
+        })
+
+        it('remainingAmount 為 null（舊資料）→ fallback originalAmount', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 400, remainingAmount: null, date: '2026-07-01', description: null, settled: false, createdAt: 1 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            expect(text).toContain('NT$400（未結清）')
+            expect(text).toContain('應付 NT$400')
+        })
+
+        it('混合 receivable + payable + type undefined（歸應付）→ 合計分算正確', () => {
+            const debts = [
+                { id: 1, type: 'receivable', originalAmount: 500, remainingAmount: 300, date: '2026-07-01', description: null, settled: false, createdAt: 1 },
+                { id: 2, type: 'payable', originalAmount: 200, remainingAmount: 200, date: '2026-07-02', description: null, settled: false, createdAt: 2 },
+                { id: 3, type: undefined, originalAmount: 100, remainingAmount: 100, date: '2026-07-03', description: null, settled: false, createdAt: 3 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            // 應收 = 300（receivable 的 remaining）；應付 = 200 + 100（payable + 舊格式）
+            expect(text).toContain('應收 NT$300')
+            expect(text).toContain('應付 NT$300')
+        })
+
+        it('部分結清 → 顯示未結清合計（已結清筆不計入）', () => {
+            const debts = [
+                { id: 1, type: 'payable', originalAmount: 100, remainingAmount: 0, date: '2026-06-01', description: null, settled: true, createdAt: 1 },
+                { id: 2, type: 'payable', originalAmount: 200, remainingAmount: 200, date: '2026-07-01', description: null, settled: false, createdAt: 2 },
+            ]
+            const text = dm.buildContactDebtExportText('小明', debts)
+            expect(text).toContain('未結清合計')
+            expect(text).toContain('應付 NT$200')
+            expect(text).not.toContain('全部 2 筆已結清')
+        })
+    })
+
+    describe('showContactDebtExportModal', () => {
+        it('聯絡人不存在 → showToast 錯誤、不建 modal', async () => {
+            await dm.showContactDebtExportModal(999)
+            expect(showToast).toHaveBeenCalledWith('找不到聯絡人', 'error')
+            expect(document.querySelector('#contact-debt-export-modal')).toBeNull()
+        })
+
+        it('該聯絡人無欠款 → modal 顯示（沒有欠款紀錄）', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await dm.showContactDebtExportModal(c.id)
+            const modal = document.querySelector('#contact-debt-export-modal')
+            expect(modal).not.toBeNull()
+            const ta = modal.querySelector('#export-debt-text')
+            expect(ta.value).toContain('（沒有欠款紀錄）')
+            expect(ta.value).toContain('小明的欠款明細（共 0 筆）')
+            expect(modal.querySelector('h3').textContent).toContain('匯出欠款 — 小明')
+            modal.remove()
+        })
+
+        it('有欠款 → modal 顯示月份分組文字', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await ds.addDebt({
+                contactId: c.id, type: 'receivable', originalAmount: 500,
+                remainingAmount: 500, date: '2026-07-15', description: '午餐代墊', settled: false,
+            })
+            await dm.showContactDebtExportModal(c.id)
+            const modal = document.querySelector('#contact-debt-export-modal')
+            expect(modal).not.toBeNull()
+            const text = modal.querySelector('#export-debt-text').value
+            expect(text).toContain('2026-07')
+            expect(text).toContain('午餐代墊')
+            expect(text).toContain('未結清')
+            modal.remove()
+        })
+
+        it('XSS 防護：debt.description 含 script 標籤 → innerHTML 不含原始 script', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await ds.addDebt({
+                contactId: c.id, type: 'payable', originalAmount: 100,
+                remainingAmount: 100, date: '2026-07-01',
+                description: '<script>alert(1)</script>', settled: false,
+            })
+            await dm.showContactDebtExportModal(c.id)
+            const modal = document.querySelector('#contact-debt-export-modal')
+            expect(modal).not.toBeNull()
+            expect(modal.innerHTML).not.toContain('<script>')
+            // 顯示文字應為 escape 後的實體
+            expect(modal.querySelector('#export-debt-text').value).toContain('<script>alert(1)</script>')
+            modal.remove()
+        })
+
+        it('複製按鈕 → clipboard.writeText 被呼叫 + modal 移除', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await ds.addDebt({
+                contactId: c.id, type: 'payable', originalAmount: 100,
+                remainingAmount: 100, date: '2026-07-01', description: null, settled: false,
+            })
+            const writeText = vi.fn(async () => {})
+            Object.defineProperty(navigator, 'clipboard', {
+                value: { writeText },
+                configurable: true,
+            })
+            await dm.showContactDebtExportModal(c.id)
+            const copyBtn = document.querySelector('#copy-export-debt-btn')
+            expect(copyBtn).not.toBeNull()
+            copyBtn.click()
+            await flush()
+            expect(writeText).toHaveBeenCalledTimes(1)
+            expect(document.querySelector('#contact-debt-export-modal')).toBeNull()
+            expect(customAlert).toHaveBeenCalled()
+        })
+
+        it('關閉按鈕 → modal 移除', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await dm.showContactDebtExportModal(c.id)
+            document.querySelector('#close-export-debt-btn').click()
+            expect(document.querySelector('#contact-debt-export-modal')).toBeNull()
+        })
+
+        it('背景點擊 → modal 移除', async () => {
+            const c = await ds.addContact({ name: '小明' })
+            await dm.showContactDebtExportModal(c.id)
+            const modal = document.querySelector('#contact-debt-export-modal')
+            modal.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            expect(document.querySelector('#contact-debt-export-modal')).toBeNull()
+        })
+    })
+
+    describe('renderContactsPage 匯出按鈕入口', () => {
+        it('每個聯絡人列有匯出欠款按鈕，點擊觸發 showContactDebtExportModal', async () => {
+            await ds.addContact({ name: '小明' })
+            await ds.addContact({ name: '阿明' })
+            const spy = vi.spyOn(dm, 'showContactDebtExportModal').mockResolvedValue(undefined)
+            const container = document.createElement('div')
+            document.body.appendChild(container)
+            await dm.renderContactsPage(container)
+
+            const exportBtns = container.querySelectorAll('.export-debt-btn')
+            expect(exportBtns.length).toBe(2)
+
+            // 點第一個聯絡人的匯出按鈕
+            exportBtns[0].click()
+            await flush()
+            expect(spy).toHaveBeenCalledTimes(1)
+            const calledId = spy.mock.calls[0][0]
+            // data-id 為數字 id（mock addContact 從 50 起遞增）
+            expect(typeof calledId).toBe('number')
+            container.remove()
+        })
+    })
+})
+
+
+// ==================== 既有款項登記（initialPaidAmount 基線） ====================
+describe('DebtManager - 既有款項登記基線', () => {
+    let dm, ds
+
+    beforeEach(() => {
+        ds = createMockDataService()
+        dm = new DebtManager(ds)
+    })
+
+    it('新增模式顯示「已還／已收金額」欄位，編輯模式不顯示', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await renderPage(dm)
+
+        await dm.showAddDebtModal()
+        expect(document.querySelector('#debt-initial-paid')).not.toBeNull()
+        document.querySelector('#add-debt-modal').remove()
+
+        const debt = await ds.addDebt({
+            contactId: 50, type: 'receivable', amount: 1000, date: '2024-01-01',
+        })
+        const fresh = await ds.getDebt(debt.id ?? debt)
+        await dm.showAddDebtModal(fresh)
+        expect(document.querySelector('#debt-initial-paid')).toBeNull()
+        document.querySelector('#add-debt-modal').remove()
+    })
+
+    it('填寫基線 → addDebt 帶 initialPaidAmount', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await renderPage(dm)
+        await dm.showAddDebtModal()
+        const modal = document.querySelector('#add-debt-modal')
+        modal.querySelector('#debt-amount').value = '1000'
+        modal.querySelector('#debt-initial-paid').value = '400'
+        modal.querySelector('#save-debt-btn').click()
+        await flush()
+
+        expect(ds.addDebt).toHaveBeenCalledTimes(1)
+        const arg = ds.addDebt.mock.calls[0][0]
+        expect(arg.amount).toBe(1000)
+        expect(arg.initialPaidAmount).toBe(400)
+    })
+
+    it('基線留空 → debtData 不含 initialPaidAmount（零污染）', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await renderPage(dm)
+        await dm.showAddDebtModal()
+        const modal = document.querySelector('#add-debt-modal')
+        modal.querySelector('#debt-amount').value = '700'
+        modal.querySelector('#save-debt-btn').click()
+        await flush()
+
+        const arg = ds.addDebt.mock.calls[0][0]
+        expect('initialPaidAmount' in arg).toBe(false)
+    })
+
+    it('基線大於總額 → 彈出警示且不建立欠款', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await renderPage(dm)
+        await dm.showAddDebtModal()
+        const modal = document.querySelector('#add-debt-modal')
+        modal.querySelector('#debt-amount').value = '500'
+        modal.querySelector('#debt-initial-paid').value = '800'
+        modal.querySelector('#save-debt-btn').click()
+        await flush()
+
+        expect(customAlert).toHaveBeenCalledWith(expect.stringContaining('不能大於'))
+        expect(ds.addDebt).not.toHaveBeenCalled()
+        document.querySelector('#add-debt-modal')?.remove()
+    })
+
+    it('編輯欠款：已還總額含基線（基線 400 + payments 200，金額 1000→900 時 remaining=300）', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await ds.addDebt({
+            contactId: 50,
+            type: 'receivable',
+            amount: 1000,
+            date: '2024-01-01',
+        })
+        // 直接改造 mock 內部 debt：加基線與一筆付款
+        const d = (await ds.getDebts())[0]
+        d.initialPaidAmount = 400
+        d.remainingAmount = 400
+        d.payments = [{ amount: 200, date: '2024-02-01' }]
+
+        await renderPage(dm)
+        await dm.showAddDebtModal(d)
+        const modal = document.querySelector('#add-debt-modal')
+        modal.querySelector('#debt-amount').value = '900'
+        modal.querySelector('#save-debt-btn').click()
+        await flush()
+
+        expect(ds.updateDebt).toHaveBeenCalledWith(
+            d.id,
+            expect.objectContaining({
+                originalAmount: 900,
+                remainingAmount: 300,
+            })
+        )
+    })
+
+    it('還款歷程 modal：已還合計含基線並顯示基線列', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await ds.addDebt({
+            contactId: 50,
+            type: 'payable',
+            amount: 1000,
+            date: '2024-01-01',
+        })
+        const d = (await ds.getDebts())[0]
+        d.initialPaidAmount = 400
+        d.remainingAmount = 400
+        d.payments = [{ amount: 200, date: '2024-02-01' }]
+
+        await renderPage(dm)
+        await dm.showPaymentHistoryModal(d.id)
+        const modal = document.querySelector('#payment-history-modal')
+        expect(modal).not.toBeNull()
+        expect(modal.innerHTML).toContain('NT$600')
+        expect(modal.innerHTML).toContain('含既有款項基線')
+        expect(modal.innerHTML).toContain('NT$400')
+        modal.remove()
+    })
+
+    it('還款歷程 modal：無基線的欠款不顯示基線列（舊行為不變）', async () => {
+        await ds.addContact({ name: '小明', phone: '1' })
+        await ds.addDebt({
+            contactId: 50,
+            type: 'payable',
+            amount: 1000,
+            date: '2024-01-01',
+        })
+        const d = (await ds.getDebts())[0]
+        d.remainingAmount = 700
+        d.payments = [{ amount: 300, date: '2024-02-01' }]
+
+        await renderPage(dm)
+        await dm.showPaymentHistoryModal(d.id)
+        const modal = document.querySelector('#payment-history-modal')
+        expect(modal.innerHTML).not.toContain('含既有款項基線')
+        expect(modal.innerHTML).toContain('NT$300')
+        modal.remove()
+    })
+})

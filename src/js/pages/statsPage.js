@@ -25,6 +25,14 @@ export class StatsPage {
                         </div>
                         <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
                     </a>
+                    <a href="#retirement" class="flex items-center gap-3 p-4 rounded-xl bg-wabi-surface border border-wabi-border mb-6 hover:bg-wabi-bg transition-colors">
+                        <i class="fa-solid fa-umbrella-beach text-wabi-primary text-lg"></i>
+                        <div class="flex-1">
+                            <p class="text-sm font-bold text-wabi-text-primary">退休分析 <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-500 align-middle">實驗性</span></p>
+                            <p class="text-xs text-wabi-text-secondary">Monte Carlo 模擬：估算現有儲蓄能撐到目標年數的機率</p>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-wabi-text-secondary"></i>
+                    </a>
                     <div id="stats-container"></div>
                     <div id="stats-calendar-container" class="mt-6"></div>
                 </main>

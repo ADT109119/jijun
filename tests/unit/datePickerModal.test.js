@@ -4,11 +4,10 @@ import { getDateRange, formatDateToString } from '../../src/js/utils.js'
 
 // ── createDateRangeModal ───────────────────────────────────────────
 describe('createDateRangeModal', () => {
-    let applyCallback, closeCallback
+    let applyCallback
 
     beforeEach(() => {
         applyCallback = vi.fn()
-        closeCallback = vi.fn()
 
         // Remove any existing modals from previous tests
         document
@@ -100,7 +99,7 @@ describe('createDateRangeModal', () => {
             expect(modal.querySelector('#custom-end-date').value).toBe(today)
         })
 
-        it('包含 6 個快速日期按鈕', () => {
+        it('包含 9 個快速日期按鈕', () => {
             const modal = createDateRangeModal({
                 initialStartDate: '2026-06-01',
                 initialEndDate: '2026-06-30',
@@ -108,7 +107,7 @@ describe('createDateRangeModal', () => {
             })
 
             const quickBtns = modal.querySelectorAll('.quick-date-btn')
-            expect(quickBtns.length).toBe(7)
+            expect(quickBtns.length).toBe(9)
         })
 
         it('快速日期按鈕包含正確的 data-range 屬性', () => {
@@ -128,6 +127,8 @@ describe('createDateRangeModal', () => {
             expect(ranges).toContain('month')
             expect(ranges).toContain('lastmonth')
             expect(ranges).toContain('year')
+            expect(ranges).toContain('quarter')
+            expect(ranges).toContain('lastquarter')
         })
 
         it('包含確定和取消按鈕', () => {
