@@ -128,6 +128,10 @@ docs/                    # 專案設計文件與技術規格目錄
 ├── PER_DEVICE_SYNC_en.md# Per-Device 共用帳本同步架構英文技術規格文件
 └── superpowers/         # 歷史設計規格與實施計畫 (specs & plans)
 
+.github/workflows/       # CI/CD 自動化工作流目錄
+├── deploy.yml           # GitHub Pages 自動部署 (推送 main 分支時自動建置並發布前端至 gh-pages)
+└── docker-image.yml     # Docker 映像檔建置與發布 (僅在推送正式版號標籤 v* / ver* 時觸發建置並推送至 Docker Hub adt109119/jijun)
+
 README.md                # 專案中文主要說明文件
 README_en.md             # 專案英文主要說明文件
 CHANGE_LOG.md            # 版本更新日誌 (語意化版本紀錄)
