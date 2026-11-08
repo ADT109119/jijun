@@ -2162,6 +2162,53 @@ describe('SyncService', () => {
             )
         })
 
+        it('pullSharedLedgerChanges 在遇到 null 或缺少欄位的畸形 change 時安全略過不拋錯 (P2-01)', async () => {
+            ds = createMockDataService()
+            ds.getLedgers.mockResolvedValue([
+                {
+                    id: 1,
+                    name: '家庭支出',
+                    uuid: 'ledger-uuid-1',
+                    isShared: true,
+                    sharedFileId: 'ledger-uuid-1',
+                    type: 'shared',
+                },
+            ])
+            ds.getSetting.mockResolvedValue({ value: [] })
+            ss = createSyncService(ds)
+            ss.selfHostToken = 'sh-token-1'
+            ss.deviceId = 'dev_me'
+            const applySpy = vi.spyOn(ss, 'applyRemoteChanges').mockResolvedValue()
+
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                jsonRes(200, {
+                    uuid: 'ledger-uuid-1',
+                    content: {
+                        deviceId: 'x',
+                        timestamp: 0,
+                        changes: [
+                            null,
+                            undefined,
+                            {},
+                            { invalid: true },
+                            {
+                                deviceId: 'dev_other',
+                                operation: 'add',
+                                storeName: 'records',
+                                timestamp: 200,
+                                data: { uuid: 'r2' },
+                            },
+                        ],
+                    },
+                })
+            )
+
+            await expect(ss.pullSharedLedgerChanges()).resolves.not.toThrow()
+            expect(applySpy).toHaveBeenCalledTimes(1)
+            expect(applySpy.mock.calls[0][0].length).toBe(1)
+            expect(applySpy.mock.calls[0][0][0].data.uuid).toBe('r2')
+        })
+
         // ── Admin（帳號管理）──
 
         it('adminCreateUser：POST /admin/users 回傳 pin', async () => {

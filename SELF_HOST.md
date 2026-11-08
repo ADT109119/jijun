@@ -132,8 +132,15 @@ SQLite DB 在 `SELF_HOST_DB_PATH`（Docker 預設 `/app/data/selfhost.db`，comp
 **備份你的資料 = 備份這個 DB 檔**：
 
 ```bash
-docker compose exec sync-server cp /app/data/selfhost.db /tmp/selfhost.db
+# 線上熱備份（SQLite WAL 模式推薦使用 .backup，避免讀取到未刷盤之髒頁或不完整快照）：
+docker compose exec sync-server sqlite3 /app/data/selfhost.db ".backup /tmp/selfhost.db"
 docker cp sync-server:/tmp/selfhost.db ./backup-$(date +%F).db
+
+# 或者停機冷備份（適合完全確保離線靜態複製）：
+docker compose stop sync-server
+docker cp sync-server:/app/data/selfhost.db ./backup-$(date +%F).db
+docker compose start sync-server
+
 # 還原：關閉容器 → 放回 DB 檔 → 啟動
 ```
 

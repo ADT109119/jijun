@@ -4085,4 +4085,69 @@ describe('importData 進度回報與確認跳過', () => {
             restore()
         }
     })
+
+    describe('同步機制加固 (P2-02 & P2-03)', () => {
+        it('seedAllDataToSyncLog 能掃描 settings 並將分類與預算設定補齊至 sync_log (P2-02)', async () => {
+            // 儲存同步相關設定與機器本地設定
+            await ds.saveSetting({ key: 'category_order_1', value: ['food', 'shopping'] })
+            await ds.saveSetting({ key: 'custom_categories_1', value: [{ id: 'cat_test', name: '測試分類' }] })
+            await ds.saveSetting({ key: 'hidden_categories_1', value: ['lottery'] })
+            await ds.saveSetting({ key: 'budget_settings', value: { monthlyBudget: 88888 } })
+            await ds.saveSetting({ key: 'local_device_token', value: 'secret' })
+
+            // 執行 seedAllDataToSyncLog
+            await ds.seedAllDataToSyncLog()
+
+            const allSyncLogs = await ds.db.getAll('sync_log')
+            const catOrderLog = allSyncLogs.find(l => l.storeName === 'category_order_1')
+            const customCatLog = allSyncLogs.find(l => l.storeName === 'custom_categories_1')
+            const hiddenCatLog = allSyncLogs.find(l => l.storeName === 'hidden_categories_1')
+            const budgetLog = allSyncLogs.find(l => l.storeName === 'budget_settings')
+            const localLog = allSyncLogs.find(l => l.storeName === 'local_device_token')
+
+            expect(catOrderLog).toBeDefined()
+            expect(catOrderLog.operation).toBe('update')
+            expect(catOrderLog.recordId).toBe('all')
+            expect(catOrderLog.data).toEqual(['food', 'shopping'])
+
+            expect(customCatLog).toBeDefined()
+            expect(customCatLog.data).toEqual([{ id: 'cat_test', name: '測試分類' }])
+
+            expect(hiddenCatLog).toBeDefined()
+            expect(hiddenCatLog.data).toEqual(['lottery'])
+
+            expect(budgetLog).toBeDefined()
+            expect(budgetLog.data).toEqual({ monthlyBudget: 88888 })
+
+            // 本地機器設置不得被編入 sync_log
+            expect(localLog).toBeUndefined()
+        })
+
+        it('logChange 在系統時鐘回撥時保證 timestamp 嚴格單調遞增 (P2-03)', async () => {
+            // 第一筆記錄
+            await ds.logChange('add', 'records', 101, { amount: 100 })
+            const logs1 = await ds.db.getAll('sync_log')
+            const log1 = logs1.find(l => l.recordId === 101)
+            expect(log1).toBeDefined()
+            const ts1 = log1.timestamp
+
+            // 模擬系統時鐘回撥 1 小時 (1000 * 3600 ms)
+            const realDateNow = Date.now
+            try {
+                Date.now = () => ts1 - 3600000
+
+                // 產生第二筆記錄
+                await ds.logChange('add', 'records', 102, { amount: 200 })
+                const logs2 = await ds.db.getAll('sync_log')
+                const log2 = logs2.find(l => l.recordId === 102)
+                expect(log2).toBeDefined()
+
+                // 驗證第二筆的 timestamp 依然嚴格大於第一筆，不隨時鐘回撥倒退
+                expect(log2.timestamp).toBeGreaterThan(ts1)
+                expect(log2.timestamp).toBe(ts1 + 1)
+            } finally {
+                Date.now = realDateNow
+            }
+        })
+    })
 })

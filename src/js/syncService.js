@@ -1123,6 +1123,7 @@ export class SyncService {
                 if (!Array.isArray(changes)) continue
 
                 for (const change of changes) {
+                    if (!change || typeof change !== 'object' || !change.storeName) continue
                     if (change.deviceId === this.deviceId) continue
                     if (
                         change.storeName === 'ledgers' &&
@@ -1195,6 +1196,11 @@ export class SyncService {
         const pushKey = `sync_last_push_timestamp_selfhost_${this.selfHostUsername || 'default'}`
         const lastPush = await this.dataService.getSetting(pushKey)
         let since = lastPush?.value || 0
+
+        // 時鐘回撥防禦：若記錄的水位高於當前時間，代表系統時鐘曾回撥，重設水位自 0 重推未同步項目
+        if (since > Date.now()) {
+            since = 0
+        }
 
         // 若為此自架伺服器/帳號之初次推送，且本機已有既有資料，確保本機所有歷史資料皆已編入 sync_log 供完整遷移
         if (!lastPush || !lastPush.value) {

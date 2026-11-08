@@ -640,11 +640,11 @@ console.log('== 並行建立共用帳本競態條件防護 ==')
 
     const [create1, create2] = await Promise.all([
         req('POST', '/api/selfhost/shared', {
-            body: { ledgerUuid: raceUuid, name: '帳本 A', content: { changes: [{ id: 'a1' }] } },
+            body: { ledgerUuid: raceUuid, name: '帳本 A', content: { changes: [{ operation: 'add', storeName: 'records', timestamp: Date.now(), deviceId: 'dev_a', data: { id: 'a1' } }] } },
             token: u1.json.token,
         }),
         req('POST', '/api/selfhost/shared', {
-            body: { ledgerUuid: raceUuid, name: '帳本 B', content: { changes: [{ id: 'b1' }] } },
+            body: { ledgerUuid: raceUuid, name: '帳本 B', content: { changes: [{ operation: 'add', storeName: 'records', timestamp: Date.now(), deviceId: 'dev_b', data: { id: 'b1' } }] } },
             token: u2.json.token,
         }),
     ])
@@ -957,6 +957,63 @@ console.log('== 共用帳本禁止惡意 storeName 變更 ==')
         }
     })
     check('建立含非法 storeName 之共用帳本回傳 400', badCreate.status === 400, badCreate.status)
+    resetLimitersForTests()
+}
+
+console.log('== 共用帳本驗證畸形 change 結構 (P2-01) ==')
+{
+    const regUser = await req('POST', '/api/selfhost/register', { body: { username: 'shared_struct_user', pin: 'sec-pin-123' } }, regCtx)
+    const token = regUser.json.token
+    const validUuid = '88888888-0000-4000-8000-000000000088'
+
+    // 建立時包含 null 變更
+    const nullCreate = await req('POST', '/api/selfhost/shared', {
+        token,
+        body: {
+            ledgerUuid: validUuid,
+            name: 'Null Change Ledger',
+            content: {
+                changes: [null]
+            }
+        }
+    })
+    check('POST /api/selfhost/shared 含 null 變更回傳 400', nullCreate.status === 400, nullCreate.status)
+
+    // 建立合法共用帳本
+    const okCreate = await req('POST', '/api/selfhost/shared', {
+        token,
+        body: {
+            ledgerUuid: validUuid,
+            name: 'Valid Change Ledger',
+            content: { changes: [] }
+        }
+    })
+    check('POST /api/selfhost/shared 建立成功 201', okCreate.status === 201, okCreate.status)
+
+    // PUT 包含缺少欄位/非法的 change 結構
+    const malformedPut = await req('PUT', `/api/selfhost/shared/${validUuid}`, {
+        token,
+        body: {
+            content: {
+                changes: [
+                    { operation: 'invalid_op', storeName: 'records', timestamp: Date.now() }
+                ]
+            }
+        }
+    })
+    check('PUT /api/selfhost/shared/:uuid 含非法 operation 回傳 400', malformedPut.status === 400, malformedPut.status)
+
+    // PUT 包含 null 變更
+    const nullPut = await req('PUT', `/api/selfhost/shared/${validUuid}`, {
+        token,
+        body: {
+            content: {
+                changes: [null]
+            }
+        }
+    })
+    check('PUT /api/selfhost/shared/:uuid 含 null 回傳 400', nullPut.status === 400, nullPut.status)
+
     resetLimitersForTests()
 }
 

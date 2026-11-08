@@ -3055,10 +3055,14 @@ class DataService {
     async logChange(operation, storeName, recordId, data) {
         if (this.useLocalStorage || !this.db) return
         try {
-            const syncData = data ? { ...data } : null
+            const syncData = data
+                ? Array.isArray(data)
+                    ? [...data]
+                    : { ...data }
+                : null
 
             // 自動補全所有外鍵 UUID，確保跨裝置同步時能正確對應
-            if (syncData) {
+            if (syncData && !Array.isArray(syncData)) {
                 // 1. Ledger UUID
                 if (syncData.ledgerId && !syncData.ledgerUuid) {
                     const ledger = await this.db.get(
@@ -3106,13 +3110,33 @@ class DataService {
                 }
             }
 
+            // 保證 sync_log 的 timestamp 嚴格單調遞增，杜絕系統時鐘回撥 (Clock Rollback)
+            // 導致新變更 timestamp 低於上次 push 游標而遭 getChangesSince 永久跳過
+            let now = Date.now()
+            if (this._maxSyncLogTimestamp === undefined) {
+                const stored =
+                    typeof localStorage !== 'undefined'
+                        ? localStorage.getItem('sync_max_monotonic_timestamp')
+                        : null
+                this._maxSyncLogTimestamp = stored ? Number(stored) : 0
+            }
+            if (now <= this._maxSyncLogTimestamp) {
+                now = this._maxSyncLogTimestamp + 1
+            }
+            this._maxSyncLogTimestamp = now
+            if (typeof localStorage !== 'undefined') {
+                try {
+                    localStorage.setItem('sync_max_monotonic_timestamp', String(now))
+                } catch (_) {}
+            }
+
             const tx = this.db.transaction('sync_log', 'readwrite')
             await tx.store.add({
                 operation,
                 storeName,
                 recordId,
                 data: syncData,
-                timestamp: Date.now(),
+                timestamp: now,
                 deviceId: this._syncDeviceId,
             })
             await tx.done
@@ -3143,17 +3167,46 @@ class DataService {
                 existingSyncLogs.map(l => `${l.storeName}|${l.recordId}`)
             )
             for (const storeName of stores) {
-                if (!this.db.objectStoreNames.contains(storeName)) continue
-                const items = await this.db.getAll(storeName)
-                for (const item of items) {
-                    if (!item || item.id === undefined) continue
-                    const key = `${storeName}|${item.id}`
-                    if (!loggedSet.has(key)) {
-                        await this.logChange('add', storeName, item.id, item)
-                        loggedSet.add(key)
+                try {
+                    if (
+                        this.db.objectStoreNames &&
+                        !this.db.objectStoreNames.contains(storeName)
+                    ) {
+                        continue
                     }
+                    const items = await this.db.getAll(storeName)
+                    for (const item of items) {
+                        if (!item || item.id === undefined) continue
+                        const key = `${storeName}|${item.id}`
+                        if (!loggedSet.has(key)) {
+                            await this.logChange('add', storeName, item.id, item)
+                            loggedSet.add(key)
+                        }
+                    }
+                } catch (_) {
+                    // store 不存在或略過
                 }
             }
+            // 補齊與帳本/使用者關聯的同步設定（分類順序、隱藏分類、自訂分類、預算配置）
+            try {
+                if (
+                    !this.db.objectStoreNames ||
+                    this.db.objectStoreNames.contains('settings')
+                ) {
+                    const settings = await this.db.getAll('settings')
+                    const syncableSettingRegex =
+                        /^(category_order|hidden_categories|custom_categories|budget_settings)(_.*)?$/
+                    for (const s of settings) {
+                        if (!s || !s.key || typeof s.key !== 'string') continue
+                        if (!syncableSettingRegex.test(s.key)) continue
+                        const key = `${s.key}|all`
+                        if (!loggedSet.has(key)) {
+                            await this.logChange('update', s.key, 'all', s.value)
+                            loggedSet.add(key)
+                        }
+                    }
+                }
+            } catch (_) {}
         } catch (err) {
             console.warn('[DataService] seedAllDataToSyncLog error:', err)
         }

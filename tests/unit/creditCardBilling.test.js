@@ -694,7 +694,10 @@ describe('信用卡「即時消費」與「出帳明細」功能測試', () => {
 
             // 3. 驗證在未出帳即時消費中能查到該筆由 2026-09 遞延過來的 2500 消費
             const card = await ds.getAccount(cardId)
-            const billingInfo = await ds.getCreditCardBillingInfo(cardId)
+            const billingInfo = await ds.getCreditCardBillingInfo(
+                cardId,
+                new Date('2026-10-15')
+            )
             const unbilledDeferred = billingInfo.unbilledRecords.find(r => r.id === rec2Id)
             expect(unbilledDeferred).toBeDefined()
             expect(unbilledDeferred.deferredFromPeriod).toBe('2026-09')

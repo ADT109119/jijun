@@ -1129,8 +1129,19 @@ export async function handleSharedCreate(request, ctx, corsHeaders) {
         )
     }
     for (const c of content.changes) {
-        if (c && c.storeName && !ALLOWED_SHARED_STORES.has(c.storeName)) {
-            return jsonResponse({ error: `Forbidden store in shared ledger: ${c.storeName}` }, 400, corsHeaders)
+        if (!isValidChange(c)) {
+            return jsonResponse(
+                { error: 'Invalid change entry in shared ledger' },
+                400,
+                corsHeaders
+            )
+        }
+        if (!ALLOWED_SHARED_STORES.has(c.storeName)) {
+            return jsonResponse(
+                { error: `Forbidden store in shared ledger: ${c.storeName}` },
+                400,
+                corsHeaders
+            )
         }
     }
     try {
@@ -1235,8 +1246,19 @@ export async function handleSharedPut(
         )
     }
     for (const c of body.content.changes) {
-        if (c && c.storeName && !ALLOWED_SHARED_STORES.has(c.storeName)) {
-            return jsonResponse({ error: `Forbidden store in shared ledger: ${c.storeName}` }, 400, corsHeaders)
+        if (!isValidChange(c)) {
+            return jsonResponse(
+                { error: 'Invalid change entry in shared ledger' },
+                400,
+                corsHeaders
+            )
+        }
+        if (!ALLOWED_SHARED_STORES.has(c.storeName)) {
+            return jsonResponse(
+                { error: `Forbidden store in shared ledger: ${c.storeName}` },
+                400,
+                corsHeaders
+            )
         }
     }
     const modifiedAt = await ctx.store.updateSharedLedgerContent(

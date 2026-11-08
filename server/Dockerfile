@@ -48,7 +48,7 @@ RUN npm run build
 FROM node:22-alpine AS server
 
 # su-exec：entrypoint 降權用（紅隊報告 M-2）
-RUN apk add --no-cache su-exec
+RUN apk add --no-cache su-exec sqlite
 
 WORKDIR /app
 
