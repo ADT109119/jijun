@@ -23,19 +23,132 @@ export class SettingsPage {
                     <h2 class="text-wabi-primary text-lg font-bold flex-1 text-center">設定</h2>
                 </div>
                 <div class="p-4 space-y-6">
-                    <!-- Settings -->
-                    <div class="bg-wabi-surface rounded-xl">
-                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">應用程式</h3>
 
-                        ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn')}
-                        ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
-                        <div id="install-pwa-btn-container" class="hidden">
-                            ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
+                    <!-- 1. 帳務功能模組 (原實驗功能成熟移出) -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
+                        <div class="px-4 pt-4 pb-2">
+                            <h3 class="text-wabi-primary text-base font-bold">帳務功能</h3>
+                            <p class="text-xs text-wabi-text-secondary">進階帳務與資金追蹤管理工具</p>
                         </div>
-                        ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn')}
-                        ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn')}
+
+                        <!-- 多帳戶模式 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-wallet"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">多帳戶模式</p>
+                                    <p class="text-xs text-wabi-text-secondary">管理現金、銀行、信用卡與轉帳</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="advanced-account-mode-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-accounts-link-container" class="hidden">
+                            ${this.createSettingItem('fa-solid fa-credit-card', '帳戶管理', 'manage-accounts-btn')}
+                        </div>
+                        <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
+
+                        <!-- 週期性交易 -->
+                        ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn', '定時自動記帳與固定收支')}
+
+                        <!-- 攤提/分期管理 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-chart-gantt"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">攤提/分期管理</p>
+                                    <p class="text-xs text-wabi-text-secondary">大額消費分期付款與資產折舊追蹤</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="amortization-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-amortizations-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-chart-gantt', '攤提/分期計畫管理', 'manage-amortizations-btn')}
+                        </div>
+                        <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
+
+                        <!-- 欠款管理 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-handshake"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">欠款管理</p>
+                                    <p class="text-xs text-wabi-text-secondary">借出、借入與聯絡人帳務記錄</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="debt-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-debts-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-receipt', '欠款與還款管理', 'manage-debts-btn')}
+                        </div>
+                        <div class="pl-16 pr-4"><hr class="border-wabi-border"/></div>
+
+                        <!-- 群組功能 -->
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-layer-group"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">群組功能</p>
+                                    <p class="text-xs text-wabi-text-secondary">分帳、專案與活動收支分組</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="group-management-toggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                            </label>
+                        </div>
+                        <div id="manage-groups-link-container" class="hidden">
+                             ${this.createSettingItem('fa-solid fa-layer-group', '群組與專案管理', 'manage-groups-btn')}
+                        </div>
+                    </div>
+
+                    <!-- 2. 系統偏好設定 (進入內層 PreferencesPage) -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">系統偏好</h3>
+                        ${this.createSettingItem('fa-solid fa-sliders', '記帳與偏好設定', 'preferences-btn', '計算機小鍵盤、明細預設範圍、每日提醒、餘額警示')}
                         ${isAndroidApk ? this.createSettingItem('fa-solid fa-barcode', '設定發票載具', 'set-invoice-carrier-btn') : ''}
-                    
+                        ${
+                            this.app.rewardService?.isAdsEnabled?.()
+                                ? isAdFree
+                                  ? this.createSettingItem(
+                                        'fa-solid fa-shield-heart text-green-600',
+                                        `已啟用無廣告模式 <span class="text-xs text-green-600 dark:text-green-400 font-medium ml-1">(${adFreeRemaining})</span>`,
+                                        'sponsor-reward-ad-btn'
+                                    )
+                                  : this.createSettingItem(
+                                        'fa-solid fa-rectangle-ad',
+                                        '觀看廣告以移除廣告 7 天',
+                                        'sponsor-reward-ad-btn',
+                                        '觀看一則獎勵廣告可暫時停用應用程式內廣告'
+                                    )
+                                : ''
+                        }
+                    </div>
+
+                    <!-- 3. 外觀與個人化 -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">外觀與個人化</h3>
+                        
                         <!-- 外觀模式快速切換 (跟隨系統 / 淺色 / 深色) -->
                         <div class="w-full flex flex-col sm:flex-row sm:items-center gap-3 bg-transparent px-4 py-3.5 justify-between border-b border-wabi-border/30">
                             <div class="flex items-center gap-4">
@@ -62,24 +175,60 @@ export class SettingsPage {
                                 </button>
                             </div>
                         </div>
-                        
+
+                        ${this.createSettingItem('fa-solid fa-palette', '外觀主題', 'manage-themes-btn', '切換自訂主題配色風格')}
+                        ${this.createSettingItem('fa-solid fa-puzzle-piece', '擴充功能管理', 'manage-plugins-btn', '管理自訂外觀與擴充模組')}
                     </div>
 
-                    <!-- Data Management -->
-                    <div class="bg-wabi-surface rounded-xl">
+                    <!-- 4. 資料管理 -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">資料管理</h3>
-                        ${this.createSettingItem('fa-solid fa-book-bookmark', '帳本管理', 'manage-ledgers-btn')}
-                        ${this.createSettingItem('fa-solid fa-cloud', '雲端備份&同步', 'cloud-sync-btn')}
-                        ${this.createSettingItem('fa-solid fa-download', '匯出資料', 'export-data-btn')}
-                        ${this.createSettingItem('fa-solid fa-upload', '匯入資料', 'import-data-btn')}
+                        ${this.createSettingItem('fa-solid fa-book-bookmark', '帳本管理', 'manage-ledgers-btn', '切換、建立或管理多人共用帳本')}
+                        ${this.createSettingItem('fa-solid fa-cloud', '雲端備份&同步', 'cloud-sync-btn', 'Google Drive 與自架伺服器同步設定')}
+                        ${this.createSettingItem('fa-solid fa-download', '匯出資料', 'export-data-btn', '備份收支紀錄與帳戶設定為 JSON')}
+                        ${this.createSettingItem('fa-solid fa-upload', '匯入資料', 'import-data-btn', '從備份檔案還原資料')}
                         <input type="file" id="import-file-input" accept=".json" class="hidden">
                     </div>
-                    <!-- App Info -->
-                    <div class="bg-wabi-surface rounded-xl">
-                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">關於</h3>
+
+                    <!-- 5. 實驗室 (Lab) -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">實驗室 (Lab)</h3>
+                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between py-2">
+                            <div class="flex items-center gap-4">
+                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
+                                    <i class="fa-solid fa-microchip"></i>
+                                </div>
+                                <div>
+                                    <p class="text-wabi-text-primary text-base font-normal">AI 離線記帳語音助手</p>
+                                    <p class="text-xs text-wabi-text-secondary">端側 58M LLM 離線解析口語與語音記帳</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button id="ai-model-select-btn" class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-wabi-primary/10 text-wabi-primary hover:bg-wabi-primary/20 transition-colors cursor-pointer" title="點擊設定或更新 AI 模型量化版本">
+                                    <i class="fa-solid fa-layer-group text-[10px]"></i>
+                                    <span id="ai-model-badge-text">Q4_0</span>
+                                    <span id="ai-model-update-tag" class="hidden px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white rounded-full">新版本</span>
+                                </button>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="ai-experimental-toggle" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
+                                    <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. 關於與系統 -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
+                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">關於與系統</h3>
                         ${this.createSettingItem('fa-solid fa-arrows-rotate', '檢查更新', 'check-update-btn')}
+                        ${this.createSettingItem('fa-solid fa-cloud-arrow-down', '強制更新', 'force-update-btn', '清除快取並重新載入最新版本')}
                         ${this.createSettingItem('fa-solid fa-file-lines', '更新日誌', 'changelog-btn')}
                         ${this.createSettingItem('fa-solid fa-compass-drafting', '導覽教學', 'guide-tour-btn')}
+                        ${this.createSettingItem('fa-solid fa-share-nodes', '分享此 App', 'share-app-btn')}
+                        <div id="install-pwa-btn-container" class="hidden">
+                            ${this.createSettingItem('fa-solid fa-mobile-screen-button', '安裝為應用程式', 'install-pwa-btn')}
+                        </div>
                         ${this.createSettingItem('fa-solid fa-shield-halved', '隱私權政策', 'privacy-btn')}
                         ${this.createSettingItem('fa-solid fa-scale-balanced', '授權條款', 'license-btn')}
                         <a id="github-repo-link" href="https://github.com/ADT109119/jijun" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
@@ -101,8 +250,8 @@ export class SettingsPage {
                         <div id="version-info" class="px-4 py-3 text-xs text-center text-wabi-text-secondary"></div>
                     </div>
 
-                    <!-- Sponsor the Author -->
-                    <div class="bg-wabi-surface rounded-xl">
+                    <!-- 7. 贊助作者 -->
+                    <div class="bg-wabi-surface rounded-xl overflow-hidden shadow-sm">
                         <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">贊助作者</h3>
                         <a href="https://buymeacoffee.com/thewalkingfish" target="_blank" rel="noopener noreferrer" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
                             <div class="flex items-center gap-4">
@@ -117,237 +266,6 @@ export class SettingsPage {
                         </a>
                     </div>
 
-                    <!-- Advanced Features -->
-                    <div class="bg-wabi-surface rounded-xl">
-                        <h3 class="text-wabi-primary text-base font-bold px-4 pb-2 pt-4">實驗功能</h3>
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-wallet"></i>
-                                </div>
-                                <p class="text-wabi-text-primary text-base font-normal">多帳戶模式</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="advanced-account-mode-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="manage-accounts-link-container" class="hidden">
-                            ${this.createSettingItem('fa-solid fa-credit-card', '帳戶管理', 'manage-accounts-btn')}
-                        </div>
-                        ${this.createSettingItem('fa-solid fa-repeat', '週期性交易', 'manage-recurring-btn')}
-                        <!-- Amortization Management Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-chart-gantt"></i>
-                                </div>
-                                <p class="text-wabi-text-primary text-base font-normal">攤提/分期管理</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="amortization-management-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="manage-amortizations-link-container" class="hidden">
-                             ${this.createSettingItem('fa-solid fa-chart-gantt', '攤提/分期管理', 'manage-amortizations-btn')}
-                        </div>
-                        <!-- Debt Management Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-handshake"></i>
-                                </div>
-                                <p class="text-wabi-text-primary text-base font-normal">欠款管理</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="debt-management-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="manage-debts-link-container" class="hidden">
-                             ${this.createSettingItem('fa-solid fa-receipt', '欠款管理', 'manage-debts-btn')}
-                        </div>
-                        <!-- Group Management Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-layer-group"></i>
-                                </div>
-                                <p class="text-wabi-text-primary text-base font-normal">群組功能</p>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="group-management-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="manage-groups-link-container" class="hidden">
-                             ${this.createSettingItem('fa-solid fa-layer-group', '群組與專案管理', 'manage-groups-btn')}
-                        </div>
-                        <!-- AI Offline Voice Assistant Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-microchip"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">AI 離線記帳語音助手</p>
-                                    <p class="text-xs text-wabi-text-secondary">使用端側 58M LLM 解析口語與語音記帳</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <button id="ai-model-select-btn" class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-wabi-primary/10 text-wabi-primary hover:bg-wabi-primary/20 transition-colors cursor-pointer" title="點擊設定或更新 AI 模型量化版本">
-                                    <i class="fa-solid fa-layer-group text-[10px]"></i>
-                                    <span id="ai-model-badge-text">Q4_0</span>
-                                    <span id="ai-model-update-tag" class="hidden px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white rounded-full">新版本</span>
-                                </button>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="ai-experimental-toggle" class="sr-only peer">
-                                    <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                    <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <!-- Calculator Mode Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-calculator"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">關閉計算機功能</p>
-                                    <p class="text-xs text-wabi-text-secondary">開啟後記帳小鍵盤將不顯示加減乘除與等於鍵</p>
-                                </div>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="calculator-mode-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="calculator-mode-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>啟用此選項後，記帳小鍵盤將隱藏 ＋、−、×、÷ 與 ＝ 按鈕，僅作為標準數字輸入鍵盤使用。</p>
-                        </div>
-                        <!-- Low Balance Warning Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-triangle-exclamation"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">餘額不足提醒</p>
-                                    <p class="text-xs text-wabi-text-secondary">支出存入後帳戶透支或信用卡超出額度時警示（需開啟多帳戶模式）</p>
-                                </div>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="low-balance-warning-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="low-balance-warning-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>記帳時若該筆支出使一般帳戶餘額轉為負值、或信用卡欠款超出額度，會以黃色警示提示（不阻擋記帳）。</p>
-                        </div>
-                        <!-- Calendar Bill Dots Toggle -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-calendar-day"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">行事曆繳款圓點</p>
-                                    <p class="text-xs text-wabi-text-secondary">收支分析月曆標示信用卡繳款日（紅點）與出帳日（藍點）（需開啟多帳戶模式）</p>
-                                </div>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="calendar-bill-dots-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="calendar-bill-dots-info" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <p class="text-xs text-wabi-text-secondary mt-2"><i class="fa-solid fa-circle-info mr-1"></i>停用後，收支分析的行事曆金流檢視將不再標示信用卡繳款日（紅點）與出帳日（藍點）。</p>
-                        </div>
-
-                        <!-- Default Records Period -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between border-b border-wabi-border/50">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-clock-rotate-left"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">明細預設時間範圍</p>
-                                    <p class="text-xs text-wabi-text-secondary">進入明細頁面時的預設時間範圍</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="default-period-container" class="px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <div class="mt-2">
-                                <select id="default-period-select" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary w-full p-2 outline-none appearance-none">
-                                    <option value="week">本週</option>
-                                    <option value="month">本月</option>
-                                    <option value="today">今天</option>
-                                    <option value="last7days">近 7 天</option>
-                                    <option value="last30days">近 30 天</option>
-                                    <option value="last">上次時間範圍</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        
-                        <!-- Daily Reminder Feature -->
-                        <div class="w-full flex items-center gap-4 bg-transparent px-4 py-3 justify-between border-b border-wabi-border/50">
-                            <div class="flex items-center gap-4">
-                                <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
-                                    <i class="fa-solid fa-bell"></i>
-                                </div>
-                                <div>
-                                    <p class="text-wabi-text-primary text-base font-normal">每日提醒</p>
-                                    <p class="text-xs text-wabi-text-secondary">定時提醒記帳</p>
-                                </div>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="reminder-toggle" class="sr-only peer">
-                                <div class="w-11 h-6 bg-wabi-bg border border-wabi-border rounded-full peer peer-focus:ring-4 peer-focus:ring-wabi-accent/30 peer-checked:bg-wabi-primary peer-checked:border-wabi-primary transition-colors"></div>
-                                <span class="absolute left-1 top-1 w-4 h-4 bg-wabi-surface rounded-full transition-transform peer-checked:translate-x-full"></span>
-                            </label>
-                        </div>
-                        <div id="reminder-settings-container" class="hidden px-4 pb-4 border-b border-wabi-border/50 bg-wabi-bg/30">
-                            <div class="mt-4 flex items-center justify-between">
-                                <label class="text-sm font-medium text-wabi-text-primary">提醒時間</label>
-                                <input type="time" id="reminder-time" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary p-2 outline-none">
-                            </div>
-                            <div class="mt-4">
-                                <label class="text-sm font-medium text-wabi-text-primary block mb-2">提醒條件</label>
-                                <select id="reminder-condition" class="bg-wabi-surface border border-wabi-border text-wabi-text-primary text-sm rounded-lg focus:ring-wabi-primary focus:border-wabi-primary w-full p-2 outline-none appearance-none">
-                                    <option value="always">時間到一律提醒</option>
-                                    <option value="no_records">當日尚未記帳才提醒</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        ${
-                            this.app.rewardService?.isAdsEnabled?.()
-                                ? isAdFree
-                                  ? this.createSettingItem(
-                                        'fa-solid fa-shield-heart text-green-600',
-                                        `已啟用無廣告模式 <span class="text-xs text-green-600 dark:text-green-400 font-medium ml-1">(${adFreeRemaining})</span>`,
-                                        'sponsor-reward-ad-btn'
-                                    )
-                                  : this.createSettingItem(
-                                        'fa-solid fa-rectangle-ad',
-                                        '觀看廣告以移除廣告 7 天',
-                                        'sponsor-reward-ad-btn'
-                                    )
-                                : ''
-                        }
-
-                    </div>
-
                     <!-- Banner Ad（AD_FREE build 不渲染） -->
                     ${
                         this.app.rewardService?.isAdsEnabled?.()
@@ -360,20 +278,15 @@ export class SettingsPage {
             </div>
         `
         await this.setupSettingsPageListeners()
-        // Add listener for plugin manager button
-        const managePluginsBtn = document.getElementById('manage-plugins-btn')
-        if (managePluginsBtn) {
-            managePluginsBtn.addEventListener('click', () => {
-                window.location.hash = '#plugins'
+
+        // 系統偏好設定
+        const preferencesBtn = document.getElementById('preferences-btn')
+        if (preferencesBtn) {
+            preferencesBtn.addEventListener('click', () => {
+                window.location.hash = '#preferences'
             })
         }
-        // Themes manager button
-        const manageThemesBtn = document.getElementById('manage-themes-btn')
-        if (manageThemesBtn) {
-            manageThemesBtn.addEventListener('click', () => {
-                window.location.hash = '#themes'
-            })
-        }
+
         // Invoice Carrier setting button
         const setInvoiceCarrierBtn = document.getElementById('set-invoice-carrier-btn')
         if (setInvoiceCarrierBtn) {
@@ -398,6 +311,21 @@ export class SettingsPage {
                 )
             })
         }
+
+        // Add listener for plugin manager button
+        const managePluginsBtn = document.getElementById('manage-plugins-btn')
+        if (managePluginsBtn) {
+            managePluginsBtn.addEventListener('click', () => {
+                window.location.hash = '#plugins'
+            })
+        }
+        // Themes manager button
+        const manageThemesBtn = document.getElementById('manage-themes-btn')
+        if (manageThemesBtn) {
+            manageThemesBtn.addEventListener('click', () => {
+                window.location.hash = '#themes'
+            })
+        }
         // Ledger management button
         const manageLedgersBtn = document.getElementById('manage-ledgers-btn')
         if (manageLedgersBtn) {
@@ -412,7 +340,7 @@ export class SettingsPage {
                 window.location.hash = '#sync-settings'
             })
         }
-        // 贊助 - 觀看獎勵廣告以移除廣告 7 天
+        // 系統偏好 - 觀看獎勵廣告以移除廣告 7 天
         const rewardAdBtn = document.getElementById('sponsor-reward-ad-btn')
         if (rewardAdBtn) {
             rewardAdBtn.addEventListener('click', async () => {
@@ -451,14 +379,17 @@ export class SettingsPage {
         }
     }
 
-    createSettingItem(icon, text, id) {
+    createSettingItem(icon, text, id, subtitle = '') {
         return `
-            <button id="${id}" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 justify-between hover:bg-wabi-bg/50">
+            <button id="${id}" class="w-full flex items-center gap-4 bg-transparent px-4 min-h-14 py-3 justify-between hover:bg-wabi-bg/50 text-left transition-colors cursor-pointer">
                 <div class="flex items-center gap-4">
                     <div class="text-wabi-primary flex items-center justify-center rounded-lg bg-wabi-primary/10 shrink-0 size-10">
                         <i class="${icon}"></i>
                     </div>
-                    <p class="text-wabi-text-primary text-base font-normal">${text}</p>
+                    <div>
+                        <p class="text-wabi-text-primary text-base font-normal">${text}</p>
+                        ${subtitle ? `<p class="text-xs text-wabi-text-secondary">${subtitle}</p>` : ''}
+                    </div>
                 </div>
                 <div class="shrink-0 text-wabi-text-secondary">
                     <i class="fa-solid fa-chevron-right"></i>
@@ -926,217 +857,6 @@ export class SettingsPage {
             manageGroupsBtn.addEventListener('click', () => {
                 window.location.hash = '#groups'
             })
-        }
-
-        // Calculator Mode Toggle
-        const calculatorModeToggle = document.getElementById(
-            'calculator-mode-toggle'
-        )
-        if (calculatorModeToggle) {
-            this.app.dataService
-                .getSetting('calculatorModeEnabled')
-                .then(setting => {
-                    const isEnabled = setting ? !!setting.value : true // 預設為 true (開啟)
-                    calculatorModeToggle.checked = !isEnabled // 關閉按鈕勾選代表 disabled (!isEnabled)
-                    if (!isEnabled) {
-                        document
-                            .getElementById('calculator-mode-info')
-                            ?.classList.remove('hidden')
-                    }
-                })
-
-            calculatorModeToggle.addEventListener('change', async e => {
-                const isDisabled = e.target.checked // 勾選 = 關閉
-                const isEnabled = !isDisabled
-                await this.app.dataService.saveSetting({
-                    key: 'calculatorModeEnabled',
-                    value: isEnabled,
-                })
-                if (isDisabled) {
-                    document
-                        .getElementById('calculator-mode-info')
-                        ?.classList.remove('hidden')
-                } else {
-                    document
-                        .getElementById('calculator-mode-info')
-                        ?.classList.add('hidden')
-                }
-                showToast(`小鍵盤計算機模式已${isEnabled ? '啟用' : '停用'}`)
-            })
-        }
-
-        // Low Balance Warning Toggle
-        const lowBalanceWarningToggle = document.getElementById(
-            'low-balance-warning-toggle'
-        )
-        if (lowBalanceWarningToggle) {
-            this.app.dataService
-                .getSetting('lowBalanceWarningEnabled')
-                .then(setting => {
-                    const isEnabled = !!setting?.value
-                    lowBalanceWarningToggle.checked = isEnabled
-                    if (isEnabled) {
-                        document
-                            .getElementById('low-balance-warning-info')
-                            ?.classList.remove('hidden')
-                    }
-                })
-
-            lowBalanceWarningToggle.addEventListener('change', async e => {
-                const isEnabled = e.target.checked
-                await this.app.dataService.saveSetting({
-                    key: 'lowBalanceWarningEnabled',
-                    value: isEnabled,
-                })
-                if (isEnabled) {
-                    document
-                        .getElementById('low-balance-warning-info')
-                        ?.classList.remove('hidden')
-                    // 導覽系統：開關開啟瞬間在設定頁彈功能介紹氣泡
-                    this.app.guideManager.showToggleTour('lowBalance')
-                } else {
-                    document
-                        .getElementById('low-balance-warning-info')
-                        ?.classList.add('hidden')
-                }
-                showToast(`餘額不足提醒已${isEnabled ? '啟用' : '停用'}`)
-            })
-        }
-
-        // Calendar Bill Dots Toggle (行事曆繳款圓點)
-        const calendarBillDotsToggle = document.getElementById(
-            'calendar-bill-dots-toggle'
-        )
-        if (calendarBillDotsToggle) {
-            this.app.dataService
-                .getSetting('calendarBillDotsEnabled')
-                .then(setting => {
-                    // 預設啟用：只有明確存過 false 才關閉
-                    const isEnabled = !(setting && setting.value === false)
-                    calendarBillDotsToggle.checked = isEnabled
-                    if (!isEnabled) {
-                        document
-                            .getElementById('calendar-bill-dots-info')
-                            ?.classList.remove('hidden')
-                    }
-                })
-
-            calendarBillDotsToggle.addEventListener('change', async e => {
-                const isEnabled = e.target.checked
-                await this.app.dataService.saveSetting({
-                    key: 'calendarBillDotsEnabled',
-                    value: isEnabled,
-                })
-                if (isEnabled) {
-                    document
-                        .getElementById('calendar-bill-dots-info')
-                        ?.classList.add('hidden')
-                } else {
-                    document
-                        .getElementById('calendar-bill-dots-info')
-                        ?.classList.remove('hidden')
-                }
-                showToast(`行事曆繳款圓點已${isEnabled ? '啟用' : '停用'}`)
-            })
-        }
-
-        // Default Records Period Setting
-        const defaultPeriodSelect = document.getElementById(
-            'default-period-select'
-        )
-        if (defaultPeriodSelect) {
-            this.app.dataService
-                .getSetting('defaultRecordsPeriod')
-                .then(setting => {
-                    const periodValue = setting?.value || 'month'
-                    defaultPeriodSelect.value = periodValue
-                })
-
-            defaultPeriodSelect.addEventListener('change', async e => {
-                await this.app.dataService.saveSetting({
-                    key: 'defaultRecordsPeriod',
-                    value: e.target.value,
-                })
-                showToast('已設定明細預設時間範圍')
-            })
-        }
-
-        // Daily Reminder UI Setup
-        const reminderToggle = document.getElementById('reminder-toggle')
-        const reminderSettingsContainer = document.getElementById(
-            'reminder-settings-container'
-        )
-        const reminderTimeInput = document.getElementById('reminder-time')
-        const reminderConditionSelect =
-            document.getElementById('reminder-condition')
-
-        if (reminderToggle) {
-            Promise.all([
-                this.app.dataService.getSetting('reminderEnabled'),
-                this.app.dataService.getSetting('reminderTime'),
-                this.app.dataService.getSetting('reminderCondition'),
-            ]).then(([enabledSetting, timeSetting, conditionSetting]) => {
-                const isEnabled = !!enabledSetting?.value
-                reminderToggle.checked = isEnabled
-                reminderTimeInput.value = timeSetting?.value || '20:00'
-                reminderConditionSelect.value =
-                    conditionSetting?.value || 'no_records'
-
-                if (isEnabled) {
-                    reminderSettingsContainer.classList.remove('hidden')
-                }
-            })
-
-            const updateReminderLogic = async () => {
-                const isEnabled = reminderToggle.checked
-                const timeStr = reminderTimeInput.value || '20:00'
-                const condition = reminderConditionSelect.value || 'always'
-
-                await this.app.dataService.saveSetting({
-                    key: 'reminderEnabled',
-                    value: isEnabled,
-                })
-                await this.app.dataService.saveSetting({
-                    key: 'reminderTime',
-                    value: timeStr,
-                })
-                await this.app.dataService.saveSetting({
-                    key: 'reminderCondition',
-                    value: condition,
-                })
-
-                if (isEnabled) {
-                    const hasPerm =
-                        await this.app.notificationService.requestPermission()
-                    if (!hasPerm) {
-                        showToast('請允許通知權限以使用此功能', 'warning')
-                        reminderToggle.checked = false
-                        reminderSettingsContainer.classList.add('hidden')
-                        await this.app.dataService.saveSetting({
-                            key: 'reminderEnabled',
-                            value: false,
-                        })
-                        return
-                    }
-                }
-
-                await this.app.notificationService.applyCurrentSettings()
-            }
-
-            reminderToggle.addEventListener('change', e => {
-                if (e.target.checked) {
-                    reminderSettingsContainer.classList.remove('hidden')
-                } else {
-                    reminderSettingsContainer.classList.add('hidden')
-                }
-                updateReminderLogic()
-            })
-
-            reminderTimeInput.addEventListener('change', updateReminderLogic)
-            reminderConditionSelect.addEventListener(
-                'change',
-                updateReminderLogic
-            )
         }
     }
 

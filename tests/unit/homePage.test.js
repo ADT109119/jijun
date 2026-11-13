@@ -111,3 +111,83 @@ describe('HomePage - loadGroupBalance Widget', () => {
         expect(groupBalanceContainer.innerHTML).not.toContain('<img src=x')
     })
 })
+
+describe('HomePage - loadBudgetWidget 與首頁月份切換連動', () => {
+    let app, homePage, container, budgetContainer, monthDisplay
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.innerHTML = ''
+        document.body.appendChild(container)
+
+        budgetContainer = document.createElement('div')
+        budgetContainer.id = 'budget-widget-container'
+        container.appendChild(budgetContainer)
+
+        monthDisplay = document.createElement('span')
+        monthDisplay.id = 'home-month-display'
+        monthDisplay.textContent = '2026 / 11'
+        container.appendChild(monthDisplay)
+
+        const balanceEl = document.createElement('div')
+        balanceEl.id = 'home-balance'
+        container.appendChild(balanceEl)
+
+        const incomeEl = document.createElement('div')
+        incomeEl.id = 'home-income'
+        container.appendChild(incomeEl)
+
+        const expenseEl = document.createElement('div')
+        expenseEl.id = 'home-expense'
+        container.appendChild(expenseEl)
+
+        const recentContainer = document.createElement('div')
+        recentContainer.id = 'recent-records-container'
+        container.appendChild(recentContainer)
+
+        app = {
+            appContainer: container,
+            dataService: {
+                getSetting: vi.fn().mockResolvedValue({ value: true }),
+                getGroups: vi.fn().mockResolvedValue([]),
+                getStatistics: vi.fn().mockResolvedValue({
+                    totalIncome: 10000,
+                    totalExpense: 4000,
+                    expenseByCategory: {},
+                }),
+                getRecords: vi.fn().mockResolvedValue([]),
+            },
+            ledgerManager: {
+                getActiveLedger: vi.fn().mockReturnValue({ id: 1, name: '預設' }),
+                getAllLedgers: vi.fn().mockReturnValue([{ id: 1 }]),
+            },
+            budgetManager: {
+                renderBudgetWidget: vi.fn().mockResolvedValue('<div id="rendered-budget">預算內容</div>'),
+                showBudgetModal: vi.fn(),
+            },
+        }
+
+        homePage = new HomePage(app)
+    })
+
+    it('loadBudgetWidget 預設自 home-month-display 取得月份並傳給 renderBudgetWidget', async () => {
+        monthDisplay.textContent = '2026 / 10'
+        await homePage.loadBudgetWidget()
+
+        expect(app.budgetManager.renderBudgetWidget).toHaveBeenCalledWith('2026-10')
+        expect(budgetContainer.innerHTML).toContain('預算內容')
+    })
+
+    it('loadBudgetWidget 可明確傳入 targetMonth', async () => {
+        await homePage.loadBudgetWidget('2026-12')
+
+        expect(app.budgetManager.renderBudgetWidget).toHaveBeenCalledWith('2026-12')
+    })
+
+    it('loadHomePageData 切換月份時，連動傳遞月份至 loadBudgetWidget', async () => {
+        const spy = vi.spyOn(homePage, 'loadBudgetWidget')
+        await homePage.loadHomePageData('2026-05')
+
+        expect(spy).toHaveBeenCalledWith('2026-05')
+    })
+})

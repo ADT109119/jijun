@@ -104,6 +104,57 @@ function noIndexPlugin() {
     }
 }
 
+const defines = {
+    // 編譯時常數：所有 src/ 下的 JS 都可直接使用
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    // 廣告設定 (來源：package.json → adConfig)
+    // __AD_ENABLED__: 總開關。build 時設 AD_FREE=1 可關閉全部廣告
+    // （純自架部署用，見 SELF_HOST.md）
+    __AD_ENABLED__: JSON.stringify(
+        process.env.AD_FREE === '1'
+            ? false
+            : adConfig.enabled ?? true
+    ),
+    __AD_IS_TESTING__: JSON.stringify(adConfig.isTesting ?? true),
+    __AD_ADSENSE_CLIENT_ID__: JSON.stringify(
+        adConfig.adsenseClientId ?? ''
+    ),
+    __AD_ADSENSE_AD_SLOT__: JSON.stringify(adConfig.adsenseAdSlot ?? ''),
+    __AD_GPT_REWARDED_PATH__: JSON.stringify(
+        adConfig.gptRewardedAdUnitPath ?? ''
+    ),
+    __AD_ADMOB_BANNER_ID__: JSON.stringify(adConfig.admobBannerId ?? ''),
+    __AD_ADMOB_REWARDED_ID__: JSON.stringify(
+        adConfig.admobRewardedId ?? ''
+    ),
+    __WEB_STORE_URL__: JSON.stringify(
+        adConfig.webStoreUrl ?? 'https://jijun.the-walking-fish.com'
+    ),
+    // __ACCESS_CODE__: 前端存取驗證碼（純自架部署的 UX 門檻）。
+    __ACCESS_CODE__: JSON.stringify(process.env.ACCESS_CODE || ''),
+}
+
+/**
+ * Vite 插件：在開發模式 (dev/serve) 下將 define 巨集常數替換注入到 JS 檔案中。
+ * 補足 Vite 8 預設在 client 模式下跳過 JS 檔案 define 替換的問題。
+ */
+function devDefinePlugin(defMap) {
+    return {
+        name: 'dev-define-plugin',
+        apply: 'serve',
+        transform(code, id) {
+            if (!id.endsWith('.js') && !id.includes('.js?')) return null
+            let transformed = code
+            for (const [k, v] of Object.entries(defMap)) {
+                if (transformed.includes(k)) {
+                    transformed = transformed.replaceAll(k, v)
+                }
+            }
+            return transformed !== code ? transformed : null
+        },
+    }
+}
+
 export default defineConfig({
     plugins: [
         legacy({
@@ -111,39 +162,11 @@ export default defineConfig({
         }),
         serviceWorkerVersionPlugin(),
         noIndexPlugin(),
+        devDefinePlugin(defines),
     ],
-    define: {
-        // 編譯時常數：所有 src/ 下的 JS 都可直接使用
-        __APP_VERSION__: JSON.stringify(APP_VERSION),
-        // 廣告設定 (來源：package.json → adConfig)
-        // __AD_ENABLED__: 總開關。build 時設 AD_FREE=1 可關閉全部廣告
-        // （純自架部署用，見 SELF_HOST.md）
-        __AD_ENABLED__: JSON.stringify(
-            process.env.AD_FREE === '1'
-                ? false
-                : adConfig.enabled ?? true
-        ),
-        __AD_IS_TESTING__: JSON.stringify(adConfig.isTesting ?? true),
-        __AD_ADSENSE_CLIENT_ID__: JSON.stringify(
-            adConfig.adsenseClientId ?? ''
-        ),
-        __AD_ADSENSE_AD_SLOT__: JSON.stringify(adConfig.adsenseAdSlot ?? ''),
-        __AD_GPT_REWARDED_PATH__: JSON.stringify(
-            adConfig.gptRewardedAdUnitPath ?? ''
-        ),
-        __AD_ADMOB_BANNER_ID__: JSON.stringify(adConfig.admobBannerId ?? ''),
-        __AD_ADMOB_REWARDED_ID__: JSON.stringify(
-            adConfig.admobRewardedId ?? ''
-        ),
-        __WEB_STORE_URL__: JSON.stringify(
-            adConfig.webStoreUrl ?? 'https://jijun.the-walking-fish.com'
-        ),
-        // __ACCESS_CODE__: 前端存取驗證碼（純自架部署的 UX 門檻）。
-        // 設定 ACCESS_CODE=xxx 後，每個瀏覽器 session 首次訪問需輸入驗證碼
-        // 才能使用 app（見 src/js/accessGate.js）。
-        // 空字串（預設）= 無 gate，一般版完全不受影響。
-        // 注意：這是 UX 門檻非安全機制（code 會編入 bundle，詳見 SELF_HOST.md）
-        __ACCESS_CODE__: JSON.stringify(process.env.ACCESS_CODE || ''),
+    define: defines,
+    legacy: {
+        skipWebSocketTokenCheck: true,
     },
     build: {
         outDir: 'dist',
@@ -155,6 +178,7 @@ export default defineConfig({
         },
     },
     server: {
+        host: 'localhost',
         port: 3000,
         open: true,
         fs: {

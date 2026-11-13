@@ -150,7 +150,7 @@ describe('AddPage - 帳戶釘選 (Pinned Accounts)', () => {
             expect(pins[0].className).toContain('fa-solid')
             expect(pins[0].className).toContain('text-wabi-accent')
             expect(pins[1].className).toContain('fa-solid')
-            expect(pins[2].className).toContain('fa-regular')
+            expect(pins[2].className).toContain('fa-solid')
             expect(pins[2].className).toContain('text-wabi-text-secondary')
         })
 

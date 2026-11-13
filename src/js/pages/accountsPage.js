@@ -548,6 +548,13 @@ export class AccountsPage {
                 a.type !== 'credit_card' &&
                 (!accountToEdit || a.id !== accountToEdit.id)
         )
+        const autoPayDebitId =
+            accountToEdit?.autoPayAccountId &&
+            debitAccounts.some(a => a.id === accountToEdit.autoPayAccountId)
+                ? accountToEdit.autoPayAccountId
+                : accountToEdit?.autoPayAccountUuid
+                  ? debitAccounts.find(a => a.uuid === accountToEdit.autoPayAccountUuid)?.id || null
+                  : null
 
         const modal = document.createElement('div')
         modal.id = 'account-form-modal'
@@ -628,7 +635,7 @@ export class AccountsPage {
                                 ${debitAccounts
                                     .map(
                                         a => `
-                                    <option value="${a.id}" ${accountToEdit?.autoPayAccountId === a.id ? 'selected' : ''}>${escapeHTML(a.name)}</option>
+                                    <option value="${a.id}" ${autoPayDebitId === a.id ? 'selected' : ''}>${escapeHTML(a.name)}</option>
                                 `
                                     )
                                     .join('')}
@@ -1001,8 +1008,17 @@ export class AccountsPage {
                             10
                         )
                         accountData.autoPayAccountId = autoPayAccountId || null
+                        if (accountData.autoPayAccountId) {
+                            const debitAcc = debitAccounts.find(
+                                a => a.id === accountData.autoPayAccountId
+                            )
+                            accountData.autoPayAccountUuid = debitAcc?.uuid || null
+                        } else {
+                            accountData.autoPayAccountUuid = null
+                        }
                     } else {
                         accountData.autoPayAccountId = null
+                        accountData.autoPayAccountUuid = null
                     }
                 }
 
@@ -1577,14 +1593,12 @@ export class AccountsPage {
                             )
                             const period = e.currentTarget.dataset.period
 
-                            if (
-                                account.autoPayAccountId &&
-                                !Number.isNaN(stmtId)
-                            ) {
-                                const debitAcc =
-                                    await this.app.dataService.getAccount(
-                                        account.autoPayAccountId
-                                    )
+                            const debitAcc = account.autoPayAccountId
+                                ? await this.app.dataService.getAccount(account.autoPayAccountId)
+                                : account.autoPayAccountUuid
+                                  ? await this.app.dataService.getByUUID('accounts', account.autoPayAccountUuid)
+                                  : null
+                            if (debitAcc && !Number.isNaN(stmtId)) {
                                 if (debitAcc) {
                                     const confirmed = await customConfirm(
                                         totalDebt <= 0
@@ -1742,10 +1756,9 @@ export class AccountsPage {
 
         // 預設選中卡片設定的自動扣款帳戶 (若有)，否則選第一個
         const selectedDebitId =
-            account.autoPayAccountId &&
-            debitAccounts.some(a => a.id === account.autoPayAccountId)
-                ? account.autoPayAccountId
-                : debitAccounts[0]?.id
+            (account.autoPayAccountId && debitAccounts.some(a => a.id === account.autoPayAccountId) ? account.autoPayAccountId : null) ||
+            (account.autoPayAccountUuid ? debitAccounts.find(a => a.uuid === account.autoPayAccountUuid)?.id : null) ||
+            debitAccounts[0]?.id
 
         const accountOptions = debitAccounts
             .map(

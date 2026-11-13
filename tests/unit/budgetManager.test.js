@@ -19,6 +19,15 @@ vi.mock('sortablejs', () => ({
 // Mock utils.js 的函數
 vi.mock('../../src/js/utils.js', () => ({
     formatCurrency: vi.fn(v => `NT$${Math.round(v)}`),
+    getMonthRange: vi.fn((year, monthIndex) => {
+        const y = year
+        const m = monthIndex + 1
+        const lastDay = new Date(y, monthIndex + 1, 0).getDate()
+        return {
+            startDate: `${y}-${String(m).padStart(2, '0')}-01`,
+            endDate: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+        }
+    }),
     getDateRange: vi.fn((period, offsetMonths = 0) => {
         // #AB4：monthOffset 以 2024-01 為基準月（offset=0），與 'month' 一致
         if (period === 'month' || (period === 'monthOffset' && offsetMonths === 0)) {
@@ -734,7 +743,7 @@ describe('BudgetManager', () => {
         })
     })
 
-    describe('renderBudgetWidget 月份選擇器 (#AB4)', () => {
+    describe('renderBudgetWidget 首頁月份連動與純淨介面', () => {
         beforeEach(() => {
             ds.getStatistics.mockResolvedValue({
                 totalExpense: 5000,
@@ -747,60 +756,70 @@ describe('BudgetManager', () => {
             bm.closeBudgetMonthPickerModal()
         })
 
-        it('budget>0 時 HTML 包含月份選擇按鈕', async () => {
+        it('budget>0 時 HTML 包含編輯按鈕且不含冗餘月份按鈕', async () => {
             bm.currentBudget = 10000
             const html = await bm.renderBudgetWidget()
 
-            expect(html).toContain('id="budget-month-btn"')
-            expect(html).toContain('fa-calendar')
             expect(html).toContain('id="edit-budget-btn"')
-            // 月份選擇 Modal 未開啟時不在 widget HTML 中
+            // 冗餘月份按鈕已移除，統一由首頁左上角月份切換
+            expect(html).not.toContain('id="budget-month-btn"')
+            expect(html).not.toContain('fa-calendar')
             expect(html).not.toContain('budget-month-select')
         })
 
-        it('預覽月份（offset>0）時 HTML 包含提示文字', async () => {
+        it('預覽未來月份（offset>0 或未來 YYYY-MM）時 HTML 包含提示文字', async () => {
             bm.currentBudget = 10000
-            bm.budgetMonthOffset = 1
-            const html = await bm.renderBudgetWidget()
+            const html1 = await bm.renderBudgetWidget(1)
+            expect(html1).toContain('尚未來臨的月份')
 
-            expect(html).toContain('尚未來臨的月份')
+            const html2 = await bm.renderBudgetWidget('2099-01')
+            expect(html2).toContain('尚未來臨的月份')
         })
 
-        it('本月（offset=0）時 HTML 不含預覽提示', async () => {
+        it('本月或過去月份時 HTML 不含預覽提示', async () => {
             bm.currentBudget = 10000
-            bm.budgetMonthOffset = 0
-            const html = await bm.renderBudgetWidget()
+            const html1 = await bm.renderBudgetWidget(0)
+            expect(html1).not.toContain('尚未來臨的月份')
 
-            expect(html).not.toContain('尚未來臨的月份')
+            const html2 = await bm.renderBudgetWidget('2024-01')
+            expect(html2).not.toContain('尚未來臨的月份')
         })
 
-        it('renderBudgetWidget 的 RAF 綁定會在下一 frame 後掛上 budget-month-btn.onclick（防死碼回歸）', async () => {
+        it('getBudgetStatus 支援 YYYY-MM 格式字串傳入並精確查詢指定月統計', async () => {
             bm.currentBudget = 10000
-            const html = await bm.renderBudgetWidget()
+            const status = await bm.getBudgetStatus('2024-05')
 
-            // 模擬 homePage 的 DOM 插入
-            const host = document.createElement('div')
-            host.innerHTML = html
-            document.body.appendChild(host)
-
-            // RAF 回呼在下一 frame 執行，等待其完成
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-
-            const btn = document.getElementById('budget-month-btn')
-            expect(btn).not.toBeNull()
-            expect(typeof btn.onclick).toBe('function')
-
-            // 觸發 onclick：月份選擇 Modal 應開啟
-            btn.onclick()
-            await new Promise(resolve => setTimeout(resolve, 0))
-            expect(document.getElementById('budget-month-picker-modal')).not.toBeNull()
-
-            // 清理
-            bm.closeBudgetMonthPickerModal()
-            host.remove()
+            expect(ds.getStatistics).toHaveBeenCalledWith(
+                '2024-05-01',
+                '2024-05-31',
+                null,
+                true
+            )
+            expect(status.spent).toBe(5000)
+            expect(status.remaining).toBe(5000)
         })
 
-        it('月份選擇 Modal：確認選定後回呼新 offset', async () => {
+        it('renderBudgetWidget 自動讀取 home-month-display 的當前月份', async () => {
+            bm.currentBudget = 10000
+            const display = document.createElement('span')
+            display.id = 'home-month-display'
+            display.textContent = '2024 / 06'
+            document.body.appendChild(display)
+
+            try {
+                await bm.renderBudgetWidget()
+                expect(ds.getStatistics).toHaveBeenCalledWith(
+                    '2024-06-01',
+                    '2024-06-30',
+                    null,
+                    true
+                )
+            } finally {
+                display.remove()
+            }
+        })
+
+        it('月份選擇 Modal：確認選定後回呼新 offset（向後相容）', async () => {
             bm.currentBudget = 10000
             const onSelect = vi.fn()
             bm.showBudgetMonthPickerModal(onSelect)
@@ -810,10 +829,8 @@ describe('BudgetManager', () => {
 
             const select = modal.querySelector('#budget-month-select')
             expect(select).not.toBeNull()
-            // 選項：本月 + 11 個月 = 12 個
             expect(select.querySelectorAll('option')).toHaveLength(12)
 
-            // 選 offset=2 並確認
             select.value = '2'
             modal.querySelector('#confirm-budget-month-btn').click()
 
@@ -822,7 +839,7 @@ describe('BudgetManager', () => {
             expect(document.getElementById('budget-month-picker-modal')).toBeNull()
         })
 
-        it('月份選擇 Modal：取消時不變更 offset', () => {
+        it('月份選擇 Modal：取消時不變更 offset（向後相容）', () => {
             bm.currentBudget = 10000
             bm.budgetMonthOffset = 0
             const onSelect = vi.fn()

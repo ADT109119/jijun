@@ -2331,6 +2331,42 @@ class DataService {
                                 oldAccountIdToNewIdMap.set(acc.id, newId)
                             }
                         }
+
+                        // 4.1 重新對齊信用卡自動扣款帳戶 (autoPayAccountId / autoPayAccountUuid)
+                        const allImportedAccounts = await this.getAccounts({ allLedgers: true })
+                        for (const acc of allImportedAccounts) {
+                            if (acc.type === 'credit_card' && (acc.autoPayAccountId || acc.autoPayAccountUuid)) {
+                                let remappedId = acc.autoPayAccountId ? oldAccountIdToNewIdMap.get(acc.autoPayAccountId) : null
+                                if (!remappedId && acc.autoPayAccountUuid) {
+                                    const matchByUuid = allImportedAccounts.find(a => a.uuid === acc.autoPayAccountUuid)
+                                    if (matchByUuid) remappedId = matchByUuid.id
+                                }
+                                if (!remappedId && acc.autoPayAccountId && Array.isArray(data.accounts)) {
+                                    // Fallback: 舊版無 UUID 備份，依原始帳戶名稱在同帳本下比對
+                                    const oldAcc = data.accounts.find(a => a.id === acc.autoPayAccountId)
+                                    if (oldAcc && oldAcc.name) {
+                                        const normOldName = oldAcc.name.trim().toLowerCase()
+                                        const matchByName = allImportedAccounts.find(
+                                            a => a.ledgerId === acc.ledgerId && (a.name || '').trim().toLowerCase() === normOldName
+                                        )
+                                        if (matchByName) remappedId = matchByName.id
+                                    }
+                                }
+                                if (remappedId && (remappedId !== acc.autoPayAccountId || !acc.autoPayAccountUuid)) {
+                                    const debitAcc = allImportedAccounts.find(a => a.id === remappedId)
+                                    await this.updateAccount(
+                                        acc.id,
+                                        {
+                                            autoPayAccountId: remappedId,
+                                            autoPayAccountUuid: debitAcc?.uuid || acc.autoPayAccountUuid || null,
+                                        },
+                                        true
+                                    )
+                                    acc.autoPayAccountId = remappedId
+                                    if (debitAcc?.uuid) acc.autoPayAccountUuid = debitAcc.uuid
+                                }
+                            }
+                        }
                     }
 
                     // 4.5 匯入檔案 (頭像等) 並建立 ID Map
@@ -3373,6 +3409,10 @@ class DataService {
         const accounts = rawAccounts.map(a => ({
             ...a,
             ledgerUuid: a.ledgerUuid || ledgerUuidMap.get(a.ledgerId) || null,
+            autoPayAccountUuid:
+                a.autoPayAccountUuid ||
+                (a.autoPayAccountId ? accountUuidMap.get(a.autoPayAccountId) : null) ||
+                null,
         }))
         const contacts = rawContacts.map(c => ({
             ...c,
@@ -3631,6 +3671,12 @@ class DataService {
                 if (dataToAdd.statementDay === undefined)
                     dataToAdd.statementDay = 25
                 if (dataToAdd.dueDay === undefined) dataToAdd.dueDay = 15
+                if (dataToAdd.autoPayAccountId && !dataToAdd.autoPayAccountUuid) {
+                    try {
+                        const debit = await this.db.get('accounts', dataToAdd.autoPayAccountId)
+                        if (debit?.uuid) dataToAdd.autoPayAccountUuid = debit.uuid
+                    } catch (_) {}
+                }
             }
             const tx = this.db.transaction('accounts', 'readwrite')
             const id = await tx.store.add(dataToAdd)
@@ -3681,6 +3727,16 @@ class DataService {
                     if (account.uuid) finalUpdates.uuid = account.uuid
                 }
                 const updatedAccount = { ...account, ...finalUpdates }
+                if (updatedAccount.autoPayAccountId) {
+                    if (!updatedAccount.autoPayAccountUuid || finalUpdates.autoPayAccountId !== undefined) {
+                        try {
+                            const debit = await tx.store.get(updatedAccount.autoPayAccountId)
+                            if (debit?.uuid) updatedAccount.autoPayAccountUuid = debit.uuid
+                        } catch (_) {}
+                    }
+                } else if (finalUpdates.autoPayAccountId === null || finalUpdates.autoPayEnabled === false) {
+                    updatedAccount.autoPayAccountUuid = null
+                }
                 await tx.store.put(updatedAccount)
                 await tx.done
                 if (!skipLog)
@@ -3795,6 +3851,7 @@ class DataService {
                 g => g.length > 1
             )
             if (duplicateGroups.length === 0) {
+                await this.alignCreditCardAutoPay()
                 return { mergedCount: 0, groupsProcessed: 0 }
             }
 
@@ -3869,6 +3926,32 @@ class DataService {
                         primary.balance = foundBal
                     }
                 }
+
+                // 若主信用卡帳戶未設定自動扣繳，而冗餘帳戶有設定，繼承之
+                if (primary.type === 'credit_card') {
+                    const donor = redundants.find(
+                        r => r.autoPayEnabled || r.autoPayAccountId
+                    )
+                    if (
+                        donor &&
+                        !primary.autoPayEnabled &&
+                        !primary.autoPayAccountId
+                    ) {
+                        const updates = {
+                            autoPayEnabled: donor.autoPayEnabled || false,
+                            autoPayAccountId: donor.autoPayAccountId || null,
+                            autoPayAccountUuid: donor.autoPayAccountUuid || null,
+                        }
+                        if (donor.statementDay && !primary.statementDay)
+                            updates.statementDay = donor.statementDay
+                        if (donor.dueDay && !primary.dueDay)
+                            updates.dueDay = donor.dueDay
+                        if (donor.creditLimit && !primary.creditLimit)
+                            updates.creditLimit = donor.creditLimit
+                        await this.updateAccount(primary.id, updates, true)
+                        Object.assign(primary, updates)
+                    }
+                    }
 
                 // 批次轉移關聯資料
                 for (const redundant of redundants) {
@@ -3979,6 +4062,8 @@ class DataService {
                 `[DataService] deduplicateAccounts: 合併了 ${mergedCount} 個重複帳戶`
             )
             await this.deduplicateCreditCardPayments()
+
+            await this.alignCreditCardAutoPay()
             return { mergedCount, groupsProcessed: duplicateGroups.length }
         } catch (error) {
             console.error('[DataService] deduplicateAccounts error:', error)
@@ -3989,6 +4074,32 @@ class DataService {
     /**
      * 清理重複的卡費扣繳記錄 (防禦歷史 autoPay 重複生成的扣繳記錄)
      */
+    async alignCreditCardAutoPay() {
+        if (!this.db || this.useLocalStorage) return
+        try {
+            const remainingAccounts = await this.getAccounts({ allLedgers: true })
+            for (const acc of remainingAccounts) {
+                if (acc.type === 'credit_card') {
+                    if (acc.autoPayAccountUuid) {
+                        const matched = remainingAccounts.find(a => a.uuid === acc.autoPayAccountUuid)
+                        if (matched && matched.id !== acc.autoPayAccountId) {
+                            await this.updateAccount(acc.id, { autoPayAccountId: matched.id }, true)
+                            acc.autoPayAccountId = matched.id
+                        }
+                    } else if (acc.autoPayAccountId) {
+                        const matched = remainingAccounts.find(a => a.id === acc.autoPayAccountId)
+                        if (matched && matched.uuid) {
+                            await this.updateAccount(acc.id, { autoPayAccountUuid: matched.uuid }, true)
+                            acc.autoPayAccountUuid = matched.uuid
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[DataService] alignCreditCardAutoPay error:', e)
+        }
+    }
+
     async deduplicateCreditCardPayments() {
         if (!this.db || this.useLocalStorage) return
         try {
@@ -5308,12 +5419,19 @@ unbilledStartDate = new Date(lastStatementEndDate)
         const processedRecords = []
 
         for (const card of creditCards) {
-            if (!card.autoPayAccountId) continue
-
-            // 檢查扣款帳戶是否存在
-            const debitAccount = accounts.find(
-                a => a.id === card.autoPayAccountId
-            )
+            let debitAccount = null
+            if (card.autoPayAccountId) {
+                debitAccount = accounts.find(a => a.id === card.autoPayAccountId)
+            }
+            if (!debitAccount && card.autoPayAccountUuid) {
+                debitAccount = accounts.find(a => a.uuid === card.autoPayAccountUuid)
+                if (debitAccount) {
+                    try {
+                        await this.updateAccount(card.id, { autoPayAccountId: debitAccount.id }, true)
+                        card.autoPayAccountId = debitAccount.id
+                    } catch (_) {}
+                }
+            }
             if (!debitAccount) continue
 
             // 找出該信用卡所有未清帳單（unpaid 全額 + partial 剩額）。

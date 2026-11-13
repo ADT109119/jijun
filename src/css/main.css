@@ -103,6 +103,27 @@ select option {
     animation: slideOutUp 0.3s ease-in forwards;
 }
 
+#toast.toast-info, #toast.toast-info #toast-message {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+#toast.toast-success, #toast.toast-success #toast-message {
+    background-color: #059669 !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+#toast.toast-error, #toast.toast-error #toast-message {
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+#toast.toast-warning, #toast.toast-warning #toast-message {
+    background-color: #d97706 !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
 /* Budget Wave Widget */
 .budget-wave-container {
     position: relative;

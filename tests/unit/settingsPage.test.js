@@ -177,7 +177,9 @@ describe('SettingsPage - render() 頁面骨架', () => {
         app.rewardService.isAdsEnabled.mockReturnValue(true)
         await page.render()
         expect(modalOf('settings-banner-ad')).not.toBeNull()
-        expect(modalOf('sponsor-reward-ad-btn')).not.toBeNull()
+        const rewardBtn = modalOf('sponsor-reward-ad-btn')
+        expect(rewardBtn).not.toBeNull()
+        expect(rewardBtn.closest('.bg-wabi-surface').querySelector('h3').textContent).toBe('系統偏好')
     })
 
     it('Android APK 時顯示發票載具設定項', async () => {
@@ -360,6 +362,7 @@ describe('SettingsPage - 導覽按鈕 hash 與導覽教學', () => {
     it('週期/攤提/欠款/群組/帳戶管理按鈕設定 hash', async () => {
         await page.render()
         const cases = [
+            ['preferences-btn', '#preferences'],
             ['manage-recurring-btn', '#recurring'],
             ['manage-amortizations-btn', '#amortizations'],
             ['manage-debts-btn', '#debts'],
@@ -853,7 +856,7 @@ describe('SettingsPage - AI 模型狀態與 toggle', () => {
     })
 })
 
-describe('SettingsPage - 實驗功能 toggles（計算機 / 餘額不足提醒 / 多帳戶 / 明細預設範圍 / 每日提醒）', () => {
+describe('SettingsPage - 帳務功能 toggles 與偏好入口', () => {
     let app, page, dataService, guideManager
     beforeEach(() => {
         const ctx = makeApp()
@@ -863,118 +866,7 @@ describe('SettingsPage - 實驗功能 toggles（計算機 / 餘額不足提醒 /
         guideManager = ctx.guideManager
     })
 
-    it('計算機 toggle 勾選 = 停用計算機（saveSetting false + 顯示說明）', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('calculator-mode-toggle')
-        toggle.checked = true
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'calculatorModeEnabled',
-            value: false,
-        })
-        expect(
-            document.getElementById('calculator-mode-info').classList.contains('hidden')
-        ).toBe(false)
-        expect(showToast).toHaveBeenCalledWith('小鍵盤計算機模式已停用')
-    })
-
-    it('計算機 toggle 取消勾選 = 啟用計算機（隱藏說明）', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('calculator-mode-toggle')
-        toggle.checked = false
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'calculatorModeEnabled',
-            value: true,
-        })
-        expect(
-            document.getElementById('calculator-mode-info').classList.contains('hidden')
-        ).toBe(true)
-    })
-
-    it('餘額不足提醒開啟：存設定 + 顯示說明 + 觸發導覽', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('low-balance-warning-toggle')
-        toggle.checked = true
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'lowBalanceWarningEnabled',
-            value: true,
-        })
-        expect(
-            document.getElementById('low-balance-warning-info').classList.contains('hidden')
-        ).toBe(false)
-        expect(guideManager.showToggleTour).toHaveBeenCalledWith('lowBalance')
-        expect(showToast).toHaveBeenCalledWith('餘額不足提醒已啟用')
-    })
-
-    it('行事曆繳款圓點 toggle：預設勾選（未設定視為啟用）', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('calendar-bill-dots-toggle')
-        expect(toggle).not.toBeNull()
-        expect(toggle.checked).toBe(true)
-    })
-
-    it('行事曆繳款圓點 toggle：明確存 false 時取消勾選並顯示停用說明', async () => {
-        // 另建 app（settings 含 calendarBillDotsEnabled=false；makeApp 會重建 appContainer）
-        const ctx2 = makeApp({ settings: { calendarBillDotsEnabled: false } })
-        const page2 = new SettingsPage(ctx2.app)
-        await page2.render()
-        await flush()
-        const toggle = document.getElementById('calendar-bill-dots-toggle')
-        expect(toggle.checked).toBe(false)
-        expect(
-            document.getElementById('calendar-bill-dots-info').classList.contains('hidden')
-        ).toBe(false)
-    })
-
-    it('行事曆繳款圓點 toggle：取消勾選 → saveSetting false + toast 停用', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('calendar-bill-dots-toggle')
-        toggle.checked = false
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'calendarBillDotsEnabled',
-            value: false,
-        })
-        expect(
-            document.getElementById('calendar-bill-dots-info').classList.contains('hidden')
-        ).toBe(false)
-        expect(showToast).toHaveBeenCalledWith('行事曆繳款圓點已停用')
-    })
-
-    it('行事曆繳款圓點 toggle：重新勾選 → saveSetting true + 說明隱藏', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('calendar-bill-dots-toggle')
-        // 先停用再啟用，驗證 info 隱藏
-        toggle.checked = false
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        toggle.checked = true
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'calendarBillDotsEnabled',
-            value: true,
-        })
-        expect(
-            document.getElementById('calendar-bill-dots-info').classList.contains('hidden')
-        ).toBe(true)
-        expect(showToast).toHaveBeenCalledWith('行事曆繳款圓點已啟用')
-    })
-
     it('多帳戶模式開啟：存設定 + 觸發導覽 + toast（reload 前不即時顯示連結）', async () => {
-        // 開關 change handler 有 setTimeout(reload, 1500) → 用 fake timers 避免真實計時器殘留
         vi.useFakeTimers()
         try {
             await page.render()
@@ -993,7 +885,6 @@ describe('SettingsPage - 實驗功能 toggles（計算機 / 餘額不足提醒 /
                 key: 'advancedAccountModeEnabled',
                 value: true,
             })
-            // 連結 container 在重新載入後的 render 才會顯示（change handler 不即時改 DOM）
             expect(
                 document
                     .getElementById('manage-accounts-link-container')
@@ -1023,84 +914,10 @@ describe('SettingsPage - 實驗功能 toggles（計算機 / 餘額不足提醒 /
         ).toBe(false)
     })
 
-    it('明細預設時間範圍：讀取設定值並顯示', async () => {
-        const ctx = makeApp({ settings: { defaultRecordsPeriod: 'week' } })
-        const page2 = new SettingsPage(ctx.app)
-        await page2.render()
-        await flush()
-        expect(
-            ctx.app.appContainer.querySelector('#default-period-select').value
-        ).toBe('week')
-    })
-
-    it('明細預設時間範圍：變更後存設定', async () => {
+    it('偏好設定按鈕點擊切換 hash 至 #preferences', async () => {
         await page.render()
-        await flush()
-        const select = document.getElementById('default-period-select')
-        select.value = 'last7days'
-        select.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'defaultRecordsPeriod',
-            value: 'last7days',
-        })
-        expect(showToast).toHaveBeenCalledWith('已設定明細預設時間範圍')
-    })
-
-    it('每日提醒開啟但通知權限被拒：toggle 回退 + 警告 toast', async () => {
-        app.notificationService.requestPermission.mockResolvedValueOnce(false)
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('reminder-toggle')
-        toggle.checked = true
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(showToast).toHaveBeenCalledWith(
-            '請允許通知權限以使用此功能',
-            'warning'
-        )
-        expect(toggle.checked).toBe(false)
-        expect(
-            document
-                .getElementById('reminder-settings-container')
-                .classList.contains('hidden')
-        ).toBe(true)
-    })
-
-    it('每日提醒開啟且權限允許：存時間/條件 + applyCurrentSettings', async () => {
-        await page.render()
-        await flush()
-        const toggle = document.getElementById('reminder-toggle')
-        document.getElementById('reminder-time').value = '09:30'
-        toggle.checked = true
-        toggle.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'reminderEnabled',
-            value: true,
-        })
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'reminderTime',
-            value: '09:30',
-        })
-        expect(app.notificationService.applyCurrentSettings).toHaveBeenCalled()
-        expect(
-            document
-                .getElementById('reminder-settings-container')
-                .classList.contains('hidden')
-        ).toBe(false)
-    })
-
-    it('提醒時間變更觸發重新儲存', async () => {
-        await page.render()
-        await flush()
-        const timeInput = document.getElementById('reminder-time')
-        timeInput.value = '22:00'
-        timeInput.dispatchEvent(new Event('change', { bubbles: true }))
-        await flush()
-        expect(dataService.saveSetting).toHaveBeenCalledWith({
-            key: 'reminderTime',
-            value: '22:00',
-        })
+        window.location.hash = ''
+        document.getElementById('preferences-btn').click()
+        expect(window.location.hash).toBe('#preferences')
     })
 })

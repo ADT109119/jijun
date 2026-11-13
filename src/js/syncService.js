@@ -4155,6 +4155,27 @@ export class SyncService {
      * @param {object} data
      * @returns {object} 已修正 accountId 的 data
      */
+    /**
+     * 將 credit_card account 的 autoPayAccountUuid 解析為本地 autoPayAccountId。
+     * @param {object} data
+     * @returns {Promise<object>}
+     */
+    async _resolveAccountAutoPayAccountId(data) {
+        if (!data || data.type !== 'credit_card' || !data.autoPayAccountUuid) return data
+        try {
+            const accounts = await this.dataService.getAccounts({
+                allLedgers: true,
+            })
+            const matched = accounts.find(a => a.uuid === data.autoPayAccountUuid)
+            if (matched) {
+                return { ...data, autoPayAccountId: matched.id }
+            }
+            return { ...data, autoPayAccountId: null }
+        } catch (_) {
+            return data
+        }
+    }
+
     async _resolveRecordAccountId(data) {
         if (!data.accountUuid) return data
         try {
@@ -4278,6 +4299,8 @@ export class SyncService {
             resolved = await this._resolveRecurringAccountId(resolved)
         } else if (storeName === 'amortizations') {
             resolved = await this._resolveAmortizationAccountId(resolved)
+        } else if (storeName === 'accounts') {
+            resolved = await this._resolveAccountAutoPayAccountId(resolved)
         }
         return resolved
     }
@@ -4500,10 +4523,12 @@ export class SyncService {
                 break
             }
             case 'accounts': {
-                const resolvedAccount = await this._resolveLedgerId(
+                let resolvedAccount = await this._resolveLedgerId(
                     data,
                     options
                 )
+                resolvedAccount =
+                    await this._resolveAccountAutoPayAccountId(resolvedAccount)
                 const targetLedgerId = resolvedAccount.ledgerId || 1
                 const normName = (resolvedAccount.name || '').trim().toLowerCase()
                 if (normName) {
@@ -4516,20 +4541,41 @@ export class SyncService {
                             (a.name || '').trim().toLowerCase() === normName
                     )
                     if (existingAcc) {
+                        const updates = {}
                         if (resolvedAccount.uuid && existingAcc.uuid !== resolvedAccount.uuid) {
-                            if (typeof this.dataService.alignAccountUuid === 'function') {
-                                await this.dataService.alignAccountUuid(
-                                    existingAcc.id,
-                                    resolvedAccount.uuid,
-                                    existingAcc.uuid
-                                )
-                            } else {
-                                await this.dataService.updateAccount(
-                                    existingAcc.id,
-                                    { uuid: resolvedAccount.uuid },
-                                    true
-                                )
+                            updates.uuid = resolvedAccount.uuid
+                        }
+                        if (resolvedAccount.type === 'credit_card') {
+                            if (resolvedAccount.autoPayEnabled !== undefined) {
+                                updates.autoPayEnabled = resolvedAccount.autoPayEnabled
                             }
+                            if (resolvedAccount.autoPayAccountId !== undefined) {
+                                updates.autoPayAccountId = resolvedAccount.autoPayAccountId
+                            }
+                            if (resolvedAccount.autoPayAccountUuid !== undefined) {
+                                updates.autoPayAccountUuid = resolvedAccount.autoPayAccountUuid
+                            }
+                            if (resolvedAccount.billingCycleDay !== undefined) {
+                                updates.billingCycleDay = resolvedAccount.billingCycleDay
+                            }
+                            if (resolvedAccount.dueDay !== undefined) {
+                                updates.dueDay = resolvedAccount.dueDay
+                            }
+                        }
+                        if (updates.uuid && typeof this.dataService.alignAccountUuid === 'function') {
+                            await this.dataService.alignAccountUuid(
+                                existingAcc.id,
+                                updates.uuid,
+                                existingAcc.uuid
+                            )
+                            delete updates.uuid
+                        }
+                        if (Object.keys(updates).length > 0) {
+                            await this.dataService.updateAccount(
+                                existingAcc.id,
+                                updates,
+                                true
+                            )
                         }
                         break
                     }
@@ -5066,10 +5112,12 @@ export class SyncService {
                 break
             }
             case 'accounts': {
-                const resolvedAccount = await this._resolveLedgerId(
+                let resolvedAccount = await this._resolveLedgerId(
                     data,
                     options
                 )
+                resolvedAccount =
+                    await this._resolveAccountAutoPayAccountId(resolvedAccount)
                 await this.dataService.updateAccount(id, resolvedAccount, true)
                 break
             }

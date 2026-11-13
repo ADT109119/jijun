@@ -37,6 +37,7 @@ const TOUR_VERSION_MAP = {
     '2.1.7.9': 'newFeatures',
     '2.1.8.0': 'newFeaturesV2',
     '2.1.9.0': 'newFeaturesV2',
+    '2.1.9.1': 'newFeaturesV2',
     '2.1.8.5': 'newFeaturesV2',
 }
 

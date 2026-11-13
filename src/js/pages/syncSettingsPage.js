@@ -267,10 +267,11 @@ export class SyncSettingsPage {
                         placeholder="admin" />
                 </div>
                 <div>
-                    <label class="text-sm text-wabi-text-secondary block mb-1">PIN 碼</label>
+                    <label class="text-sm text-wabi-text-secondary block mb-1">PIN 碼 / 安全密碼</label>
                     <input type="password" id="sync-selfhost-pin"
                         class="w-full px-3 py-2 rounded-lg border border-wabi-border bg-wabi-surface text-sm focus:ring-wabi-primary focus:border-wabi-primary"
                         placeholder="••••••••" autocomplete="off" />
+                    <p class="text-xs text-wabi-text-secondary mt-1"><i class="fa-solid fa-shield-halved mr-1 text-wabi-primary"></i>至少 4 碼，建議 8 碼以上（支援英數與符號）</p>
                 </div>
                 <div class="flex gap-2">
                     <button id="sync-selfhost-login-btn" class="flex-1 py-2 bg-wabi-primary text-wabi-surface rounded-lg text-sm font-medium hover:bg-wabi-primary/90">登入</button>
@@ -410,7 +411,7 @@ export class SyncSettingsPage {
                     <p class="text-xs font-bold text-wabi-text-primary mb-2">手動建立帳號（不需開放公開註冊）</p>
                     <div class="flex gap-2">
                         <input type="text" id="selfhost-admin-new-username" placeholder="帳號名稱" class="flex-1 min-w-0 px-2 py-1.5 text-sm rounded-lg border border-wabi-border" />
-                        <input type="text" id="selfhost-admin-new-pin" placeholder="PIN（至少 4 碼）" class="flex-1 min-w-0 px-2 py-1.5 text-sm rounded-lg border border-wabi-border" />
+                        <input type="text" id="selfhost-admin-new-pin" placeholder="PIN（至少 4 碼，建議 8 碼以上）" class="flex-1 min-w-0 px-2 py-1.5 text-sm rounded-lg border border-wabi-border" />
                         <button id="selfhost-admin-create-btn" class="px-3 py-1.5 text-sm bg-wabi-primary text-wabi-surface rounded-lg shrink-0">建立</button>
                     </div>
                 </div>
@@ -798,7 +799,7 @@ export class SyncSettingsPage {
                 btn.addEventListener('click', async () => {
                     const username = btn.dataset.username
                     const pin = window.prompt(
-                        `為「${username}」設定新 PIN（至少 4 碼）：`
+                        `為「${username}」設定新 PIN（至少 4 碼，建議 8 碼以上）：`
                     )
                     if (!pin || pin.length < 4) {
                         showToast('PIN 至少 4 碼', 'error')

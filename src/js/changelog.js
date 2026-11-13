@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.9.1': {
+        date: '2026-11-13',
+        title: '設定頁面改版、首頁預算月份連動與信用卡自動扣款設定修復',
+        bugfixes: [
+            '修復信用卡自動扣款設定在雲端還原或同步後跑掉的問題：全面支援扣款帳戶 UUID 關聯，確保備份還原與跨裝置同步後扣款設定不遺失。',
+            '修復記帳頁帳戶選擇彈窗未釘選圖示顯示為缺字框 (☒) 的問題：修正圖示樣式類別，恢復正常圖示顯示。',
+            '修復深色模式與自訂主題下 Toast 通知文字顏色看不清的問題：新增高對比樣式，確保提示訊息清晰易讀。',
+        ],
+        improvements: [
+            '系統設定頁面改版：主設定頁劃分為帳務功能、系統偏好、資料管理等模組，並新增獨立「偏好設定」頁面收納小鍵盤、提醒與發票載具等選項。',
+            '首頁預算卡片月份連動與介面精簡：移除預算卡片多餘的月份按鈕，直接連動首頁左上角月份切換，支援查看過往月支出與未來月份預覽。',
+            '自架同步安全性提示：新增 PIN 碼建議 8 碼以上之安全說明。',
+        ],
+    },
     '2.1.9.0': {
         date: '2026-11-08',
         title: '全新 Docker 純自架同步伺服器、Protocol v2 協議、全站頁面單元測試覆蓋與安全性加固',
@@ -1154,7 +1168,7 @@ export class ChangelogManager {
     constructor() {
         // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
         this.currentVersion =
-            localStorage.getItem('app-current-version') || __APP_VERSION__
+            localStorage.getItem('app-current-version') || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.1.9.1')
     }
 
     // 獲取當前版本資訊

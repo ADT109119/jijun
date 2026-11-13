@@ -13,15 +13,20 @@ const AD_FREE_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 天
 
 // Web 廣告設定值（來源：package.json → adConfig，由 Vite 編譯時注入）
 // AD_ENABLED: 廣告總開關（build 時 AD_FREE=1 可關閉；純自架部署用）
-const AD_ENABLED = __AD_ENABLED__
-const ADSENSE_CLIENT_ID = __AD_ADSENSE_CLIENT_ID__
-const ADSENSE_AD_SLOT = __AD_ADSENSE_AD_SLOT__
-const REWARDED_AD_UNIT_PATH = __AD_GPT_REWARDED_PATH__
+const AD_ENABLED = typeof __AD_ENABLED__ !== 'undefined' ? __AD_ENABLED__ : true
+const ADSENSE_CLIENT_ID =
+    typeof __AD_ADSENSE_CLIENT_ID__ !== 'undefined' ? __AD_ADSENSE_CLIENT_ID__ : ''
+const ADSENSE_AD_SLOT =
+    typeof __AD_ADSENSE_AD_SLOT__ !== 'undefined' ? __AD_ADSENSE_AD_SLOT__ : ''
+const REWARDED_AD_UNIT_PATH =
+    typeof __AD_GPT_REWARDED_PATH__ !== 'undefined' ? __AD_GPT_REWARDED_PATH__ : ''
 
 // AdMob 原生廣告設定值（同上，上架前在 package.json 修改）
-const ADMOB_BANNER_ID = __AD_ADMOB_BANNER_ID__
-const ADMOB_REWARDED_ID = __AD_ADMOB_REWARDED_ID__
-const AD_IS_TESTING = __AD_IS_TESTING__
+const ADMOB_BANNER_ID =
+    typeof __AD_ADMOB_BANNER_ID__ !== 'undefined' ? __AD_ADMOB_BANNER_ID__ : ''
+const ADMOB_REWARDED_ID =
+    typeof __AD_ADMOB_REWARDED_ID__ !== 'undefined' ? __AD_ADMOB_REWARDED_ID__ : ''
+const AD_IS_TESTING = typeof __AD_IS_TESTING__ !== 'undefined' ? __AD_IS_TESTING__ : true
 
 // ── 平臺偵測 ────────────────────────────────────────
 export function checkIsNative() {

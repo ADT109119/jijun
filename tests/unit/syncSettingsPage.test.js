@@ -362,6 +362,7 @@ describe('SyncSettingsPage - renderSelfHostPanel', () => {
         const html = page.renderSelfHostPanel({ ...base, isSelfHostMode: false })
         expect(html).toContain('id="sync-selfhost-username"')
         expect(html).toContain('id="sync-selfhost-pin"')
+        expect(html).toContain('建議 8 碼以上')
         expect(html).toContain('id="sync-selfhost-login-btn"')
         expect(html).toContain('id="sync-selfhost-register-btn"')
         expect(html).not.toContain('id="sync-selfhost-signout-btn"')

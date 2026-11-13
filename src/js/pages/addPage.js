@@ -3163,7 +3163,7 @@ export class AddPage {
                     const isPinned = pinnedIds.includes(account.id)
                     const pinIcon = isPinned
                         ? 'fa-solid fa-thumbtack text-wabi-accent'
-                        : 'fa-regular fa-thumbtack text-wabi-text-secondary'
+                        : 'fa-solid fa-thumbtack text-wabi-text-secondary/30 hover:text-wabi-text-secondary'
                     return `
             <button data-id="${account.id}" class="account-select-item w-full flex items-center gap-3 p-4 rounded-lg text-left ${account.id === currentAccountId ? 'bg-wabi-accent/20' : 'hover:bg-wabi-surface'}">
                 <div class="relative flex items-center justify-center rounded-lg ${colorClass} text-white shrink-0 size-10" ${colorStyle}>

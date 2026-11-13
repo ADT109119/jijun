@@ -1,5 +1,5 @@
 // 預算管理模組
-import { formatCurrency, getDateRange, showToast, escapeHTML, getSafeIconClass } from './utils.js'
+import { formatCurrency, getDateRange, getMonthRange, showToast, escapeHTML, getSafeIconClass } from './utils.js'
 import Sortable from 'sortablejs'
 
 export class BudgetManager {
@@ -250,13 +250,48 @@ export class BudgetManager {
         }
     }
 
-    async getBudgetStatus(offsetMonths = 0) {
-        // #AB4：支援指定月份偏移（0 = 本月，>0 = 未來月份預覽）
-        const dateRange = getDateRange('monthOffset', offsetMonths)
+    async getBudgetStatus(targetMonthOrOffset = 0) {
+        let startDate, endDate, isPreview, monthLabel, offsetMonths
+        const now = new Date()
+        const currentYear = now.getFullYear()
+        const currentMonth = now.getMonth() + 1
+        const currentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`
+
+        if (
+            typeof targetMonthOrOffset === 'string' &&
+            /^\d{4}-\d{2}$/.test(targetMonthOrOffset)
+        ) {
+            const [y, m] = targetMonthOrOffset.split('-').map(Number)
+            const range = getMonthRange(y, m - 1)
+            startDate = range.startDate
+            endDate = range.endDate
+            isPreview = targetMonthOrOffset > currentMonthStr
+            monthLabel =
+                targetMonthOrOffset === currentMonthStr ? '本月' : `${y}年${m}月`
+            offsetMonths = (y - currentYear) * 12 + (m - currentMonth)
+        } else {
+            offsetMonths =
+                typeof targetMonthOrOffset === 'number' ? targetMonthOrOffset : 0
+            const dateRange = getDateRange('monthOffset', offsetMonths)
+            startDate = dateRange.startDate
+            endDate = dateRange.endDate
+            isPreview = offsetMonths > 0
+            if (offsetMonths === 0) {
+                monthLabel = '本月'
+            } else {
+                const target = new Date(
+                    currentYear,
+                    currentMonth - 1 + offsetMonths,
+                    1
+                )
+                monthLabel = `${target.getFullYear()}年${target.getMonth() + 1}月`
+            }
+        }
+
         // Budget should not include transfers, so offset them
         const stats = await this.dataService.getStatistics(
-            dateRange.startDate,
-            dateRange.endDate,
+            startDate,
+            endDate,
             null,
             true
         )
@@ -319,18 +354,6 @@ export class BudgetManager {
             })
         }
 
-        // #AB4：月份標籤（0 = 本月，>0 用系統真實日期 + 偏移計算，跨年正確）
-        let monthLabel = '本月'
-        if (offsetMonths > 0) {
-            const now = new Date()
-            const target = new Date(
-                now.getFullYear(),
-                now.getMonth() + offsetMonths,
-                1
-            )
-            monthLabel = `${target.getFullYear()}年${target.getMonth() + 1}月`
-        }
-
         return {
             budget: this.currentBudget,
             spent: spent,
@@ -339,14 +362,32 @@ export class BudgetManager {
             isOverBudget: spent > this.currentBudget,
             categoryStatuses: categoryStatuses,
             offsetMonths: offsetMonths,
-            isPreview: offsetMonths > 0,
+            isPreview: isPreview,
             monthLabel: monthLabel,
         }
     }
 
-    renderBudgetWidget() {
-        // #AB4：依目前選擇的月份偏移（this.budgetMonthOffset）取得預算狀態
-        return this.getBudgetStatus(this.budgetMonthOffset).then(status => {
+    renderBudgetWidget(targetMonthOrOffset) {
+        let monthParam = targetMonthOrOffset
+        if (monthParam === undefined || monthParam === null) {
+            const homeMonthEl =
+                typeof document !== 'undefined'
+                    ? document.getElementById('home-month-display')
+                    : null
+            if (homeMonthEl && homeMonthEl.textContent) {
+                const cleaned = homeMonthEl.textContent
+                    .replace(/\s+/g, '')
+                    .replace('/', '-')
+                if (/^\d{4}-\d{2}$/.test(cleaned)) {
+                    monthParam = cleaned
+                }
+            }
+        }
+        if (monthParam === undefined || monthParam === null) {
+            monthParam = this.budgetMonthOffset || 0
+        }
+
+        return this.getBudgetStatus(monthParam).then(status => {
             const isOverBudget = status.isOverBudget
             const percentage = Math.min(100, status.percentage)
             let waterLevel = 100 - percentage
@@ -356,19 +397,7 @@ export class BudgetManager {
                 waterLevel = 105
             }
 
-            // #AB4：月份按鈕短標籤（0 = 本月，>0 = YYYY/M）
-            let monthShortLabel = '本月'
-            if (status.offsetMonths > 0) {
-                const now = new Date()
-                const target = new Date(
-                    now.getFullYear(),
-                    now.getMonth() + status.offsetMonths,
-                    1
-                )
-                monthShortLabel = `${target.getFullYear()}/${target.getMonth() + 1}`
-            }
-
-            // #AB4：未來月份預覽提示（本月不顯示）
+            // 未來月份預覽提示（本月與過去月份不顯示）
             const previewHint = status.isPreview
                 ? '<div class="text-xs text-wabi-text-secondary mt-1">尚未來臨的月份，實際支出將隨時間累積</div>'
                 : ''
@@ -377,16 +406,9 @@ export class BudgetManager {
         <div class="bg-wabi-surface p-4 rounded-lg shadow-sm border border-wabi-border mb-6">
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-lg font-semibold text-wabi-primary">預算</h3>
-            <div class="flex items-center gap-3">
-              <!-- #AB4：月份選擇按鈕（本月 / 未來月份預覽） -->
-              <button id="budget-month-btn" class="text-wabi-text-secondary hover:text-wabi-primary text-sm flex items-center gap-1 transition-colors">
-                <i class="fa-regular fa-calendar"></i>
-                <span>${monthShortLabel}</span>
-              </button>
-              <button id="edit-budget-btn" class="text-wabi-accent hover:underline text-sm">
-                ${status.budget > 0 ? '編輯' : '設定'}
-              </button>
-            </div>
+            <button id="edit-budget-btn" class="text-wabi-accent hover:underline text-sm">
+              ${status.budget > 0 ? '編輯' : '設定'}
+            </button>
           </div>
           
           ${
@@ -459,27 +481,6 @@ export class BudgetManager {
           }
         </div>
       `
-            // #AB4：綁定月份按鈕（DOM 由 homePage 插入，故延後到下一 frame）。
-            // 用 onclick 屬性而非 addEventListener：homePage 每次 re-render 會重建 DOM，
-            // 避免重複綁定。edit-budget-btn 由 homePage 綁定，這裡不可重複綁。
-            requestAnimationFrame(() => {
-                const monthBtn = document.getElementById('budget-month-btn')
-                if (!monthBtn) return
-                monthBtn.onclick = () => {
-                    this.showBudgetMonthPickerModal(_offset => {
-                        if (
-                            typeof window !== 'undefined' &&
-                            window.app &&
-                            window.app.router &&
-                            typeof window.app.router.routes['home']
-                                .loadBudgetWidget === 'function'
-                        ) {
-                            window.app.router.routes['home'].loadBudgetWidget()
-                        }
-                    })
-                }
-            })
-
             return widgetHtml
         })
     }

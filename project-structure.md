@@ -12,7 +12,7 @@ src/js/
 ├── retirementReport.js  # 退休 Monte Carlo 模擬與資產提領推演引擎 (常態分佈抽樣、實質報酬推演、破產機率與年期統計)
 ├── themeManager.js      # 主題管理 (深淺色模式四態切換 system/light/dark/custom、prefers-color-scheme 動態監聽、meta theme-color 同步、套用 CSS 變數、圖示替換；SVG/CSS 注入消毒)
 ├── aiService.js         # PWA 離線 AI 記帳服務 (wllama WASM + 58M GGUF 推論引擎，含語意守門校正 applySemanticGuardrail、對齊訓練集 tools.schema.json 與 build_prompt.py 規範、平衡括號 _extractBalancedJson 抽取巢狀 JSON、stop token 容錯、OPFS 實體快取清除與遠端 HEAD ETag/SHA-256 即時版本比對、智慧模糊匹配與同義詞/別名映射 fuzzyMatchAccount / fuzzyMatchCategory)
-├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + getStatistics 整合 calculateEffectiveRecordAmount 統計生活收支實質金額（代墊還清歸零、部分還款扣減已還金額）+ 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 依可用還款池精確計算本期 partial 已繳金額防虛增、刪除/修改還款紀錄自動連動重算信用卡帳單 + 信用卡消費延遲請款遞延至下一期與移回原期 deferRecordToNextStatement/undeferRecord/recalculateStatement + 嚴格過濾還款紀錄防明細污染與未出帳/帳單金額誤減歸零 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳 partialSettleGroup 支援 direction 單向沖銷與 FIFO 確定性排序 + recalculateDebtState 採 Record-as-Truth 同步修剪 payments 幽靈付款並回寫最新金額/日期 + 單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊 + seedAllDataToSyncLog 依拓撲順序合成歷史資料與同步設定項 category_order/hidden_categories/custom_categories/budget_settings 至 sync_log 支援無縫切換同步通道、logChange 完整保留陣列結構並以嚴格單調遞增時間戳防範系統時鐘回撥)
+├── dataService.js       # IndexedDB 資料存取層 (Schema v15: 多帳本 + 攤提/分期 + 信用卡支援與即時未出帳/已出帳帳單計算 getCreditCardBillingInfo/getStatementRecords + getStatistics 整合 calculateEffectiveRecordAmount 統計生活收支實質金額（代墊還清歸零、部分還款扣減已還金額）+ 信用卡自動產生帳單與繳款日同月/次月修正 + 到期卡費自動扣繳/單筆扣繳平帳 payCreditStatement 支援 deductOnly 單向平帳/autoPayCreditStatements 依可用還款池精確計算本期 partial 已繳金額防虛增、刪除/修改還款紀錄自動連動重算信用卡帳單 + 信用卡消費延遲請款遞延至下一期與移回原期 deferRecordToNextStatement/undeferRecord/recalculateStatement + 嚴格過濾還款紀錄防明細污染與未出帳/帳單金額誤減歸零 + 總欠款重構以完整涵蓋未繳帳單與未出帳即時消費 + deduplicateCreditCardPayments 自動清理重複扣繳記錄 + 群組分帳 partialSettleGroup 支援 direction 單向沖銷與 FIFO 確定性排序 + recalculateDebtState 採 Record-as-Truth 同步修剪 payments 幽靈付款並回寫最新金額/日期 + 單筆個別還款 + 雲端同步 exportDataForSync 完整打包 budgetSettingsMap/分類設定對照表與 activeLedgerId + importData 支援預算與分類跨帳本還原及 localStorage 雙向同步、skipConfirm 防呆與 onProgress 即時進度回報 + deduplicateAccounts / deduplicateContacts 自動去重 + alignAccountUuid / alignContactUuid / alignRecurringTransactionUuid 主動 UUID 對齊 + seedAllDataToSyncLog 依拓撲順序合成歷史資料與同步設定項 category_order/hidden_categories/custom_categories/budget_settings 至 sync_log 支援無縫切換同步通道、logChange 完整保留陣列結構並以嚴格單調遞增時間戳防範系統時鐘回撥 + 信用卡自動扣款全途徑韌性維護：addAccount 與 updateAccount 自動雙向維護 autoPayAccountId 與 autoPayAccountUuid、匯入備份 importData Phase 4.1 依 oldAccountIdToNewIdMap 與 UUID 雙重重對齊扣款帳戶、exportDataForSync 完整匯出 autoPayAccountUuid、deduplicateAccounts / alignCreditCardAutoPay 自動修復關聯對齊、autoPayCreditStatements 支援 autoPayAccountUuid 自癒修復避免扣繳失敗)
 ├── ledgerManager.js     # 帳本管理商業邏輯 (建立、切換、刪除帳本、自架共用建立失敗原子回滾、加入共用 5 段 key 植入 sync_shared_applied_keys 防止歷史快照覆寫本地修改、unshareLedger 容錯 404)
 ├── groupManager.js      # 群組分帳商業邏輯 (建立、刪除群組、一鍵結清、部分結清 partialSettleGroup 支援 direction 與單筆明細個別還款 settleGroupRecord)
 ├── categories.js        # 分類常數與工具函數 (getCategoryById 支援雙向相容降級查找，避免收入端之還款紀錄顯示未知問號圖示)
@@ -21,28 +21,28 @@ src/js/
 ├── comparisonReport.js   # 跨月比較報表與 CSV 匯出 (包含結構比例、日均支出、儲蓄率，過濾 transfer 轉帳與卡費扣繳紀錄防支出虛增，並依 calculateEffectiveRecordAmount 計算實質生活收支)
 ├── calendarCashFlow.js   # 行事曆金流檢視 (月曆網格、Top 3 支出標籤、每日明細 Modal，過濾 transfer/扣繳卡費避免干擾當月實質收支，整合 calculateEffectiveRecordAmount 精確排除代墊已還清/部分還款金額)
 ├── recordsList.js       # 記帳紀錄列表 (summary 統計與轉帳對沖邏輯全面排除 [卡費扣繳] 與 [自動扣款]，徹底解決單一帳戶篩選或單向扣款時的生活支出重複計算；整合 calculateEffectiveRecordAmount 計算實質金額，類別篩選彈窗依會計學總額原則分開呈現「支出類別」與「收入類別」，支援 type:catId 精準鍵值獨立篩選其他收入與其他支出，提供全選/取消全選切換；支援代墊部分還款剩餘金額箭頭與標籤顯示)
-├── budgetManager.js     # 預算管理 (支援多帳本 per-ledger 預算設定、第一主帳本相容 fallback 與 IndexedDB/localStorage 雙向快照同步)
+├── budgetManager.js     # 預算管理 (支援多帳本 per-ledger 預算設定、第一主帳本相容 fallback 與 IndexedDB/localStorage 雙向快照同步；移除小工具卡片冗餘獨立月份按鈕與未來月份限制，重構 getBudgetStatus 與 renderBudgetWidget 支援 YYYY-MM 與首頁月份選取器即時連動，支援過去月份回顧、當月實質支出進度與未來月份預覽提示)
 ├── quickSelectManager.js# 快速選擇管理
 ├── debtManager.js       # 欠款與群組管理 (欠款/借貸、聯絡人篩選與關聯群組過濾、群組分帳 AA 帳，支援點擊查看群組細部明細與單筆個別還款，群組部分收款/付款依淨額顯式傳遞 direction 單向沖銷避免現金流顛倒，群組詳情彈窗與個別還款彈窗完整顯示各筆明細之關聯欠款人/代墊人標籤與群組成員總覽，金額統計卡片與聯絡人總表完整納入群組欠款，進入頁面自動去重與新增聯絡人同名防呆)
 ├── changelog.js         # 更新日誌
 ├── datePickerModal.js   # 日期選擇器彈窗
 ├── pluginManager.js     # 擴充功能系統
 ├── pluginStorage.js     # 插件沙箱化儲存
-├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理與 Drive 缺水位強制 seed、共用帳本 sharedProvider 通道隔離與 403/404 雲端刪除自動降級、共用日誌合法 store 白名單隔離防篡改私人設定、自架拉取 _selfHostPullSharedLedgerChanges 畸形變更防禦性檢查、推送 _selfHostPushChanges 時鐘回撥游標自動歸零防跳過、自架推送僅上傳差異變更、登出與 409 衝突自動輪換 deviceId、登出即時撤銷 Token、setServerUrl 嚴格 URL 驗證、_selfHostFetch 標頭合併防覆寫、同步後自動觸發 deduplicateAccounts/deduplicateContacts)
-├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense)
+├── syncService.js       # Google Drive 與自架雙通道同步 (含跨裝置 groupMeta 群組資料同步、帳戶/聯絡人同名冪等防護、UUID 主動對齊、Update/Delete 業務鍵兜底防漏與防重複、markAllRemoteChangesAsPulled 檢查點更新與 _resolveDebtContactId 跨帳本外鍵解析、自架與 Drive 獨立 push 水位管理與 Drive 缺水位強制 seed、共用帳本 sharedProvider 通道隔離與 403/404 雲端刪除自動降級、共用日誌合法 store 白名單隔離防篡改私人設定、自架拉取 _selfHostPullSharedLedgerChanges 畸形變更防禦性檢查、推送 _selfHostPushChanges 時鐘回撥游標自動歸零防跳過、自架推送僅上傳差異變更、登出與 409 衝突自動輪換 deviceId、登出即時撤銷 Token、setServerUrl 嚴格 URL 驗證、_selfHostFetch 標頭合併防覆寫、同步後自動觸發 deduplicateAccounts/deduplicateContacts + _resolveAccountAutoPayAccountId 與 _resolveAllForeignKeys 自動將遠端 autoPayAccountUuid 解析為本地 autoPayAccountId，_applyAdd 與 _applyUpdateWithId 完整支援信用卡扣款帳戶之跨裝置同步對齊)
+├── rewardService.js     # 雙平台廣告服務 (Capacitor AdMob + Web AdSense，編譯巨集防護 typeof __AD_*__ 安全降級，防範開發環境未替換宏變數拋出 ReferenceError)
 ├── tourManager.js       # 導覽功能核心引擎 (GuideManager 類別，歡迎 Modal、氣泡引導、自動實操演示、狀態持久化，優先確保版本更新導覽不被常駐功能導覽搶先打斷)
 ├── tours/               # 導覽定義模組目錄 (包含各功能獨立導覽設定檔、syncTour 雲端備份與同步常駐導覽與統一註冊表 index.js)
 ├── router.js            # 路由管理
 ├── widgetHelper.js      # Android Widget 資料計算與同步輔助 (包含行事曆 Widget 資料提取，精確排除 transfer 與卡費扣繳平帳，整合 calculateEffectiveRecordAmount 避免代墊干擾桌面支出)
-└── utils.js             # 共用工具函數 (格式化、Toast、customConfirm/customAlert、showProgressModal 即時進度彈窗、calculateEffectiveRecordAmount 生活收支實質金額計算引擎、isDebtSettlementRecord 辨識還款/平帳/結清前綴、calculateNextDueDate 支援 anchorDay 防止月底溢出與逐期漂移達成收斂可逆、buildDebtLookupMaps 與 findDebtForRecord 雙向快取等)
+└── utils.js             # 共用工具函數 (格式化、Toast、customConfirm/customAlert、showProgressModal 即時進度彈窗、calculateEffectiveRecordAmount 生活收支實質金額計算引擎、isDebtSettlementRecord 辨識還款/平帳/結清前綴、calculateNextDueDate 支援 anchorDay 防止月底溢出與逐期漂移達成收斂可逆、buildDebtLookupMaps 與 findDebtForRecord 雙向快取等 + Toast 通知重構高對比度獨立樣式類別 toast-info / toast-success / toast-error / toast-warning，確保各外觀模式與深淺色主題下字色清晰可讀、防白底白字)
 
 src/js/pages/
-├── homePage.js          # 首頁：收支摘要、小工具、快速記帳
-├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提 (分期試算與新增分期傳入 anchorDay 避免月底溢出，建立與編輯欠款時自動同步保存 record.contactId，快速新增聯絡人同名自動選用現有聯絡人防重複，AI 語意記帳動態即時載入帳本全數真實帳戶與分類，自動對沖去重並藉由 fuzzyMatchAccount / fuzzyMatchCategory 智慧選中現存實體帳戶與類別)
+├── homePage.js          # 首頁：收支摘要、小工具、快速記帳 (月份切換時同步傳遞 selectedMonth 至 loadBudgetWidget 實現預算卡片跨月/當月/未來即時連動)
+├── addPage.js           # 新增/編輯紀錄：金額輸入、分類選擇、群組、欠款、攤提 (分期試算與新增分期傳入 anchorDay 避免月底溢出，建立與編輯欠款時自動同步保存 record.contactId，快速新增聯絡人同名自動選用現有聯絡人防重複，AI 語意記帳動態即時載入帳本全數真實帳戶與分類，自動對沖去重並藉由 fuzzyMatchAccount / fuzzyMatchCategory 智慧選中現存實體帳戶與類別 + 選擇帳戶彈窗未釘選圖示全面改採 fa-solid fa-thumbtack 解決 FontAwesome Free 缺少 regular 樣式導致的缺字框 ☒)
 ├── recordsPage.js       # 明細列表：篩選、搜尋、日期範圍、分頁
 ├── statsPage.js         # 統計報表：圖表、類別分析、趨勢
-├── settingsPage.js      # 設定：主題、進階模式、匯入匯出 (整合 showProgressModal 與 reloadAppData 即時套用)、通知
-├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶 (信用卡雙列分開顯示「即時未出帳」與「準備繳納」金額，卡片欠款 cardDebt 同步採用 billingInfo.totalDebt，支援獨立「信用卡帳務明細」彈窗 showCreditDetailModal 檢視即時消費與歷史/各期帳單折疊明細，未繳帳單消費支援「遞延下期」與「移回原期」，未出帳明細清楚標示遞延來源並支援移回，進入頁面主動觸發到期帳單扣繳平帳與歷史被誤減金額之主動矯正，到期/逾期醒目標籤與單筆「扣繳平帳」快速處理，全面修復編輯彈窗橫向滾動與溢位問題；支援信用卡欠款已歸零時的「僅扣款帳戶平帳」防溢繳款、一鍵帶入最近一期帳單金額、已繳清帳單「扣款平帳」與一般帳戶餘額矯正差額扣繳卡費)
+├── settingsPage.js      # 設定：帳務功能模組 (多帳戶/週期交易/攤提分期/欠款/群組)、系統偏好入口、外觀主題、資料管理 (匯入匯出整合 showProgressModal 與 reloadAppData 即時套用)、AI 離線實驗室、關於與系統
+├── accountsPage.js      # 帳戶管理：建立、編輯、刪除帳戶 (信用卡雙列分開顯示「即時未出帳」與「準備繳納」金額，卡片欠款 cardDebt 同步採用 billingInfo.totalDebt，支援獨立「信用卡帳務明細」彈窗 showCreditDetailModal 檢視即時消費與歷史/各期帳單折疊明細，未繳帳單消費支援「遞延下期」與「移回原期」，未出帳明細清楚標示遞延來源並支援移回，進入頁面主動觸發到期帳單扣繳平帳與歷史被誤減金額之主動矯正，到期/逾期醒目標籤與單筆「扣繳平帳」快速處理，全面修復編輯彈窗橫向滾動與溢位問題；支援信用卡欠款已歸零時的「僅扣款帳戶平帳」防溢繳款、一鍵帶入最近一期帳單金額、已繳清帳單「扣款平帳」與一般帳戶餘額矯正差額扣繳卡費 + 編輯信用卡彈窗與扣款平帳彈窗自動扣款帳戶下拉選單 autoPayDebitId 支援 autoPayAccountUuid 容錯回退，儲存時自動關聯 autoPayAccountUuid，防止備份還原或同步後扣款帳戶跳回預設)
 ├── debtsPage.js         # 欠款管理頁面（極簡直觀顯示個人欠款與待結清群組，前端路由）
 ├── groupsPage.js        # 獨立群組與專案管理頁面（建立/重命名/刪除/檢視專案與分帳群組）
 ├── contactsPage.js      # 聯絡人管理
@@ -55,9 +55,10 @@ src/js/pages/
 ├── themesPage.js        # 主題管理
 ├── themeStorePage.js    # 主題商店
 ├── storePage.js         # 商店頁面
-├── syncSettingsPage.js  # 同步設定 (自架同步與 Google Drive 雙通道切換、雲端還原、管理員控制台)
+├── syncSettingsPage.js  # 同步設定 (自架同步與 Google Drive 雙通道切換、PIN/密碼安全提示建議 8 碼以上、雲端還原、管理員控制台)
 ├── privacyPage.js       # 隱私權政策
-└── licensePage.js       # 授權條款
+├── licensePage.js       # 授權條款
+└── preferencesPage.js   # 記帳與系統偏好設定頁面 (二級內層設定：計算機小鍵盤模式、明細預設時間範圍、每日提醒、餘額不足警示、行事曆繳款圓點、Android 發票載具)
 
 server/                  # Docker 自架同步伺服器 (需 Node.js >= 22.13.0 免 flag node:sqlite)
 ├── src/
@@ -143,7 +144,7 @@ project-structure.md     # 專案結構與模組說明 (本文件)
 
 tailwind.config.js       # Tailwind CSS 主題與外掛設定檔 (PostCSS build 用)
 postcss.config.js        # PostCSS 插件設定檔 (tailwindcss + autoprefixer)
-vite.config.js           # Vite 打包配置 (含 Service Worker 版本與 precachemanifest 注入外掛)
+vite.config.js           # Vite 打包配置 (含 Service Worker 版本與 precachemanifest 注入外掛、devDefinePlugin 解決 Vite 8 開發環境 client 跳過巨集替換問題、skipWebSocketTokenCheck 避免 HMR 重連 token 失效斷線)
 capacitor.config.json    # Capacitor 配置 (appId, webDir, androidScheme)
 index.html               # 入口 HTML (零首屏第三方 CDN，Google SDK/QRCode/Chart.js 本地化與按需載入)
 ```

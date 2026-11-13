@@ -184,7 +184,7 @@ export function createAccessGate(code, options = {}) {
 // - 空 code（一般版）→ minifier 移除整個 if 區塊，createAccessGate 變為
 //   未被引用而整段 tree-shake，gate UI 文案不會進 bundle（與 AD_FREE 同機制）。
 // - 有 code（自架版）→ 保留 gate 實作。
-const ACCESS_CODE = __ACCESS_CODE__
+const ACCESS_CODE = typeof __ACCESS_CODE__ !== 'undefined' ? __ACCESS_CODE__ : ''
 
 let gateImpl = null
 if (ACCESS_CODE) {

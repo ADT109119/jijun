@@ -137,7 +137,7 @@ export class PluginManager {
 
         return {
             appName: 'Easy Accounting',
-            version: __APP_VERSION__,
+            version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.1.9.1',
             activeLedgerId: () => this.dataService.activeLedgerId,
             lib: { Chart: Chart },
             storage,

@@ -265,7 +265,7 @@ export class HomePage {
                 .join('')
         }
 
-        this.loadBudgetWidget()
+        this.loadBudgetWidget(selectedMonth)
         this.loadDebtSummary()
         this.loadGroupBalance()
     }
@@ -409,10 +409,19 @@ export class HomePage {
         }
     }
 
-    async loadBudgetWidget() {
+    async loadBudgetWidget(targetMonth = null) {
         const container = document.getElementById('budget-widget-container')
         if (!container) return
-        container.innerHTML = await this.app.budgetManager.renderBudgetWidget()
+        const selectedMonth =
+            targetMonth ||
+            document
+                .getElementById('home-month-display')
+                ?.textContent?.replace(/\s+/g, '')
+                ?.replace('/', '-')
+                ?.trim() ||
+            null
+        container.innerHTML =
+            await this.app.budgetManager.renderBudgetWidget(selectedMonth)
         // Re-bind events for the new widget content
         const editBudgetBtn = document.getElementById('edit-budget-btn')
         if (editBudgetBtn) {

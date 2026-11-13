@@ -56,6 +56,7 @@ import { ThemesPage } from './pages/themesPage.js'
 import { ThemeStorePage } from './pages/themeStorePage.js'
 import { PrivacyPage } from './pages/privacyPage.js'
 import { LicensePage } from './pages/licensePage.js'
+import { PreferencesPage } from './pages/preferencesPage.js'
 
 export class EasyAccountingApp {
     constructor() {
@@ -247,6 +248,7 @@ export class EasyAccountingApp {
         this.router.register('license', new LicensePage(this))
         this.router.register('comparison', new ComparisonPage(this))
         this.router.register('retirement', new RetirementPage(this))
+        this.router.register('preferences', new PreferencesPage(this))
 
         // Check for PWA Share Target parameters
         const urlParams = new URLSearchParams(window.location.search)

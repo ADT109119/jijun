@@ -375,28 +375,33 @@ export function showToast(message, type = 'info', duration = 3000) {
 
     // Reset classes
     toast.classList.remove(
+        'toast-info',
+        'toast-success',
+        'toast-error',
+        'toast-warning',
         'bg-wabi-income',
         'bg-wabi-expense',
         'bg-wabi-primary',
         'bg-yellow-500',
         'toast-hide',
-        'text-wabi-surface'
+        'text-wabi-surface',
+        'text-white'
     )
 
     // Apply new classes based on type
     switch (type) {
         case 'success':
-            toast.classList.add('bg-wabi-income', 'text-wabi-surface')
+            toast.classList.add('toast-success')
             break
         case 'error':
-            toast.classList.add('bg-wabi-expense', 'text-wabi-surface')
+            toast.classList.add('toast-error')
             break
         case 'warning':
-            toast.classList.add('bg-yellow-500', 'text-wabi-surface')
+            toast.classList.add('toast-warning')
             break
         case 'info':
         default:
-            toast.classList.add('bg-wabi-primary', 'text-wabi-surface')
+            toast.classList.add('toast-info')
             break
     }
 
@@ -1029,7 +1034,7 @@ export function getStoreUrl(path) {
     const isNative = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
     // __WEB_STORE_URL__ is injected by Vite Define
     // @ts-ignore
-    const baseUrl = isNative ? __WEB_STORE_URL__ : '';
+    const baseUrl = isNative ? (typeof __WEB_STORE_URL__ !== 'undefined' ? __WEB_STORE_URL__ : 'https://jijun.the-walking-fish.com') : '';
     const separator = path.startsWith('/') ? '' : '/';
     return `${baseUrl}${separator}${path}`;
 }

@@ -39,9 +39,9 @@ export const newFeaturesTour = {
         },
         {
             target: '#low-balance-warning-toggle',
-            goto: '#settings',
+            goto: '#preferences',
             title: '餘額不足提醒',
-            body: '記帳前預先檢查：若該筆支出會讓帳戶透支、或信用卡欠款超出額度，儲存時會先跳出黃色警示（不阻擋記帳）。在設定頁「餘額不足提醒」開關即可啟用。',
+            body: '記帳前預先檢查：若該筆支出會讓帳戶透支、或信用卡欠款超出額度，儲存時會先跳出黃色警示（不阻擋記帳）。在偏好設定中「餘額不足提醒」開關即可啟用。',
             position: 'top',
         },
         {
