@@ -15,7 +15,7 @@
         "test": "node test/selfhost-api.test.mjs && node test/selfhost-http.test.mjs"
     },
     "devDependencies": {
-        "wrangler": "^4.147.0"
+        "wrangler": "^4.162.0"
     },
     "keywords": [
         "cloudflare-worker",
