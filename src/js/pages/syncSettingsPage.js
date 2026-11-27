@@ -422,6 +422,14 @@ export class SyncSettingsPage {
     // ── 備份 + 多裝置同步卡片（已登入才顯示，兩種通道共用）──
     renderSignedInCards({ isSelfHostMode, lastBackup, lastSync, autoSyncEnabled, autoBackupEnabled, backupIntervalValue }) {
         const channelName = isSelfHostMode ? '自架伺服器' : 'Google Drive'
+        const expectedProvider = isSelfHostMode ? 'selfhost' : 'gdrive'
+        const backupVal = lastBackup?.value
+        const backupMatchesChannel =
+            !backupVal?.provider || backupVal.provider === expectedProvider
+        const lastBackupLabel =
+            backupMatchesChannel && backupVal?.timestamp
+                ? new Date(backupVal.timestamp).toLocaleString('zh-TW')
+                : '尚未備份'
         const retentionNote = isSelfHostMode
             ? '備份保留由伺服器管理（BACKUP_RETENTION_COUNT 環境變數，預設 100 筆）。'
             : '備份保留策略：近 7 天的備份全部保留，更早的每月僅保留一筆，超過一年的自動刪除。'
@@ -430,7 +438,7 @@ export class SyncSettingsPage {
             <div class="bg-wabi-surface rounded-xl p-4 space-y-3">
                 <h3 class="text-wabi-primary text-base font-bold">雲端備份</h3>
                 <p class="text-xs text-wabi-text-secondary">
-                    上次備份：${lastBackup?.value?.timestamp ? new Date(lastBackup.value.timestamp).toLocaleString('zh-TW') : '尚未備份'}（${channelName}）
+                    上次備份：${lastBackupLabel}（${channelName}）
                 </p>
                 <div class="grid grid-cols-2 gap-3">
                     <button id="sync-backup-btn" class="py-2.5 bg-wabi-primary text-wabi-surface rounded-lg text-sm font-medium hover:bg-wabi-primary/90 flex items-center justify-center gap-1">
@@ -904,6 +912,10 @@ export class SyncSettingsPage {
         const restoreBtn = document.getElementById('sync-restore-btn')
         if (restoreBtn) {
             restoreBtn.addEventListener('click', async () => {
+                const origHtml = restoreBtn.innerHTML
+                restoreBtn.disabled = true
+                restoreBtn.innerHTML =
+                    '<i class="fa-solid fa-spinner fa-spin"></i> 載入中...'
                 try {
                     const backups = await ss.listBackups()
                     if (backups.length === 0) {
@@ -913,13 +925,16 @@ export class SyncSettingsPage {
                     // Show backup selection
                     const listHtml = backups
                         .map((b, _i) => {
-                            const date = new Date(b.createdTime).toLocaleString(
-                                'zh-TW'
-                            )
+                            const ts = b.createdTime || b.modifiedTime
+                            const parsed = ts ? new Date(ts) : null
+                            const date =
+                                parsed && !Number.isNaN(parsed.getTime())
+                                    ? parsed.toLocaleString('zh-TW')
+                                    : '未知時間'
                             const sizeKB = b.size
                                 ? (parseInt(b.size) / 1024).toFixed(1)
                                 : '?'
-                            return `<button class="restore-backup-item w-full text-left p-3 hover:bg-wabi-bg rounded-lg border border-wabi-border" data-file-id="${b.id}">
+                            return `<button class="restore-backup-item w-full text-left p-3 hover:bg-wabi-bg rounded-lg border border-wabi-border" data-file-id="${escapeHTML(String(b.id || ''))}">
                             <p class="text-sm font-medium text-wabi-text-primary">${escapeHTML(b.name)}</p>
                             <p class="text-xs text-wabi-text-secondary">${date} · ${sizeKB} KB</p>
                         </button>`
@@ -1036,6 +1051,9 @@ export class SyncSettingsPage {
                         })
                 } catch (err) {
                     showToast('載入備份列表失敗：' + err.message, 'error')
+                } finally {
+                    restoreBtn.disabled = false
+                    restoreBtn.innerHTML = origHtml
                 }
             })
         }

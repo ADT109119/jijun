@@ -1004,23 +1004,75 @@ export class EasyAccountingApp {
      * 監聽 online/offline 事件即時切換；無 emoji，依設計慣例用功能圖示。
      */
     setupOfflineBanner() {
+        let dismissed = false
+        let resizeObserver = null
+
+        const syncBannerOffset = banner => {
+            const height = banner ? banner.offsetHeight : 0
+            document.documentElement.style.setProperty(
+                '--offline-banner-height',
+                `${height}px`
+            )
+            document.body.classList.toggle('has-offline-banner', !!banner)
+        }
+
+        const removeBanner = () => {
+            if (resizeObserver) {
+                resizeObserver.disconnect()
+                resizeObserver = null
+            }
+            const existing = document.getElementById('offline-banner')
+            if (existing) existing.remove()
+            syncBannerOffset(null)
+        }
+
         const update = () => {
-            let banner = document.getElementById('offline-banner')
             const isOnline = navigator.onLine
-            if (!isOnline && !banner) {
+            if (isOnline) {
+                dismissed = false
+                removeBanner()
+                return
+            }
+
+            if (dismissed) return
+
+            let banner = document.getElementById('offline-banner')
+            if (!banner) {
                 banner = document.createElement('div')
                 banner.id = 'offline-banner'
+                banner.setAttribute('role', 'status')
                 banner.className =
-                    'fixed top-0 left-0 right-0 z-[60] bg-amber-600 text-white text-xs text-center py-1.5 px-3 shadow-md flex items-center justify-center gap-1.5'
+                    'fixed top-0 left-0 right-0 md:left-64 z-30 bg-amber-600 text-white text-xs py-1.5 px-3 shadow-md flex items-center justify-center gap-2'
                 banner.innerHTML =
-                    '<i class="fa-solid fa-wifi fa-slash"></i><span>離線模式：資料安全存於本機，記帳照常可用（雲端同步暫停）</span>'
+                    '<i class="fa-solid fa-wifi fa-slash shrink-0"></i>' +
+                    '<span class="flex-1 text-center leading-snug">離線模式：資料安全存於本機，記帳照常可用（雲端同步暫停）</span>' +
+                    '<button type="button" id="offline-banner-close" class="shrink-0 px-1.5 py-0.5 rounded hover:bg-black/15 focus:outline-none" aria-label="關閉離線提示"><i class="fa-solid fa-xmark"></i></button>'
                 document.body.prepend(banner)
-            } else if (isOnline && banner) {
-                banner.remove()
+
+                const closeBtn = banner.querySelector('#offline-banner-close')
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', () => {
+                        dismissed = true
+                        removeBanner()
+                    })
+                }
+
+                if (typeof ResizeObserver === 'function') {
+                    resizeObserver = new ResizeObserver(() => {
+                        const current = document.getElementById('offline-banner')
+                        if (current) syncBannerOffset(current)
+                    })
+                    resizeObserver.observe(banner)
+                }
             }
+            syncBannerOffset(banner)
         }
+
         window.addEventListener('online', update)
-        window.addEventListener('offline', update)
+        window.addEventListener('offline', () => {
+            dismissed = false
+            update()
+        })
         update()
     }
 

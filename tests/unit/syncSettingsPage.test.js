@@ -1386,3 +1386,50 @@ describe('SyncSettingsPage - 主題變數（無寫死顏色，v2.1.8.2 回歸）
         expect(html).toContain('test@example.com')
     })
 })
+
+describe('SyncSettingsPage - 備份通道歸屬與還原時間容錯回歸', () => {
+    it('renderSignedInCards 若 lastBackup.provider 與目前通道不一致應顯示「尚未備份」', () => {
+        const page = new SyncSettingsPage({ syncService: { deviceId: 'dev1' } })
+        const mismatched = page.renderSignedInCards({
+            isSelfHostMode: false,
+            lastBackup: {
+                value: {
+                    timestamp: '2026-11-26T13:50:51.000Z',
+                    provider: 'selfhost',
+                },
+            },
+            lastSync: null,
+            autoSyncEnabled: null,
+            autoBackupEnabled: null,
+            backupIntervalValue: 'daily',
+        })
+        expect(mismatched).toContain('尚未備份')
+        expect(mismatched).not.toContain('2026')
+    })
+
+    it('還原彈窗在缺少 createdTime 時退回 modifiedTime 或「未知時間」，並於載入完成後恢復按鈕', async () => {
+        const ctx = makeCtx({ signedInGoogle: true })
+        await ctx.render()
+        ctx.syncService.listBackups.mockResolvedValueOnce([
+            {
+                id: 'f1',
+                name: 'backup_mod.json',
+                modifiedTime: '2026-11-26T13:50:51.000Z',
+                size: '2048',
+            },
+            {
+                id: 'f2',
+                name: 'backup_unknown.json',
+                size: null,
+            },
+        ])
+        const btn = document.getElementById('sync-restore-btn')
+        btn.click()
+        await flushAll()
+        expect(btn.disabled).toBe(false)
+        expect(btn.innerHTML).toContain('還原備份')
+        expect(document.body.innerHTML).toContain('backup_mod.json')
+        expect(document.body.innerHTML).toContain('2026')
+        expect(document.body.innerHTML).toContain('未知時間')
+    })
+})

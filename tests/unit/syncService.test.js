@@ -5971,5 +5971,251 @@ describe('PR #69 External Code Review Hardening & Regression Tests', () => {
             expect(infra.manifestId).toBe('mf_organizer')
         })
     })
+
+    describe('Google Drive 備份列表與還原回歸修復', () => {
+        let ss, ds
+
+        beforeEach(() => {
+            ds = createMockDataService()
+            ss = createSyncService(ds)
+            ss.accessToken = 'drive_acc_tok'
+            ss.refreshToken = 'drive_ref_tok'
+            ss.tokenExpiresAt = Date.now() + 3600_000
+        })
+
+        it('listBackups 帶 cache: no-store、不依賴 name contains 索引、過濾非備份/已刪除檔並依時間降冪排序', async () => {
+            const fetchOpts = []
+            globalThis.fetch = vi.fn(async (url, opts) => {
+                fetchOpts.push({ url, opts })
+                if (url.includes('pageToken=p2')) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            files: [
+                                {
+                                    id: 'newest',
+                                    name: 'backup_2026-11-26T13-50-51-000Z.json',
+                                    createdTime: '2026-11-26T13:50:51.000Z',
+                                },
+                                {
+                                    id: 'trashed_item',
+                                    name: 'backup_2026-11-27T00-00-00-000Z.json',
+                                    createdTime: '2026-11-27T00:00:00.000Z',
+                                    trashed: true,
+                                },
+                            ],
+                            nextPageToken: null,
+                        }),
+                    }
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        files: [
+                            {
+                                id: 'old',
+                                name: 'backup_2026-10-01T00-00-00-000Z.json',
+                                createdTime: '2026-10-01T00:00:00.000Z',
+                            },
+                            {
+                                id: 'sync_log',
+                                name: 'sync_log_dev_1.json',
+                                createdTime: '2026-11-27T10:00:00.000Z',
+                            },
+                            {
+                                id: 'mid',
+                                name: 'backup_2026-11-20T00-00-00-000Z.json',
+                                createdTime: '2026-11-20T00:00:00.000Z',
+                            },
+                        ],
+                        nextPageToken: 'p2',
+                    }),
+                }
+            })
+
+            const backups = await ss.listBackups()
+
+            expect(fetchOpts.length).toBe(2)
+            expect(fetchOpts[0].opts.cache).toBe('no-store')
+            expect(fetchOpts[0].url).not.toContain('name contains')
+            // 即使 Drive API 第二頁才回傳最新檔，仍正確排在第一筆，並過濾掉 sync_log 與 trashed 檔案
+            expect(backups.map(b => b.id)).toEqual(['newest', 'mid', 'old'])
+        })
+
+        it('listBackups 遇到 401 時刷新 Access Token 並重試一次', async () => {
+            ss.refreshAccessToken = vi.fn(async () => {
+                ss.accessToken = 'refreshed_acc_tok'
+            })
+            let calls = 0
+            globalThis.fetch = vi.fn(async (_url, opts) => {
+                calls++
+                if (calls === 1) {
+                    expect(opts.headers.Authorization).toBe('Bearer drive_acc_tok')
+                    return { ok: false, status: 401 }
+                }
+                expect(opts.headers.Authorization).toBe('Bearer refreshed_acc_tok')
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        files: [
+                            {
+                                id: 'b_recent',
+                                name: 'backup_2026-11-26T13-50-51-000Z.json',
+                                createdTime: '2026-11-26T13:50:51.000Z',
+                            },
+                        ],
+                    }),
+                }
+            })
+
+            const backups = await ss.listBackups()
+            expect(ss.refreshAccessToken).toHaveBeenCalledTimes(1)
+            expect(backups.map(b => b.id)).toEqual(['b_recent'])
+        })
+
+        it('backupToDrive 上傳成功並取得檔案 ID 後才儲存 sync_last_backup，並於之後執行 cleanupOldBackups', async () => {
+            const callOrder = []
+            ss.cleanupOldBackups = vi.fn(async () => {
+                callOrder.push('cleanup')
+            })
+            globalThis.fetch = vi.fn(async () => {
+                callOrder.push('upload')
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ id: 'drive_file_1', name: 'backup_x.json' }),
+                }
+            })
+
+            const uploaded = await ss.backupToDrive()
+
+            expect(uploaded.id).toBe('drive_file_1')
+            expect(callOrder).toEqual(['upload', 'cleanup'])
+            expect(ds.saveSetting).toHaveBeenCalledWith({
+                key: 'sync_last_backup',
+                value: expect.objectContaining({
+                    fileId: 'drive_file_1',
+                    provider: 'gdrive',
+                    timestamp: expect.any(Number),
+                }),
+            })
+        })
+
+        it('backupToDrive 上傳失敗時不寫入 sync_last_backup 且不執行 cleanupOldBackups', async () => {
+            ss.cleanupOldBackups = vi.fn()
+            globalThis.fetch = vi.fn(async () => ({
+                ok: false,
+                status: 500,
+                json: async () => ({ error: { message: 'Internal Error' } }),
+            }))
+
+            await expect(ss.backupToDrive()).rejects.toThrow('Internal Error')
+            expect(ss.cleanupOldBackups).not.toHaveBeenCalled()
+            expect(ds.saveSetting).not.toHaveBeenCalledWith(
+                expect.objectContaining({ key: 'sync_last_backup' })
+            )
+        })
+
+        it('cleanupOldBackups 遇到缺少或無效 createdTime 的項目應跳過而非誤刪', async () => {
+            ss.listBackups = vi.fn(async () => [
+                { id: 'missing_ts', name: 'backup_x.json' },
+                { id: 'bad_ts', name: 'backup_y.json', createdTime: 'invalid-date' },
+            ])
+            const deleteSpy = vi.spyOn(ss, 'deleteBackup').mockResolvedValue()
+
+            await ss.cleanupOldBackups()
+
+            expect(deleteSpy).not.toHaveBeenCalled()
+        })
+
+        it('handleAuthCallback 同通道重新授權保留 sync_last_backup；從 self-host 切換過來才清除', async () => {
+            globalThis.fetch = vi.fn(async url => {
+                if (url.includes('/api/auth/token')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            access_token: 'new_at',
+                            refresh_token: 'new_rt',
+                            expires_in: 3600,
+                        }),
+                    }
+                }
+                return { ok: true, json: async () => ({ email: 'u@example.com' }) }
+            })
+
+            // 同通道重新授權（selfHostToken 為 null）→ 不清除 sync_last_backup
+            await ss.handleAuthCallback('auth_code_1')
+            expect(ds.saveSetting).not.toHaveBeenCalledWith({
+                key: 'sync_last_backup',
+                value: null,
+            })
+
+            // 從 self-host 切換到 Google → 清除舊通道的 sync_last_backup
+            ds.saveSetting.mockClear()
+            ss.selfHostToken = 'old_selfhost_tok'
+            await ss.handleAuthCallback('auth_code_2')
+            expect(ds.saveSetting).toHaveBeenCalledWith({
+                key: 'sync_last_backup',
+                value: null,
+            })
+        })
+
+        it('refreshAccessToken 網路超過 5 秒無回應時自動中止並避免阻塞啟動，且不登出', async () => {
+            vi.useFakeTimers()
+            try {
+                const signOutSpy = vi.spyOn(ss, 'signOut').mockResolvedValue()
+                globalThis.fetch = vi.fn((_url, opts) => {
+                    return new Promise((_resolve, reject) => {
+                        opts.signal.addEventListener('abort', () => {
+                            const err = new Error('Aborted')
+                            err.name = 'AbortError'
+                            reject(err)
+                        })
+                    })
+                })
+
+                const p = ss.refreshAccessToken()
+                const caught = p.catch(err => err)
+                await vi.advanceTimersByTimeAsync(5000)
+
+                const err = await caught
+                expect(err).toBeInstanceOf(Error)
+                expect(err.name).toBe('AbortError')
+                expect(signOutSpy).not.toHaveBeenCalled()
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        it('init() 在 refreshAccessToken 失敗或逾時時仍繼續啟動自動同步與自動備份', async () => {
+            ds.getSetting = vi.fn(async key => {
+                if (key === 'sync_tokens') {
+                    return {
+                        key,
+                        value: {
+                            access_token: 'exp_at',
+                            refresh_token: 'exp_rt',
+                            expires_at: Date.now() - 1000,
+                        },
+                    }
+                }
+                if (key === 'sync_auto_enabled') return { key, value: true }
+                if (key === 'sync_auto_backup_enabled') return { key, value: true }
+                return null
+            })
+            ds.getLedgers = vi.fn(async () => [])
+            vi.spyOn(ss, 'refreshAccessToken').mockRejectedValueOnce(new Error('timeout'))
+            const autoSyncSpy = vi.spyOn(ss, 'startAutoSync').mockImplementation(() => {})
+            const autoBackupSpy = vi.spyOn(ss, 'startAutoBackup').mockImplementation(() => {})
+
+            await ss.init()
+
+            expect(autoSyncSpy).toHaveBeenCalledTimes(1)
+            expect(autoBackupSpy).toHaveBeenCalledWith('daily')
+        })
+    })
 })
 

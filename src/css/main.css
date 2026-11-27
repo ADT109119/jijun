@@ -323,10 +323,36 @@ select option {
     filter: brightness(1.2);
 }
 
+/* 離線提示橫幅顯示時向下推移主容器、頂部粘性列與覆蓋頁，避免遮擋返回按鈕與標題 */
+body.has-offline-banner #app-container {
+    padding-top: var(--offline-banner-height, 0px);
+}
+
+body.has-offline-banner #app-container .sticky.top-0,
+body.has-offline-banner #app-container [class*="sticky"][class*="top-0"] {
+    top: var(--offline-banner-height, 0px) !important;
+}
+
+body.has-offline-banner #add-page-wrapper {
+    top: var(--offline-banner-height, 0px);
+}
+
+body.has-offline-banner #toast {
+    top: calc(1.25rem + var(--offline-banner-height, 0px));
+}
+
 /* Mobile Safe Area Fixes (僅在 Android/iOS App 原生環境生效,不影響手機 PWA) */
 @media (max-width: 767px) {
+    #offline-banner {
+        top: env(safe-area-inset-top, 0px);
+    }
+
     body.is-capacitor-native #app-container {
         padding-top: env(safe-area-inset-top, 0px);
+    }
+
+    body.is-capacitor-native.has-offline-banner #app-container {
+        padding-top: calc(env(safe-area-inset-top, 0px) + var(--offline-banner-height, 0px));
     }
     
     /* Fixed-position add page wrapper bypasses body padding — add its own safe area */
@@ -339,11 +365,21 @@ select option {
     #add-page-wrapper {
         padding-top: env(safe-area-inset-top, 0px);
     }
+
+    body.has-offline-banner #add-page-wrapper {
+        top: calc(env(safe-area-inset-top, 0px) + var(--offline-banner-height, 0px));
+        padding-top: 0px;
+    }
     
     /* 調整所有 sticky top-0 的定位，使滾動時能完美停在狀態列下方 */
     body.is-capacitor-native .sticky.top-0, 
     body.is-capacitor-native [class*="sticky"][class*="top-0"] {
         top: env(safe-area-inset-top, 0px) !important;
+    }
+
+    body.has-offline-banner #app-container .sticky.top-0,
+    body.has-offline-banner #app-container [class*="sticky"][class*="top-0"] {
+        top: calc(env(safe-area-inset-top, 0px) + var(--offline-banner-height, 0px)) !important;
     }
 
     /* 狀態列防穿模遮罩：擋住往上滾動穿透狀態列的內容 */

@@ -187,9 +187,16 @@ export class SyncService {
                 }
             }
 
-            // 如果已登入且 token 快過期，嘗試刷新
+            // 如果已登入且 token 快過期，嘗試刷新（失敗或逾時不阻斷離線/慢網啟動與後續排程）
             if (this.refreshToken && this.isTokenExpiringSoon()) {
-                await this.refreshAccessToken()
+                try {
+                    await this.refreshAccessToken()
+                } catch (refreshErr) {
+                    console.warn(
+                        '[SyncService] init token refresh skipped:',
+                        refreshErr
+                    )
+                }
             }
 
             // 檢查是否需要啟動自動同步
@@ -274,6 +281,30 @@ export class SyncService {
         if (!this.accessToken) {
             throw new Error('Not signed in')
         }
+    }
+
+    /**
+     * 執行 Google Drive API 請求：停用 HTTP 快取並在 401 時刷新 token 重試一次
+     * @param {string} url
+     * @param {RequestInit} [options={}]
+     * @returns {Promise<Response>}
+     */
+    async _driveFetch(url, options = {}) {
+        await this.ensureValidToken()
+        const buildInit = () => ({
+            cache: 'no-store',
+            ...options,
+            headers: {
+                Authorization: `Bearer ${this.accessToken}`,
+                ...options.headers,
+            },
+        })
+        let res = await fetch(url, buildInit())
+        if (res.status === 401 && this.refreshToken) {
+            await this.refreshAccessToken()
+            res = await fetch(url, buildInit())
+        }
+        return res
     }
 
     /**
@@ -432,12 +463,19 @@ export class SyncService {
         // 切換到 Google 模式時清除自架登入（與 _saveSelfHostCredentials 對稱，
         // 修復單向互斥：原本自架登入會清 Google token，但 Google 登入不會清
         // selfHostToken，會殘留殭屍憑證導致 isSelfHostMode() 永久為真）
+        const wasSelfHost = !!this.selfHostToken
         this.selfHostToken = null
         this.selfHostUsername = null
         await this.dataService.saveSetting({
             key: 'sync_selfhost',
             value: null,
         })
+        if (wasSelfHost) {
+            await this.dataService.saveSetting({
+                key: 'sync_last_backup',
+                value: null,
+            })
+        }
 
         // 取得使用者資訊
         await this.fetchUserInfo()
@@ -461,12 +499,20 @@ export class SyncService {
     async refreshAccessToken() {
         if (!this.refreshToken) throw new Error('No refresh token')
 
+        const controller =
+            typeof AbortController === 'function'
+                ? new AbortController()
+                : null
+        const timeoutId = controller
+            ? setTimeout(() => controller.abort(), 5000)
+            : null
         try {
             const serverUrl = this.serverUrl.replace(/\/+$/, '')
             const res = await fetch(`${serverUrl}/api/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refresh_token: this.refreshToken }),
+                ...(controller ? { signal: controller.signal } : {}),
             })
 
             if (!res.ok) {
@@ -485,6 +531,8 @@ export class SyncService {
         } catch (err) {
             console.error('[SyncService] refreshAccessToken error:', err)
             throw err
+        } finally {
+            if (timeoutId !== null) clearTimeout(timeoutId)
         }
     }
 
@@ -496,6 +544,7 @@ export class SyncService {
             const res = await fetch(
                 'https://www.googleapis.com/oauth2/v2/userinfo',
                 {
+                    cache: 'no-store',
                     headers: { Authorization: `Bearer ${this.accessToken}` },
                 }
             )
@@ -547,6 +596,10 @@ export class SyncService {
         await this.dataService.saveSetting({ key: 'sync_tokens', value: null })
         await this.dataService.saveSetting({
             key: 'sync_selfhost',
+            value: null,
+        })
+        await this.dataService.saveSetting({
+            key: 'sync_last_backup',
             value: null,
         })
         await this.dataService.saveSetting({
@@ -786,6 +839,10 @@ export class SyncService {
         await this.dataService.saveSetting({
             key: 'sync_drive_file_authorized',
             value: false,
+        })
+        await this.dataService.saveSetting({
+            key: 'sync_last_backup',
+            value: null,
         })
         await this.dataService.saveSetting({
             key: 'sync_selfhost',
@@ -1390,7 +1447,7 @@ export class SyncService {
 
         await this.dataService.saveSetting({
             key: 'sync_last_backup',
-            value: { timestamp: Date.now(), fileName },
+            value: { timestamp: Date.now(), fileName, provider: 'selfhost' },
         })
     }
 
@@ -1437,9 +1494,6 @@ export class SyncService {
         if (this.selfHostToken) return this._selfHostBackup()
         await this.ensureValidToken()
 
-        // 備份前先清理舊備份
-        await this.cleanupOldBackups()
-
         const exportData = await this.dataService.exportDataForSync()
         exportData.backup_device = this.deviceId
         exportData.backup_timestamp = Date.now()
@@ -1461,18 +1515,17 @@ export class SyncService {
             '',
             JSON.stringify(metadata),
             `--${boundary}`,
-            'Content-Type: application/json',
+            'Content-Type: application/json; charset=UTF-8',
             '',
             fileContent,
             `--${boundary}--`,
         ].join('\r\n')
 
-        const res = await fetch(
+        const res = await this._driveFetch(
             'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
             {
                 method: 'POST',
                 headers: {
-                    Authorization: `Bearer ${this.accessToken}`,
                     'Content-Type': `multipart/related; boundary=${boundary}`,
                 },
                 body,
@@ -1486,13 +1539,26 @@ export class SyncService {
             )
         }
 
-        // 記錄最後備份時間
+        const uploaded = await res.json()
+        if (!uploaded?.id) {
+            throw new Error('Backup failed: missing file id from Drive')
+        }
+
+        // 記錄最後備份時間（僅在確認 Drive 回傳檔案 ID 後寫入）
         await this.dataService.saveSetting({
             key: 'sync_last_backup',
-            value: { timestamp: Date.now(), fileName },
+            value: {
+                timestamp: Date.now(),
+                fileName,
+                fileId: uploaded.id,
+                provider: 'gdrive',
+            },
         })
 
-        return await res.json()
+        // 備份成功後再清理舊備份（避免上傳失敗時先誤刪舊備份）
+        await this.cleanupOldBackups()
+
+        return uploaded
     }
 
     /**
@@ -1501,19 +1567,19 @@ export class SyncService {
      */
     async listBackups() {
         if (this.selfHostToken) return this._selfHostListBackups()
-        await this.ensureValidToken()
 
         const allFiles = []
         let pageToken = null
+        const fields = encodeURIComponent(
+            'nextPageToken,files(id,name,size,createdTime,modifiedTime,trashed)'
+        )
+        const orderBy = encodeURIComponent('createdTime desc')
         do {
             const pageParam = pageToken
                 ? `&pageToken=${encodeURIComponent(pageToken)}`
                 : ''
-            const res = await fetch(
-                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'backup_'&fields=nextPageToken,files(id,name,size,createdTime,modifiedTime)&orderBy=createdTime desc&pageSize=100${pageParam}`,
-                {
-                    headers: { Authorization: `Bearer ${this.accessToken}` },
-                }
+            const res = await this._driveFetch(
+                `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=${fields}&orderBy=${orderBy}&pageSize=100${pageParam}`
             )
 
             if (!res.ok)
@@ -1525,7 +1591,23 @@ export class SyncService {
             pageToken = data.nextPageToken || null
         } while (pageToken)
 
+        // 直接列出 appDataFolder 後於客戶端過濾與排序：
+        // 避免 Drive `name contains 'backup_'` 底線分詞/搜尋索引延遲導致剛備份檔案漏失，
+        // 並確保即使 Drive API 忽略 orderBy 或跨頁排序不一致，最新備份仍排在最前
         return allFiles
+            .filter(
+                f =>
+                    f &&
+                    !f.trashed &&
+                    (typeof f.name !== 'string' || f.name.startsWith('backup_'))
+            )
+            .sort((a, b) => {
+                const ta =
+                    Date.parse(a.createdTime || a.modifiedTime || '') || 0
+                const tb =
+                    Date.parse(b.createdTime || b.modifiedTime || '') || 0
+                return tb - ta
+            })
     }
 
     /**
@@ -1535,13 +1617,9 @@ export class SyncService {
      */
     async restoreFromDrive(fileId) {
         if (this.selfHostToken) return this._selfHostRestore(fileId)
-        await this.ensureValidToken()
 
-        const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-            {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-            }
+        const res = await this._driveFetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`
         )
 
         if (!res.ok)
@@ -1555,13 +1633,11 @@ export class SyncService {
      */
     async deleteBackup(fileId) {
         if (this.selfHostToken) return this._selfHostDeleteBackup(fileId)
-        await this.ensureValidToken()
 
-        const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        const res = await this._driveFetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`,
             {
                 method: 'DELETE',
-                headers: { Authorization: `Bearer ${this.accessToken}` },
             }
         )
 
@@ -1737,7 +1813,10 @@ export class SyncService {
                 : ''
             const resList = await fetch(
                 `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100${pageParam}`,
-                { headers: { Authorization: `Bearer ${this.accessToken}` } }
+                {
+                    cache: 'no-store',
+                    headers: { Authorization: `Bearer ${this.accessToken}` },
+                }
             )
 
             if (!resList.ok)
@@ -2100,7 +2179,10 @@ export class SyncService {
                     : ''
                 const resList = await fetch(
                     `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name contains 'sync_log_'&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100${pageParam}`,
-                    { headers: { Authorization: `Bearer ${this.accessToken}` } }
+                    {
+                        cache: 'no-store',
+                        headers: { Authorization: `Bearer ${this.accessToken}` },
+                    }
                 )
                 if (!resList.ok) throw new Error('Failed to list sync logs')
                 const data = await resList.json()
@@ -2439,7 +2521,9 @@ export class SyncService {
             const monthlyBuckets = {} // key: 'YYYY-MM', value: 該月最早的備份
 
             for (const backup of backups) {
-                const createdAt = new Date(backup.createdTime).getTime()
+                const tsStr = backup.createdTime || backup.modifiedTime
+                const createdAt = tsStr ? new Date(tsStr).getTime() : NaN
+                if (!Number.isFinite(createdAt)) continue
                 const age = now - createdAt
 
                 if (age <= SEVEN_DAYS) {
@@ -2447,7 +2531,7 @@ export class SyncService {
                     toKeep.push(backup)
                 } else if (age <= ONE_YEAR) {
                     // 7天~1年 → 每月保留第一筆（最早的）
-                    const monthKey = new Date(backup.createdTime)
+                    const monthKey = new Date(createdAt)
                         .toISOString()
                         .slice(0, 7) // 'YYYY-MM'
                     if (!monthlyBuckets[monthKey]) {
@@ -2658,7 +2742,10 @@ export class SyncService {
     async _findFileInDrive(fileName) {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${fileName}' and trashed=false`)}&fields=files(id)`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+            {
+                cache: 'no-store',
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+            }
         )
         if (!res.ok) {
             throw new Error(`Drive search failed (${res.status})`)
@@ -2675,7 +2762,10 @@ export class SyncService {
     async _getFileModifiedTime(fileId) {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}?fields=modifiedTime`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+            {
+                cache: 'no-store',
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+            }
         )
         if (!res.ok) throw new Error(`Failed to get file meta (${res.status})`)
         const data = await res.json()
@@ -3770,6 +3860,7 @@ export class SyncService {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${fileName}'&fields=files(id)`,
             {
+                cache: 'no-store',
                 headers: { Authorization: `Bearer ${this.accessToken}` },
             }
         )
@@ -3805,6 +3896,7 @@ export class SyncService {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
             {
+                cache: 'no-store',
                 headers: { Authorization: `Bearer ${this.accessToken}` },
             }
         )
@@ -3824,7 +3916,10 @@ export class SyncService {
     async _downloadFileStrict(fileId, { withMeta = false } = {}) {
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+            {
+                cache: 'no-store',
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+            }
         )
         if (!res.ok) throw new Error(`Failed to download file (${res.status})`)
         const data = await res.json()
@@ -3984,7 +4079,10 @@ export class SyncService {
         await this.ensureSharingPermission()
         const res = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,emailAddress,role,displayName)`,
-            { headers: { Authorization: `Bearer ${this.accessToken}` } }
+            {
+                cache: 'no-store',
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+            }
         )
         if (!res.ok) throw new Error('Failed to get permissions')
         const data = await res.json()
