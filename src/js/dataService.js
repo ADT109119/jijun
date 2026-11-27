@@ -16,6 +16,188 @@ const openDB =
         return null
     })
 
+// ==================== #AUTOPAY-INT 信用卡自動扣款引用完整性單一真相源 ====================
+
+/**
+ * 判斷兩個實體（帳戶／帳單物件或帳本 ID）是否屬於同一個帳本（#AUTOPAY-INT）。
+ * 未設定 ledgerId 之歷史資料比照全站慣例正規化為預設帳本 1。
+ * @param {object|number|null|undefined} entityA
+ * @param {object|number|null|undefined} entityB
+ * @returns {boolean}
+ */
+export function isLedgerCompatible(entityA, entityB) {
+    if (entityA === null || entityA === undefined) return false
+    if (entityB === null || entityB === undefined) return false
+    const rawA =
+        typeof entityA === 'object' ? (entityA.ledgerId ?? 1) : entityA
+    const rawB =
+        typeof entityB === 'object' ? (entityB.ledgerId ?? 1) : entityB
+    const ledgerA = Number(rawA)
+    const ledgerB = Number(rawB)
+    if (!Number.isFinite(ledgerA) || !Number.isFinite(ledgerB)) return false
+    return ledgerA === ledgerB
+}
+
+/**
+ * 驗證指定帳戶是否可作為某張信用卡的合法自動扣款／繳款來源帳戶（#AUTOPAY-INT）：
+ *  1. 扣款帳戶與信用卡物件皆存在
+ *  2. 卡片本身必須是 credit_card
+ *  3. 扣款帳戶不得為 credit_card（不可用信用卡扣繳信用卡）
+ *  4. 不得為同一帳戶（防自我扣款，同時檢核 id 與 uuid）
+ *  5. 兩者必須屬於同一個帳本（isLedgerCompatible）
+ * @param {object|null|undefined} debitAccount
+ * @param {object|null|undefined} card
+ * @returns {boolean}
+ */
+export function isValidAutoPayDebitAccount(debitAccount, card) {
+    if (!debitAccount || typeof debitAccount !== 'object') return false
+    if (!card || typeof card !== 'object') return false
+    if (card.type !== 'credit_card') return false
+    if (debitAccount.type === 'credit_card') return false
+    if (
+        debitAccount.id !== null &&
+        debitAccount.id !== undefined &&
+        card.id !== null &&
+        card.id !== undefined &&
+        debitAccount.id === card.id
+    ) {
+        return false
+    }
+    if (debitAccount.uuid && card.uuid && debitAccount.uuid === card.uuid) {
+        return false
+    }
+    return isLedgerCompatible(card, debitAccount)
+}
+
+/**
+ * 判斷一筆信用卡帳戶上的紀錄是否為真正的「卡費繳款／扣繳」紀錄（#AUTOPAY-INT）：
+ *  - 必須為 type === 'income'（卡片端入帳）
+ *  - 明確排除商家退款／刷退（category === 'refund' 或描述含「退款」「刷退」）
+ *  - 分類必須屬還款／轉帳（debt_repayment / transfer），或描述帶有系統扣繳前綴
+ *    （[卡費扣繳] / [卡費扣繳平帳] / [自動扣款]），防止一般回饋金或刷退被誤判為已繳卡費
+ *  - 若傳入 period（如 '2026-10'），需在描述中精準匹配該期別標記（如 "(2026-10 期)" 或 " 2026-10 期"）
+ * @param {object|null|undefined} record
+ * @param {string|null} [period=null]
+ * @returns {boolean}
+ */
+export function isCardFeePaymentRecord(record, period = null) {
+    if (!record || typeof record !== 'object') return false
+    if (record.type !== 'income') return false
+
+    const desc = typeof record.description === 'string' ? record.description : ''
+    const cat = record.category
+
+    if (cat === 'refund' || desc.includes('退款') || desc.includes('刷退')) {
+        return false
+    }
+
+    const hasCardFeePrefix =
+        desc.startsWith('[卡費扣繳]') ||
+        desc.startsWith('[卡費扣繳平帳]') ||
+        desc.startsWith('[自動扣款]')
+    const isRepaymentCategory =
+        cat === 'debt_repayment' || cat === 'transfer'
+
+    if (!isRepaymentCategory && !hasCardFeePrefix) {
+        return false
+    }
+
+    if (period) {
+        // 指定期別比對（防重複扣款）：一般 transfer 需同時具卡費／繳款語意，避免朋友轉帳備註誤含期別而被當成已繳卡費
+        if (
+            cat === 'transfer' &&
+            !hasCardFeePrefix &&
+            !/(?:卡費|繳費|繳款|還款|扣繳)/.test(desc)
+        ) {
+            return false
+        }
+        const escapedPeriod = String(period).replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&'
+        )
+        const periodRe = new RegExp(
+            `(?:^|[^0-9])${escapedPeriod}\\s*期(?!\\d)`
+        )
+        return periodRe.test(desc)
+    }
+
+    return true
+}
+
+// ==================== #BAL-DRY 帳戶餘額單一真相源 ====================
+
+/**
+ * 計算帳戶淨現金流餘額（全站唯一實作，供 DataService / AccountsPage / StatisticsManager 共用）。
+ *
+ * 語意：
+ *  - 初始餘額非有限數（undefined / null / NaN / Infinity）一律視為 0
+ *  - type === 'income' 記正、其餘記負（非有限 amount 記 0）
+ *  - 「我欠別人」(payable) 欠款的原始紀錄不計入餘額（建立欠款當下未扣款，實際扣款發生於還款時）：
+ *    排除條件為 debtId 存在、屬於 payable 欠款且 category !== 'debt_repayment'
+ *
+ * @param {number} initialBalance - 帳戶初始餘額
+ * @param {Array<object>} [records=[]] - 該帳戶的記帳紀錄
+ * @param {Set<string|number>|Array<object>|null} [payableDebts=null] - payable 欠款 ID 集合或欠款陣列
+ * @returns {number} 帳戶目前淨現金流餘額
+ */
+export function computeNetCashflowBalance(
+    initialBalance,
+    records = [],
+    payableDebts = null
+) {
+    let balance =
+        typeof initialBalance === 'number' && Number.isFinite(initialBalance)
+            ? initialBalance
+            : 0
+    if (!Array.isArray(records) || records.length === 0) {
+        return balance
+    }
+
+    let payableIdSet = null
+    if (payableDebts instanceof Set) {
+        if (payableDebts.size > 0) {
+            payableIdSet = new Set()
+            for (const id of payableDebts) {
+                if (id !== null && id !== undefined) {
+                    payableIdSet.add(String(id))
+                }
+            }
+        }
+    } else if (Array.isArray(payableDebts) && payableDebts.length > 0) {
+        payableIdSet = new Set()
+        for (const d of payableDebts) {
+            if (
+                d &&
+                d.type === 'payable' &&
+                d.id !== null &&
+                d.id !== undefined
+            ) {
+                payableIdSet.add(String(d.id))
+            }
+        }
+    }
+
+    for (const r of records) {
+        if (!r) continue
+        if (
+            payableIdSet &&
+            payableIdSet.size > 0 &&
+            r.debtId !== null &&
+            r.debtId !== undefined &&
+            payableIdSet.has(String(r.debtId)) &&
+            r.category !== 'debt_repayment'
+        ) {
+            continue
+        }
+        const amt =
+            typeof r.amount === 'number' && Number.isFinite(r.amount)
+                ? r.amount
+                : 0
+        balance += r.type === 'income' ? amt : -amt
+    }
+    return balance
+}
+
 class DataService {
     constructor() {
         this.dbName = 'EasyAccountingDB'
@@ -2332,38 +2514,74 @@ class DataService {
                             }
                         }
 
-                        // 4.1 重新對齊信用卡自動扣款帳戶 (autoPayAccountId / autoPayAccountUuid)
+                        // 4.1 重新對齊信用卡自動扣款帳戶 (autoPayAccountId / autoPayAccountUuid，#AUTOPAY-INT 嚴格驗證引用完整性)
                         const allImportedAccounts = await this.getAccounts({ allLedgers: true })
                         for (const acc of allImportedAccounts) {
                             if (acc.type === 'credit_card' && (acc.autoPayAccountId || acc.autoPayAccountUuid)) {
-                                let remappedId = acc.autoPayAccountId ? oldAccountIdToNewIdMap.get(acc.autoPayAccountId) : null
-                                if (!remappedId && acc.autoPayAccountUuid) {
-                                    const matchByUuid = allImportedAccounts.find(a => a.uuid === acc.autoPayAccountUuid)
-                                    if (matchByUuid) remappedId = matchByUuid.id
+                                let candidateDebit = null
+                                const mappedId = acc.autoPayAccountId
+                                    ? oldAccountIdToNewIdMap.get(acc.autoPayAccountId)
+                                    : null
+                                if (mappedId) {
+                                    const byMapped = allImportedAccounts.find(a => a.id === mappedId)
+                                    if (isValidAutoPayDebitAccount(byMapped, acc)) {
+                                        candidateDebit = byMapped
+                                    }
                                 }
-                                if (!remappedId && acc.autoPayAccountId && Array.isArray(data.accounts)) {
+                                if (!candidateDebit && acc.autoPayAccountUuid) {
+                                    const byUuid = allImportedAccounts.find(
+                                        a => a.uuid === acc.autoPayAccountUuid
+                                    )
+                                    if (isValidAutoPayDebitAccount(byUuid, acc)) {
+                                        candidateDebit = byUuid
+                                    }
+                                }
+                                if (!candidateDebit && acc.autoPayAccountId && Array.isArray(data.accounts)) {
                                     // Fallback: 舊版無 UUID 備份，依原始帳戶名稱在同帳本下比對
                                     const oldAcc = data.accounts.find(a => a.id === acc.autoPayAccountId)
                                     if (oldAcc && oldAcc.name) {
                                         const normOldName = oldAcc.name.trim().toLowerCase()
-                                        const matchByName = allImportedAccounts.find(
-                                            a => a.ledgerId === acc.ledgerId && (a.name || '').trim().toLowerCase() === normOldName
+                                        const byName = allImportedAccounts.find(
+                                            a =>
+                                                isValidAutoPayDebitAccount(a, acc) &&
+                                                (a.name || '').trim().toLowerCase() === normOldName
                                         )
-                                        if (matchByName) remappedId = matchByName.id
+                                        if (byName) candidateDebit = byName
                                     }
                                 }
-                                if (remappedId && (remappedId !== acc.autoPayAccountId || !acc.autoPayAccountUuid)) {
-                                    const debitAcc = allImportedAccounts.find(a => a.id === remappedId)
+                                if (candidateDebit) {
+                                    if (
+                                        candidateDebit.id !== acc.autoPayAccountId ||
+                                        candidateDebit.uuid !== acc.autoPayAccountUuid
+                                    ) {
+                                        await this.updateAccount(
+                                            acc.id,
+                                            {
+                                                autoPayAccountId: candidateDebit.id,
+                                                autoPayAccountUuid:
+                                                    candidateDebit.uuid || acc.autoPayAccountUuid || null,
+                                            },
+                                            true
+                                        )
+                                        acc.autoPayAccountId = candidateDebit.id
+                                        if (candidateDebit.uuid) {
+                                            acc.autoPayAccountUuid = candidateDebit.uuid
+                                        }
+                                    }
+                                } else {
+                                    // 找不到合法同帳本非信用卡扣款帳戶 → 清除懸空引用
                                     await this.updateAccount(
                                         acc.id,
                                         {
-                                            autoPayAccountId: remappedId,
-                                            autoPayAccountUuid: debitAcc?.uuid || acc.autoPayAccountUuid || null,
+                                            autoPayEnabled: false,
+                                            autoPayAccountId: null,
+                                            autoPayAccountUuid: null,
                                         },
                                         true
                                     )
-                                    acc.autoPayAccountId = remappedId
-                                    if (debitAcc?.uuid) acc.autoPayAccountUuid = debitAcc.uuid
+                                    acc.autoPayEnabled = false
+                                    acc.autoPayAccountId = null
+                                    acc.autoPayAccountUuid = null
                                 }
                             }
                         }
@@ -3663,7 +3881,7 @@ class DataService {
             const { id: _rid, ...accountWithoutId } = account
             const dataToAdd = skipLog ? accountWithoutId : account
             dataToAdd.ledgerId = dataToAdd.ledgerId ?? this.activeLedgerId
-            // 信用卡欄位預設值
+            // 信用卡欄位預設值與自動扣款引用完整性防呆 (#AUTOPAY-INT)
             if (!dataToAdd.type) dataToAdd.type = 'wallet'
             if (dataToAdd.type === 'credit_card') {
                 if (dataToAdd.creditLimit === undefined)
@@ -3671,12 +3889,52 @@ class DataService {
                 if (dataToAdd.statementDay === undefined)
                     dataToAdd.statementDay = 25
                 if (dataToAdd.dueDay === undefined) dataToAdd.dueDay = 15
-                if (dataToAdd.autoPayAccountId && !dataToAdd.autoPayAccountUuid) {
+                if (dataToAdd.autoPayAccountId != null) {
                     try {
-                        const debit = await this.db.get('accounts', dataToAdd.autoPayAccountId)
-                        if (debit?.uuid) dataToAdd.autoPayAccountUuid = debit.uuid
+                        const debit = await this.db.get(
+                            'accounts',
+                            dataToAdd.autoPayAccountId
+                        )
+                        if (isValidAutoPayDebitAccount(debit, dataToAdd)) {
+                            if (debit.uuid && !dataToAdd.autoPayAccountUuid) {
+                                dataToAdd.autoPayAccountUuid = debit.uuid
+                            }
+                        } else {
+                            // 目標帳戶不存在／跨帳本／為信用卡／自引用 → 清除非法 id
+                            // 若明確帶有其他有效 autoPayAccountUuid（如同步／舊備份自癒情境）則保留待後續驗證
+                            dataToAdd.autoPayAccountId = null
+                            if (
+                                !dataToAdd.autoPayAccountUuid ||
+                                (debit && debit.uuid === dataToAdd.autoPayAccountUuid)
+                            ) {
+                                dataToAdd.autoPayAccountUuid = null
+                            }
+                        }
+                    } catch (_) {
+                        dataToAdd.autoPayAccountId = null
+                    }
+                }
+                if (dataToAdd.autoPayAccountUuid) {
+                    try {
+                        const allAccs = await this.db.getAll('accounts')
+                        const byUuid = (allAccs || []).find(
+                            a => a.uuid === dataToAdd.autoPayAccountUuid
+                        )
+                        if (byUuid && !isValidAutoPayDebitAccount(byUuid, dataToAdd)) {
+                            dataToAdd.autoPayAccountUuid = null
+                            dataToAdd.autoPayAccountId = null
+                        }
                     } catch (_) {}
                 }
+            } else if (
+                dataToAdd.autoPayEnabled ||
+                dataToAdd.autoPayAccountId != null ||
+                dataToAdd.autoPayAccountUuid != null
+            ) {
+                // 非信用卡帳戶不得持有信用卡自動扣款設定
+                dataToAdd.autoPayEnabled = false
+                dataToAdd.autoPayAccountId = null
+                dataToAdd.autoPayAccountUuid = null
             }
             const tx = this.db.transaction('accounts', 'readwrite')
             const id = await tx.store.add(dataToAdd)
@@ -3727,25 +3985,134 @@ class DataService {
                     if (account.uuid) finalUpdates.uuid = account.uuid
                 }
                 const updatedAccount = { ...account, ...finalUpdates }
-                if (updatedAccount.autoPayAccountId) {
-                    if (!updatedAccount.autoPayAccountUuid || finalUpdates.autoPayAccountId !== undefined) {
+                const affectedReferrers = []
+
+                // #AUTOPAY-INT：信用卡自動扣款引用完整性防呆
+                if (updatedAccount.type !== 'credit_card') {
+                    // 非信用卡帳戶一律清除殘留的信用卡自動扣款設定
+                    if (
+                        updatedAccount.autoPayEnabled ||
+                        updatedAccount.autoPayAccountId != null ||
+                        updatedAccount.autoPayAccountUuid != null
+                    ) {
+                        updatedAccount.autoPayEnabled = false
+                        updatedAccount.autoPayAccountId = null
+                        updatedAccount.autoPayAccountUuid = null
+                    }
+                } else if (
+                    finalUpdates.autoPayAccountId === null ||
+                    finalUpdates.autoPayEnabled === false
+                ) {
+                    updatedAccount.autoPayAccountId = null
+                    updatedAccount.autoPayAccountUuid = null
+                } else {
+                    if (updatedAccount.autoPayAccountId != null) {
                         try {
-                            const debit = await tx.store.get(updatedAccount.autoPayAccountId)
-                            if (debit?.uuid) updatedAccount.autoPayAccountUuid = debit.uuid
+                            const debit = await tx.store.get(
+                                updatedAccount.autoPayAccountId
+                            )
+                            if (
+                                isValidAutoPayDebitAccount(
+                                    debit,
+                                    updatedAccount
+                                )
+                            ) {
+                                if (
+                                    !updatedAccount.autoPayAccountUuid ||
+                                    finalUpdates.autoPayAccountId !== undefined
+                                ) {
+                                    updatedAccount.autoPayAccountUuid =
+                                        debit.uuid || null
+                                }
+                            } else {
+                                updatedAccount.autoPayAccountId = null
+                                if (
+                                    finalUpdates.autoPayAccountUuid ===
+                                        undefined ||
+                                    (debit &&
+                                        debit.uuid ===
+                                            updatedAccount.autoPayAccountUuid)
+                                ) {
+                                    updatedAccount.autoPayAccountUuid = null
+                                }
+                            }
+                        } catch (_) {
+                            updatedAccount.autoPayAccountId = null
+                        }
+                    }
+                    if (updatedAccount.autoPayAccountUuid) {
+                        try {
+                            const allAccs = await tx.store.getAll()
+                            const byUuid = (allAccs || []).find(
+                                a =>
+                                    a.uuid === updatedAccount.autoPayAccountUuid
+                            )
+                            if (
+                                byUuid &&
+                                !isValidAutoPayDebitAccount(
+                                    byUuid,
+                                    updatedAccount
+                                )
+                            ) {
+                                updatedAccount.autoPayAccountUuid = null
+                                updatedAccount.autoPayAccountId = null
+                            }
                         } catch (_) {}
                     }
-                } else if (finalUpdates.autoPayAccountId === null || finalUpdates.autoPayEnabled === false) {
-                    updatedAccount.autoPayAccountUuid = null
                 }
+
                 await tx.store.put(updatedAccount)
+
+                // 若本帳戶轉型為信用卡或變更帳本，級聯清除指向本帳戶之所有已失效自動扣款設定
+                const becameCreditCard =
+                    account.type !== 'credit_card' &&
+                    updatedAccount.type === 'credit_card'
+                const ledgerChanged = !isLedgerCompatible(
+                    account,
+                    updatedAccount
+                )
+                if (becameCreditCard || ledgerChanged) {
+                    const allAccs = await tx.store.getAll()
+                    for (const other of allAccs || []) {
+                        if (!other || other.id === id) continue
+                        const pointsToThis =
+                            other.autoPayAccountId === id ||
+                            (updatedAccount.uuid &&
+                                other.autoPayAccountUuid ===
+                                    updatedAccount.uuid)
+                        if (
+                            pointsToThis &&
+                            !isValidAutoPayDebitAccount(updatedAccount, other)
+                        ) {
+                            const cleared = {
+                                ...other,
+                                autoPayEnabled: false,
+                                autoPayAccountId: null,
+                                autoPayAccountUuid: null,
+                            }
+                            await tx.store.put(cleared)
+                            affectedReferrers.push(cleared)
+                        }
+                    }
+                }
+
                 await tx.done
-                if (!skipLog)
+                if (!skipLog) {
                     await this.logChange(
                         'update',
                         'accounts',
                         id,
                         updatedAccount
                     )
+                    for (const cleared of affectedReferrers) {
+                        await this.logChange(
+                            'update',
+                            'accounts',
+                            cleared.id,
+                            cleared
+                        )
+                    }
+                }
                 return updatedAccount
             }
             throw new Error('Account not found')
@@ -3764,13 +4131,31 @@ class DataService {
             const accStore = tx.objectStore('accounts')
             const stmtStore = tx.objectStore('credit_statements')
 
-            let itemData = null
-            if (!skipLog) {
-                itemData = await accStore.get(id)
-            }
+            const itemData = await accStore.get(id)
 
             // 1. 刪除帳戶本身
             await accStore.delete(id)
+
+            // 1.5 #AUTOPAY-INT：級聯清除所有將此帳戶設為自動扣款來源的信用卡引用，防止懸空參照
+            const clearedCards = []
+            const remainingAccounts = await accStore.getAll()
+            for (const other of remainingAccounts || []) {
+                if (!other || other.id === id) continue
+                const matchesId = other.autoPayAccountId === id
+                const matchesUuid =
+                    Boolean(itemData?.uuid) &&
+                    other.autoPayAccountUuid === itemData.uuid
+                if (matchesId || matchesUuid) {
+                    const cleared = {
+                        ...other,
+                        autoPayEnabled: false,
+                        autoPayAccountId: null,
+                        autoPayAccountUuid: null,
+                    }
+                    await accStore.put(cleared)
+                    clearedCards.push(cleared)
+                }
+            }
 
             // 2. 蒐集需要刪除的帳單元數據，並在事務中刪除它們
             const deletedStatements = []
@@ -3802,6 +4187,14 @@ class DataService {
                         ledgerId: itemData.ledgerId,
                         name: itemData.name,
                     })
+                }
+                for (const cleared of clearedCards) {
+                    await this.logChange(
+                        'update',
+                        'accounts',
+                        cleared.id,
+                        cleared
+                    )
                 }
                 for (const stmt of deletedStatements) {
                     await this.logChange(
@@ -4080,18 +4473,48 @@ class DataService {
             const remainingAccounts = await this.getAccounts({ allLedgers: true })
             for (const acc of remainingAccounts) {
                 if (acc.type === 'credit_card') {
+                    let validDebit = null
                     if (acc.autoPayAccountUuid) {
-                        const matched = remainingAccounts.find(a => a.uuid === acc.autoPayAccountUuid)
-                        if (matched && matched.id !== acc.autoPayAccountId) {
-                            await this.updateAccount(acc.id, { autoPayAccountId: matched.id }, true)
-                            acc.autoPayAccountId = matched.id
+                        const matched = remainingAccounts.find(
+                            a => a.uuid === acc.autoPayAccountUuid
+                        )
+                        if (isValidAutoPayDebitAccount(matched, acc)) {
+                            validDebit = matched
                         }
-                    } else if (acc.autoPayAccountId) {
-                        const matched = remainingAccounts.find(a => a.id === acc.autoPayAccountId)
-                        if (matched && matched.uuid) {
-                            await this.updateAccount(acc.id, { autoPayAccountUuid: matched.uuid }, true)
-                            acc.autoPayAccountUuid = matched.uuid
+                    }
+                    if (!validDebit && acc.autoPayAccountId != null) {
+                        const matched = remainingAccounts.find(
+                            a => a.id === acc.autoPayAccountId
+                        )
+                        if (isValidAutoPayDebitAccount(matched, acc)) {
+                            validDebit = matched
                         }
+                    }
+
+                    if (validDebit) {
+                        const updates = {}
+                        if (validDebit.id !== acc.autoPayAccountId) {
+                            updates.autoPayAccountId = validDebit.id
+                        }
+                        if (validDebit.uuid && validDebit.uuid !== acc.autoPayAccountUuid) {
+                            updates.autoPayAccountUuid = validDebit.uuid
+                        }
+                        if (Object.keys(updates).length > 0) {
+                            await this.updateAccount(acc.id, updates, true)
+                            Object.assign(acc, updates)
+                        }
+                    } else if (
+                        acc.autoPayAccountId != null ||
+                        acc.autoPayAccountUuid != null
+                    ) {
+                        // 目標扣款帳戶不存在／跨帳本／為信用卡／自引用 → 清理懸空或非法綁定並停用自動扣繳
+                        const clearUpdates = {
+                            autoPayEnabled: false,
+                            autoPayAccountId: null,
+                            autoPayAccountUuid: null,
+                        }
+                        await this.updateAccount(acc.id, clearUpdates, true)
+                        Object.assign(acc, clearUpdates)
                     }
                 }
             }
@@ -4672,10 +5095,12 @@ class DataService {
         const periodRecords = records.filter(r => {
             // 排除卡費還款/扣繳/平帳紀錄（還款不屬於當期消費明細，不可扣減新一期消費出帳金額）
             if (
+                isCardFeePaymentRecord(r) ||
                 r.category === 'debt_repayment' ||
                 r.category === 'transfer' ||
                 r.category === 'balance_adjustment' ||
                 r.description?.startsWith('[卡費扣繳]') ||
+                r.description?.startsWith('[卡費扣繳平帳]') ||
                 r.description?.startsWith('[自動扣款]')
             ) {
                 return false
@@ -4738,45 +5163,30 @@ class DataService {
     async calculateAccountCurrentBalance(accountId) {
         const account = await this.getAccount(accountId)
         if (!account) return 0
-        // 初始餘額（一般帳戶與信用卡皆以此為起點）
-        let balance =
-            typeof account.balance === 'number' ? account.balance : 0
         // 該帳戶所有記錄（效能：走 accountId index，避免載入全部 records）
-        // 注意：index 查詢不分帳本，需手動補 activeLedgerId 過濾（與本類別其他方法一致）
+        // 注意：index 查詢不分帳本，需手動補帳本過濾（優先取該帳戶所屬帳本，否則退回 activeLedgerId）
+        const targetLedgerId = account.ledgerId ?? this.activeLedgerId
         let records
         try {
-            const targetLedgerId = this.activeLedgerId
             const all = await this.db.getAllFromIndex(
                 'records',
                 'accountId',
                 accountId
             )
-            records = all.filter(r => r.ledgerId === targetLedgerId)
+            records = all.filter(
+                r => (r.ledgerId ?? this.activeLedgerId) === targetLedgerId
+            )
         } catch (_) {
             records = []
         }
-        // 「我欠別人」(payable) 欠款 id 集合，用於排除其原始欠款紀錄
+        // 「我欠別人」(payable) 欠款集合，交由全站單一真相源 computeNetCashflowBalance 統一排除
         let debts
         try {
-            debts = await this.getDebts()
+            debts = await this.getDebts({ ledgerId: targetLedgerId })
         } catch (_) {
             debts = []
         }
-        const payableDebtIds = new Set(
-            debts.filter(d => d.type === 'payable').map(d => String(d.id))
-        )
-        for (const r of records) {
-            if (
-                r.debtId !== null &&
-                r.debtId !== undefined &&
-                payableDebtIds.has(String(r.debtId)) &&
-                r.category !== 'debt_repayment'
-            ) {
-                continue // 排除 payable 欠款的原始紀錄
-            }
-            balance += r.type === 'income' ? r.amount || 0 : -(r.amount || 0)
-        }
-        return balance
+        return computeNetCashflowBalance(account.balance, records, debts)
     }
 
     /**
@@ -5104,10 +5514,12 @@ unbilledStartDate = new Date(lastStatementEndDate)
         const unbilledRecords = validRecords
             .filter(r => {
                 if (
+                    isCardFeePaymentRecord(r) ||
                     r.category === 'debt_repayment' ||
                     r.category === 'transfer' ||
                     r.category === 'balance_adjustment' ||
                     r.description?.startsWith('[卡費扣繳]') ||
+                    r.description?.startsWith('[卡費扣繳平帳]') ||
                     r.description?.startsWith('[自動扣款]')
                 ) {
                     return false
@@ -5186,10 +5598,12 @@ unbilledStartDate = new Date(lastStatementEndDate)
             nextDueDate = statements[0].dueDate
         }
 
-        // 計算整體歷史欠款與可用額度 (欠款至少應包含所有待繳出帳帳單與未出帳即時消費)
-        const balance = validRecords.reduce((bal, r) => {
-            return bal + (r.type === 'income' ? r.amount : -r.amount)
-        }, account.balance || 0)
+        // 計算整體歷史欠款與可用額度 (欠款至少應包含所有待繳出帳帳單與未出帳即時消費，#BAL-DRY 走單一真相源)
+        const balance = computeNetCashflowBalance(
+            account.balance,
+            allRecords,
+            payableDebtIds
+        )
         const netCashDebt = Math.max(0, -balance)
         const totalDebt = Math.max(billedDueTotal + unbilledTotal, netCashDebt)
         const availableCredit = Math.max(0, creditLimit - totalDebt)
@@ -5243,10 +5657,12 @@ unbilledStartDate = new Date(lastStatementEndDate)
             .filter(r => {
                 // 排除卡費還款/扣繳/平帳紀錄（還款不屬於消費明細）
                 if (
+                    isCardFeePaymentRecord(r) ||
                     r.category === 'debt_repayment' ||
                     r.category === 'transfer' ||
                     r.category === 'balance_adjustment' ||
                     r.description?.startsWith('[卡費扣繳]') ||
+                    r.description?.startsWith('[卡費扣繳平帳]') ||
                     r.description?.startsWith('[自動扣款]')
                 ) {
                     return false
@@ -5420,14 +5836,26 @@ unbilledStartDate = new Date(lastStatementEndDate)
 
         for (const card of creditCards) {
             let debitAccount = null
-            if (card.autoPayAccountId) {
-                debitAccount = accounts.find(a => a.id === card.autoPayAccountId)
+            if (card.autoPayAccountId != null) {
+                const candidate = accounts.find(
+                    a => a.id === card.autoPayAccountId
+                )
+                if (isValidAutoPayDebitAccount(candidate, card)) {
+                    debitAccount = candidate
+                }
             }
             if (!debitAccount && card.autoPayAccountUuid) {
-                debitAccount = accounts.find(a => a.uuid === card.autoPayAccountUuid)
-                if (debitAccount) {
+                const candidate = accounts.find(
+                    a => a.uuid === card.autoPayAccountUuid
+                )
+                if (isValidAutoPayDebitAccount(candidate, card)) {
+                    debitAccount = candidate
                     try {
-                        await this.updateAccount(card.id, { autoPayAccountId: debitAccount.id }, true)
+                        await this.updateAccount(
+                            card.id,
+                            { autoPayAccountId: debitAccount.id },
+                            true
+                        )
                         card.autoPayAccountId = debitAccount.id
                     } catch (_) {}
                 }
@@ -5460,18 +5888,15 @@ unbilledStartDate = new Date(lastStatementEndDate)
 
                 // 如果今天大於或等於繳款截止日，且尚未繳清
                 if (today >= stmtDue) {
-                    // 防重複扣款：檢查是否已有此帳單期別的扣款記錄
+                    // 防重複扣款（#AUTOPAY-INT）：僅採信真正的卡費繳款紀錄，
+                    // 避免商家退款／刷退／現金回饋誤含「YYYY-MM 期」被誤判為已繳卡費
                     const allCardRecords = await this.db.getAllFromIndex(
                         'records',
                         'accountId',
                         card.id
                     )
                     const paidForPeriod = allCardRecords
-                        .filter(
-                            r =>
-                                r.type === 'income' &&
-                                r.description?.includes(`${stmt.period} 期`)
-                        )
+                        .filter(r => isCardFeePaymentRecord(r, stmt.period))
                         .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
 
                     // partial 帳單只扣「帳單額 − 已繳額」剩額，防止對同一帳單重複全額扣款
@@ -5567,9 +5992,24 @@ unbilledStartDate = new Date(lastStatementEndDate)
 
         const card = await this.getAccount(stmt.accountId)
         if (!card) throw new Error('找不到該信用卡帳戶')
+        if (card.type !== 'credit_card') {
+            throw new Error('指定帳單所屬帳戶非信用卡帳戶')
+        }
 
         const debitAccount = await this.getAccount(debitAccountId)
         if (!debitAccount) throw new Error('找不到扣款帳戶')
+        if (!isValidAutoPayDebitAccount(debitAccount, card)) {
+            if (debitAccount.type === 'credit_card') {
+                throw new Error('扣款帳戶不可為信用卡')
+            }
+            if (debitAccount.id === card.id) {
+                throw new Error('扣款帳戶不可與信用卡相同')
+            }
+            if (!isLedgerCompatible(card, debitAccount)) {
+                throw new Error('扣款帳戶與信用卡必須屬於同一個帳本')
+            }
+            throw new Error('指定的扣款帳戶不相容')
+        }
 
         const amountToPay =
             customAmount !== null ? customAmount : stmt.amount || 0
@@ -5664,21 +6104,17 @@ unbilledStartDate = new Date(lastStatementEndDate)
                 new Date(oldestStatementDate)
             )
 
-            // 3. 獲取在最舊出帳日之後的所有還款紀錄 (type === 'income' 且日期 >= 最舊出帳日)
+            // 3. 獲取在最舊出帳日之後的所有真正卡費還款紀錄（#AUTOPAY-INT：排除商家刷退／一般收入回饋誤判）
             const records = await this.db.getAllFromIndex(
                 'records',
                 'accountId',
                 card.id
             )
-            const repaymentRecords = records.filter(r => {
-                return (
-                    r.type === 'income' &&
+            const repaymentRecords = records.filter(
+                r =>
                     r.date >= oldestStatementDateStr &&
-                    r.category !== 'refund' &&
-                    !r.description?.includes('退款') &&
-                    !r.description?.includes('刷退')
-                )
-            })
+                    isCardFeePaymentRecord(r)
+            )
 
             // 4. 計算出帳日後所有的累計還款總額（沖銷可用池 pool）
             const totalRepaid = repaymentRecords.reduce(
@@ -6888,12 +7324,12 @@ date,
         // 偏好帳戶存在且非信用卡 → 直接沿用
         if (preferred && !isCard(preferred)) return preferred.id
 
-        // 偏好帳戶是信用卡 → 轉導到其自動扣繳帳戶
+        // 偏好帳戶是信用卡 → 轉導到其自動扣繳帳戶（經引用完整性校驗）
         if (preferred && isCard(preferred) && preferred.autoPayAccountId) {
             const debit = accounts.find(
                 a => a.id === preferred.autoPayAccountId
             )
-            if (debit && !isCard(debit)) return debit.id
+            if (isValidAutoPayDebitAccount(debit, preferred)) return debit.id
         }
 
         // 預設回現金帳戶

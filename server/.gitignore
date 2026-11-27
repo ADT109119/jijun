@@ -1,3 +1,10 @@
 node_modules/
 .env
 .dev.vars
+
+# 本地執行／測試產生的 SQLite 資料庫與 WAL（含帳密雜湊與個人同步日誌，嚴禁入庫，#SEC-GIT-DATA）
+data/
+*.db
+*.db-wal
+*.db-shm
+

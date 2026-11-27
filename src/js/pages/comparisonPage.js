@@ -174,7 +174,7 @@ export class ComparisonPage {
                 .map(p => {
                     const checked = selectedPeriods.has(p) ? 'checked' : ''
                     return `<label class="flex items-center gap-2 p-2 rounded-lg bg-wabi-surface border border-wabi-border cursor-pointer hover:border-wabi-accent/50 transition-colors">
-                    <input type="checkbox" value="${p}" ${checked} class="comp-checkbox rounded" disabled>
+                    <input type="checkbox" value="${escapeHTML(p)}" ${checked} class="comp-checkbox rounded" disabled>
                     <span class="text-sm">${p}</span>
                 </label>`
                 })
@@ -317,7 +317,7 @@ export class ComparisonPage {
                     this.renderResults(container, comp, data)
                 } catch (err) {
                     container.querySelector('#comp-results').innerHTML =
-                        `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${err.message}</p>`
+                        `<p class="text-center text-wabi-expense py-4"><i class="fa-solid fa-exclamation-triangle mr-1"></i>計算失敗: ${escapeHTML(err?.message || '')}</p>`
                 } finally {
                     // Restore button state
                     runBtn.disabled = false

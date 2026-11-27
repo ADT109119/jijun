@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
     escapeHTML,
+    escapeCsvField,
     formatDateToString,
     formatCurrency,
     isValidDate,
@@ -1261,4 +1262,43 @@ describe('buildDebtLookupMaps & findDebtForRecord', () => {
         expect(findDebtForRecord(null, maps)).toBeNull()
     })
 })
+
+describe('#SEC07 — escapeCsvField (CSV 公式注入防禦與 RFC 4180 單一真相源)', () => {
+    it('null / undefined 回傳空字串，有限數值與布林維持原格式（負數不誤加單引號）', () => {
+        expect(escapeCsvField(null)).toBe('')
+        expect(escapeCsvField(undefined)).toBe('')
+        expect(escapeCsvField(0)).toBe('0')
+        expect(escapeCsvField(1234.56)).toBe('1234.56')
+        expect(escapeCsvField(-500)).toBe('-500')
+        expect(escapeCsvField(NaN)).toBe('')
+        expect(escapeCsvField(Infinity)).toBe('')
+        expect(escapeCsvField(true)).toBe('true')
+    })
+
+    it('危險公式前綴（=、+、-、@、\\t、\\r，含前置空白）一律加上單引號防呆', () => {
+        expect(escapeCsvField('=SUM(A1:A10)')).toBe("'=SUM(A1:A10)")
+        expect(escapeCsvField("+cmd|' /C calc'!A0")).toBe("'+cmd|' /C calc'!A0")
+        expect(escapeCsvField('-2+3')).toBe("'-2+3")
+        expect(escapeCsvField('@SUM(1+1)')).toBe("'@SUM(1+1)")
+        expect(escapeCsvField('\t=1+1')).toBe("'\t=1+1")
+        expect(escapeCsvField('\r=1+1')).toBe("\"'\\r=1+1\"".replace('\\r', '\r'))
+        expect(escapeCsvField('  =1+1')).toBe("'  =1+1")
+    })
+
+    it('含逗號、雙引號或換行時依 RFC 4180 以雙引號包裹且雙引號加倍', () => {
+        expect(escapeCsvField('餐飲,外食')).toBe('"餐飲,外食"')
+        expect(escapeCsvField('吃"拉麵"')).toBe('"吃""拉麵"""')
+        expect(escapeCsvField('第一行\n第二行')).toBe('"第一行\n第二行"')
+        expect(escapeCsvField('=HYPERLINK("http://evil.com","點我")')).toBe(
+            '"\'=HYPERLINK(""http://evil.com"",""點我"")"'
+        )
+    })
+
+    it('一般中英文字串不受影響', () => {
+        expect(escapeCsvField('餐飲')).toBe('餐飲')
+        expect(escapeCsvField('2026-05')).toBe('2026-05')
+        expect(escapeCsvField('小明')).toBe('小明')
+    })
+})
+
 

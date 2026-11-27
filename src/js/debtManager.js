@@ -1622,7 +1622,7 @@ export class DebtManager {
         <!-- Amount -->
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">金額</label>
-          <input type="number" id="debt-amount" value="${debtToEdit?.originalAmount ?? debtToEdit?.amount ?? ''}" min="0" step="1" placeholder="輸入金額"
+          <input type="number" id="debt-amount" value="${escapeHTML(debtToEdit?.originalAmount ?? debtToEdit?.amount ?? '')}" min="0" step="1" placeholder="輸入金額"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 
@@ -1643,14 +1643,14 @@ export class DebtManager {
         <!-- Date -->
         <div class="mb-4">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">日期</label>
-          <input type="date" id="debt-date" value="${debtToEdit?.date || formatDateToString(new Date())}"
+          <input type="date" id="debt-date" value="${escapeHTML(debtToEdit?.date || formatDateToString(new Date()))}"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 
         <!-- Description -->
         <div class="mb-6">
           <label class="text-sm font-medium text-wabi-text-primary mb-2 block">備註</label>
-          <input type="text" id="debt-description" value="${debtToEdit?.description || ''}" placeholder="例如：午餐代墊"
+          <input type="text" id="debt-description" value="${escapeHTML(debtToEdit?.description || '')}" placeholder="例如：午餐代墊"
                  class="w-full p-3 bg-wabi-surface border border-wabi-border rounded-lg text-wabi-text-primary">
         </div>
 

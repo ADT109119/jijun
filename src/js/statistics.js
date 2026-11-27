@@ -3,6 +3,7 @@ import 'chartjs-adapter-date-fns'
 import { zhTW } from 'date-fns/locale'
 import { formatCurrency, getDateRange, escapeHTML, getSafeIconClass, isSafeHexColor } from './utils.js'
 import { createDateRangeModal } from './datePickerModal.js'
+import { computeNetCashflowBalance } from './dataService.js'
 
 Chart.register(...registerables)
 
@@ -301,7 +302,7 @@ export class StatisticsManager {
             this.filters.selectedContactId ?? null
         )
 
-        // Handle Account Balance display
+        // Handle Account Balance display (#BAL-DRY：統一委派全站帳戶餘額單一真相源，與帳戶管理頁語意一致)
         const accountBalanceCard = this.container.querySelector(
             '#stats-account-balance-card'
         )
@@ -313,29 +314,30 @@ export class StatisticsManager {
                 a => a.id === this.filters.selectedAccountId
             )
             if (account) {
-                const allRecordsForAccount = await this.dataService.getRecords({
-                    accountId: this.filters.selectedAccountId,
-                })
-                const currentBalance = allRecordsForAccount.reduce(
-                    (balance, record) => {
-                        if (record.category === 'transfer') {
-                            // Transfers are handled as simple income/expense
-                            return (
-                                balance +
-                                (record.type === 'income'
-                                    ? record.amount
-                                    : -record.amount)
-                            )
-                        }
-                        return (
-                            balance +
-                            (record.type === 'income'
-                                ? record.amount
-                                : -record.amount)
+                let currentBalance
+                if (
+                    typeof this.dataService.calculateAccountCurrentBalance ===
+                    'function'
+                ) {
+                    currentBalance =
+                        await this.dataService.calculateAccountCurrentBalance(
+                            account.id
                         )
-                    },
-                    account.balance
-                )
+                } else {
+                    const allRecordsForAccount =
+                        await this.dataService.getRecords({
+                            accountId: this.filters.selectedAccountId,
+                        })
+                    const debts =
+                        typeof this.dataService.getDebts === 'function'
+                            ? await this.dataService.getDebts()
+                            : []
+                    currentBalance = computeNetCashflowBalance(
+                        account.balance,
+                        allRecordsForAccount,
+                        debts
+                    )
+                }
 
                 const accountBalanceEl = accountBalanceCard.querySelector(
                     '#stats-account-balance'

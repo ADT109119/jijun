@@ -350,3 +350,104 @@ describe('RetirementPage Chart 生命週期與 destroy', () => {
         expect(page.chart).toBeNull()
     })
 })
+
+describe('#AB1-HIST — RetirementPage 歷史重演模型切換 UI', () => {
+    it('預設顯示常態抽樣欄位並隱藏歷史區塊欄位；點擊切換按鈕後正確切換可見性與 aria-pressed', async () => {
+        await page.render()
+        const normalBtn = appContainer.querySelector('#ret-model-normal')
+        const histBtn = appContainer.querySelector('#ret-model-historical')
+        const normalFields = appContainer.querySelector('#ret-normal-fields')
+        const histFields = appContainer.querySelector('#ret-historical-fields')
+
+        expect(normalBtn.getAttribute('aria-pressed')).toBe('true')
+        expect(histBtn.getAttribute('aria-pressed')).toBe('false')
+        expect(normalFields.classList.contains('hidden')).toBe(false)
+        expect(histFields.classList.contains('hidden')).toBe(true)
+
+        histBtn.click()
+        expect(page.returnModel).toBe('historical')
+        expect(histBtn.getAttribute('aria-pressed')).toBe('true')
+        expect(normalBtn.getAttribute('aria-pressed')).toBe('false')
+        expect(normalFields.classList.contains('hidden')).toBe(true)
+        expect(histFields.classList.contains('hidden')).toBe(false)
+
+        const datasetSelect = appContainer.querySelector('#ret-historical-dataset')
+        expect(datasetSelect).not.toBeNull()
+        expect(datasetSelect.value).toBe('taiex_tr')
+        expect(datasetSelect.options).toHaveLength(3)
+        const infoEl = appContainer.querySelector('#ret-historical-info')
+        expect(infoEl.textContent).toContain('IR0001')
+        expect(infoEl.textContent).toContain('2003')
+
+        datasetSelect.value = 'tw0050_tr'
+        datasetSelect.dispatchEvent(new Event('change'))
+        expect(page.historicalDataset).toBe('tw0050_tr')
+        expect(infoEl.textContent).toContain('0050')
+        expect(infoEl.textContent).toContain('2004')
+
+        datasetSelect.value = 'sp500_tr'
+        datasetSelect.dispatchEvent(new Event('change'))
+        expect(page.historicalDataset).toBe('sp500_tr')
+        expect(infoEl.textContent).toContain('S&P 500')
+        expect(infoEl.textContent).toContain('1928')
+
+        normalBtn.click()
+        expect(page.returnModel).toBe('normal')
+        expect(normalFields.classList.contains('hidden')).toBe(false)
+        expect(histFields.classList.contains('hidden')).toBe(true)
+    })
+
+    it('歷史重演模式執行模擬時傳遞 returnModel="historical"、historicalDataset 與 blockSize，並於結果卡片顯示模型徽章', async () => {
+        mockSimulate.mockResolvedValue(
+            makeResult({
+                returnModel: 'historical',
+                historicalDataset: 'tw0050_tr',
+                blockSize: 7,
+                historicalMeta: {
+                    id: 'tw0050_tr',
+                    shortName: '元大台灣50 (0050 含息)',
+                    startYear: 2004,
+                    endYear: 2025,
+                    count: 22,
+                },
+            })
+        )
+        await page.render()
+        appContainer.querySelector('#ret-model-historical').click()
+        const datasetSelect = appContainer.querySelector('#ret-historical-dataset')
+        datasetSelect.value = 'tw0050_tr'
+        datasetSelect.dispatchEvent(new Event('change'))
+        appContainer.querySelector('#ret-block-size').value = '7'
+        appContainer.querySelector('#ret-run').click()
+        await flush()
+        await flush()
+
+        expect(mockSimulate).toHaveBeenCalledTimes(1)
+        const opts = mockSimulate.mock.calls[0][0]
+        expect(opts.returnModel).toBe('historical')
+        expect(opts.historicalDataset).toBe('tw0050_tr')
+        expect(opts.blockSize).toBe(7)
+        expect(opts.annualReturn).toBeUndefined()
+        expect(opts.volatility).toBeUndefined()
+
+        const badge = appContainer.querySelector('#ret-model-badge')
+        expect(badge).not.toBeNull()
+        expect(badge.textContent).toContain('歷史重演')
+        expect(badge.textContent).toContain('0050')
+        expect(badge.textContent).toContain('7 年')
+        expect(badge.textContent).toContain('2004–2025')
+    })
+
+    it('歷史重演模式下區塊長度空白 → toast 提示錯誤且不呼叫 simulate', async () => {
+        await page.render()
+        appContainer.querySelector('#ret-model-historical').click()
+        appContainer.querySelector('#ret-block-size').value = ''
+        appContainer.querySelector('#ret-run').click()
+        await flush()
+        await flush()
+
+        expect(mockSimulate).not.toHaveBeenCalled()
+        expect(showToast).toHaveBeenCalledWith('請完整填寫模擬參數', 'error')
+    })
+})
+

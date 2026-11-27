@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// settingsPage.js 僅從 utils.js 使用 showToast 與 customConfirm
-vi.mock('../../src/js/utils.js', () => ({
-    showToast: vi.fn(),
-    customConfirm: vi.fn(async () => true),
-}))
+// settingsPage.js 使用 utils.js 的 showToast / customConfirm / escapeHTML / getSafeIconClass / showInputModal
+vi.mock('../../src/js/utils.js', async importOriginal => {
+    const actual = await importOriginal()
+    return {
+        ...actual,
+        showToast: vi.fn(),
+        customConfirm: vi.fn(async () => true),
+    }
+})
 vi.mock('../../src/js/themeManager.js', () => {
     const THEME_MODES = {
         SYSTEM: 'system',

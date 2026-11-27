@@ -194,17 +194,17 @@ export class RecurringPage {
         // Prepare category and account options
         const expenseCategories = this.app.categoryManager
             .getAllCategories('expense')
-            .map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`)
+            .map(c => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`)
             .join('')
         const incomeCategories = this.app.categoryManager
             .getAllCategories('income')
-            .map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`)
+            .map(c => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>`)
             .join('')
         const accountOptions = advancedModeEnabled
             ? accounts
                   .map(
                       acc =>
-                          `<option value="${acc.id}">${escapeHTML(acc.name)}</option>`
+                          `<option value="${escapeHTML(acc.id)}">${escapeHTML(acc.name)}</option>`
                   )
                   .join('')
             : ''
@@ -220,7 +220,7 @@ export class RecurringPage {
 
                 <div>
                     <label class="text-sm">金額</label>
-                    <input type="number" id="recurring-amount" value="${txToEdit?.amount || ''}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="number" id="recurring-amount" value="${escapeHTML(txToEdit?.amount ?? '')}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
 
                 <div>
@@ -259,13 +259,13 @@ export class RecurringPage {
                     </div>
                     <div>
                         <label class="text-sm">間隔</label>
-                        <input type="number" id="recurring-interval" value="${txToEdit?.interval || 1}" min="1" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                        <input type="number" id="recurring-interval" value="${escapeHTML(txToEdit?.interval || 1)}" min="1" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                     </div>
                 </div>
 
                 <div>
                     <label class="text-sm">開始日期</label>
-                    <input type="date" id="recurring-start-date" value="${txToEdit?.startDate || formatDateToString(new Date())}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
+                    <input type="date" id="recurring-start-date" value="${escapeHTML(txToEdit?.startDate || formatDateToString(new Date()))}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface">
                 </div>
 
                 <!-- Skip Rules -->

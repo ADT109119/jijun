@@ -1,4 +1,11 @@
-import { showToast, customConfirm, showProgressModal } from '../utils.js'
+import {
+    showToast,
+    customConfirm,
+    showProgressModal,
+    escapeHTML,
+    getSafeIconClass,
+    showInputModal as openInputModal,
+} from '../utils.js'
 import { THEME_MODES } from '../themeManager.js'
 
 export class SettingsPage {
@@ -1022,7 +1029,7 @@ export class SettingsPage {
                     <i class="fa-solid fa-triangle-exclamation text-2xl text-wabi-expense"></i>
                 </div>
                 <h3 class="text-xl font-bold text-wabi-expense mb-2">確認操作</h3>
-                <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
+                <p class="text-wabi-text-primary font-medium mb-6">${escapeHTML(message)}</p>
                 <div class="flex space-x-3">
                     <button id="settings-confirm-ok" class="flex-1 bg-wabi-expense hover:bg-red-600 text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                         確定
@@ -1052,16 +1059,22 @@ export class SettingsPage {
         icon = 'fa-solid fa-circle-info',
         iconColor = 'text-wabi-primary'
     ) {
+        const safeIcon = getSafeIconClass(icon, 'fa-solid fa-circle-info')
+        const safeIconColor =
+            typeof iconColor === 'string' &&
+            /^text-[a-z0-9-]+(?:\/[0-9]+)?$/.test(iconColor.trim())
+                ? iconColor.trim()
+                : 'text-wabi-primary'
         const modal = document.createElement('div')
         modal.className =
             'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 text-center shadow-xl">
                 <div class="size-12 bg-wabi-bg rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="${icon} text-2xl ${iconColor}"></i>
+                    <i class="${safeIcon} text-2xl ${safeIconColor}"></i>
                 </div>
-                <h3 class="text-xl font-bold text-wabi-primary mb-2">${title}</h3>
-                <p class="text-wabi-text-primary font-medium mb-6">${message}</p>
+                <h3 class="text-xl font-bold text-wabi-primary mb-2">${escapeHTML(title)}</h3>
+                <p class="text-wabi-text-primary font-medium mb-6">${escapeHTML(message)}</p>
                 <button id="settings-alert-ok" class="w-full bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
                     我知道了
                 </button>
@@ -1075,51 +1088,11 @@ export class SettingsPage {
     }
 
     showInputModal(title, message, defaultValue, onConfirm) {
-        const modal = document.createElement('div')
-        modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
-        modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 shadow-xl border border-wabi-border/30">
-                <h3 class="text-lg font-bold text-wabi-primary mb-2">${title}</h3>
-                <p class="text-sm text-wabi-text-secondary mb-4">${message}</p>
-                <div class="mb-6">
-                    <input type="text" id="settings-input-value" value="${defaultValue}" class="w-full bg-wabi-surface border border-wabi-border text-wabi-text-primary text-base rounded-lg focus:ring-2 focus:ring-wabi-primary focus:border-wabi-primary p-3 outline-none" placeholder="例如: /ABC1234">
-                </div>
-                <div class="flex space-x-3">
-                    <button id="settings-input-ok" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
-                        確定
-                    </button>
-                    <button id="settings-input-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
-                        取消
-                    </button>
-                </div>
-            </div>
-        `
-        document.body.appendChild(modal)
-
-        const inputEl = modal.querySelector('#settings-input-value')
-        setTimeout(() => {
-            inputEl.focus()
-            inputEl.select()
-        }, 100)
-
-        const handleOk = () => {
-            const val = inputEl.value
-            modal.remove()
-            onConfirm(val)
-        }
-
-        modal
-            .querySelector('#settings-input-cancel')
-            .addEventListener('click', () => modal.remove())
-        modal
-            .querySelector('#settings-input-ok')
-            .addEventListener('click', handleOk)
-
-        inputEl.addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                handleOk()
-            }
+        return openInputModal(title, message, defaultValue, onConfirm, {
+            inputId: 'settings-input-value',
+            okId: 'settings-input-ok',
+            cancelId: 'settings-input-cancel',
+            placeholder: '例如: /ABC1234',
         })
     }
 

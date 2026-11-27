@@ -709,29 +709,95 @@ export class AIService {
 
     /**
      * 離線規則推論回覆，用於在模型加載前的測試、降級與離線展示
+     * #AI-RULES：修復金額誤擷取／備註咬字／協定注入／帳戶預設四項缺陷。
      * @private
      */
     _ruleInference(text, categories, accounts, currentDate = new Date()) {
-        const amountMatch = text.match(/\d+/);
-        const amount = amountMatch ? parseInt(amountMatch[0], 10) : 100;
+        const sanitizedInput = stripProtocolTags(text);
+        const extractedAmount = extractAmountFromText(sanitizedInput);
+        // 找不到有效金額時輸出 0，由 extractToolCall 明確拋錯，不再憑空捏造 100 元
+        const amount = extractedAmount !== null ? extractedAmount : 0;
 
-        const catList = (Array.isArray(categories) ? categories : []).map(c => typeof c === 'string' ? c : (c?.name || '')).filter(Boolean);
-        const accList = (Array.isArray(accounts) ? accounts : []).map(a => typeof a === 'string' ? a : (a?.name || '')).filter(Boolean);
+        const catObjs = (Array.isArray(categories) ? categories : [])
+            .map(c =>
+                typeof c === 'string'
+                    ? { name: c.trim() }
+                    : c && typeof c.name === 'string'
+                      ? { ...c, name: c.name.trim() }
+                      : null
+            )
+            .filter(c => c && c.name);
+        const accObjs = (Array.isArray(accounts) ? accounts : [])
+            .map(a =>
+                typeof a === 'string'
+                    ? { name: a.trim() }
+                    : a && typeof a.name === 'string'
+                      ? { ...a, name: a.name.trim() }
+                      : null
+            )
+            .filter(a => a && a.name);
 
-        const matchedCategory = catList.find(c => text.includes(c)) || catList[0] || '飲食';
-        const matchedAccount = accList.find(a => text.includes(a)) || accList[0] || '現金';
-
-        const isIncome = text.includes('領') || text.includes('领') || text.includes('賺') || text.includes('赚') || text.includes('收入') || text.includes('薪水');
+        const isIncome =
+            /(?:領了?|領到|领了?|领到|賺了?|賺到|赚了?|赚到|收入|薪水|工資|工资|發薪|发薪|領薪|领薪|入帳|入账|進帳|进账|獎金|奖金|退款|利息)/.test(
+                sanitizedInput
+            );
         const type = isIncome ? 'income' : 'expense';
 
+        // 分類匹配：先以最長字面命中，次以語意同義詞模糊匹配，最後才退回清單首項
+        const literalCat = findLiteralCategoryName(sanitizedInput, catObjs);
+        const fuzzyCat = !literalCat
+            ? fuzzyMatchCategory(sanitizedInput, catObjs)?.name || null
+            : null;
+        const matchedCategory =
+            literalCat || fuzzyCat || catObjs[0]?.name || (isIncome ? '其他' : '飲食');
+
+        // 帳戶匹配（#AI-RULES 帳戶預設缺陷修復）：
+        // 1. 最長字面匹配（避免短名稱搶先覆蓋長名稱；純 ASCII 短名帶邊界防誤傷）
+        // 2. 語意支付關鍵字（刷卡／信用卡／轉帳／銀行／現金）
+        // 3. 未提及任何帳戶時：優先現金類帳戶 → 首個非信用卡帳戶 → '現金'（絕不誤預設為信用卡）
+        let matchedAccount = null;
+        const sortedAccs = [...accObjs].sort((a, b) => b.name.length - a.name.length);
+        const lowerInput = sanitizedInput.toLowerCase();
+        for (const a of sortedAccs) {
+            const nameLower = a.name.toLowerCase();
+            if (isAsciiWordOnly(a.name)) {
+                const re = new RegExp(`(?<![a-zA-Z0-9])${escapeRegexChars(nameLower)}(?![a-zA-Z0-9])`, 'i');
+                if (re.test(sanitizedInput)) {
+                    matchedAccount = a.name;
+                    break;
+                }
+            } else if (lowerInput.includes(nameLower)) {
+                matchedAccount = a.name;
+                break;
+            }
+        }
+        if (!matchedAccount) {
+            if (/(?:信用卡|刷卡|刷了)/i.test(sanitizedInput)) {
+                matchedAccount = fuzzyMatchAccount('信用卡', accObjs)?.name || null;
+            } else if (/(?:轉帳|转账|匯款|汇款|存入|網銀|网银|銀行|银行)/i.test(sanitizedInput)) {
+                matchedAccount = fuzzyMatchAccount('銀行', accObjs)?.name || null;
+            } else if (/(?:現金|现金|付現|付现|皮夾|錢包)/i.test(sanitizedInput)) {
+                matchedAccount = fuzzyMatchAccount('現金', accObjs)?.name || null;
+            }
+        }
+        if (!matchedAccount) {
+            const cashAcc = accObjs.find(
+                a => a.type === 'cash' || /(?:現金|现金|皮夾|錢包)/.test(a.name)
+            );
+            const nonCreditAcc = accObjs.find(
+                a => a.type !== 'credit_card' && !/(?:信用卡|卡$)/.test(a.name)
+            );
+            matchedAccount = cashAcc?.name || nonCreditAcc?.name || '現金';
+        }
+
         const d = new Date(currentDate.getTime());
-        if (text.includes('大前天')) {
+        if (sanitizedInput.includes('大前天')) {
             d.setDate(d.getDate() - 3);
-        } else if (text.includes('前天')) {
+        } else if (sanitizedInput.includes('前天')) {
             d.setDate(d.getDate() - 2);
-        } else if (text.includes('昨天')) {
+        } else if (sanitizedInput.includes('昨天')) {
             d.setDate(d.getDate() - 1);
-        } else if (text.includes('明天')) {
+        } else if (sanitizedInput.includes('明天')) {
             d.setDate(d.getDate() + 1);
         }
         const year = d.getFullYear();
@@ -739,19 +805,314 @@ export class AIService {
         const day = String(d.getDate()).padStart(2, '0');
         const dateStr = `${year}-${month}-${day}`;
 
-        let description = text
-            .replace(/\d+/g, '')
-            .replace(matchedCategory, '')
-            .replace(matchedAccount, '')
-            .replace(/[元|塊|花了|剛|刷|昨天|前天|大前天|明天|中午|晚上|早上]/g, '')
-            .trim();
+        const description = cleanRuleDescription(sanitizedInput, {
+            category: matchedCategory,
+            account: matchedAccount,
+            isIncome,
+        });
 
-        if (!description) {
-            description = isIncome ? '收入' : '消費';
-        }
+        // #AI-RULES 協定注入防禦：對所有寫入壓縮協定的欄位剝除 [TAG] 與 <tool_call> 控制字元
+        const safeCat = sanitizeCompressedProtocolField(matchedCategory) || '其他';
+        const safeAcc = sanitizeCompressedProtocolField(matchedAccount) || '現金';
+        const safeDesc = sanitizeCompressedProtocolField(description) || (isIncome ? '收入' : '消費');
 
-        return `<tool_call>[AMT]${amount}[CAT]${matchedCategory}[ACC]${matchedAccount}[DESC]${description}[DATE]${dateStr}[TYPE]${type}</tool_call>`;
+        return `<tool_call>[AMT]${amount}[CAT]${safeCat}[ACC]${safeAcc}[DESC]${safeDesc}[DATE]${dateStr}[TYPE]${type}</tool_call>`;
     }
+}
+
+// ==================== #AI-RULES 離線規則降級純函數 ====================
+
+function escapeRegexChars(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isAsciiWordOnly(str) {
+    return typeof str === 'string' && str.length > 0 && /^[a-zA-Z0-9\s._-]+$/.test(str);
+}
+
+/**
+ * 剝除可能干擾壓縮協議解析的標籤與控制字元（#AI-RULES 協定注入防禦）
+ */
+function stripProtocolTags(text) {
+    if (typeof text !== 'string') return '';
+    return text
+        .replace(/<\/?(?:tool_call|think|thinking)\b[^>]*>/gi, ' ')
+        .replace(/<\|[^|]*\|>/g, ' ')
+        .replace(/\[(?:AMT|CAT|ACC|DESC|DATE|TYPE)\][^\s[<]*/gi, ' ');
+}
+
+function sanitizeCompressedProtocolField(value) {
+    if (typeof value !== 'string') return '';
+    return stripProtocolTags(value)
+        .replace(/[[\]<>\r\n]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * 將全形數字（０-９）、全形金額小數點（．）、全形千分位逗號（，）與全形貨幣符號（＄）正規化為半形（#AI-RULES）。
+ * 僅轉換夾在數字之間的小數點與三位數千分位逗號，不破壞中文標點（例如「午餐，200元」）。
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeFullWidthDigits(text) {
+    if (typeof text !== 'string') return '';
+    let result = text
+        .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+        .replace(/＄/g, '$');
+    // 全形小數點：僅限數字之間（例 １２．５ → 12.5）
+    result = result.replace(/(\d)．(\d)/g, '$1.$2');
+    // 全形千分位逗號：僅限數字與三位數字之間（例 １，２００ → 1,200）
+    let prev;
+    do {
+        prev = result;
+        result = result.replace(/(\d)，(\d{3})(?!\d)/g, '$1,$2');
+    } while (result !== prev);
+    return result;
+}
+
+/**
+ * 判斷單一字元是否為 CJK 漢字（含基本區、擴展 A 區與相容表意文字，#AI-RULES）。
+ * @param {string} ch
+ * @returns {boolean}
+ */
+export function isCjkChar(ch) {
+    if (typeof ch !== 'string' || ch.length === 0) return false;
+    const code = ch.charCodeAt(0);
+    return (
+        (code >= 0x4e00 && code <= 0x9fff) ||
+        (code >= 0x3400 && code <= 0x4dbf) ||
+        (code >= 0xf900 && code <= 0xfaff)
+    );
+}
+
+const AMOUNT_UNIT_MULTIPLIERS = {
+    萬: 10000,
+    万: 10000,
+    千: 1000,
+    k: 1000,
+    K: 1000,
+    百: 100,
+};
+
+function parseAmountCandidate(numStr, unit) {
+    if (!numStr) return null;
+    const base = parseFloat(String(numStr).replace(/,/g, ''));
+    if (!Number.isFinite(base) || base <= 0) return null;
+    const mult = unit ? AMOUNT_UNIT_MULTIPLIERS[unit] || 1 : 1;
+    const val = Math.round(base * mult * 100) / 100;
+    return Number.isFinite(val) && val > 0 ? val : null;
+}
+
+/**
+ * 從自然語言記帳文字中精準擷取金額（#AI-RULES 金額誤擷取修復）：
+ * - 支援全形數字（１５０）、千分位逗號（12,000）、小數（85.5）、單位倍率（2萬／1.5k／3千／5百）與貨幣前綴（NT$／$）
+ * - 自動遮罩日期（2026-08-03、8月3日、8/3）、時間（12:30、3點）、序數期別（第3期）、店名數字（7-11、85度C、50嵐）、百分比與量詞（2杯、3個、1000ml）
+ * - 無有效正金額時回傳 null（絕不捏造 100 元）
+ * @param {string} text
+ * @returns {number|null}
+ */
+export function extractAmountFromText(text) {
+    if (typeof text !== 'string' || !text.trim()) return null;
+
+    // 先移除協定注入標籤後轉半形數字
+    let masked = normalizeFullWidthDigits(stripProtocolTags(text));
+
+    // 1. 遮罩非金額的數字語境（以空白取代維持分詞邊界）
+    const nonAmountPatterns = [
+        // 完整日期：2026-08-03 / 2026/8/3 / 2026.08.03
+        /(?<!\d)\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?!\d)/g,
+        // 中文日期：2026年8月3日 / 8月3日 / 8月 / 3日 / 3號
+        /\d{4}\s*年(?:\s*\d{1,2}\s*月)?(?:\s*\d{1,2}\s*[日號号])?/g,
+        /(?<!\d)\d{1,2}\s*月(?:\s*\d{1,2}\s*[日號号])?/g,
+        /(?<!\d)\d{1,2}\s*[日號号]/g,
+        // 短日期：8/3、12/25
+        /(?<!\d)(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])(?!\d)/g,
+        // 時間：12:30 / 12:30:00 / 3點半 / 3點20分
+        /(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?!\d)/g,
+        /(?<!\d)\d{1,2}\s*(?:點|点|時|时)(?:\s*\d{1,2}\s*分|半)?/g,
+        // 期數／序數：第3期 / 第2次
+        /第\s*\d+\s*[期次天月年回屆]/g,
+        // 常見含數字店名／品牌
+        /\b7\s*-\s*(?:11|eleven)\b/gi,
+        /85\s*度\s*c/gi,
+        /50\s*嵐/g,
+        // 折扣／百分比：9折 / 85折 / 10%
+        /(?<![\d.,])\d+(?:\.\d+)?\s*(?:%|％|折)/g,
+        // 數量＋非貨幣量詞（後接元／塊等貨幣字則保留）
+        /(?<![\d.,])\d+(?:\.\d+)?\s*(?:個|个|杯|碗|盤|盘|份|瓶|罐|包|盒|袋|箱|件|雙|双|支|隻|只|條|条|張|张|本|台|臺|顆|颗|粒|片|次|趟|人|位|天|週|周|小時|小时|分鐘|分钟|公里|公尺|公分|公斤|公克|克|毫升|ml|kg|km|度)(?![a-zA-Z])(?!\s*(?:元|塊|块|圓|圆|萬|万|千|百|[kK]))/gi,
+    ];
+    for (const pat of nonAmountPatterns) {
+        masked = masked.replace(pat, ' ');
+    }
+
+    const NUM = '((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)';
+
+    // Priority 1a：貨幣前綴（NT$380、$150、¥2000）
+    const prefixRe = new RegExp(`(?:NT\\$|US\\$|\\$|￥|¥)\\s*${NUM}\\s*(萬|万|千|百|[kK](?![a-zA-Z]))?`, 'i');
+    const prefixMatch = masked.match(prefixRe);
+    if (prefixMatch) {
+        const val = parseAmountCandidate(prefixMatch[1], prefixMatch[2]);
+        if (val !== null) return val;
+    }
+
+    // Priority 1b：明確單位倍率或貨幣後綴（250元、1.5萬、2k、3千塊）
+    const suffixRe = new RegExp(
+        `${NUM}\\s*(?:(萬|万|千|百|[kK](?![a-zA-Z]))\\s*(?:元|塊|块|圓|圆|台幣|臺幣)?|(?:元|塊|块|圓|圆|台幣|臺幣|NTD|TWD|USD|JPY|EUR)(?![a-zA-Z]))`,
+        'i'
+    );
+    const suffixMatch = masked.match(suffixRe);
+    if (suffixMatch) {
+        const val = parseAmountCandidate(suffixMatch[1], suffixMatch[2]);
+        if (val !== null) return val;
+    }
+
+    // Priority 1c：消費／收入動詞緊接數字（花了250、領到5000）
+    const verbRe = new RegExp(
+        `(?:花了?|花費|花费|付了?|支付|刷了?|共|總共|总共|合計|合计|金額|金额|收入|賺了?|赚了?|領了?|领了?|領到|领到)\\s*${NUM}\\s*(萬|万|千|百|[kK](?![a-zA-Z]))?`,
+        'i'
+    );
+    const verbMatch = masked.match(verbRe);
+    if (verbMatch) {
+        const val = parseAmountCandidate(verbMatch[1], verbMatch[2]);
+        if (val !== null) return val;
+    }
+
+    // Priority 2：其餘獨立數字（中文記帳句式金額多在句尾，取最後一個有效正數）
+    const bareRe = new RegExp(`(?<![a-zA-Z\\d.,])${NUM}(?![a-zA-Z\\d.])`, 'g');
+    let lastVal = null;
+    let m;
+    while ((m = bareRe.exec(masked)) !== null) {
+        const val = parseAmountCandidate(m[1], null);
+        if (val !== null) lastVal = val;
+    }
+    return lastVal;
+}
+
+/**
+ * 清理離線規則推論的備註文字（#AI-RULES 備註咬字修復）：
+ * - 以多字詞交替群組取代舊版字元集 `[...]`，絕不誤刪「早餐」「大杯」「牙刷」「元氣」「天婦羅」「花束」「上海」中的字元
+ * - 保留常見品牌數字（7-11、85度C、50嵐），僅移除金額片語、時間副詞、帳戶與控制標籤
+ * - 透過 isCjkChar() 折疊漢字間多餘空白同時保留英文單字間距
+ * @param {string} rawText
+ * @param {object|string} [optionsOrCategory]
+ * @param {string} [matchedAccount]
+ * @param {boolean} [isIncome]
+ * @returns {string}
+ */
+export function cleanRuleDescription(
+    rawText,
+    optionsOrCategory = {},
+    matchedAccount = '',
+    isIncome = false
+) {
+    let category = '';
+    let account = matchedAccount || '';
+    let incomeFlag = Boolean(isIncome);
+    if (optionsOrCategory && typeof optionsOrCategory === 'object') {
+        category = optionsOrCategory.category || '';
+        account = optionsOrCategory.account || '';
+        incomeFlag = Boolean(optionsOrCategory.isIncome);
+    } else if (typeof optionsOrCategory === 'string') {
+        category = optionsOrCategory;
+    }
+
+    if (typeof rawText !== 'string' || !rawText.trim()) {
+        return incomeFlag ? '收入' : '消費';
+    }
+
+    // 先剝除協定標籤與控制字元
+    let desc = stripProtocolTags(rawText).replace(/[[\]<>\r\n]/g, ' ');
+    desc = normalizeFullWidthDigits(desc);
+
+    // 暫時保護含數字的品牌名稱，避免被金額剝除規則誤傷（佔位符使用純英文字母避免被數字規則觸及）
+    const protectedTokens = [];
+    const protect = regex => {
+        desc = desc.replace(regex, match => {
+            const idx = protectedTokens.push(match) - 1;
+            const tag = String.fromCharCode(65 + (idx % 26)).repeat(Math.floor(idx / 26) + 1);
+            return `ZXQBRAND${tag}ZXQ`;
+        });
+    };
+    protect(/\b7\s*-\s*(?:11|eleven)\b/gi);
+    protect(/85\s*度\s*c/gi);
+    protect(/50\s*嵐/g);
+
+    const literalCatInText = Boolean(category && category.length >= 2 && desc.includes(category));
+
+    // 移除帳戶片語（搭配常見介系詞，且對純 ASCII 帳戶名做詞邊界防護）
+    if (account) {
+        const escAcc = escapeRegexChars(account);
+        const accPattern = isAsciiWordOnly(account)
+            ? new RegExp(`(?:用|刷|從|从|以|存入|轉入|转入|匯入|汇入)?\\s*(?<![a-zA-Z0-9])${escAcc}(?![a-zA-Z0-9])`, 'gi')
+            : new RegExp(`(?:用|刷|從|从|以|存入|轉入|转入|匯入|汇入)?\\s*${escAcc}`, 'g');
+        desc = desc.replace(accPattern, ' ');
+    }
+
+    // 移除字面出現的分類名（稍後若殘句清空再回填分類名）
+    if (literalCatInText) {
+        const escCat = escapeRegexChars(category);
+        const catPattern = isAsciiWordOnly(category)
+            ? new RegExp(`(?<![a-zA-Z0-9])${escCat}(?![a-zA-Z0-9])`, 'gi')
+            : new RegExp(escCat, 'g');
+        desc = desc.replace(catPattern, ' ');
+    }
+
+    // 移除相對日期與時段詞（多字精確詞組，不咬「早餐／午餐／晚餐／大杯／天婦羅／上海」）
+    desc = desc.replace(
+        /(?:大前天|前天|昨天|今天|明天|後天|后天|早上|上午|中午|下午|傍晚|晚上|深夜|凌晨|剛剛|剛才|刚才)/g,
+        ' '
+    );
+    // 移除明確日期／時間字串
+    desc = desc
+        .replace(/(?<!\d)\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?!\d)/g, ' ')
+        .replace(/(?<!\d)\d{1,2}:\d{2}(?::\d{2})?(?!\d)/g, ' ');
+
+    // 移除金額片語（連同緊鄰的消費/收入動詞、貨幣符號與單位，不單獨砍「元／塊／花／刷」，亦保留量詞如「2杯」「3個」）
+    // 單字動詞（花/付/刷/共/賺/領）僅於非漢字字元後方生效，避免誤咬「買牙刷 99元」「買豆花 50元」中的名詞尾字
+    const VERB_OPT = '(?:花了|花費|花费|付了|支付|刷了|總共|总共|合計|合计|賺了|赚了|領了|领了|領到|领到|(?<![\\u4e00-\\u9fff])(?:花|付|刷|共|賺|赚|領|领))?';
+    const NUM_CORE = '(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?';
+    const UNIT_CORE = '(?:(?:萬|万|千|百|[kK](?![a-zA-Z]))\\s*(?:元|塊|块|圓|圆|台幣|臺幣)?|(?:元|塊|块|圓|圆|台幣|臺幣|NTD|TWD|USD|JPY|EUR)(?![a-zA-Z]))';
+    const NON_MONEY_LOOKAHEAD = '(?!\\s*(?:個|个|杯|碗|盤|盘|份|瓶|罐|包|盒|袋|箱|件|雙|双|支|隻|只|條|条|張|张|本|台|臺|顆|颗|粒|片|次|趟|人|位|天|週|周|月|年|日|號|号|點|点|時|时|分|小時|小时|分鐘|分钟|公里|公尺|公分|公斤|公克|克|毫升|ml|kg|km|度|%|％|折|期|回|屆))';
+    desc = desc
+        .replace(new RegExp(`${VERB_OPT}\\s*(?:NT\\$|US\\$|\\$|￥|¥)\\s*${NUM_CORE}(?:\\s*${UNIT_CORE})?`, 'gi'), ' ')
+        .replace(new RegExp(`${VERB_OPT}\\s*${NUM_CORE}\\s*${UNIT_CORE}`, 'gi'), ' ')
+        .replace(new RegExp(`${VERB_OPT}\\s*(?<![a-zA-Z\\d.,])${NUM_CORE}(?![a-zA-Z\\d.])${NON_MONEY_LOOKAHEAD}`, 'gi'), ' ');
+
+    // 還原品牌名稱
+    desc = desc.replace(/ZXQBRAND([A-Z]+)ZXQ/g, (_, tag) => {
+        const idx = (tag.length - 1) * 26 + (tag.charCodeAt(0) - 65);
+        return protectedTokens[idx] || '';
+    });
+
+    // 清理首尾殘留連接詞與標點（僅剝除完整動詞片語，絕不單獨咬掉「花束」「牙刷」「付費」中的單字）
+    desc = desc
+        .replace(/^(?:花了|花費|花费|付了|刷了|用|在|存入|轉入|转入|領了|领了|領到|领到|賺了|赚了|[，。、：:；;,\s])+/g, '')
+        .replace(/(?:花了|花費|花费|付了|刷了|用|存入|轉入|转入|[，。、：:；;,\s])+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // 折疊兩個相鄰 CJK 字元中間因抽字留下的單一空白（保留英文單字間距）
+    let collapsed = '';
+    for (let i = 0; i < desc.length; i++) {
+        const ch = desc[i];
+        if (
+            ch === ' ' &&
+            i > 0 &&
+            i < desc.length - 1 &&
+            isCjkChar(desc[i - 1]) &&
+            isCjkChar(desc[i + 1])
+        ) {
+            continue;
+        }
+        collapsed += ch;
+    }
+
+    const finalDesc = collapsed.trim();
+    if (!finalDesc) {
+        return literalCatInText ? category : incomeFlag ? '收入' : '消費';
+    }
+    return finalDesc;
 }
 
 /**

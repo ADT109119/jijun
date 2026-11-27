@@ -219,8 +219,8 @@ export class AmortizationsPage {
                             </div>
                             <div class="flex items-center gap-2 text-xs text-wabi-text-secondary mb-2">
                                 <span>${type.name}</span><span>·</span>
-                                <span>${category?.name || '未分類'}</span>
-                                ${item.interestRate ? `<span>· 利率 ${item.interestRate}%</span>` : ''}
+                                <span>${escapeHTML(category?.name || '未分類')}</span>
+                                ${item.interestRate ? `<span>· 利率 ${escapeHTML(item.interestRate)}%</span>` : ''}
                             </div>
                             <div class="w-full bg-wabi-bg rounded-full h-2 mb-1.5">
                                 <div class="h-2 rounded-full transition-all ${item.status === 'completed' ? 'bg-green-500' : 'bg-wabi-primary'}" style="width: ${progress}%"></div>
@@ -232,7 +232,7 @@ export class AmortizationsPage {
                             <div class="mt-2 flex items-center gap-3 text-xs">
                                 <span class="text-wabi-text-secondary">總額 <strong class="text-wabi-text-primary">$${this._formatAmount(item.totalAmount)}</strong></span>
                                 ${item.downPayment ? `<span class="text-wabi-text-secondary">首付 <strong class="text-wabi-text-primary">$${this._formatAmount(item.downPayment)}</strong></span>` : ''}
-                                ${remaining > 0 && item.status === 'active' ? `<span class="text-wabi-text-secondary">下期 <strong class="text-wabi-primary">${item.nextDueDate}</strong></span>` : ''}
+                                ${remaining > 0 && item.status === 'active' ? `<span class="text-wabi-text-secondary">下期 <strong class="text-wabi-primary">${escapeHTML(item.nextDueDate)}</strong></span>` : ''}
                             </div>
                             ${upfrontLine}
                         </div>

@@ -10,6 +10,46 @@ const QUICK_SELECT_STORAGE_KEY = 'quickSelectRecords'
 const MAX_TOTAL_RECORDS = 20
 const MAX_DISPLAY_RECORDS = 5
 
+/**
+ * 將 accountId 正規化為整數或 null（#QSM-ATTR）：
+ * 統一 addRecord / deleteRecord / click / loadRecords 對 null / undefined / 'null' / 'undefined' /
+ * 空字串 / 數字字串 / 非法髒字串的語意，避免 parseInt(null) 變 NaN 導致膠囊比對與刪除失配。
+ * @param {*} accountId
+ * @returns {number|null}
+ */
+function normalizeAccountId(accountId) {
+    if (
+        accountId === null ||
+        accountId === undefined ||
+        accountId === '' ||
+        accountId === 'null' ||
+        accountId === 'undefined'
+    ) {
+        return null
+    }
+    if (typeof accountId === 'number') {
+        return Number.isInteger(accountId) ? accountId : null
+    }
+    if (typeof accountId === 'string') {
+        const trimmed = accountId.trim()
+        if (/^-?\d+$/.test(trimmed)) {
+            const parsed = parseInt(trimmed, 10)
+            return Number.isSafeInteger(parsed) ? parsed : null
+        }
+    }
+    return null
+}
+
+/**
+ * 正規化描述字串（null/undefined → ''，CRLF/CR → LF，與 HTML 屬性解析對齊防止比對失配）
+ * @param {*} description
+ * @returns {string}
+ */
+function normalizeDescription(description) {
+    if (description === null || description === undefined) return ''
+    return String(description).replace(/\r\n?/g, '\n')
+}
+
 export class QuickSelectManager {
     constructor() {
         this.records = this.loadRecords()
@@ -38,6 +78,24 @@ export class QuickSelectManager {
     }
 
     /**
+     * 判斷快選紀錄是否與目標鍵值一致（addRecord / deleteRecord 共用單一比對邏輯，#QSM-ATTR）
+     * @private
+     */
+    _matchesRecord(record, type, categoryId, description, accountId) {
+        if (!record || typeof record !== 'object') return false
+        const targetDesc = normalizeDescription(description)
+        const targetAccId = normalizeAccountId(accountId)
+        const recordDesc = normalizeDescription(record.description)
+        const recordAccId = normalizeAccountId(record.accountId)
+        return (
+            String(record.type ?? '') === String(type ?? '') &&
+            String(record.categoryId ?? '') === String(categoryId ?? '') &&
+            recordDesc === targetDesc &&
+            recordAccId === targetAccId
+        )
+    }
+
+    /**
      * Adds or updates a record based on its category, description, and account.
      * @param {string} type - 'income' or 'expense'
      * @param {string} categoryId
@@ -45,22 +103,24 @@ export class QuickSelectManager {
      * @param {number|null} accountId
      */
     addRecord(type, categoryId, description, accountId) {
-        const normalizedDescription = description || ''
-        // Treat undefined accountId as null for consistent matching
-        const normalizedAccountId = accountId === undefined ? null : accountId
+        const normalizedDescription = normalizeDescription(description)
+        const normalizedAccountId = normalizeAccountId(accountId)
 
-        const existingRecordIndex = this.records.findIndex(
-            r =>
-                r.type === type &&
-                r.categoryId === categoryId &&
-                r.description === normalizedDescription &&
-                (r.accountId === normalizedAccountId ||
-                    (r.accountId === undefined && normalizedAccountId === null))
+        const existingRecordIndex = this.records.findIndex(r =>
+            this._matchesRecord(
+                r,
+                type,
+                categoryId,
+                normalizedDescription,
+                normalizedAccountId
+            )
         )
 
         if (existingRecordIndex > -1) {
             this.records[existingRecordIndex].count++
             this.records[existingRecordIndex].lastUsed = Date.now()
+            this.records[existingRecordIndex].description = normalizedDescription
+            this.records[existingRecordIndex].accountId = normalizedAccountId
         } else {
             this.records.push({
                 type,
@@ -91,39 +151,23 @@ export class QuickSelectManager {
      * @param {string} type
      * @param {string} categoryId
      * @param {string} description
-     * @param {string} accountId - Note: dataset converts null to "null" string
+     * @param {string|number|null} accountId - Accepts null, undefined, numeric ID, or dataset string
      */
     deleteRecord(type, categoryId, description, accountId) {
-        console.log('Attempting to delete:', {
-            type,
-            categoryId,
-            description,
-            accountId,
-        })
-        const normalizedDescription = description || ''
-        const normalizedAccountId =
-            accountId === 'null' || accountId === 'undefined'
-                ? null
-                : parseInt(accountId, 10)
-        console.log('Normalized accountId for deletion:', normalizedAccountId)
+        const normalizedDescription = normalizeDescription(description)
+        const normalizedAccountId = normalizeAccountId(accountId)
 
-        const initialCount = this.records.length
-
-        this.records = this.records.filter(r => {
-            const match =
-                r.type === type &&
-                r.categoryId === categoryId &&
-                r.description === normalizedDescription &&
-                r.accountId === normalizedAccountId
-            if (match) {
-                console.log('Found matching record to delete:', r)
-            }
-            return !match
-        })
-
-        console.log(
-            `Record count before: ${initialCount}, after: ${this.records.length}`
+        this.records = this.records.filter(
+            r =>
+                !this._matchesRecord(
+                    r,
+                    type,
+                    categoryId,
+                    normalizedDescription,
+                    normalizedAccountId
+                )
         )
+
         this.saveRecords()
     }
 
@@ -147,21 +191,42 @@ export class QuickSelectManager {
             return
         }
 
+        const renderItems = []
+        for (const record of quickSelects) {
+            if (!record || typeof record !== 'object') continue
+            const category = categoryManager?.getCategoryById?.(
+                record.type,
+                record.categoryId
+            )
+            if (!category) continue
+            renderItems.push({ record, category })
+        }
+
+        if (renderItems.length === 0) {
+            container.innerHTML = ''
+            container.classList.add('hidden')
+            return
+        }
+
         container.classList.remove('hidden')
         container.innerHTML = `
             <div class="px-2">
                 <label class="text-sm text-wabi-text-secondary">最近紀錄</label>
                 <div class="flex gap-2 overflow-x-auto pb-2">
-                    ${quickSelects
-                        .map(record => {
-                            const category = categoryManager.getCategoryById(
-                                record.type,
-                                record.categoryId
+                    ${renderItems
+                        .map(({ record, category }) => {
+                            const normalizedDesc = normalizeDescription(
+                                record.description
                             )
-                            if (!category) return ''
-
-                            const descriptionText = record.description
-                                ? record.description
+                            const normalizedAccId = normalizeAccountId(
+                                record.accountId
+                            )
+                            const accountIdAttr =
+                                normalizedAccId === null
+                                    ? 'null'
+                                    : String(normalizedAccId)
+                            const descriptionText = normalizedDesc
+                                ? normalizedDesc
                                 : category.name
                             // #SEC05：歷史髒 color 走全站白名單（hex 或 bg-* class，髒值雙空→不輸出屬性）
                             const safeBg = getSafeBgColorStyle(category.color)
@@ -170,12 +235,15 @@ export class QuickSelectManager {
                                 : ''
                             const colorClass = safeBg.className
 
+                            // #QSM-ATTR：四個 data-* 屬性一律經 escapeHTML 跳脫，
+                            // 阻斷雙引號／尖括號 XSS attribute breakout，同時確保瀏覽器
+                            // 解析回 button.dataset 時與原始記錄逐字一致（解決膠囊比對與刪除失配）。
                             return `
-                            <button class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 mt-1 text-sm"
-                                data-type="${record.type}"
-                                data-category-id="${record.categoryId}"
-                                data-description="${record.description}"
-                                data-account-id="${record.accountId}"
+                            <button type="button" class="quick-select-capsule flex-shrink-0 flex items-center gap-2 bg-wabi-surface border border-wabi-border rounded-full pl-2 pr-3 py-1 mt-1 text-sm"
+                                data-type="${escapeHTML(record.type)}"
+                                data-category-id="${escapeHTML(record.categoryId)}"
+                                data-description="${escapeHTML(normalizedDesc)}"
+                                data-account-id="${escapeHTML(accountIdAttr)}"
                             >
                                 <div class="flex items-center justify-center rounded-full ${colorClass} text-white shrink-0 size-6" ${colorStyle}>
                                     <i class="${getSafeIconClass(category.icon, 'fa-solid fa-question')} text-xs"></i>
@@ -194,10 +262,7 @@ export class QuickSelectManager {
                 const { type, categoryId, description, accountId } =
                     button.dataset
                 if (onSelect) {
-                    const numericAccountId =
-                        accountId === 'null' || accountId === 'undefined'
-                            ? null
-                            : parseInt(accountId, 10)
+                    const numericAccountId = normalizeAccountId(accountId)
                     onSelect(type, categoryId, description, numericAccountId)
                 }
             })

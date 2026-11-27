@@ -106,6 +106,38 @@ export function escapeHTML(str) {
         .replace(/'/g, '&#39;')
 }
 
+// ── CSV 欄位安全轉義（#SEC07：全站單一真相源，防公式注入 CWE-1236 + RFC 4180）──
+// 試算表軟體（Excel / LibreOffice Calc / Google Sheets）開啟 CSV 時，
+// 若儲存格以 =, +, -, @, Tab (\t), CR (\r)（含前導空白後接 =, +, -, @）開頭，
+// 會將其解析為公式或 DDE 指令執行。所有匯出 CSV 的文字儲存格一律經本函數轉義：
+//   1. null / undefined → 空字串；有限數字直接轉字串（負數如 -100 不觸發公式）
+//   2. 字串若命中公式前綴特徵，前置單引號 ' 強制降格為純文字
+//   3. 含逗號、雙引號、換行 (\r/\n) 時依 RFC 4180 以雙引號包裹並將內部 " 轉為 ""
+const CSV_FORMULA_TRIGGER_RE = /^(?:[ \t\r\n]*[=+\-@]|[\t\r])/
+
+/**
+ * 將任意值安全轉義為 CSV 欄位字串（防 Excel 公式注入並符合 RFC 4180）。
+ * @param {*} value - 待輸出至 CSV 儲存格的值
+ * @returns {string} 安全的 CSV 欄位字串
+ */
+export function escapeCsvField(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? String(value) : ''
+    }
+    if (typeof value === 'boolean') {
+        return String(value)
+    }
+    let str = String(value)
+    if (CSV_FORMULA_TRIGGER_RE.test(str)) {
+        str = `'${str}`
+    }
+    if (/[",\r\n]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+}
+
 /**
  * 格式化日期為 YYYY-MM-DD 格式（避免時區問題）
  * @param {Date} date - 日期對象
@@ -236,6 +268,97 @@ export function customAlert(message, title = '提示') {
                 closeModalWithAnimation(modal, modal.firstElementChild, resolve)
             })
     })
+}
+
+/**
+ * 顯示通用單行文字輸入彈窗（#SEC06：全站單一真相源，嚴格跳脫 title/message/defaultValue/placeholder 防 XSS attribute breakout）。
+ *
+ * @param {string} title - 彈窗標題
+ * @param {string} message - 提示說明文字
+ * @param {string} [defaultValue=''] - 輸入框預設值
+ * @param {Function} [onConfirm] - 使用者按確定或 Enter 時的回呼 (value: string) => void
+ * @param {object} [options] - 客製選項
+ * @param {string} [options.inputId='input-modal-value'] - input 元素 ID
+ * @param {string} [options.okId='input-modal-ok'] - 確定按鈕 ID
+ * @param {string} [options.cancelId='input-modal-cancel'] - 取消按鈕 ID
+ * @param {string} [options.placeholder='例如: /ABC1234'] - 輸入框 placeholder
+ * @returns {HTMLElement} 建立並掛載於 document.body 的 modal 元素
+ */
+export function showInputModal(
+    title,
+    message,
+    defaultValue = '',
+    onConfirm = null,
+    options = {}
+) {
+    const inputId = options.inputId || 'input-modal-value'
+    const okId = options.okId || 'input-modal-ok'
+    const cancelId = options.cancelId || 'input-modal-cancel'
+    const placeholder =
+        options.placeholder !== undefined ? options.placeholder : '例如: /ABC1234'
+    const safeDefault =
+        defaultValue === null || defaultValue === undefined
+            ? ''
+            : String(defaultValue)
+
+    const modal = document.createElement('div')
+    modal.className =
+        'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
+    modal.innerHTML = `
+        <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 shadow-xl border border-wabi-border/30">
+            <h3 class="text-lg font-bold text-wabi-primary mb-2">${escapeHTML(title)}</h3>
+            <p class="text-sm text-wabi-text-secondary mb-4">${escapeHTML(message)}</p>
+            <div class="mb-6">
+                <input type="text" id="${escapeHTML(inputId)}" data-input-modal="field" value="${escapeHTML(safeDefault)}" class="w-full bg-wabi-surface border border-wabi-border text-wabi-text-primary text-base rounded-lg focus:ring-2 focus:ring-wabi-primary focus:border-wabi-primary p-3 outline-none" placeholder="${escapeHTML(placeholder)}">
+            </div>
+            <div class="flex space-x-3">
+                <button id="${escapeHTML(okId)}" data-input-modal="ok" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
+                    確定
+                </button>
+                <button id="${escapeHTML(cancelId)}" data-input-modal="cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
+                    取消
+                </button>
+            </div>
+        </div>
+    `
+    document.body.appendChild(modal)
+
+    const inputEl = modal.querySelector('[data-input-modal="field"]')
+    if (inputEl) {
+        // 以 DOM 屬性再寫一次作為縱深防禦，確保任何字元（引號／尖括號）原樣保留
+        inputEl.value = safeDefault
+        setTimeout(() => {
+            inputEl.focus()
+            inputEl.select()
+        }, 100)
+    }
+
+    const handleOk = () => {
+        const val = inputEl ? inputEl.value : ''
+        modal.remove()
+        if (typeof onConfirm === 'function') {
+            onConfirm(val)
+        }
+    }
+
+    const cancelBtn = modal.querySelector('[data-input-modal="cancel"]')
+    const okBtn = modal.querySelector('[data-input-modal="ok"]')
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => modal.remove())
+    }
+    if (okBtn) {
+        okBtn.addEventListener('click', handleOk)
+    }
+    if (inputEl) {
+        inputEl.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                handleOk()
+            }
+        })
+    }
+
+    return modal
 }
 
 /**

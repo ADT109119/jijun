@@ -7,6 +7,13 @@
  */
 
 import { RetirementReport } from '../retirementReport.js'
+import {
+    DEFAULT_HISTORICAL_DATASET_ID,
+    HISTORICAL_DATASET_LIST,
+    HISTORICAL_RETURN_META,
+    getHistoricalDataset,
+    getHistoricalReturnStats,
+} from '../historicalReturns.js'
 import { formatCurrency, escapeHTML, showToast } from '../utils.js'
 import { Chart, registerables } from 'chart.js'
 
@@ -18,17 +25,28 @@ const DEFAULT_RETURN_PCT = 4 // 年化報酬率 4%
 const DEFAULT_VOLATILITY_PCT = 10 // 波動度 10%
 const DEFAULT_SIM_COUNT = 1000
 const DEFAULT_SEED = 20260928
+const DEFAULT_BLOCK_SIZE = HISTORICAL_RETURN_META.defaultBlockSize // 5 年
 
 export class RetirementPage {
     constructor(app) {
         this.app = app
         this.chart = null
         this.snapshot = null
+        this.returnModel = 'normal'
+        this.historicalDataset = DEFAULT_HISTORICAL_DATASET_ID
     }
 
     async render() {
         // Destroy old chart before re-rendering to prevent memory leaks
         this.destroy()
+        this.returnModel = 'normal'
+        this.historicalDataset = DEFAULT_HISTORICAL_DATASET_ID
+
+        const datasetOptions = HISTORICAL_DATASET_LIST.map(ds => {
+            const selected =
+                ds.id === this.historicalDataset ? 'selected' : ''
+            return `<option value="${escapeHTML(ds.id)}" ${selected}>${escapeHTML(ds.shortName)}（${ds.startYear}–${ds.endYear}，${ds.count} 年）</option>`
+        }).join('')
 
         this.app.appContainer.innerHTML = `
             <div class="page active max-w-3xl mx-auto">
@@ -56,6 +74,22 @@ export class RetirementPage {
                                 <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>以目前資料預填
                             </button>
                         </div>
+
+                        <!-- 報酬模型切換（#AB1-HIST：常態抽樣 vs 歷史重演） -->
+                        <div class="mb-3">
+                            <span class="text-xs text-wabi-text-secondary block mb-1.5">報酬模型</span>
+                            <div id="ret-model-toggle" class="grid grid-cols-2 gap-1 p-1 rounded-lg bg-wabi-bg border border-wabi-border" role="group" aria-label="報酬模型">
+                                <button type="button" id="ret-model-normal" data-return-model="normal" aria-pressed="true"
+                                    class="ret-model-btn py-2 px-3 rounded-md text-xs font-bold bg-wabi-surface text-wabi-primary shadow-sm transition-all">
+                                    常態抽樣（i.i.d.）
+                                </button>
+                                <button type="button" id="ret-model-historical" data-return-model="historical" aria-pressed="false"
+                                    class="ret-model-btn py-2 px-3 rounded-md text-xs font-medium text-wabi-text-secondary hover:text-wabi-primary transition-all">
+                                    歷史重演（區塊抽樣）
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label for="ret-start-balance" class="text-xs text-wabi-text-secondary">起始資產</label>
@@ -77,15 +111,33 @@ export class RetirementPage {
                                 <input type="number" id="ret-years" min="1" max="80" step="1" value="${DEFAULT_YEARS}"
                                     class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
                             </div>
-                            <div>
-                                <label for="ret-return" class="text-xs text-wabi-text-secondary">年化報酬率 %（-90~100）</label>
-                                <input type="number" id="ret-return" min="-90" max="100" step="0.5" value="${DEFAULT_RETURN_PCT}"
-                                    class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                            <div id="ret-normal-fields" class="col-span-2 grid grid-cols-2 gap-3">
+                                <div>
+                                    <label for="ret-return" class="text-xs text-wabi-text-secondary">年化報酬率 %（-90~100）</label>
+                                    <input type="number" id="ret-return" min="-90" max="100" step="0.5" value="${DEFAULT_RETURN_PCT}"
+                                        class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                                </div>
+                                <div>
+                                    <label for="ret-volatility" class="text-xs text-wabi-text-secondary">波動度 %（0-200）</label>
+                                    <input type="number" id="ret-volatility" min="0" max="200" step="1" value="${DEFAULT_VOLATILITY_PCT}"
+                                        class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                                </div>
                             </div>
-                            <div>
-                                <label for="ret-volatility" class="text-xs text-wabi-text-secondary">波動度 %（0-200）</label>
-                                <input type="number" id="ret-volatility" min="0" max="200" step="1" value="${DEFAULT_VOLATILITY_PCT}"
-                                    class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                            <div id="ret-historical-fields" class="col-span-2 hidden space-y-2.5">
+                                <div>
+                                    <label for="ret-historical-dataset" class="text-xs text-wabi-text-secondary">歷史市場基準</label>
+                                    <select id="ret-historical-dataset"
+                                        class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                                        ${datasetOptions}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="ret-block-size" class="text-xs text-wabi-text-secondary">連續區塊長度（年，${HISTORICAL_RETURN_META.minBlockSize}-${HISTORICAL_RETURN_META.maxBlockSize}，預設 ${DEFAULT_BLOCK_SIZE}）</label>
+                                    <input type="number" id="ret-block-size" min="${HISTORICAL_RETURN_META.minBlockSize}" max="${HISTORICAL_RETURN_META.maxBlockSize}" step="1" value="${DEFAULT_BLOCK_SIZE}"
+                                        class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-bg text-wabi-text-primary text-sm">
+                                    <p class="text-[11px] text-wabi-text-secondary mt-1">每次抽取連續 N 年真實歷史報酬拼接重演，保留市場多頭／熊市群聚與報酬自相關。</p>
+                                </div>
+                                <div id="ret-historical-info" class="p-3 rounded-lg bg-wabi-bg/70 border border-wabi-border/70 text-[11px] text-wabi-text-secondary space-y-1"></div>
                             </div>
                             <div>
                                 <label for="ret-sim-count" class="text-xs text-wabi-text-secondary">模擬次數（50-10000）</label>
@@ -106,6 +158,7 @@ export class RetirementPage {
 
                     <!-- 結果區 -->
                     <div id="retirement-results" class="hidden">
+                        <div id="ret-model-badge" class="mb-3 text-xs text-wabi-text-secondary flex items-center gap-1.5"></div>
                         <div id="ret-summary-cards" class="grid grid-cols-2 gap-3 mb-4"></div>
                         <div class="p-4 rounded-xl bg-wabi-surface border border-wabi-border mb-4">
                             <h2 class="text-sm font-bold text-wabi-text-primary mb-2">期末資產分佈（%分位）</h2>
@@ -117,7 +170,33 @@ export class RetirementPage {
             </div>
         `
 
+        this._renderHistoricalInfo(this.historicalDataset)
         this.setupListeners()
+    }
+
+    /** 依選中的歷史資料集更新 #ret-historical-info 統計摘要。 */
+    _renderHistoricalInfo(datasetId = this.historicalDataset) {
+        const infoEl = this.app.appContainer.querySelector('#ret-historical-info')
+        if (!infoEl) return
+        const histStats = getHistoricalReturnStats(datasetId)
+        const fmtPct = v => `${(v * 100).toFixed(1)}%`
+        const shortSampleHint =
+            histStats.count < 30
+                ? `<p class="text-[10px] text-wabi-text-secondary/80 pt-0.5"><i class="fa-solid fa-circle-info mr-1"></i>樣本共 ${histStats.count} 年，長天期模擬將由連續區塊拼接；若需近百年極端情境壓力測試，可切換至美股 S&amp;P 500。</p>`
+                : ''
+        infoEl.innerHTML = `
+            <p class="font-bold text-wabi-text-primary">
+                <i class="fa-solid fa-clock-rotate-left mr-1 text-wabi-accent"></i>${escapeHTML(histStats.name)}（${histStats.startYear}–${histStats.endYear}，共 ${histStats.count} 年）
+            </p>
+            <p class="text-[11px] text-wabi-text-secondary">${escapeHTML(histStats.description)}</p>
+            <p>
+                算術均值 ${fmtPct(histStats.mean)} · 幾何年化 ${fmtPct(histStats.geometricMean)} · 波動度 ${fmtPct(histStats.stdDev)}
+            </p>
+            <p>
+                歷史最差 ${fmtPct(histStats.min)}（${histStats.minYear}）· 歷史最佳 +${fmtPct(histStats.max)}（${histStats.maxYear}）
+            </p>
+            ${shortSampleHint}
+        `
     }
 
     setupListeners() {
@@ -130,12 +209,86 @@ export class RetirementPage {
             })
         }
 
+        const modelBtns =
+            this.app.appContainer.querySelectorAll('.ret-model-btn')
+        modelBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const nextModel = btn.dataset.returnModel
+                if (nextModel === 'normal' || nextModel === 'historical') {
+                    this.setReturnModel(nextModel)
+                }
+            })
+        })
+
+        const datasetSelect = this.app.appContainer.querySelector(
+            '#ret-historical-dataset'
+        )
+        if (datasetSelect) {
+            datasetSelect.addEventListener('change', () => {
+                this.historicalDataset =
+                    datasetSelect.value || DEFAULT_HISTORICAL_DATASET_ID
+                this._renderHistoricalInfo(this.historicalDataset)
+            })
+        }
+
         const runBtn = this.app.appContainer.querySelector('#ret-run')
         if (runBtn) {
             runBtn.addEventListener('click', async () => {
                 await this.runSimulation(runBtn)
             })
         }
+    }
+
+    /**
+     * 切換報酬模型（'normal' | 'historical'），聯動顯示對應參數區塊與按鈕狀態。
+     * @param {'normal'|'historical'} model
+     */
+    setReturnModel(model) {
+        this.returnModel = model === 'historical' ? 'historical' : 'normal'
+        const normalFields =
+            this.app.appContainer.querySelector('#ret-normal-fields')
+        const histFields = this.app.appContainer.querySelector(
+            '#ret-historical-fields'
+        )
+        if (normalFields) {
+            normalFields.classList.toggle(
+                'hidden',
+                this.returnModel !== 'normal'
+            )
+        }
+        if (histFields) {
+            histFields.classList.toggle(
+                'hidden',
+                this.returnModel !== 'historical'
+            )
+        }
+
+        const modelBtns =
+            this.app.appContainer.querySelectorAll('.ret-model-btn')
+        modelBtns.forEach(btn => {
+            const isActive = btn.dataset.returnModel === this.returnModel
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false')
+            if (isActive) {
+                btn.classList.add(
+                    'bg-wabi-surface',
+                    'text-wabi-primary',
+                    'shadow-sm',
+                    'font-bold'
+                )
+                btn.classList.remove(
+                    'text-wabi-text-secondary',
+                    'font-medium'
+                )
+            } else {
+                btn.classList.remove(
+                    'bg-wabi-surface',
+                    'text-wabi-primary',
+                    'shadow-sm',
+                    'font-bold'
+                )
+                btn.classList.add('text-wabi-text-secondary', 'font-medium')
+            }
+        })
     }
 
     /**
@@ -181,27 +334,56 @@ export class RetirementPage {
         const monthlyNet = getNum('#ret-monthly-net')
         const monthlyWithdrawal = getNum('#ret-withdrawal')
         const years = getNum('#ret-years')
-        const returnPct = getNum('#ret-return')
-        const volatilityPct = getNum('#ret-volatility')
         const simCount = getNum('#ret-sim-count')
         const seed = getNum('#ret-seed')
 
-        if (isNaN(startBalance) || isNaN(monthlyNet) || isNaN(years) ||
-            isNaN(returnPct) || isNaN(volatilityPct)) {
+        if (isNaN(startBalance) || isNaN(monthlyNet) || isNaN(years)) {
             showToast('請完整填寫模擬參數', 'error')
             return null
         }
-        return {
+
+        const common = {
             startBalance: Math.max(0, startBalance),
             monthlyNet,
             monthlyWithdrawal: isNaN(monthlyWithdrawal)
                 ? 0
                 : Math.max(0, monthlyWithdrawal),
             years: Math.round(years),
+            returnModel: this.returnModel,
+            simCount: isNaN(simCount) ? DEFAULT_SIM_COUNT : Math.round(simCount),
+            seed: isNaN(seed) ? DEFAULT_SEED : Math.round(seed),
+        }
+
+        if (this.returnModel === 'historical') {
+            const blockSize = getNum('#ret-block-size')
+            if (isNaN(blockSize)) {
+                showToast('請完整填寫模擬參數', 'error')
+                return null
+            }
+            const datasetSelect = this.app.appContainer.querySelector(
+                '#ret-historical-dataset'
+            )
+            const historicalDataset =
+                datasetSelect?.value ||
+                this.historicalDataset ||
+                DEFAULT_HISTORICAL_DATASET_ID
+            return {
+                ...common,
+                historicalDataset,
+                blockSize: Math.round(blockSize),
+            }
+        }
+
+        const returnPct = getNum('#ret-return')
+        const volatilityPct = getNum('#ret-volatility')
+        if (isNaN(returnPct) || isNaN(volatilityPct)) {
+            showToast('請完整填寫模擬參數', 'error')
+            return null
+        }
+        return {
+            ...common,
             annualReturn: returnPct / 100,
             volatility: volatilityPct / 100,
-            simCount: isNaN(simCount) ? DEFAULT_SIM_COUNT : Math.round(simCount),
-            seed: isNaN(seed) ? DEFAULT_SEED : Math.round(seed)
         }
     }
 
@@ -238,6 +420,59 @@ export class RetirementPage {
         )
         if (!resultsEl) return
         resultsEl.classList.remove('hidden')
+
+        // 報酬模型標示徽章（#AB1-HIST）
+        const modelBadgeEl = this.app.appContainer.querySelector(
+            '#ret-model-badge'
+        )
+        if (modelBadgeEl) {
+            const isHistorical =
+                (result.returnModel || result.params?.returnModel) ===
+                'historical'
+            if (isHistorical) {
+                const bSize =
+                    result.blockSize ??
+                    result.params?.blockSize ??
+                    DEFAULT_BLOCK_SIZE
+                const fallbackMeta = getHistoricalDataset(
+                    result.historicalDataset ||
+                        result.params?.historicalDataset ||
+                        this.historicalDataset ||
+                        DEFAULT_HISTORICAL_DATASET_ID
+                ).meta
+                const shortName =
+                    result.historicalMeta?.shortName ?? fallbackMeta.shortName
+                const startYear =
+                    result.historicalMeta?.startYear ?? fallbackMeta.startYear
+                const endYear =
+                    result.historicalMeta?.endYear ?? fallbackMeta.endYear
+                modelBadgeEl.innerHTML = `
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-wabi-accent/15 text-wabi-accent font-medium">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        歷史重演 · ${escapeHTML(shortName)}（連續 ${escapeHTML(bSize)} 年區塊 · ${escapeHTML(startYear)}–${escapeHTML(endYear)}）
+                    </span>
+                `
+            } else {
+                const retPct =
+                    typeof result.params?.annualReturn === 'number'
+                        ? (result.params.annualReturn * 100).toFixed(1)
+                        : null
+                const volPct =
+                    typeof result.params?.volatility === 'number'
+                        ? (result.params.volatility * 100).toFixed(1)
+                        : null
+                const detail =
+                    retPct !== null && volPct !== null
+                        ? `（報酬 ${retPct}% · 波動 ${volPct}%）`
+                        : ''
+                modelBadgeEl.innerHTML = `
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-wabi-surface border border-wabi-border text-wabi-text-secondary font-medium">
+                        <i class="fa-solid fa-chart-line"></i>
+                        常態抽樣${escapeHTML(detail)}
+                    </span>
+                `
+            }
+        }
 
         // 摘要卡片：成功率 / 期末中位數 / 悲觀情境 / 破產比例
         const successPct = (result.successRate * 100).toFixed(1)

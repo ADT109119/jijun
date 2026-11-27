@@ -1,5 +1,19 @@
 // 版本更新日誌模組
 export const CHANGELOG = {
+    '2.1.9.3': {
+        date: '2026-11-28',
+        title: '退休模擬歷史重演模型、全站輸入與同步 XSS 防護、信用卡扣款完整性與 AI 規則降級修復',
+        features: [
+            '新功能: 退休模擬「歷史重演」報酬模型 — 預設採用台灣加權股價報酬指數（IR0001，2003–2025，含息／等同 1 倍台指期無限轉倉理論基準），並支援切換元大台灣50（0050 含息，2004–2025）與美股 S&P 500（1928–2025，98 年長樣本）；支援以真實連續年份區塊（可調 1–10 年，預設 5 年）進行區塊抽樣推演，保留市場多頭與熊市群聚的報酬自相關特性。',
+        ],
+        bugfixes: [
+            '修復: 彈窗、快速記帳膠囊 XSS 防護與 CSV 公式注入防禦 — 統一加固輸入彈窗、編輯彈窗與快速記帳膠囊 data-* 屬性跳脫及特殊字元比對，並於比較報表 CSV 匯出新增 escapeCsvField() 中和公式注入。',
+            '修復: 信用卡自動扣款引用完整性與同步接收路徑洗白 — 嚴格驗證扣款帳戶存在性、同帳本歸屬與帳戶型別相容性，排除商家退款與回饋誤判已繳卡費，並於跨裝置同步路徑採 Fail-Closed 洗白未對應 UUID 的遠端帳戶 ID。',
+            '修復: 統計頁帳戶餘額與全站口徑收斂 — 統一 DataService、帳戶頁與統計頁的淨現金流餘額計算（computeNetCashflowBalance），消除應付欠款原始紀錄計算分岔。',
+            '修復: AI 離線規則降級四項缺陷 — 精準遮罩非金額數字並支援全形／倍率金額擷取（無金額不捏造預設值），修正備註誤咬中文字元、阻絕協定標籤注入，且未提及支付方式時不誤預設為信用卡。',
+            '修復: 自架同步伺服器 SQLite 資料庫防誤入版控 — 於 server/.gitignore 忽略本地資料庫目錄與檔案。',
+        ],
+    },
     '2.1.9.2': {
         date: '2026-11-27',
         title: 'Google Drive 近期備份還原修復、離線橫幅防遮擋與慢網路 5 秒快取極速開啟',
@@ -1179,7 +1193,7 @@ export class ChangelogManager {
     constructor() {
         // 從瀏覽器存儲中讀取當前版本，如果沒有則使用預設值
         this.currentVersion =
-            localStorage.getItem('app-current-version') || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.1.9.2')
+            localStorage.getItem('app-current-version') || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '2.1.9.3')
     }
 
     // 獲取當前版本資訊

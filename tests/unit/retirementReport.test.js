@@ -6,7 +6,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { RetirementReport } from '../../src/js/retirementReport.js'
+import {
+    RetirementReport,
+    RETURN_MODELS,
+    BLOCK_SIZE_MIN,
+    BLOCK_SIZE_MAX,
+    BLOCK_SIZE_DEFAULT,
+    DEFAULT_HISTORICAL_DATASET_ID,
+    HISTORICAL_RETURN_DATASETS,
+    HISTORICAL_DATASET_LIST,
+    getHistoricalDataset,
+    pickHistoricalBlocks,
+    HISTORICAL_RETURN_META,
+    getHistoricalReturnValues,
+    getHistoricalReturnStats,
+} from '../../src/js/retirementReport.js'
 
 /* ------------------------------------------------------------------ */
 /*  simulate() — 邊界驗證（非法參數必須明確拒絕）                        */
@@ -409,3 +423,219 @@ describe('RetirementReport.collectFinancialSnapshot', () => {
         expect(snap.netWorth).toBe(12345)
     })
 })
+
+/* ------------------------------------------------------------------ */
+/*  #AB1-HIST: 歷史重演區塊抽樣（Historical Block Bootstrap）           */
+/* ------------------------------------------------------------------ */
+
+describe('#AB1-HIST — historicalReturns 多資料集與 pickHistoricalBlocks', () => {
+    it('預設資料集為 taiex_tr (2003–2025，23 年) 且清單含三組冷凍資料集', () => {
+        expect(DEFAULT_HISTORICAL_DATASET_ID).toBe('taiex_tr')
+        expect(HISTORICAL_DATASET_LIST.map(d => d.id)).toEqual([
+            'taiex_tr',
+            'tw0050_tr',
+            'sp500_tr',
+        ])
+        expect(HISTORICAL_RETURN_META.id).toBe('taiex_tr')
+        expect(HISTORICAL_RETURN_META.startYear).toBe(2003)
+        expect(HISTORICAL_RETURN_META.endYear).toBe(2025)
+        expect(HISTORICAL_RETURN_META.count).toBe(23)
+        expect(HISTORICAL_RETURN_META.currency).toBe('TWD')
+        expect(HISTORICAL_RETURN_META.minBlockSize).toBe(1)
+        expect(HISTORICAL_RETURN_META.maxBlockSize).toBe(10)
+        expect(HISTORICAL_RETURN_META.defaultBlockSize).toBe(5)
+        expect(Object.isFrozen(HISTORICAL_RETURN_DATASETS)).toBe(true)
+
+        const taiexStats = getHistoricalReturnStats()
+        expect(taiexStats.id).toBe('taiex_tr')
+        expect(taiexStats.count).toBe(23)
+        expect(taiexStats.minYear).toBe(2008)
+        expect(taiexStats.min).toBeCloseTo(-0.4307, 4)
+        expect(taiexStats.maxYear).toBe(2009)
+        expect(taiexStats.max).toBeCloseTo(0.8334, 4)
+        expect(taiexStats.currency).toBe('TWD')
+
+        const vals = getHistoricalReturnValues()
+        expect(vals).toHaveLength(23)
+        expect(vals.every(v => Number.isFinite(v) && v > -1 && v < 2)).toBe(true)
+
+        const tw0050Stats = getHistoricalReturnStats('tw0050_tr')
+        expect(tw0050Stats.startYear).toBe(2004)
+        expect(tw0050Stats.endYear).toBe(2025)
+        expect(tw0050Stats.count).toBe(22)
+        expect(tw0050Stats.minYear).toBe(2008)
+        expect(tw0050Stats.min).toBeCloseTo(-0.4332, 4)
+        expect(tw0050Stats.maxYear).toBe(2009)
+        expect(tw0050Stats.max).toBeCloseTo(0.75, 4)
+        expect(tw0050Stats.currency).toBe('TWD')
+
+        const sp500Stats = getHistoricalReturnStats('sp500_tr')
+        expect(sp500Stats.startYear).toBe(1928)
+        expect(sp500Stats.endYear).toBe(2025)
+        expect(sp500Stats.count).toBe(98)
+        expect(sp500Stats.minYear).toBe(1931)
+        expect(sp500Stats.min).toBeCloseTo(-0.4384, 4)
+        expect(sp500Stats.currency).toBe('USD')
+        expect(sp500Stats.geometricMean).toBeLessThan(sp500Stats.mean)
+    })
+
+    it('getHistoricalDataset 對空值回傳預設資料集、對未知 ID 拋錯', () => {
+        expect(getHistoricalDataset().meta.id).toBe('taiex_tr')
+        expect(getHistoricalDataset('').meta.id).toBe('taiex_tr')
+        expect(() => getHistoricalDataset('unknown')).toThrow(
+            '不支援的歷史報酬資料集'
+        )
+    })
+
+    it('pickHistoricalBlocks 抽出精確年數、每個區塊皆為真實連續切片且同亂數序列具決定性', () => {
+        const series = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        const makeRng = () => {
+            let i = 0
+            const seq = [0.0, 0.5, 0.99, 0.25]
+            return () => seq[i++ % seq.length]
+        }
+
+        const out1 = pickHistoricalBlocks(12, 5, makeRng(), series)
+        const out2 = pickHistoricalBlocks(12, 5, makeRng(), series)
+        expect(out1).toHaveLength(12)
+        expect(out1).toEqual(out2)
+
+        // 每個完整 5 年區塊（0..4, 5..9）及尾段（10..11）皆為原序列連續遞增（差 0.1），絕不環繞斷裂
+        for (const [start, end] of [[0, 5], [5, 10], [10, 12]]) {
+            for (let k = start + 1; k < end; k++) {
+                expect(out1[k] - out1[k - 1]).toBeCloseTo(0.1, 8)
+            }
+        }
+    })
+
+    it('pickHistoricalBlocks 對無效 years / blockSize / 空 series 拋出錯誤', () => {
+        expect(() => pickHistoricalBlocks(0, 5, Math.random)).toThrow('推估年數')
+        expect(() => pickHistoricalBlocks(10, 0, Math.random)).toThrow('區塊長度')
+        expect(() => pickHistoricalBlocks(10, 11, Math.random)).toThrow('區塊長度')
+        expect(() => pickHistoricalBlocks(10, 2.5, Math.random)).toThrow('區塊長度')
+        expect(() => pickHistoricalBlocks(10, 5, Math.random, [])).toThrow('歷史報酬序列')
+    })
+})
+
+describe('#AB1-HIST — RetirementReport.simulate 歷史重演模式', () => {
+    it('returnModel="historical" 執行成功、不依賴 annualReturn/volatility 且保留決定性', () => {
+        const opts = {
+            startBalance: 1000000,
+            monthlyNet: 15000,
+            monthlyWithdrawal: 0,
+            years: 30,
+            returnModel: RETURN_MODELS.HISTORICAL,
+            blockSize: BLOCK_SIZE_DEFAULT,
+            simCount: 200,
+            seed: 20260928,
+        }
+        const a = RetirementReport.simulate(opts)
+        const b = RetirementReport.simulate(opts)
+        expect(a).toEqual(b)
+        expect(a.returnModel).toBe('historical')
+        expect(a.blockSize).toBe(5)
+        expect(a.historicalDataset).toBe('taiex_tr')
+        expect(a.historicalMeta).toBeDefined()
+        expect(a.historicalMeta.id).toBe('taiex_tr')
+        expect(a.historicalMeta.count).toBe(23)
+        expect(a.p10).toBeLessThanOrEqual(a.p25)
+        expect(a.p25).toBeLessThanOrEqual(a.median)
+        expect(a.median).toBeLessThanOrEqual(a.p75)
+        expect(a.p75).toBeLessThanOrEqual(a.p90)
+        expect(a.median).toBeGreaterThan(1000000)
+    })
+
+    it('切換 historicalDataset（tw0050_tr / sp500_tr）使用對應歷史序列與元資料', () => {
+        const base = {
+            startBalance: 1000000,
+            monthlyNet: 15000,
+            monthlyWithdrawal: 0,
+            years: 25,
+            returnModel: RETURN_MODELS.HISTORICAL,
+            blockSize: 5,
+            simCount: 200,
+            seed: 20260928,
+        }
+        const tw = RetirementReport.simulate(base)
+        const etf0050 = RetirementReport.simulate({
+            ...base,
+            historicalDataset: 'tw0050_tr',
+        })
+        const sp = RetirementReport.simulate({
+            ...base,
+            historicalDataset: 'sp500_tr',
+        })
+        expect(tw.historicalDataset).toBe('taiex_tr')
+        expect(etf0050.historicalDataset).toBe('tw0050_tr')
+        expect(etf0050.historicalMeta.count).toBe(22)
+        expect(sp.historicalDataset).toBe('sp500_tr')
+        expect(sp.historicalMeta.count).toBe(98)
+        expect(tw.median).not.toBe(sp.median)
+        expect(etf0050.median).not.toBe(sp.median)
+
+        expect(() =>
+            RetirementReport.simulate({
+                ...base,
+                historicalDataset: 'unknown',
+            })
+        ).toThrow('不支援的歷史報酬資料集')
+    })
+
+    it('區塊抽樣可調 1–10 年，在序列負自相關情境下與 blockSize=1（i.i.d.）產生可區辨之尾端波動分佈', () => {
+        // 建構強均值回歸（正負交替）之合成歷史序列：blockSize=4 每段必含兩漲兩跌，波動遠小於 blockSize=1
+        const alternating = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 0.3 : -0.2))
+        const iid = RetirementReport.simulate({
+            startBalance: 1000000,
+            monthlyNet: 0,
+            years: 20,
+            returnModel: 'historical',
+            blockSize: BLOCK_SIZE_MIN,
+            historicalReturns: alternating,
+            simCount: 400,
+            seed: 77,
+        })
+        const blocked = RetirementReport.simulate({
+            startBalance: 1000000,
+            monthlyNet: 0,
+            years: 20,
+            returnModel: 'historical',
+            blockSize: 4,
+            historicalReturns: alternating,
+            simCount: 400,
+            seed: 77,
+        })
+        const spreadIid = iid.p90 - iid.p10
+        const spreadBlocked = blocked.p90 - blocked.p10
+        expect(spreadBlocked).toBeLessThan(spreadIid * 0.25)
+    })
+
+    it('非法 returnModel 或越界 blockSize 明確拋錯', () => {
+        expect(() =>
+            RetirementReport.simulate({
+                startBalance: 100000,
+                monthlyNet: 5000,
+                years: 10,
+                returnModel: 'bogus',
+            })
+        ).toThrow('不支援的報酬模型')
+        expect(() =>
+            RetirementReport.simulate({
+                startBalance: 100000,
+                monthlyNet: 5000,
+                years: 10,
+                returnModel: 'historical',
+                blockSize: BLOCK_SIZE_MAX + 1,
+            })
+        ).toThrow('區塊長度必須為 1-10 的整數')
+        expect(() =>
+            RetirementReport.simulate({
+                startBalance: 100000,
+                monthlyNet: 5000,
+                years: 10,
+                returnModel: 'historical',
+                blockSize: 0,
+            })
+        ).toThrow('區塊長度必須為 1-10 的整數')
+    })
+})
+

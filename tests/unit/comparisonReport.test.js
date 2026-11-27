@@ -627,3 +627,65 @@ describe('ComparisonReport.calculateComparison — 對象（聯絡人）篩選 (
         expect(csvNamed).toContain('篩選對象,小明')
     })
 })
+
+describe('#SEC07 — ComparisonReport CSV 公式注入防禦與渲染跳脫', () => {
+    it('exportToCSV 對惡意分類名稱、聯絡人名稱與期間標籤加上公式中和與 RFC 4180 跳脫', () => {
+        const mockCM = {
+            getCategoryById: (type, id) => {
+                if (id === 'evil1') return { name: '=SUM(A1:A2)' }
+                if (id === 'evil2') return { name: '+HYPERLINK("http://x","go"),惡意' }
+                if (id === 'evil3') return { name: '@cmd|calc' }
+                return null
+            },
+        }
+        const data = {
+            periodLabels: ['=2026-05', '2026-06'],
+            periodType: 'month',
+            typeFilter: 'all',
+            contactName: '-1+1+cmd|" /C calc"!A0',
+            periodData: [
+                { label: '=2026-05', income: 1000, expense: 200 },
+                { label: '2026-06', income: 2000, expense: 300 },
+            ],
+            categoryComparisons: [
+                { category: 'evil1', period0: 100, period0Signed: -100, period1: 200, period1Signed: -200 },
+                { category: 'evil2', period0: 50, period0Signed: -50, period1: 60, period1Signed: -60 },
+                { category: 'evil3', period0: 10, period0Signed: -10, period1: 20, period1Signed: -20 },
+            ],
+        }
+        const csv = new ComparisonReport(null, mockCM).exportToCSV(data)
+        const lines = csv.split('\n')
+
+        // 不得有任何未加引號/單引號保護的裸公式儲存格
+        expect(csv).toContain("'=SUM(A1:A2)")
+        expect(csv).toContain('"\'+HYPERLINK(""http://x"",""go""),惡意"')
+        expect(csv).toContain("'@cmd|calc")
+        expect(csv).toContain('篩選對象,"\'-1+1+cmd|"" /C calc""!A0"')
+        // 每個資料列起始不得直接以 =, +, @ 開頭
+        for (const line of lines) {
+            expect(line).not.toMatch(/^[=+@]/)
+        }
+    })
+
+    it('renderSummaryCards / renderSavingsRates / renderDailyAverages 跳脫惡意期間標籤', () => {
+        const comp = new ComparisonReport(null, null)
+        const el = document.createElement('div')
+        const dirtyLabel = '<img src=x onerror="window.__cmpPwn=1">'
+
+        comp.renderSummaryCards(el, [{ label: dirtyLabel, income: 100, expense: 50 }])
+        expect(el.querySelector('img[src="x"]')).toBeNull()
+        expect(el.innerHTML).toContain('&lt;img')
+
+        comp.renderSavingsRates(el, [50], [dirtyLabel])
+        expect(el.querySelector('img[src="x"]')).toBeNull()
+
+        comp.renderDailyAverages(
+            el,
+            [{ label: dirtyLabel, income: 100, expense: 50 }],
+            'month',
+            [dirtyLabel]
+        )
+        expect(el.querySelector('img[src="x"]')).toBeNull()
+    })
+})
+

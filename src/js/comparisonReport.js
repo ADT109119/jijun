@@ -15,6 +15,7 @@
 import {
     formatCurrency,
     escapeHTML,
+    escapeCsvField,
     calculateEffectiveRecordAmount,
     buildDebtLookupMaps,
     findDebtForRecord,
@@ -325,11 +326,11 @@ export class ComparisonReport {
 
         const lines = []
 
-        // ── Header metadata ──
-        lines.push(`期間類型,${periodType === 'month' ? '月' : '年'}`)
-        lines.push(`比較期間,${periodLabels.join(', ')}`)
-        lines.push(`篩選類型,${typeFilter === 'all' ? '全部' : typeFilter === 'income' ? '僅收入' : '僅支出'}`)
-        lines.push(`篩選對象,${contactName ?? '全部'}`)
+        // ── Header metadata (#SEC07：文字欄位一律經 escapeCsvField 防公式注入與 RFC 4180) ──
+        lines.push(`期間類型,${escapeCsvField(periodType === 'month' ? '月' : '年')}`)
+        lines.push(`比較期間,${escapeCsvField(periodLabels.join(', '))}`)
+        lines.push(`篩選類型,${escapeCsvField(typeFilter === 'all' ? '全部' : typeFilter === 'income' ? '僅收入' : '僅支出')}`)
+        lines.push(`篩選對象,${escapeCsvField(contactName ?? '全部')}`)
         lines.push('')
 
         // ── 期間摘要 ──
@@ -343,7 +344,7 @@ export class ComparisonReport {
             const days = ComparisonReport.getDaysInPeriod(periodType, pd.label)
             const dailyAvg = days > 0 ? (pd.expense / days).toFixed(2) : '0'
             lines.push(
-                `${pd.label},${pd.income.toFixed(2)},${pd.expense.toFixed(2)},` +
+                `${escapeCsvField(pd.label)},${pd.income.toFixed(2)},${pd.expense.toFixed(2)},` +
                 `${net.toFixed(2)},${balanceRate},${pd.recordCount || 0},${days},${dailyAvg},${savingsRate}`
             )
         }
@@ -353,7 +354,7 @@ export class ComparisonReport {
         lines.push('▓ 分類比較')
         const headerCells = ['分類', '收支類型']
         for (const lbl of periodLabels) {
-            headerCells.push(lbl)
+            headerCells.push(escapeCsvField(lbl))
         }
         headerCells.push('變化率')
         lines.push(headerCells.join(','))
@@ -370,8 +371,7 @@ export class ComparisonReport {
 
         for (const row of categoryComparisons) {
             const info = getCatInfo(row.category)
-            const escapedName = String(info.name).replace(/"/g, '""')
-            let csvLine = `"${escapedName}",${info.type === 'expense' ? '支出' : info.type === 'income' ? '收入' : '—'}`
+            let csvLine = `${escapeCsvField(info.name)},${info.type === 'expense' ? '支出' : info.type === 'income' ? '收入' : '—'}`
             for (let i = 0; i < periodLabels.length; i++) {
                 csvLine += `,${(row[`period${i}`] || 0).toFixed(2)}`
             }
@@ -394,7 +394,7 @@ export class ComparisonReport {
             lines.push('▓ 支出比例結構（各分類佔總支出百分比）')
             const pctHeaderCells = ['分類']
             for (const lbl of periodLabels) {
-                pctHeaderCells.push(lbl)
+                pctHeaderCells.push(escapeCsvField(lbl))
             }
             lines.push(pctHeaderCells.join(','))
 
@@ -404,8 +404,7 @@ export class ComparisonReport {
             )
             for (const row of breakdown) {
                 const info = getCatInfo(row.category)
-                const escapedName = String(info.name).replace(/"/g, '""')
-                let csvLine = `"${escapedName}"`
+                let csvLine = `${escapeCsvField(info.name)}`
                 for (let i = 0; i < row.percentages.length; i++) {
                     csvLine += `,${row.percentages[i].toFixed(1)}%`
                 }
@@ -425,7 +424,7 @@ export class ComparisonReport {
             for (let i = 0; i < periodData.length; i++) {
                 const days = ComparisonReport.getDaysInPeriod(periodType, periodLabels[i])
                 const trendSymbol = trends[i] === '↑' ? '增加' : trends[i] === '↓' ? '減少' : '—'
-                lines.push(`${periodLabels[i]},${days},${dailyAvgs[i].toFixed(2)},${trendSymbol}`)
+                lines.push(`${escapeCsvField(periodLabels[i])},${days},${dailyAvgs[i].toFixed(2)},${trendSymbol}`)
             }
             lines.push('')
         }
@@ -440,7 +439,7 @@ export class ComparisonReport {
             const rate = rates[i]
             const trendSymbol = rateTrends[i] === '↑' ? '上升' : rateTrends[i] === '↓' ? '下降' : '—'
             lines.push(
-                `${periodLabels[i]},${periodData[i].income.toFixed(2)},${periodData[i].expense.toFixed(2)},` +
+                `${escapeCsvField(periodLabels[i])},${periodData[i].income.toFixed(2)},${periodData[i].expense.toFixed(2)},` +
                 `${net.toFixed(2)},${rate.toFixed(1)}%,${trendSymbol}`
             )
         }
@@ -480,7 +479,7 @@ export class ComparisonReport {
             }
             html += `
                 <div class="rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
-                    <p class="text-sm font-bold text-wabi-primary mb-2">${pd.label} ${changeBadge}</p>
+                    <p class="text-sm font-bold text-wabi-primary mb-2">${escapeHTML(pd.label)} ${changeBadge}</p>
                     <div class="flex justify-between text-sm">
                         <span class="text-wabi-income">收入 ${formatCurrency(pd.income)}</span>
                         <span class="text-wabi-expense">支出 ${formatCurrency(pd.expense)}</span>
@@ -574,7 +573,7 @@ export class ComparisonReport {
             html += `
                 <div class="rounded-xl bg-wabi-surface p-3 shadow-sm border border-wabi-border flex items-center justify-between">
                     <div>
-                        <p class="text-sm font-bold text-wabi-primary">${periodLabels[i]}</p>
+                        <p class="text-sm font-bold text-wabi-primary">${escapeHTML(periodLabels[i])}</p>
                         <p class="text-xs text-wabi-text-secondary mt-1">結餘 ${formatCurrency(net)}</p>
                     </div>
                     <div class="text-right">
@@ -708,7 +707,7 @@ export class ComparisonReport {
             html += `
                 <div class="rounded-xl bg-wabi-surface p-3 shadow-sm border border-wabi-border flex items-center justify-between">
                     <div>
-                        <p class="text-sm font-bold text-wabi-primary">${periodLabels[i]}</p>
+                        <p class="text-sm font-bold text-wabi-primary">${escapeHTML(periodLabels[i])}</p>
                         <p class="text-xs text-wabi-text-secondary mt-1">${days} 天</p>
                     </div>
                     <div class="text-right">
@@ -770,7 +769,7 @@ export class ComparisonReport {
         // Render each period's ranking
         for (let i = 0; i < periodLabels.length; i++) {
             html += `<div class="rounded-xl bg-wabi-surface p-4 shadow-sm border border-wabi-border">
-                <h3 class="text-sm font-bold text-wabi-primary mb-3">${periodLabels[i]} Top ${Math.min(topN, rankings[i].length)} 支出分類</h3>`
+                <h3 class="text-sm font-bold text-wabi-primary mb-3">${escapeHTML(periodLabels[i])} Top ${Math.min(topN, rankings[i].length)} 支出分類</h3>`
 
             if (rankings[i].length === 0) {
                 html +=

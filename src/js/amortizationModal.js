@@ -88,7 +88,7 @@ export function showAmortizationModal(
                         )
                         .join('')}
                 </div>
-                <input type="hidden" id="amort-type" value="${defaults.type}" />
+                <input type="hidden" id="amort-type" value="${escapeHTML(defaults.type)}" />
             </div>
             <div class="mb-3">
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">記帳類型</label>
@@ -107,25 +107,25 @@ export function showAmortizationModal(
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">總金額</label>
                 <input type="number" id="amort-total" min="0" step="0.01"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${defaults.totalAmount}" placeholder="輸入總金額" />
+                    value="${escapeHTML(defaults.totalAmount)}" placeholder="輸入總金額" />
             </div>
             <div class="mb-3">
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">首付金額 <span class="text-xs text-wabi-text-secondary">(選填)</span></label>
                 <input type="number" id="amort-downpayment" min="0" step="0.01"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${defaults.downPayment}" placeholder="0" />
+                    value="${escapeHTML(defaults.downPayment)}" placeholder="0" />
             </div>
             <div class="mb-3">
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">年利率 % <span class="text-xs text-wabi-text-secondary">(選填，0 = 免息)</span></label>
                 <input type="number" id="amort-interest" min="0" max="100" step="0.01"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${defaults.interestRate}" placeholder="0" />
+                    value="${escapeHTML(defaults.interestRate)}" placeholder="0" />
             </div>
             <div class="mb-3">
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">總期數</label>
                 <input type="number" id="amort-periods" min="1" max="600"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${defaults.periods}" placeholder="例如：12" />
+                    value="${escapeHTML(defaults.periods)}" placeholder="例如：12" />
             </div>
             ${
                 // 起始已還期數僅新增模式提供：編輯模式既有「已完成期數」欄位可直接調整
@@ -161,7 +161,7 @@ export function showAmortizationModal(
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">開始日期</label>
                 <input type="date" id="amort-start-date"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${defaults.startDate}" />
+                    value="${escapeHTML(defaults.startDate)}" />
             </div>
             <div id="amort-preview" class="mb-4 p-3 bg-wabi-bg rounded-lg">
                 <p class="text-xs text-wabi-text-secondary mb-1">每期金額（自動計算）</p>
@@ -175,7 +175,7 @@ export function showAmortizationModal(
                 <label class="text-sm font-medium text-wabi-text-primary block mb-1">已完成期數</label>
                 <input type="number" id="amort-completed" min="0"
                     class="w-full px-3 py-2.5 rounded-lg border border-wabi-border bg-wabi-surface text-sm outline-none focus:border-wabi-primary"
-                    value="${item.completedPeriods || 0}" />
+                    value="${escapeHTML(item.completedPeriods || 0)}" />
             </div>`
                     : ''
             }
@@ -202,7 +202,7 @@ export function showAmortizationModal(
             categories
                 .map(
                     c =>
-                        `<option value="${c.id}" ${defaults.category === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
+                        `<option value="${escapeHTML(c.id)}" ${defaults.category === c.id ? 'selected' : ''}>${escapeHTML(c.name)}</option>`
                 )
                 .join('')
     }

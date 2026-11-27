@@ -11,6 +11,10 @@ import {
 } from '../utils.js'
 import { FONT_AWESOME_ICONS } from '../fontAwesomeIcons.js'
 import { getCategoryName, getCategoryIcon } from '../categories.js'
+import {
+    computeNetCashflowBalance,
+    isValidAutoPayDebitAccount,
+} from '../dataService.js'
 
 export class AccountsPage {
     constructor(app) {
@@ -81,16 +85,11 @@ export class AccountsPage {
 
         const accounts = await this.app.dataService.getAccounts()
         const allRecords = await this.app.dataService.getRecords() // Get all records once
-        // 建立「我欠別人」(payable) 欠款的 id 集合，用於從帳戶餘額中排除其原始欠款紀錄
-        // （依使用者模型：建立 payable 欠款當下不扣款，實際扣款發生於還款時）
+        // 建立「我欠別人」(payable) 欠款的 id 集合，交由全站單一真相源 computeNetCashflowBalance 統一排除 (#BAL-DRY)
         const debts = await this.app.dataService.getDebts()
         const payableDebtIds = new Set(
-            debts.filter(d => d.type === 'payable').map(d => String(d.id))
+            (debts || []).filter(d => d.type === 'payable').map(d => String(d.id))
         )
-        const isBalanceExempt = record =>
-            record.debtId !== null &&
-            payableDebtIds.has(String(record.debtId)) &&
-            record.category !== 'debt_repayment'
         const container = document.getElementById('accounts-list-container')
         const totalAssetsEl = document.getElementById('total-assets')
 
@@ -105,19 +104,13 @@ export class AccountsPage {
 
         for (const account of accounts) {
             const recordsForAccount = allRecords.filter(
-                r => r.accountId === account.id && !isBalanceExempt(r)
+                r => r.accountId === account.id
             )
-            const currentBalance = recordsForAccount.reduce(
-                (balance, record) => {
-                    return (
-                        balance +
-                        (record.type === 'income'
-                            ? record.amount
-                            : -record.amount)
-                    )
-                },
-                account.balance
-            ) // Start with initial balance
+            const currentBalance = computeNetCashflowBalance(
+                account.balance,
+                recordsForAccount,
+                payableDebtIds
+            )
 
             // 信用卡：currentBalance 為淨現金流（消費為負、繳款為正）。
             // 欠款（額度佔用）= 餘額為負時的欠款金額；餘額為正代表超繳，欠款為 0
@@ -541,12 +534,18 @@ export class AccountsPage {
         const isEdit = !!accountToEdit
         const accountType = accountToEdit?.type || 'wallet'
 
-        // 取得所有其他的一般帳戶 (用於自動扣款設定，排除信用卡，且排除目前編輯的這個帳戶)
+        // 取得所有合法自動扣款帳戶（#AUTOPAY-INT：同帳本、非信用卡、非當前編輯帳戶）
         const allAccounts = await this.app.dataService.getAccounts()
-        const debitAccounts = allAccounts.filter(
-            a =>
-                a.type !== 'credit_card' &&
-                (!accountToEdit || a.id !== accountToEdit.id)
+        const cardContextForSelect = {
+            ...(accountToEdit || {}),
+            type: 'credit_card',
+            ledgerId:
+                accountToEdit?.ledgerId ??
+                this.app.dataService.activeLedgerId ??
+                1,
+        }
+        const debitAccounts = (allAccounts || []).filter(a =>
+            isValidAutoPayDebitAccount(a, cardContextForSelect)
         )
         const autoPayDebitId =
             accountToEdit?.autoPayAccountId &&
@@ -601,22 +600,22 @@ export class AccountsPage {
                     </div>
                     <div>
                         <label class="text-sm font-medium text-wabi-text-secondary" id="account-balance-label">初始餘額</label>
-                        <input type="number" id="account-balance-input" value="${accountToEdit?.balance || 0}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
+                        <input type="number" id="account-balance-input" value="${escapeHTML(accountToEdit?.balance ?? 0)}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary" ${isEdit ? 'disabled' : ''}>
                     </div>
 
                     <div id="credit-card-fields" class="space-y-3 ${accountType === 'credit_card' ? '' : 'hidden'}">
                         <div>
                             <label class="text-sm font-medium text-wabi-text-secondary">信用額度</label>
-                            <input type="number" id="credit-limit-input" value="${accountToEdit?.creditLimit || 0}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
+                            <input type="number" id="credit-limit-input" value="${escapeHTML(accountToEdit?.creditLimit ?? 0)}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary">
                         </div>
                         <div class="grid grid-cols-2 gap-2 sm:gap-3">
                             <div class="min-w-0">
                                 <label class="text-xs sm:text-sm font-medium text-wabi-text-secondary">出帳日</label>
-                                <input type="number" id="statement-day-input" min="1" max="31" value="${accountToEdit?.statementDay || 25}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
+                                <input type="number" id="statement-day-input" min="1" max="31" value="${escapeHTML(accountToEdit?.statementDay ?? 25)}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
                             </div>
                             <div class="min-w-0">
                                 <label class="text-xs sm:text-sm font-medium text-wabi-text-secondary">繳款日</label>
-                                <input type="number" id="due-day-input" min="1" max="31" value="${accountToEdit?.dueDay || 15}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
+                                <input type="number" id="due-day-input" min="1" max="31" value="${escapeHTML(accountToEdit?.dueDay ?? 15)}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-2 focus:ring-wabi-accent focus:border-transparent text-wabi-text-primary text-sm">
                             </div>
                         </div>
                         <!-- 自動繳款與扣款帳戶設定 -->
@@ -1007,19 +1006,24 @@ export class AccountsPage {
                                 .value,
                             10
                         )
-                        accountData.autoPayAccountId = autoPayAccountId || null
-                        if (accountData.autoPayAccountId) {
-                            const debitAcc = debitAccounts.find(
-                                a => a.id === accountData.autoPayAccountId
-                            )
-                            accountData.autoPayAccountUuid = debitAcc?.uuid || null
-                        } else {
-                            accountData.autoPayAccountUuid = null
+                        const debitAcc = Number.isFinite(autoPayAccountId)
+                            ? debitAccounts.find(a => a.id === autoPayAccountId)
+                            : null
+                        if (!debitAcc || !isValidAutoPayDebitAccount(debitAcc, cardContextForSelect)) {
+                            showToast('請選擇有效的自動扣款帳戶', 'error')
+                            return
                         }
+                        accountData.autoPayAccountId = debitAcc.id
+                        accountData.autoPayAccountUuid = debitAcc.uuid || null
                     } else {
                         accountData.autoPayAccountId = null
                         accountData.autoPayAccountUuid = null
                     }
+                } else {
+                    // 非信用卡帳戶一律清除殘留之自動扣款設定（#AUTOPAY-INT）
+                    accountData.autoPayEnabled = false
+                    accountData.autoPayAccountId = null
+                    accountData.autoPayAccountUuid = null
                 }
 
                 if (isEdit) {
@@ -1233,7 +1237,7 @@ export class AccountsPage {
                                 <div class="flex items-center justify-between p-2.5 bg-wabi-surface rounded-xl border border-wabi-border/60 hover:border-wabi-border transition-colors">
                                     <div class="flex items-center gap-3 min-w-0">
                                         <div class="size-8 rounded-lg flex items-center justify-center shrink-0 ${isExp ? 'bg-wabi-expense/10 text-wabi-expense' : 'bg-green-500/10 text-green-600'}">
-                                            <i class="${catIcon} text-sm"></i>
+                                            <i class="${getSafeIconClass(catIcon, 'fa-solid fa-question')} text-sm"></i>
                                         </div>
                                         <div class="min-w-0">
                                             <div class="flex items-center gap-1.5 flex-wrap">
@@ -1241,7 +1245,7 @@ export class AccountsPage {
                                                 <span class="text-[10px] bg-wabi-bg text-wabi-text-secondary px-1.5 py-0.2 rounded border border-wabi-border/40 shrink-0">${escapeHTML(catName)}</span>
                                                 ${r.deferredFromPeriod ? `<span class="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">由 ${escapeHTML(r.deferredFromPeriod)} 期遞延</span>` : ''}
                                             </div>
-                                            <p class="text-[11px] text-wabi-text-secondary">${r.date}</p>
+                                            <p class="text-[11px] text-wabi-text-secondary">${escapeHTML(r.date)}</p>
                                         </div>
                                     </div>
                                     <div class="text-right shrink-0 ml-2 flex items-center gap-1.5">
@@ -1342,10 +1346,10 @@ export class AccountsPage {
                                     today0 >= stmtDue0
 
                                 return `
-                                <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3.5 space-y-2.5 transition-all" data-period="${stmt.period}">
+                                <div class="bg-wabi-surface border border-wabi-border rounded-xl p-3.5 space-y-2.5 transition-all" data-period="${escapeHTML(stmt.period)}">
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-2">
-                                            <span class="font-bold text-sm sm:text-base text-wabi-text-primary">${stmt.period} 期帳單</span>
+                                            <span class="font-bold text-sm sm:text-base text-wabi-text-primary">${escapeHTML(stmt.period)} 期帳單</span>
                                             ${isPaid ? '<span class="text-[10px] bg-green-500/10 text-green-600 font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">已繳清</span>' : isZero ? '<span class="text-[10px] bg-gray-400/10 text-gray-500 font-medium px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">無欠款</span>' : `<span class="text-[10px] ${stmtOverdue ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30' : 'bg-wabi-expense text-wabi-surface'} font-bold px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">${stmtOverdue ? '已到期待扣繳' : '待繳納'}</span>`}
                                         </div>
                                         <div class="text-right">
@@ -1356,26 +1360,26 @@ export class AccountsPage {
                                     </div>
 
                                     <div class="text-xs text-wabi-text-secondary flex items-center justify-between border-t border-wabi-border/40 pt-2 flex-wrap gap-1">
-                                        <span>計費區間: ${periodRange}</span>
-                                        ${stmtDueDateStr ? `<span>繳款日: ${stmtDueDateStr}</span>` : ''}
+                                        <span>計費區間: ${escapeHTML(periodRange)}</span>
+                                        ${stmtDueDateStr ? `<span>繳款日: ${escapeHTML(stmtDueDateStr)}</span>` : ''}
                                     </div>
 
                                     <div class="flex items-center justify-between pt-1">
-                                        <button class="toggle-stmt-records-btn text-xs text-wabi-primary hover:text-wabi-accent font-medium flex items-center gap-1" data-period="${stmt.period}">
+                                        <button class="toggle-stmt-records-btn text-xs text-wabi-primary hover:text-wabi-accent font-medium flex items-center gap-1" data-period="${escapeHTML(stmt.period)}">
                                             <span>查看該期消費明細</span>
                                             <i class="fa-solid fa-chevron-down text-[10px] transition-transform"></i>
                                         </button>
                                         ${!isPaid && !isZero ? `
-                                            <button class="pay-single-stmt-btn text-xs ${stmtOverdue ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-wabi-accent text-wabi-primary hover:bg-wabi-accent/90'} font-bold px-2.5 py-1 rounded-lg transition-colors" data-period="${stmt.period}" data-amount="${stmt.amount}" data-stmt-id="${stmt.id}">${stmtOverdue ? '扣繳平帳' : '繳款'}</button>
+                                            <button class="pay-single-stmt-btn text-xs ${stmtOverdue ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-wabi-accent text-wabi-primary hover:bg-wabi-accent/90'} font-bold px-2.5 py-1 rounded-lg transition-colors" data-period="${escapeHTML(stmt.period)}" data-amount="${escapeHTML(stmt.amount)}" data-stmt-id="${escapeHTML(stmt.id)}">${stmtOverdue ? '扣繳平帳' : '繳款'}</button>
                                         ` : isPaid && stmt.amount > 0 ? `
-                                            <button class="reconcile-stmt-btn text-[11px] text-wabi-text-secondary hover:text-wabi-primary border border-wabi-border hover:border-wabi-primary/50 font-medium px-2 py-0.5 rounded-lg transition-colors" data-period="${stmt.period}" data-amount="${stmt.amount}" data-stmt-id="${stmt.id}" title="若扣款帳戶尚未扣除此期卡費，可點此補扣平帳">
+                                            <button class="reconcile-stmt-btn text-[11px] text-wabi-text-secondary hover:text-wabi-primary border border-wabi-border hover:border-wabi-primary/50 font-medium px-2 py-0.5 rounded-lg transition-colors" data-period="${escapeHTML(stmt.period)}" data-amount="${escapeHTML(stmt.amount)}" data-stmt-id="${escapeHTML(stmt.id)}" title="若扣款帳戶尚未扣除此期卡費，可點此補扣平帳">
                                                 <i class="fa-solid fa-scale-balanced mr-1"></i>扣款平帳
                                             </button>
                                         ` : ''}
                                     </div>
 
                                     <!-- 折疊明細容器 -->
-                                    <div class="stmt-records-container hidden border-t border-wabi-border/30 pt-2 mt-2 space-y-1.5" data-period="${stmt.period}">
+                                    <div class="stmt-records-container hidden border-t border-wabi-border/30 pt-2 mt-2 space-y-1.5" data-period="${escapeHTML(stmt.period)}">
                                         <div class="text-center py-2 text-xs text-wabi-text-secondary"><i class="fa-solid fa-spinner fa-spin mr-1"></i>載入明細中...</div>
                                     </div>
                                 </div>
@@ -1391,12 +1395,20 @@ export class AccountsPage {
                     .forEach(btn => {
                         btn.addEventListener('click', async e => {
                             const period = e.currentTarget.dataset.period
-                            const card = contentContainer.querySelector(
-                                `[data-period="${period}"]`
+                            const card = Array.from(
+                                contentContainer.querySelectorAll('[data-period]')
+                            ).find(
+                                el =>
+                                    el.dataset.period === period &&
+                                    !el.classList.contains('toggle-stmt-records-btn') &&
+                                    !el.classList.contains('stmt-records-container')
                             )
-                            const detailBox = card.querySelector(
-                                `.stmt-records-container[data-period="${period}"]`
-                            )
+                            const detailBox = card
+                                ? Array.from(
+                                      card.querySelectorAll('.stmt-records-container')
+                                  ).find(el => el.dataset.period === period)
+                                : null
+                            if (!detailBox) return
                             const icon = e.currentTarget.querySelector('i')
 
                             if (detailBox.classList.contains('hidden')) {
@@ -1435,13 +1447,13 @@ export class AccountsPage {
                                             return `
                                         <div class="flex items-center justify-between p-2 bg-wabi-bg/60 rounded-lg text-xs">
                                             <div class="flex items-center gap-2 min-w-0">
-                                                <i class="${catIcon} ${isExp ? 'text-wabi-expense' : 'text-green-600'} text-xs shrink-0"></i>
+                                                <i class="${getSafeIconClass(catIcon, 'fa-solid fa-question')} ${isExp ? 'text-wabi-expense' : 'text-green-600'} text-xs shrink-0"></i>
                                                 <div class="min-w-0">
                                                     <div class="flex items-center gap-1.5 flex-wrap">
                                                         <span class="font-medium text-wabi-text-primary truncate">${escapeHTML(r.description || catName)}</span>
                                                         ${r.deferredFromPeriod ? `<span class="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1 py-0.2 rounded border border-amber-500/30 shrink-0">由 ${escapeHTML(r.deferredFromPeriod)} 期遞延</span>` : ''}
                                                     </div>
-                                                    <span class="text-[10px] text-wabi-text-secondary">${r.date}</span>
+                                                    <span class="text-[10px] text-wabi-text-secondary">${escapeHTML(r.date)}</span>
                                                 </div>
                                             </div>
                                             <div class="flex items-center gap-1.5 shrink-0 ml-2">
@@ -1450,9 +1462,9 @@ export class AccountsPage {
                                                 </span>
                                                 ${!isPaid && !isZero ? (
                                                     r.deferredFromPeriod ? `
-                                                        <button class="undefer-record-btn text-[10px] text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-300/40 transition-colors shrink-0" data-record-id="${r.id}" data-stmt-id="${stmt ? stmt.id : ''}" data-period="${period}" title="移回原本帳單期別">移回原期</button>
+                                                        <button class="undefer-record-btn text-[10px] text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-300/40 transition-colors shrink-0" data-record-id="${escapeHTML(r.id)}" data-stmt-id="${stmt ? escapeHTML(stmt.id) : ''}" data-period="${escapeHTML(period)}" title="移回原本帳單期別">移回原期</button>
                                                     ` : `
-                                                        <button class="defer-record-btn text-[10px] text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-300/40 transition-colors shrink-0" data-record-id="${r.id}" data-stmt-id="${stmt ? stmt.id : ''}" data-period="${period}" title="商家延遲請款？將此筆消費遞延至下一期帳單">遞延下期</button>
+                                                        <button class="defer-record-btn text-[10px] text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-300/40 transition-colors shrink-0" data-record-id="${escapeHTML(r.id)}" data-stmt-id="${stmt ? escapeHTML(stmt.id) : ''}" data-period="${escapeHTML(period)}" title="商家延遲請款？將此筆消費遞延至下一期帳單">遞延下期</button>
                                                     `
                                                 ) : ''}
                                             </div>
@@ -1593,40 +1605,56 @@ export class AccountsPage {
                             )
                             const period = e.currentTarget.dataset.period
 
-                            const debitAcc = account.autoPayAccountId
-                                ? await this.app.dataService.getAccount(account.autoPayAccountId)
-                                : account.autoPayAccountUuid
-                                  ? await this.app.dataService.getByUUID('accounts', account.autoPayAccountUuid)
-                                  : null
+                            // #AUTOPAY-INT：解析自動扣款帳戶並嚴格驗證同帳本／非信用卡／非自身；無效時改開啟手動選戶彈窗
+                            let debitAcc = null
+                            if (account.autoPayAccountId != null) {
+                                const byId = await this.app.dataService.getAccount(
+                                    account.autoPayAccountId
+                                )
+                                if (isValidAutoPayDebitAccount(byId, account)) {
+                                    debitAcc = byId
+                                }
+                            }
+                            if (
+                                !debitAcc &&
+                                account.autoPayAccountUuid &&
+                                typeof this.app.dataService.getByUUID === 'function'
+                            ) {
+                                const byUuid = await this.app.dataService.getByUUID(
+                                    'accounts',
+                                    account.autoPayAccountUuid
+                                )
+                                if (isValidAutoPayDebitAccount(byUuid, account)) {
+                                    debitAcc = byUuid
+                                }
+                            }
                             if (debitAcc && !Number.isNaN(stmtId)) {
-                                if (debitAcc) {
-                                    const confirmed = await customConfirm(
-                                        totalDebt <= 0
-                                            ? `此信用卡欠款已為 0，是否確認立即由指定帳戶「${escapeHTML(debitAcc.name)}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（將僅扣除扣款帳戶餘額以達平帳，不重複增加信用卡餘額，且不計入生活支出）`
-                                            : `是否確認立即由指定帳戶「${escapeHTML(debitAcc.name)}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（此紀錄不計入生活支出，但會調整帳戶餘額以達平帳）`
-                                    )
-                                    if (confirmed) {
-                                        try {
-                                            await this.app.dataService.payCreditStatement(
-                                                stmtId,
-                                                debitAcc.id,
-                                                amount,
-                                                null,
-                                                { deductOnly: totalDebt <= 0 }
-                                            )
-                                            showToast(
-                                                '卡費扣繳成功，已完成平帳！'
-                                            )
-                                            this.render()
-                                            this.showCreditDetailModal(account)
-                                            return
-                                        } catch (err) {
-                                            console.error('扣繳失敗:', err)
-                                            showToast(
-                                                '扣繳失敗，請稍後重試',
-                                                'error'
-                                            )
-                                        }
+                                const confirmed = await customConfirm(
+                                    totalDebt <= 0
+                                        ? `此信用卡欠款已為 0，是否確認立即由指定帳戶「${debitAcc.name}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（將僅扣除扣款帳戶餘額以達平帳，不重複增加信用卡餘額，且不計入生活支出）`
+                                        : `是否確認立即由指定帳戶「${debitAcc.name}」扣繳卡費 ${formatCurrency(amount)} 進行平帳？\n（此紀錄不計入生活支出，但會調整帳戶餘額以達平帳）`
+                                )
+                                if (confirmed) {
+                                    try {
+                                        await this.app.dataService.payCreditStatement(
+                                            stmtId,
+                                            debitAcc.id,
+                                            amount,
+                                            null,
+                                            { deductOnly: totalDebt <= 0 }
+                                        )
+                                        showToast(
+                                            '卡費扣繳成功，已完成平帳！'
+                                        )
+                                        this.render()
+                                        this.showCreditDetailModal(account)
+                                        return
+                                    } catch (err) {
+                                        console.error('扣繳失敗:', err)
+                                        showToast(
+                                            '扣繳失敗，請稍後重試',
+                                            'error'
+                                        )
                                     }
                                 }
                             }
@@ -1659,9 +1687,9 @@ export class AccountsPage {
                         })
                     })
             if (currentTab === 'billed' && openPeriod) {
-                const targetBtn = contentContainer.querySelector(
-                    `.toggle-stmt-records-btn[data-period="${openPeriod}"]`
-                )
+                const targetBtn = Array.from(
+                    contentContainer.querySelectorAll('.toggle-stmt-records-btn')
+                ).find(b => b.dataset.period === openPeriod)
                 if (targetBtn) {
                     targetBtn.click()
                 }
@@ -1688,10 +1716,10 @@ export class AccountsPage {
         const statementId = options?.statementId || null
         const period = options?.period || null
 
-        // 取得扣款賬戶 (排除信用卡和當前賬戶)
+        // 取得合法扣款帳戶（#AUTOPAY-INT：同帳本、非信用卡、非當前帳戶）
         const allAccounts = await this.app.dataService.getAccounts()
-        const debitAccounts = allAccounts.filter(
-            a => a.type !== 'credit_card' && a.id !== account.id
+        const debitAccounts = (allAccounts || []).filter(a =>
+            isValidAutoPayDebitAccount(a, account)
         )
 
         if (debitAccounts.length === 0) {
@@ -1699,14 +1727,19 @@ export class AccountsPage {
             return
         }
 
-        // 計算該信用卡目前欠款
+        // 計算該信用卡目前欠款（#BAL-DRY：統一走 computeNetCashflowBalance 單一真相源）
         const allRecords = await this.app.dataService.getRecords()
         const recordsForCard = allRecords.filter(
             r => r.accountId === account.id
         )
-        const currentCardBal = recordsForCard.reduce(
-            (bal, r) => bal + (r.type === 'income' ? r.amount : -r.amount),
-            account.balance || 0
+        const debts =
+            typeof this.app.dataService.getDebts === 'function'
+                ? await this.app.dataService.getDebts()
+                : []
+        const currentCardBal = computeNetCashflowBalance(
+            account.balance,
+            recordsForCard,
+            debts
         )
         const billingInfo =
             await this.app.dataService.getCreditCardBillingInfo(account.id)
@@ -1775,7 +1808,7 @@ export class AccountsPage {
 
         modal.innerHTML = `
             <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-4 sm:p-6 space-y-4 overflow-hidden box-border">
-                <h3 class="text-lg font-bold text-wabi-primary">${titleText}</h3>
+                <h3 class="text-lg font-bold text-wabi-primary">${escapeHTML(titleText)}</h3>
                 <p class="text-sm text-wabi-text-secondary">${escapeHTML(account.name)} — 未繳賬單合計: <span class="font-semibold text-wabi-expense">${formatCurrency(unpaidTotal)}</span> (總欠款: ${formatCurrency(cardDebt)})</p>
                 ${cardDebt <= 0 ? `
                 <div class="text-xs text-blue-700 dark:text-blue-300 bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-lg flex items-start gap-2">
@@ -1798,11 +1831,11 @@ export class AccountsPage {
                 </div>
                 <div>
                     <label class="text-sm text-wabi-text-secondary">扣繳金額</label>
-                    <input type="number" id="credit-pay-amount" placeholder="0.00" min="0" step="0.01" value="${amountToPay > 0 ? amountToPay : ''}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface text-wabi-text-primary">
+                    <input type="number" id="credit-pay-amount" placeholder="0.00" min="0" step="0.01" value="${escapeHTML(amountToPay > 0 ? amountToPay : '')}" class="w-full min-w-0 mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface text-wabi-text-primary">
                     ${recentStatement ? `
                     <div class="flex items-center justify-between text-[11px] text-wabi-text-secondary mt-1 px-0.5">
-                        <span>最近一期 (${recentStatement.period} 期): ${formatCurrency(recentStatement.amount)}</span>
-                        <button type="button" id="use-recent-stmt-amount-btn" class="text-wabi-accent font-bold hover:underline" data-amount="${recentStatement.amount}">帶入金額</button>
+                        <span>最近一期 (${escapeHTML(recentStatement.period)} 期): ${formatCurrency(recentStatement.amount)}</span>
+                        <button type="button" id="use-recent-stmt-amount-btn" class="text-wabi-accent font-bold hover:underline" data-amount="${escapeHTML(recentStatement.amount)}">帶入金額</button>
                     </div>
                     ` : ''}
                 </div>

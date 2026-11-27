@@ -1,4 +1,9 @@
-import { getDateRange, formatDateToString, closeModalWithAnimation } from './utils.js'
+import {
+    getDateRange,
+    formatDateToString,
+    closeModalWithAnimation,
+    escapeHTML,
+} from './utils.js'
 
 export function createDateRangeModal({
     initialStartDate,
@@ -35,15 +40,15 @@ export function createDateRangeModal({
         <div class="space-y-4">
             <div>
                 <label for="custom-start-date" class="text-sm text-wabi-text-secondary">開始日期</label>
-                <input type="date" id="custom-start-date" value="${
+                <input type="date" id="custom-start-date" value="${escapeHTML(
                     initialStartDate || today
-                }" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                )}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
             </div>
             <div>
                 <label for="custom-end-date" class="text-sm text-wabi-text-secondary">結束日期</label>
-                <input type="date" id="custom-end-date" value="${
+                <input type="date" id="custom-end-date" value="${escapeHTML(
                     initialEndDate || today
-                }" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
+                )}" class="w-full mt-1 p-2 rounded-lg border-wabi-border bg-wabi-surface focus:ring-wabi-accent focus:border-wabi-accent">
             </div>
         </div>
 

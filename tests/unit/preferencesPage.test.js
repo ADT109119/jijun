@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-vi.mock('../../src/js/utils.js', () => ({
-    showToast: vi.fn(),
-    customConfirm: vi.fn(async () => true),
-}))
+vi.mock('../../src/js/utils.js', async importOriginal => {
+    const actual = await importOriginal()
+    return {
+        ...actual,
+        showToast: vi.fn(),
+        customConfirm: vi.fn(async () => true),
+    }
+})
 vi.mock('../../src/js/widgetHelper.js', () => ({
     updateAndroidWidget: vi.fn(async () => {}),
 }))

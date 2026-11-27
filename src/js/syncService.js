@@ -8,6 +8,7 @@
 // showToast 暫存以便未來使用（目前未使用）
 // eslint-disable-next-line no-unused-vars
 import { showToast } from './utils.js'
+import { isValidAutoPayDebitAccount } from './dataService.js'
 
 /** @type {string} Google OAuth Client ID（透過 .env.local 設定，不硬編碼） */
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
@@ -4254,23 +4255,84 @@ export class SyncService {
      * @returns {object} 已修正 accountId 的 data
      */
     /**
-     * 將 credit_card account 的 autoPayAccountUuid 解析為本地 autoPayAccountId。
+     * 將 credit_card account 的 autoPayAccountUuid 解析為本地 autoPayAccountId（#AUTOPAY-XSS / #AUTOPAY-INT）。
+     *
+     * 安全防禦（遠端整數 autoPayAccountId 洗白缺口封堵）：
+     *  - 遠端裝置的整數主鍵在本機毫無語意，甚至可能撞上本機其他帳本帳戶或信用卡；
+     *    凡缺少 autoPayAccountUuid 或查無合法目標或解析異常，一律 Fail-Closed 洗白為 null，
+     *    絕不讓遠端整數 autoPayAccountId 原樣穿透寫入本機 DB。
+     *  - 目標帳戶命中後必須通過 isValidAutoPayDebitAccount(matched, cardContext)
+     *    （非信用卡、非自身、同帳本）；命中不相容帳戶時一併清除 autoPayAccountUuid。
+     *  - 非信用卡帳戶若夾帶 autoPay 欄位則一併清零。
+     *
      * @param {object} data
+     * @param {object|null} [existingLocalAccount=null] - _applyUpdateWithId 時之本地既有關聯帳戶（補齊 partial update 缺省的 type/ledgerId/uuid）
      * @returns {Promise<object>}
      */
-    async _resolveAccountAutoPayAccountId(data) {
-        if (!data || data.type !== 'credit_card' || !data.autoPayAccountUuid) return data
+    async _resolveAccountAutoPayAccountId(data, existingLocalAccount = null) {
+        if (!data || typeof data !== 'object') return data
+
+        const effectiveType = data.type ?? existingLocalAccount?.type
+        if (effectiveType && effectiveType !== 'credit_card') {
+            if (
+                data.autoPayEnabled ||
+                data.autoPayAccountId !== undefined ||
+                data.autoPayAccountUuid !== undefined
+            ) {
+                return {
+                    ...data,
+                    autoPayEnabled: false,
+                    autoPayAccountId: null,
+                    autoPayAccountUuid: null,
+                }
+            }
+            return data
+        }
+
+        const hasAutoPayField =
+            data.autoPayAccountId !== undefined ||
+            data.autoPayAccountUuid !== undefined
+        if (effectiveType !== 'credit_card' && !hasAutoPayField) {
+            return data
+        }
+
+        // 缺少 autoPayAccountUuid：絕不信任遠端整數 autoPayAccountId，強制洗白為 null
+        if (!data.autoPayAccountUuid) {
+            if (data.autoPayAccountId !== undefined && data.autoPayAccountId !== null) {
+                return { ...data, autoPayAccountId: null }
+            }
+            return data
+        }
+
+        const cardContext = {
+            ...(existingLocalAccount || {}),
+            ...data,
+            type: effectiveType || 'credit_card',
+        }
+
         try {
             const accounts = await this.dataService.getAccounts({
                 allLedgers: true,
             })
-            const matched = accounts.find(a => a.uuid === data.autoPayAccountUuid)
+            const matched = (accounts || []).find(
+                a => a.uuid === data.autoPayAccountUuid
+            )
             if (matched) {
-                return { ...data, autoPayAccountId: matched.id }
+                if (isValidAutoPayDebitAccount(matched, cardContext)) {
+                    return { ...data, autoPayAccountId: matched.id }
+                }
+                // 目標存在但不相容（信用卡／自引用／跨帳本）→ 同時洗白 id 與 uuid
+                return {
+                    ...data,
+                    autoPayAccountId: null,
+                    autoPayAccountUuid: null,
+                }
             }
+            // 目標扣款帳戶尚未同步到達：保留 autoPayAccountUuid 待後續自癒，但必須洗白遠端整數 id
             return { ...data, autoPayAccountId: null }
         } catch (_) {
-            return data
+            // Fail-Closed：查詢失敗亦不得放行遠端整數 id
+            return { ...data, autoPayAccountId: null }
         }
     }
 
@@ -5214,8 +5276,14 @@ export class SyncService {
                     data,
                     options
                 )
-                resolvedAccount =
-                    await this._resolveAccountAutoPayAccountId(resolvedAccount)
+                const existingAcc =
+                    typeof this.dataService.getAccount === 'function'
+                        ? await this.dataService.getAccount(id)
+                        : null
+                resolvedAccount = await this._resolveAccountAutoPayAccountId(
+                    resolvedAccount,
+                    existingAcc
+                )
                 await this.dataService.updateAccount(id, resolvedAccount, true)
                 break
             }

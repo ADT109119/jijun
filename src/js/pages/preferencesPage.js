@@ -1,4 +1,4 @@
-import { showToast } from '../utils.js'
+import { showToast, showInputModal as openInputModal } from '../utils.js'
 
 export class PreferencesPage {
     constructor(app) {
@@ -395,51 +395,11 @@ export class PreferencesPage {
     }
 
     showInputModal(title, message, defaultValue, onConfirm) {
-        const modal = document.createElement('div')
-        modal.className =
-            'fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4 backdrop-blur-[2px]'
-        modal.innerHTML = `
-            <div class="bg-wabi-bg rounded-lg max-w-sm w-full p-6 shadow-xl border border-wabi-border/30">
-                <h3 class="text-lg font-bold text-wabi-primary mb-2">${title}</h3>
-                <p class="text-sm text-wabi-text-secondary mb-4">${message}</p>
-                <div class="mb-6">
-                    <input type="text" id="pref-input-value" value="${defaultValue}" class="w-full bg-wabi-surface border border-wabi-border text-wabi-text-primary text-base rounded-lg focus:ring-2 focus:ring-wabi-primary focus:border-wabi-primary p-3 outline-none" placeholder="例如: /ABC1234">
-                </div>
-                <div class="flex space-x-3">
-                    <button id="pref-input-ok" class="flex-1 bg-wabi-primary hover:bg-wabi-primary-hover text-wabi-surface font-bold py-3 rounded-lg transition-colors shadow-sm">
-                        確定
-                    </button>
-                    <button id="pref-input-cancel" class="px-6 bg-wabi-surface border border-wabi-border hover:bg-wabi-bg text-wabi-text-primary py-3 rounded-lg transition-colors">
-                        取消
-                    </button>
-                </div>
-            </div>
-        `
-        document.body.appendChild(modal)
-
-        const inputEl = modal.querySelector('#pref-input-value')
-        setTimeout(() => {
-            inputEl.focus()
-            inputEl.select()
-        }, 100)
-
-        const handleOk = () => {
-            const val = inputEl.value
-            modal.remove()
-            onConfirm(val)
-        }
-
-        modal
-            .querySelector('#pref-input-cancel')
-            .addEventListener('click', () => modal.remove())
-        modal
-            .querySelector('#pref-input-ok')
-            .addEventListener('click', handleOk)
-
-        inputEl.addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                handleOk()
-            }
+        return openInputModal(title, message, defaultValue, onConfirm, {
+            inputId: 'pref-input-value',
+            okId: 'pref-input-ok',
+            cancelId: 'pref-input-cancel',
+            placeholder: '例如: /ABC1234',
         })
     }
 }

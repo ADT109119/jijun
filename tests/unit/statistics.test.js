@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { StatisticsManager } from '../../src/js/statistics.js'
+import { computeNetCashflowBalance } from '../../src/js/dataService.js'
 import { getDateRange } from '../../src/js/utils.js'
 import { createDateRangeModal } from '../../src/js/datePickerModal.js'
 
@@ -934,3 +935,92 @@ describe('StatisticsManager — 對象（聯絡人）篩選 UI (#MOZE-TGT)', () 
         expect(call[4]).toBe(5)
     })
 })
+
+// ==================== #BAL-DRY 帳戶餘額單一真相源 ====================
+
+describe('#BAL-DRY — computeNetCashflowBalance 與統計頁帳戶餘額一致性', () => {
+    it('computeNetCashflowBalance 正確累計初始餘額、收支與轉帳，且排除 payable 欠款原始紀錄', () => {
+        const records = [
+            { id: 1, type: 'income', amount: 5000, category: 'salary' },
+            { id: 2, type: 'expense', amount: 1200, category: 'food' },
+            { id: 3, type: 'income', amount: 300, category: 'transfer' },
+            // payable 欠款（別人先墊、我尚未付現金）→ 不可扣減我帳戶現金餘額
+            { id: 4, type: 'expense', amount: 800, category: 'food', debtId: 10 },
+            // receivable 代墊（我先掏腰包墊付）→ 必須計入我帳戶實際流出
+            { id: 5, type: 'expense', amount: 400, category: 'food', debtId: 11 },
+            // 還款平帳紀錄（實際掏錢還款）→ 必須計入
+            { id: 6, type: 'expense', amount: 800, category: 'debt_repayment', debtId: 10 },
+        ]
+        const debts = [
+            { id: 10, type: 'payable', amount: 800, recordId: 4 },
+            { id: 11, type: 'receivable', amount: 400, recordId: 5 },
+        ]
+        // 1000 + 5000 - 1200 + 300 - 0(payable raw) - 400(receivable) - 800(repayment) = 3900
+        expect(computeNetCashflowBalance(1000, records, debts)).toBe(3900)
+        // 支援直接傳入 payableDebtIds Set
+        expect(computeNetCashflowBalance(1000, records, new Set([10]))).toBe(3900)
+    })
+
+    it('computeNetCashflowBalance 對非有限數值、非數字或空紀錄安全歸零且不字串拼接', () => {
+        expect(computeNetCashflowBalance(NaN, null)).toBe(0)
+        expect(computeNetCashflowBalance(Infinity, [])).toBe(0)
+        expect(computeNetCashflowBalance('500', [
+            { type: 'income', amount: 200 },
+            { type: 'expense', amount: NaN },
+            { type: 'income', amount: 'dirty' },
+            null,
+        ])).toBe(200)
+    })
+
+    it('StatisticsManager 優先委派 dataService.calculateAccountCurrentBalance（單一真相源）', async () => {
+        const { sm, container, dataService } = createTestHarness()
+        dataService.calculateAccountCurrentBalance = vi.fn().mockResolvedValue(4321)
+        dataService.getStatistics.mockResolvedValue({
+            totalIncome: 100,
+            totalExpense: 50,
+            expenseByCategory: {},
+            incomeByCategory: {},
+            dailyTotals: {},
+            records: [],
+        })
+        sm.advancedModeEnabled = true
+        sm.accounts = [{ id: 1, name: '活存', balance: 1000 }]
+        sm.filters.selectedAccountId = 1
+
+        await sm.loadStatisticsData()
+
+        expect(dataService.calculateAccountCurrentBalance).toHaveBeenCalledWith(1)
+        expect(container.querySelector('#stats-account-balance').textContent).toContain('4,321')
+        sm.destroy()
+    })
+
+    it('StatisticsManager 在降級路徑（無 calculateAccountCurrentBalance）仍透過 computeNetCashflowBalance 排除 payable 欠款原始支出', async () => {
+        const { sm, container, dataService } = createTestHarness()
+        dataService.getStatistics.mockResolvedValue({
+            totalIncome: 0,
+            totalExpense: 0,
+            expenseByCategory: {},
+            incomeByCategory: {},
+            dailyTotals: {},
+            records: [],
+        })
+        dataService.getRecords.mockResolvedValue([
+            { id: 1, type: 'expense', amount: 300, category: 'food' },
+            // 欠別人的餐費（尚未實際掏錢）
+            { id: 2, type: 'expense', amount: 1500, category: 'food', debtId: 7 },
+        ])
+        dataService.getDebts = vi.fn().mockResolvedValue([
+            { id: 7, type: 'payable', amount: 1500, recordId: 2 },
+        ])
+        sm.advancedModeEnabled = true
+        sm.accounts = [{ id: 1, name: '錢包', balance: 2000 }]
+        sm.filters.selectedAccountId = 1
+
+        await sm.loadStatisticsData()
+
+        // 2000 - 300 = 1700（排除 1500 的 payable 原始紀錄，與帳戶頁完全一致）
+        expect(container.querySelector('#stats-account-balance').textContent).toContain('1,700')
+        sm.destroy()
+    })
+})
+

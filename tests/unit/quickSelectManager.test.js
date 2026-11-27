@@ -3,27 +3,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock utils.js escapeHTML — 直接回傳原始字串
-vi.mock('../../src/js/utils.js', () => ({
-    escapeHTML: vi.fn(s => s),
-    // #SEC04：getSafeIconClass 以真實語意提供（白名單外一律 fallback）
-    getSafeIconClass: (icon, fallback = 'fa-solid fa-question') =>
-        typeof icon === 'string' &&
-        /^(fas|far|fab|fa-solid|fa-regular|fa-brands)\s+fa-[a-zA-Z0-9-]+$/.test(icon.trim())
-            ? icon.trim()
-            : fallback,
-    // #SEC05：顏色白名單以真實語意提供（髒值雙空→不輸出屬性）
-    getSafeBgColorStyle: color => {
-        if (typeof color === 'string' &&
-            /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
-            return { style: `background-color: ${color}`, className: '' }
-        }
-        if (typeof color === 'string' && /^bg-[a-z0-9-]+$/.test(color)) {
-            return { style: '', className: color }
-        }
-        return { style: '', className: '' }
-    },
-}))
+// #QSM-ATTR：使用真實 utils.js（含真實 escapeHTML / getSafeIconClass / getSafeBgColorStyle）
+vi.mock('../../src/js/utils.js', async importOriginal => {
+    const actual = await importOriginal()
+    return { ...actual }
+})
 
 import { QuickSelectManager } from '../../src/js/quickSelectManager.js'
 
@@ -639,31 +623,29 @@ describe('QuickSelectManager', () => {
             expect(container.innerHTML).toContain('餐飲')
         })
 
-        it('render 時呼叫 escapeHTML 對 description 做 XSS 防護', () => {
+        it('render 時呼叫 escapeHTML 對 description 與 data-description 做 XSS 防護', () => {
             const qsm = new QuickSelectManager()
-            qsm.addRecord(
-                'expense',
-                'food',
-                '<script>alert("xss")</script>',
-                null
-            )
+            const payload = '<script>alert("xss")</script>'
+            qsm.addRecord('expense', 'food', payload, null)
 
             const container = document.createElement('div')
 
             const mockCategoryManager = {
                 getCategoryById: vi.fn(() => ({
                     name: '餐飲',
-                    icon: 'fa-utensils',
+                    icon: 'fa-solid fa-utensils',
                     color: '#FF5733',
                 })),
             }
 
             qsm.render(container, null, mockCategoryManager, false)
 
-            // escapeHTML 被 mock 為 identity，所以原始字串出現在 HTML 中
-            expect(container.innerHTML).toContain(
-                '<script>alert("xss")</script>'
-            )
+            expect(container.querySelector('script')).toBeNull()
+            const labelSpan = container.querySelector('.quick-select-capsule span')
+            expect(labelSpan.innerHTML).not.toContain('<script>')
+            expect(labelSpan.innerHTML).toContain('&lt;script&gt;')
+            const btn = container.querySelector('.quick-select-capsule')
+            expect(btn.dataset.description).toBe(payload)
         })
 
         it('render 時 container 內有 quick-select-capsule 按鈕', () => {
@@ -847,6 +829,142 @@ describe('QuickSelectManager', () => {
             expect(container.querySelector('img[src="x"]')).toBeNull()
             expect(container.innerHTML).toContain('fa-solid fa-question')
             expect(container.innerHTML).not.toContain('onerror')
+        })
+
+        // ==================== #QSM-ATTR 屬性跳脫與膠囊比對回傳 ====================
+
+        it('#QSM-ATTR description 含雙引號與事件注入時不發生 attribute breakout 且點擊無損回傳', () => {
+            const qsm = new QuickSelectManager()
+            const payload = '買"大杯"咖啡"><img src=x onerror="window.__qsmPwn=1">'
+            qsm.addRecord('expense', 'food', payload, 7)
+
+            const container = document.createElement('div')
+            const onSelect = vi.fn()
+            const mockCategoryManager = {
+                getCategoryById: vi.fn(() => ({
+                    name: '餐飲',
+                    icon: 'fa-solid fa-utensils',
+                    color: '#FF5733',
+                })),
+            }
+
+            qsm.render(container, onSelect, mockCategoryManager, false)
+
+            expect(container.querySelector('img[src="x"]')).toBeNull()
+            const btn = container.querySelector('.quick-select-capsule')
+            expect(btn).not.toBeNull()
+            expect(btn.getAttribute('type')).toBe('button')
+            expect(btn.hasAttribute('onerror')).toBe(false)
+            expect(btn.dataset.description).toBe(payload)
+
+            btn.click()
+            expect(onSelect).toHaveBeenCalledTimes(1)
+            expect(onSelect).toHaveBeenCalledWith('expense', 'food', payload, 7)
+        })
+
+        it('#QSM-ATTR 含雙引號/單引號/尖括號/& 的膠囊可經右鍵選單精準比對並刪除', () => {
+            const qsm = new QuickSelectManager()
+            const trickyDesc = `A"B'C<D>E&F`
+            qsm.addRecord('expense', 'food', trickyDesc, null)
+            qsm.addRecord('expense', 'food', '保留項目', null)
+
+            const container = document.createElement('div')
+            const mockCategoryManager = {
+                getCategoryById: vi.fn(() => ({
+                    name: '餐飲',
+                    icon: 'fa-solid fa-utensils',
+                    color: '#FF5733',
+                })),
+            }
+
+            qsm.render(container, vi.fn(), mockCategoryManager, false)
+            const targetBtn = [...container.querySelectorAll('.quick-select-capsule')].find(
+                b => b.dataset.description === trickyDesc
+            )
+            expect(targetBtn).toBeDefined()
+
+            const evt = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+            targetBtn.dispatchEvent(evt)
+
+            const delBtn = document.getElementById('delete-quick-select-btn')
+            expect(delBtn).not.toBeNull()
+            delBtn.click()
+
+            expect(qsm.records).toHaveLength(1)
+            expect(qsm.records[0].description).toBe('保留項目')
+        })
+
+        it('#QSM-ATTR localStorage 被植入髒 type/categoryId/accountId 時仍全部跳脫不注入', () => {
+            const dirtyRecords = [
+                {
+                    type: 'expense" onclick="window.__qsmType=1',
+                    categoryId: 'cat" onmouseover="window.__qsmCat=1',
+                    description: '一般備註',
+                    accountId: '1"><img src=x onerror="window.__qsmAcc=1">',
+                    count: 2,
+                    lastUsed: Date.now(),
+                },
+            ]
+            localStorage.setItem('quickSelectRecords', JSON.stringify(dirtyRecords))
+
+            const qsm = new QuickSelectManager()
+            const container = document.createElement('div')
+            const onSelect = vi.fn()
+            const mockCategoryManager = {
+                getCategoryById: vi.fn(() => ({
+                    name: '惡意分類',
+                    icon: 'fa-solid fa-tag',
+                    color: '#10b981',
+                })),
+            }
+
+            qsm.render(container, onSelect, mockCategoryManager, false)
+
+            expect(container.querySelector('img[src="x"]')).toBeNull()
+            const btn = container.querySelector('.quick-select-capsule')
+            expect(btn).not.toBeNull()
+            expect(btn.hasAttribute('onclick')).toBe(false)
+            expect(btn.hasAttribute('onmouseover')).toBe(false)
+            // 非純整數字串的 accountId 經 normalizeAccountId 降級為 null
+            expect(btn.dataset.accountId).toBe('null')
+
+            btn.click()
+            expect(onSelect).toHaveBeenCalledWith(
+                dirtyRecords[0].type,
+                dirtyRecords[0].categoryId,
+                '一般備註',
+                null
+            )
+        })
+
+        it('#QSM-ATTR deleteRecord 對 JS null / undefined / "null" / "" / 整數與字串整數皆一致比對，且正規化 CRLF', () => {
+            const qsm = new QuickSelectManager()
+            qsm.addRecord('expense', 'food', '第一行\r\n第二行', null)
+            qsm.deleteRecord('expense', 'food', '第一行\n第二行', null)
+            expect(qsm.records).toHaveLength(0)
+
+            qsm.addRecord('expense', 'food', '有帳戶', '15')
+            expect(qsm.records[0].accountId).toBe(15)
+            qsm.deleteRecord('expense', 'food', '有帳戶', 15)
+            expect(qsm.records).toHaveLength(0)
+
+            qsm.addRecord('expense', 'food', '空帳戶', '')
+            expect(qsm.records[0].accountId).toBeNull()
+            qsm.deleteRecord('expense', 'food', '空帳戶', undefined)
+            expect(qsm.records).toHaveLength(0)
+        })
+
+        it('#QSM-ATTR 所有記錄所屬分類皆已不存在時隱藏容器', () => {
+            const qsm = new QuickSelectManager()
+            qsm.addRecord('expense', 'deleted_cat', '舊紀錄', null)
+
+            const container = document.createElement('div')
+            const mockCategoryManager = {
+                getCategoryById: vi.fn(() => null),
+            }
+            qsm.render(container, vi.fn(), mockCategoryManager, false)
+            expect(container.classList.contains('hidden')).toBe(true)
+            expect(container.innerHTML).toBe('')
         })
     })
 })
