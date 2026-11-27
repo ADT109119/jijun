@@ -1,11 +1,12 @@
 // 現代化 Service Worker（v2：precache + opaque cache-first）
 // 使用統一的版本號和 build hash 命名快取
-const APP_VERSION = '2.1.9.1' // build 時自動注入 package.json 的版本號
-const BUILD_HASH = 'f623bec0' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
+const APP_VERSION = '2.1.9.2' // build 時自動注入 package.json 的版本號
+const BUILD_HASH = '6e61011a' // build 時自動注入（assets 清單的 hash；dev 模式固定 'dev'）
 
 // 快取命名帶 BUILD_HASH：新 build 的 SW 用新快取，舊快取在 activate 時清理
 const APP_CACHE = `app-v${APP_VERSION}-${BUILD_HASH}` // install 時的 precache（本機 assets + 核心 + CDN）
 const DYNAMIC_CACHE = `dynamic-v${APP_VERSION}-${BUILD_HASH}` // 執行期快取
+const NETWORK_TIMEOUT_MS = 5000 // 有快取時網路載入超過 5 秒即直接使用快取開啟
 
 // 核心檔案（本機伺服）
 const CORE_URLS = [
@@ -79,6 +80,27 @@ self.addEventListener('activate', event => {
                     })
                 )
             }),
+            // 清理當前 DYNAMIC_CACHE 中殘留的非同源或 API 快取（如早期誤存的 Google Drive 備份列表）
+            caches.open(DYNAMIC_CACHE).then(cache =>
+                cache.keys().then(requests =>
+                    Promise.all(
+                        requests
+                            .filter(req => {
+                                try {
+                                    const u = new URL(req.url)
+                                    return (
+                                        u.origin !== self.location.origin ||
+                                        u.pathname.startsWith('/api/') ||
+                                        u.pathname.includes('/api/')
+                                    )
+                                } catch (_) {
+                                    return true
+                                }
+                            })
+                            .map(req => cache.delete(req))
+                    )
+                )
+            ).catch(() => {}),
             // 立即控制所有客戶端
             self.clients.claim(),
             // 啟用時更新所有小工具
@@ -116,72 +138,112 @@ self.addEventListener('fetch', event => {
         return
     }
 
-    // API 請求一律放行、不經 SW 快取（含自架同步 server 的跨域 /api/）：
+    // 帶認證標頭（Authorization）或明確要求不快取（no-store）的請求一律放行
+    if (
+        event.request.headers.has('authorization') ||
+        event.request.cache === 'no-store'
+    ) {
+        return
+    }
+
+    const reqUrl = new URL(event.request.url)
+
+    // 跨域請求一律放行、不經 SW 快取：
+    // Google Drive API (/drive/v3/files...)、OAuth (/oauth2/...)、Google SDK、
+    // 自架同步伺服器、GitHub API、遠端商店與 AI 模型等皆為動態或外部資源；
+    // 本機靜態資源皆已同源打包，若對跨域 GET 執行 cache-first 會導致
+    // 備份清單與同步日誌永久命中舊快取。
+    if (reqUrl.origin !== self.location.origin) {
+        return
+    }
+
+    // API 請求一律放行、不經 SW 快取（含同源反代 /api/）：
     // 同步狀態 / admin 帳號列表 / 備份清單等是動態資料，
     // cache-first 會讓 PUT/POST 變更後的 GET 讀到 SW 舊快取
     // （瀏覽器 cache:'no-store' 對 SW 攔截無效）。
-    const path = new URL(event.request.url).pathname
-    if (path.startsWith('/api/') || path.includes('/api/')) {
+    if (reqUrl.pathname.startsWith('/api/') || reqUrl.pathname.includes('/api/')) {
         return
     }
 
     // 導覽請求（index.html / /）一律網路優先：
     // HTML 是入口，cache-first 會讓舊 SW 在更新後仍提供舊 index.html，
-    // 載入舊 JS 開新版本 DB → VersionError → 資料「看似消失」的根因鏈之一。
+    // 載入舊 JS 開新版本 DB → VersionError → 資料「看似消失」的根因鏈之一；
+    // 同時設定 5 秒逾時，若已有快取且網路極慢，立即改用快取開啟。
     if (event.request.mode === 'navigate') {
-        event.respondWith(networkFirst(event.request))
+        event.respondWith(networkFirst(event.request, event))
         return
     }
 
     // 開發模式（BUILD_HASH === 'dev' 或 localhost/127.0.0.1）下，/src/ 源代碼或 JS 腳本一律網路優先，
     // 防止熱修復時代碼被 Service Worker 靜態快取截斷
-    const reqUrl = new URL(event.request.url)
     const isLocalDev = BUILD_HASH === 'dev' || reqUrl.hostname === 'localhost' || reqUrl.hostname === '127.0.0.1'
     if (isLocalDev && (reqUrl.pathname.startsWith('/src/') || reqUrl.pathname.endsWith('.js'))) {
-        event.respondWith(networkFirst(event.request))
+        event.respondWith(networkFirst(event.request, event))
         return
     }
 
-    // 其他一切（本機 assets、CSS、CDN、字型）：cache-first。
-    // cross-origin 的 opaque 回應（Tailwind CDN、FA 字型、Google Fonts woff2）
-    // 首次載入即入快取 → 離線可活，不再受 HTTP cache TTL 限制。
+    // 其餘同源靜態資源（assets、icon、themes 等）：cache-first
     event.respondWith(cacheFirst(event.request))
 })
 
-// 網路優先策略（僅導覽請求用）
-async function networkFirst(request) {
-    try {
-        // 先嘗試從網路獲取
-        const networkResponse = await fetch(request)
+// 網路優先策略（僅導覽與開發腳本用；有快取且網路逾 5 秒時直接以快取開啟）
+async function networkFirst(request, event) {
+    // 立即發起網路請求與快取查詢，確保網路正常時零額外延遲
+    const networkFetch = fetch(request)
+    const cachedResponse =
+        (await caches.match(request)) ||
+        (request.destination === 'document'
+            ? await caches.match('/index.html')
+            : null)
 
-        if (networkResponse && networkResponse.status === 200) {
-            // 成功獲取，更新快取（只存同源）
-            if (new URL(request.url).origin === self.location.origin) {
-                const cache = await caches.open(DYNAMIC_CACHE)
-                cache.put(request, networkResponse.clone())
+    const networkTask = (async () => {
+        try {
+            const networkResponse = await networkFetch
+            if (networkResponse && networkResponse.status === 200) {
+                // 成功獲取，更新快取（只存同源）
+                if (new URL(request.url).origin === self.location.origin) {
+                    const cache = await caches.open(DYNAMIC_CACHE)
+                    await cache.put(request, networkResponse.clone()).catch(() => {})
+                }
+                return networkResponse
             }
-            return networkResponse
+        } catch (error) {
+            console.log('網路請求失敗，嘗試從快取獲取:', request.url)
         }
-    } catch (error) {
-        console.log('網路請求失敗，嘗試從快取獲取:', request.url)
+        return null
+    })()
+
+    // 無任何快取時只能等待網路回應，不提前在 5 秒中斷
+    if (!cachedResponse) {
+        const fresh = await networkTask
+        if (fresh) return fresh
+        return new Response('離線狀態，無法載入資源', {
+            status: 503,
+            statusText: 'Service Unavailable',
+        })
     }
 
-    // 網路失敗，從快取獲取
-    const cachedResponse = await caches.match(request)
-    if (cachedResponse) {
-        return cachedResponse
-    }
-
-    // 如果是頁面請求且快取中沒有，返回離線頁面（precache 的 index.html）
-    if (request.destination === 'document') {
-        return caches.match('/index.html')
-    }
-
-    // 其他情況返回網路錯誤
-    return new Response('離線狀態，無法載入資源', {
-        status: 503,
-        statusText: 'Service Unavailable',
+    // 有快取時與 5 秒逾時競速：網路失敗或超過 5 秒即刻以快取開啟
+    let timeoutId = null
+    let timedOut = false
+    const raceNetwork = networkTask.then(res => res || cachedResponse)
+    const timeoutTask = new Promise(resolve => {
+        timeoutId = setTimeout(() => {
+            timedOut = true
+            console.log('網路載入超過 5 秒，直接使用快取開啟:', request.url)
+            resolve(cachedResponse)
+        }, NETWORK_TIMEOUT_MS)
     })
+
+    try {
+        return await Promise.race([raceNetwork, timeoutTask])
+    } finally {
+        if (timeoutId !== null) clearTimeout(timeoutId)
+        if (timedOut && event && typeof event.waitUntil === 'function') {
+            // 若逾時已先行用快取開啟，允許背景完成更新快取供下次使用
+            event.waitUntil(networkTask.catch(() => {}))
+        }
+    }
 }
 
 // 快取優先策略（其餘全部請求用）
@@ -196,8 +258,12 @@ async function cacheFirst(request) {
         // 快取中沒有，從網路獲取
         const networkResponse = await fetch(request)
 
-        // ok（同源）或 opaque（cross-origin 無 CORS）都入快取
-        if (networkResponse && (networkResponse.ok || networkResponse.type === 'opaque')) {
+        // 僅快取同源且成功的靜態回應，嚴禁快取跨域回應
+        if (
+            networkResponse &&
+            networkResponse.ok &&
+            new URL(request.url).origin === self.location.origin
+        ) {
             const cache = await caches.open(DYNAMIC_CACHE)
             cache.put(request, networkResponse.clone()).catch(() => {})
         }
